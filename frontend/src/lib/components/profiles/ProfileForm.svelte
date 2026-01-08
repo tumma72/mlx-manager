@@ -5,11 +5,12 @@
 	interface Props {
 		profile?: ServerProfile;
 		nextPort?: number;
+		initialModelPath?: string;
 		onSubmit: (data: ServerProfileCreate | ServerProfileUpdate) => Promise<void>;
 		onCancel: () => void;
 	}
 
-	let { profile, nextPort = 10240, onSubmit, onCancel }: Props = $props();
+	let { profile, nextPort = 10240, initialModelPath = '', onSubmit, onCancel }: Props = $props();
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
@@ -34,11 +35,11 @@
 
 	let showAdvanced = $state(false);
 
-	// Reset form when profile or nextPort changes
+	// Reset form when profile, nextPort, or initialModelPath changes
 	$effect(() => {
 		name = profile?.name ?? '';
 		description = profile?.description ?? '';
-		modelPath = profile?.model_path ?? '';
+		modelPath = profile?.model_path ?? initialModelPath;
 		modelType = profile?.model_type ?? 'lm';
 		port = profile?.port ?? nextPort;
 		host = profile?.host ?? '127.0.0.1';

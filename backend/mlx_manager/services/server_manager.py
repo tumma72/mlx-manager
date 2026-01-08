@@ -1,14 +1,38 @@
 """Server process manager service."""
 
 import asyncio
+import shutil
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 import httpx
 import psutil
 
 from mlx_manager.models import ServerProfile
+
+
+def _find_mlx_openai_server() -> str:
+    """Find the mlx-openai-server executable.
+
+    First checks the same directory as the Python executable (for venv installs),
+    then falls back to system PATH.
+    """
+    # Check alongside the Python executable (handles venv correctly)
+    python_dir = Path(sys.executable).parent
+    local_cmd = python_dir / "mlx-openai-server"
+    if local_cmd.exists():
+        return str(local_cmd)
+
+    # Fall back to PATH lookup
+    path_cmd = shutil.which("mlx-openai-server")
+    if path_cmd:
+        return path_cmd
+
+    raise RuntimeError(
+        "mlx-openai-server not found. Please install it with: pip install mlx-openai-server"
+    )
 
 
 class ServerManager:
@@ -53,9 +77,7 @@ class ServerManager:
     def _build_command(self, profile: ServerProfile) -> list[str]:
         """Build the mlx-openai-server command from profile."""
         cmd = [
-            sys.executable,
-            "-m",
-            "mlx_openai_server.main",
+            _find_mlx_openai_server(),
             "--model-path",
             profile.model_path,
             "--model-type",

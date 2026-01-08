@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from mlx_manager.models import ServerProfile
+from mlx_manager.services.server_manager import _find_mlx_openai_server
 
 
 class LaunchdManager:
@@ -31,11 +32,9 @@ class LaunchdManager:
         """Generate a launchd plist dictionary for a profile."""
         label = self.get_label(profile)
 
-        # Build program arguments
+        # Build program arguments using the mlx-openai-server CLI
         program_args = [
-            sys.executable,
-            "-m",
-            "mlx_openai_server.main",
+            _find_mlx_openai_server(),
             "--model-path",
             profile.model_path,
             "--model-type",

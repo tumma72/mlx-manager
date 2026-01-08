@@ -33,5 +33,5 @@
 <div class="max-w-2xl mx-auto">
 	<h1 class="text-2xl font-bold mb-6">Create Server Profile</h1>
 
-	<ProfileForm {nextPort} onSubmit={handleSubmit} onCancel={handleCancel} />
+	<ProfileForm {nextPort} initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
 </div>
