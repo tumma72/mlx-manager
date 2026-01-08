@@ -16,7 +16,15 @@
 	let downloading = $state(false);
 	let deleting = $state(false);
 	let error = $state<string | null>(null);
-	let isDownloaded = $state(model.is_downloaded);
+	// Track local override for download status (null means use prop value)
+	let downloadStatusOverride = $state<boolean | null>(null);
+	let isDownloaded = $derived(downloadStatusOverride ?? model.is_downloaded);
+
+	// Reset override when model prop changes
+	$effect(() => {
+		model.model_id; // Track model changes
+		downloadStatusOverride = null;
+	});
 
 	async function handleDownload() {
 		downloading = true;
@@ -30,7 +38,7 @@
 			eventSource.onmessage = (event) => {
 				const data = JSON.parse(event.data);
 				if (data.status === 'completed') {
-					isDownloaded = true;
+					downloadStatusOverride = true;
 					downloading = false;
 					eventSource.close();
 				} else if (data.status === 'failed') {
@@ -58,7 +66,7 @@
 		error = null;
 		try {
 			await models.delete(model.model_id);
-			isDownloaded = false;
+			downloadStatusOverride = false;
 			onDeleted?.();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Delete failed';

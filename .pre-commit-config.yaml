@@ -1,0 +1,89 @@
+# Pre-commit hooks for MLX Model Manager
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python - Ruff (linting + formatting)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  # Python - Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^backend/mlx_manager/
+        additional_dependencies:
+          - types-psutil
+          - pydantic
+          - sqlmodel
+        args: [--ignore-missing-imports]
+
+  # Frontend - Prettier
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        files: ^frontend/
+        types_or: [javascript, typescript, svelte, css, json]
+        additional_dependencies:
+          - prettier
+          - prettier-plugin-svelte
+
+  # Frontend - ESLint
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: ^frontend/.*\.(js|ts|svelte)$
+        pass_filenames: false
+
+      - id: svelte-check
+        name: svelte-check
+        entry: bash -c 'cd frontend && npm run check'
+        language: system
+        files: ^frontend/.*\.(ts|svelte)$
+        pass_filenames: false
+
+  # Run tests
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: backend-tests
+        entry: bash -c 'cd backend && source .venv/bin/activate && pytest -x -q'
+        language: system
+        files: ^backend/
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: frontend-tests
+        name: frontend-tests
+        entry: bash -c 'cd frontend && npm run test'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+        stages: [pre-push]
+
+# Configuration
+default_stages: [pre-commit]

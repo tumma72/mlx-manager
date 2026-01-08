@@ -56,17 +56,26 @@ pip install -e ".[dev]"
 # Run development server
 uvicorn mlx_manager.main:app --reload --port 8080
 
-# Linting and formatting
-ruff check .
+# Linting (with auto-fix)
+ruff check . --fix
+
+# Formatting
 ruff format .
 
 # Type checking
 mypy mlx_manager
 
-# Run tests
-pytest
-pytest tests/test_specific.py -v           # Single test file
-pytest tests/test_specific.py::test_name   # Single test
+# Run all tests
+pytest -v
+
+# Run tests with coverage
+pytest --cov=mlx_manager --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_profiles.py -v
+
+# Run specific test
+pytest tests/test_profiles.py::test_create_profile -v
 ```
 
 ### Frontend (SvelteKit 2 + Svelte 5 + TailwindCSS)
@@ -88,9 +97,51 @@ npm run lint
 # Formatting
 npm run format
 
+# Unit tests
+npm run test
+
+# Unit tests with watch mode
+npm run test:watch
+
+# E2E tests (requires dev server)
+npm run test:e2e
+
 # Production build
 npm run build
 ```
+
+## Quality Gates
+
+Pre-commit hooks enforce quality on every commit. Install with:
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+### Running All Quality Checks
+
+**Backend:**
+```bash
+cd backend && source .venv/bin/activate
+ruff check . && ruff format --check . && mypy mlx_manager && pytest -v
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm run check && npm run lint && npm run test
+```
+
+### Test Coverage (Current: 67%)
+
+| Module | Coverage |
+|--------|----------|
+| routers/profiles.py | 100% |
+| routers/system.py | 92% |
+| services/health_checker.py | 100% |
+| services/launchd.py | 96% |
+| services/hf_client.py | 89% |
+| services/server_manager.py | 80% |
 
 ## Architecture
 

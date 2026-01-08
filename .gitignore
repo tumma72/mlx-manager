@@ -77,3 +77,6 @@ htmlcov/
 
 # Serena
 .serena/*
+
+# Claude Code local config
+.claude/settings.local.json

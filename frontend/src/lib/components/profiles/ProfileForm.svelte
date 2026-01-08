@@ -14,25 +14,45 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
-	// Form state
-	let name = $state(profile?.name ?? '');
-	let description = $state(profile?.description ?? '');
-	let modelPath = $state(profile?.model_path ?? '');
-	let modelType = $state(profile?.model_type ?? 'lm');
-	let port = $state(profile?.port ?? nextPort);
-	let host = $state(profile?.host ?? '127.0.0.1');
-	let contextLength = $state<number | undefined>(profile?.context_length ?? undefined);
-	let maxConcurrency = $state(profile?.max_concurrency ?? 1);
-	let queueTimeout = $state(profile?.queue_timeout ?? 300);
-	let queueSize = $state(profile?.queue_size ?? 100);
-	let toolCallParser = $state(profile?.tool_call_parser ?? '');
-	let reasoningParser = $state(profile?.reasoning_parser ?? '');
-	let enableAutoToolChoice = $state(profile?.enable_auto_tool_choice ?? false);
-	let trustRemoteCode = $state(profile?.trust_remote_code ?? false);
-	let logLevel = $state(profile?.log_level ?? 'INFO');
-	let autoStart = $state(profile?.auto_start ?? false);
+	// Form state - initialized empty, populated via $effect
+	let name = $state('');
+	let description = $state('');
+	let modelPath = $state('');
+	let modelType = $state('lm');
+	let port = $state(10240);
+	let host = $state('127.0.0.1');
+	let contextLength = $state<number | undefined>(undefined);
+	let maxConcurrency = $state(1);
+	let queueTimeout = $state(300);
+	let queueSize = $state(100);
+	let toolCallParser = $state('');
+	let reasoningParser = $state('');
+	let enableAutoToolChoice = $state(false);
+	let trustRemoteCode = $state(false);
+	let logLevel = $state('INFO');
+	let autoStart = $state(false);
 
 	let showAdvanced = $state(false);
+
+	// Reset form when profile or nextPort changes
+	$effect(() => {
+		name = profile?.name ?? '';
+		description = profile?.description ?? '';
+		modelPath = profile?.model_path ?? '';
+		modelType = profile?.model_type ?? 'lm';
+		port = profile?.port ?? nextPort;
+		host = profile?.host ?? '127.0.0.1';
+		contextLength = profile?.context_length ?? undefined;
+		maxConcurrency = profile?.max_concurrency ?? 1;
+		queueTimeout = profile?.queue_timeout ?? 300;
+		queueSize = profile?.queue_size ?? 100;
+		toolCallParser = profile?.tool_call_parser ?? '';
+		reasoningParser = profile?.reasoning_parser ?? '';
+		enableAutoToolChoice = profile?.enable_auto_tool_choice ?? false;
+		trustRemoteCode = profile?.trust_remote_code ?? false;
+		logLevel = profile?.log_level ?? 'INFO';
+		autoStart = profile?.auto_start ?? false;
+	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
