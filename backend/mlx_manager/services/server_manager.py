@@ -4,12 +4,11 @@ import asyncio
 import signal
 import subprocess
 import sys
-from typing import Optional
 
 import httpx
 import psutil
 
-from app.models import ServerProfile
+from mlx_manager.models import ServerProfile
 
 
 class ServerManager:
@@ -151,7 +150,7 @@ class ServerManager:
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}
 
-    def get_server_stats(self, profile_id: int) -> Optional[dict]:
+    def get_server_stats(self, profile_id: int) -> dict | None:
         """Get memory and CPU stats for a running server."""
         if profile_id not in self.processes:
             return None

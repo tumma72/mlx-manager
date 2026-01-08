@@ -1,13 +1,13 @@
 """Database setup and session management."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 
-from app.config import ensure_data_dir, settings
+from mlx_manager.config import ensure_data_dir, settings
 
 # Create async engine
 engine = create_async_engine(
@@ -34,7 +34,7 @@ async def init_db() -> None:
     async with get_session() as session:
         from sqlmodel import select
 
-        from app.models import Setting
+        from mlx_manager.models import Setting
 
         # Check if settings exist
         result = await session.execute(select(Setting))

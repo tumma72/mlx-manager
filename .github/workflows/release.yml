@@ -1,0 +1,61 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: MLX Manager v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Installation
+
+            **Via pip:**
+            ```bash
+            pip install mlx-manager
+            ```
+
+            **Via uvx (recommended):**
+            ```bash
+            uvx mlx-manager serve
+            ```
+
+            **Via Homebrew:**
+            ```bash
+            brew tap tumma72/mlx-manager
+            brew install mlx-manager
+            ```
+
+            ## Usage
+            ```bash
+            # Start the web server
+            mlx-manager serve
+
+            # Launch menubar app
+            mlx-manager menubar
+
+            # Install as background service
+            mlx-manager install-service
+            ```
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          generate_release_notes: true

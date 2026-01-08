@@ -2,12 +2,12 @@
 
 import asyncio
 import shutil
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator, Optional
 
 from huggingface_hub import HfApi, snapshot_download
 
-from app.config import settings
+from mlx_manager.config import settings
 
 
 class HuggingFaceClient:
@@ -20,7 +20,7 @@ class HuggingFaceClient:
     async def search_mlx_models(
         self,
         query: str,
-        max_size_gb: Optional[float] = None,
+        max_size_gb: float | None = None,
         limit: int = 20,
     ) -> list[dict]:
         """Search for MLX models in mlx-community organization."""
@@ -102,7 +102,7 @@ class HuggingFaceClient:
                 pass
         return False
 
-    def get_local_path(self, model_id: str) -> Optional[str]:
+    def get_local_path(self, model_id: str) -> str | None:
         """Get the local path for a downloaded model."""
         cache_name = f"models--{model_id.replace('/', '--')}"
         model_path = self.cache_dir / cache_name / "snapshots"
@@ -167,9 +167,7 @@ class HuggingFaceClient:
 
                     if local_path:
                         size_bytes = sum(
-                            f.stat().st_size
-                            for f in Path(local_path).rglob("*")
-                            if f.is_file()
+                            f.stat().st_size for f in Path(local_path).rglob("*") if f.is_file()
                         )
 
                         models.append(

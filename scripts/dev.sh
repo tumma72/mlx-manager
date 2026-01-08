@@ -60,7 +60,7 @@ source .venv/bin/activate
 pip install -q -e ".[dev]"
 
 # Start uvicorn in background
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8080 &
+uvicorn mlx_manager.main:app --reload --host 127.0.0.1 --port 8080 &
 BACKEND_PID=$!
 
 # Wait for backend to start

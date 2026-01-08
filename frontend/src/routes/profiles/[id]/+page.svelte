@@ -11,7 +11,7 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	const profileId = $derived(parseInt($page.params.id, 10));
+	const profileId = $derived(parseInt($page.params.id ?? '0', 10));
 
 	onMount(async () => {
 		try {

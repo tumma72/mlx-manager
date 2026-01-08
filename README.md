@@ -1,4 +1,4 @@
-# MLX Model Manager
+# MLX Manager
 
 A web-based application for managing MLX-optimized language models on Apple Silicon Macs.
 

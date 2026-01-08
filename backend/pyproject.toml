@@ -1,17 +1,35 @@
 [project]
-name = "mlx-manager-backend"
+name = "mlx-manager"
 version = "1.0.0"
-description = "Backend API for MLX Model Manager"
+description = "Web-based MLX model manager for Apple Silicon Macs"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: MacOS X",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["mlx", "apple-silicon", "llm", "model-manager", "fastapi"]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "sqlmodel>=0.0.22",
     "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
     "huggingface-hub>=0.27.0",
     "psutil>=6.0.0",
     "httpx>=0.28.0",
     "pydantic-settings>=2.0.0",
+    "typer[all]>=0.12.0",
+    "rumps>=0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +38,19 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "build>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tumma72/mlx-manager"
+Repository = "https://github.com/tumma72/mlx-manager"
+Documentation = "https://github.com/tumma72/mlx-manager#readme"
+
+[project.scripts]
+mlx-manager = "mlx_manager.cli:main"
+
+[project.gui-scripts]
+mlx-manager-menubar = "mlx_manager.menubar:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -28,6 +58,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["mlx_manager*"]
+
+[tool.setuptools.package-data]
+mlx_manager = ["static/**/*"]
 
 [tool.ruff]
 line-length = 100

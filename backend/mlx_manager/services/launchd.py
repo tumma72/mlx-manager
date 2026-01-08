@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.models import ServerProfile
+from mlx_manager.models import ServerProfile
 
 
 class LaunchdManager:
@@ -103,9 +103,7 @@ class LaunchdManager:
             plistlib.dump(plist, f)
 
         # Load the service
-        subprocess.run(
-            ["launchctl", "load", str(plist_path)], check=True, capture_output=True
-        )
+        subprocess.run(["launchctl", "load", str(plist_path)], check=True, capture_output=True)
 
         return str(plist_path)
 
@@ -137,9 +135,7 @@ class LaunchdManager:
         """Check if a launchd service is running."""
         label = self.get_label(profile)
 
-        result = subprocess.run(
-            ["launchctl", "list", label], capture_output=True, text=True
-        )
+        result = subprocess.run(["launchctl", "list", label], capture_output=True, text=True)
 
         return result.returncode == 0
 
@@ -163,9 +159,7 @@ class LaunchdManager:
         """Get detailed status of a launchd service."""
         label = self.get_label(profile)
 
-        result = subprocess.run(
-            ["launchctl", "list", label], capture_output=True, text=True
-        )
+        result = subprocess.run(["launchctl", "list", label], capture_output=True, text=True)
 
         if result.returncode != 0:
             return {

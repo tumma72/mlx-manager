@@ -2,13 +2,12 @@
 
 import asyncio
 from datetime import datetime
-from typing import Optional
 
 from sqlmodel import select
 
-from app.database import get_session
-from app.models import RunningInstance, ServerProfile
-from app.services.server_manager import server_manager
+from mlx_manager.database import get_session
+from mlx_manager.models import RunningInstance, ServerProfile
+from mlx_manager.services.server_manager import server_manager
 
 
 class HealthChecker:
@@ -16,7 +15,7 @@ class HealthChecker:
 
     def __init__(self, interval: int = 30):
         self.interval = interval
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._running = False
 
     async def start(self):
@@ -54,9 +53,7 @@ class HealthChecker:
 
             for instance in instances:
                 # Get profile
-                profile_stmt = select(ServerProfile).where(
-                    ServerProfile.id == instance.profile_id
-                )
+                profile_stmt = select(ServerProfile).where(ServerProfile.id == instance.profile_id)
                 profile_result = await session.execute(profile_stmt)
                 profile = profile_result.scalar_one_or_none()
 

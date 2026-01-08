@@ -3,7 +3,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { profileStore } from '$stores';
-	import type { ServerProfileCreate } from '$api';
+	import type { ServerProfileCreate, ServerProfileUpdate } from '$api';
 	import { ProfileForm } from '$components/profiles';
 
 	let nextPort = $state(10240);
@@ -20,8 +20,8 @@
 		}
 	});
 
-	async function handleSubmit(data: ServerProfileCreate) {
-		await profileStore.create(data);
+	async function handleSubmit(data: ServerProfileCreate | ServerProfileUpdate) {
+		await profileStore.create(data as ServerProfileCreate);
 		goto('/profiles');
 	}
 

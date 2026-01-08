@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from app.config import settings
+from mlx_manager.config import settings
 
 
 def validate_model_path(path: str) -> bool:

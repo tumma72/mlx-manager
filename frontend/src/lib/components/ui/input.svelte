@@ -6,6 +6,7 @@
 		value?: string | number;
 		placeholder?: string;
 		disabled?: boolean;
+		required?: boolean;
 		class?: string;
 		id?: string;
 		name?: string;
@@ -18,6 +19,7 @@
 		value = $bindable(''),
 		placeholder = '',
 		disabled = false,
+		required = false,
 		class: className = '',
 		id,
 		name,
@@ -31,6 +33,7 @@
 	bind:value
 	{placeholder}
 	{disabled}
+	{required}
 	{id}
 	{name}
 	{oninput}

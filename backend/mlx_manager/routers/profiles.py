@@ -1,15 +1,14 @@
 """Server profiles API router."""
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.config import settings
-from app.database import get_db
-from app.models import (
+from mlx_manager.config import settings
+from mlx_manager.database import get_db
+from mlx_manager.models import (
     ServerProfile,
     ServerProfileCreate,
     ServerProfileResponse,
@@ -30,9 +29,7 @@ async def list_profiles(session: AsyncSession = Depends(get_db)):
 @router.get("/next-port")
 async def get_next_port(session: AsyncSession = Depends(get_db)):
     """Get the next available port."""
-    result = await session.execute(
-        select(ServerProfile.port).order_by(ServerProfile.port.desc())
-    )
+    result = await session.execute(select(ServerProfile.port).order_by(ServerProfile.port.desc()))
     ports = result.scalars().all()
 
     if not ports:
@@ -50,9 +47,7 @@ async def get_next_port(session: AsyncSession = Depends(get_db)):
 @router.get("/{profile_id}", response_model=ServerProfileResponse)
 async def get_profile(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Get a specific profile."""
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -95,9 +90,7 @@ async def update_profile(
     session: AsyncSession = Depends(get_db),
 ):
     """Update a server profile."""
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -117,9 +110,7 @@ async def update_profile(
             select(ServerProfile).where(ServerProfile.port == profile_data.port)
         )
         if result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=409, detail="Port already in use by another profile"
-            )
+            raise HTTPException(status_code=409, detail="Port already in use by another profile")
 
     # Update fields
     update_data = profile_data.model_dump(exclude_unset=True)
@@ -137,9 +128,7 @@ async def update_profile(
 @router.delete("/{profile_id}", status_code=204)
 async def delete_profile(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Delete a server profile."""
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -156,25 +145,19 @@ async def duplicate_profile(
     session: AsyncSession = Depends(get_db),
 ):
     """Duplicate a profile with a new name."""
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Check for name conflict
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.name == new_name)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.name == new_name))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Profile name already exists")
 
     # Get next available port
-    result = await session.execute(
-        select(ServerProfile.port).order_by(ServerProfile.port.desc())
-    )
+    result = await session.execute(select(ServerProfile.port).order_by(ServerProfile.port.desc()))
     ports = result.scalars().all()
     next_port = max(ports) + 1 if ports else settings.default_port_start
 

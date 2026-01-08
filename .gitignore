@@ -75,5 +75,5 @@ htmlcov/
 # ruff
 .ruff_cache/
 
-# MLX Manager specific
-~/.mlx-manager/
+# Serena
+.serena/*

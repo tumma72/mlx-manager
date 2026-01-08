@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.config import settings
-from app.database import get_db
-from app.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
-from app.services.launchd import launchd_manager
+from mlx_manager.config import settings
+from mlx_manager.database import get_db
+from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
+from mlx_manager.services.launchd import launchd_manager
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -95,14 +95,10 @@ async def get_system_info():
 
 
 @router.post("/launchd/install/{profile_id}")
-async def install_launchd_service(
-    profile_id: int, session: AsyncSession = Depends(get_db)
-):
+async def install_launchd_service(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Install profile as launchd service."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -122,14 +118,10 @@ async def install_launchd_service(
 
 
 @router.post("/launchd/uninstall/{profile_id}", status_code=204)
-async def uninstall_launchd_service(
-    profile_id: int, session: AsyncSession = Depends(get_db)
-):
+async def uninstall_launchd_service(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Uninstall launchd service."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -147,9 +139,7 @@ async def uninstall_launchd_service(
 async def get_launchd_status(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Get launchd service status."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:

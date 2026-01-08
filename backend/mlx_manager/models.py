@@ -1,7 +1,6 @@
 """SQLModel database models."""
 
 from datetime import datetime
-from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
@@ -10,22 +9,22 @@ class ServerProfileBase(SQLModel):
     """Base model for server profiles."""
 
     name: str = Field(index=True)
-    description: Optional[str] = None
+    description: str | None = None
     model_path: str
     model_type: str = Field(default="lm")
     port: int
     host: str = Field(default="127.0.0.1")
-    context_length: Optional[int] = None
+    context_length: int | None = None
     max_concurrency: int = Field(default=1)
     queue_timeout: int = Field(default=300)
     queue_size: int = Field(default=100)
-    tool_call_parser: Optional[str] = None
-    reasoning_parser: Optional[str] = None
+    tool_call_parser: str | None = None
+    reasoning_parser: str | None = None
     enable_auto_tool_choice: bool = Field(default=False)
     trust_remote_code: bool = Field(default=False)
-    chat_template_file: Optional[str] = None
+    chat_template_file: str | None = None
     log_level: str = Field(default="INFO")
-    log_file: Optional[str] = None
+    log_file: str | None = None
     no_log_file: bool = Field(default=False)
     auto_start: bool = Field(default=False)
 
@@ -35,7 +34,7 @@ class ServerProfile(ServerProfileBase, table=True):
 
     __tablename__ = "server_profiles"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     launchd_installed: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -50,25 +49,25 @@ class ServerProfileCreate(ServerProfileBase):
 class ServerProfileUpdate(SQLModel):
     """Schema for updating a server profile."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    model_path: Optional[str] = None
-    model_type: Optional[str] = None
-    port: Optional[int] = None
-    host: Optional[str] = None
-    context_length: Optional[int] = None
-    max_concurrency: Optional[int] = None
-    queue_timeout: Optional[int] = None
-    queue_size: Optional[int] = None
-    tool_call_parser: Optional[str] = None
-    reasoning_parser: Optional[str] = None
-    enable_auto_tool_choice: Optional[bool] = None
-    trust_remote_code: Optional[bool] = None
-    chat_template_file: Optional[str] = None
-    log_level: Optional[str] = None
-    log_file: Optional[str] = None
-    no_log_file: Optional[bool] = None
-    auto_start: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    model_path: str | None = None
+    model_type: str | None = None
+    port: int | None = None
+    host: str | None = None
+    context_length: int | None = None
+    max_concurrency: int | None = None
+    queue_timeout: int | None = None
+    queue_size: int | None = None
+    tool_call_parser: str | None = None
+    reasoning_parser: str | None = None
+    enable_auto_tool_choice: bool | None = None
+    trust_remote_code: bool | None = None
+    chat_template_file: str | None = None
+    log_level: str | None = None
+    log_file: str | None = None
+    no_log_file: bool | None = None
+    auto_start: bool | None = None
 
 
 class RunningInstance(SQLModel, table=True):
@@ -76,12 +75,12 @@ class RunningInstance(SQLModel, table=True):
 
     __tablename__ = "running_instances"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     profile_id: int = Field(foreign_key="server_profiles.id", unique=True)
     pid: int
     started_at: datetime = Field(default_factory=datetime.utcnow)
     health_status: str = Field(default="starting")
-    last_health_check: Optional[datetime] = None
+    last_health_check: datetime | None = None
 
 
 class DownloadedModel(SQLModel, table=True):
@@ -89,12 +88,12 @@ class DownloadedModel(SQLModel, table=True):
 
     __tablename__ = "downloaded_models"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     model_id: str = Field(unique=True, index=True)
     local_path: str
-    size_bytes: Optional[int] = None
+    size_bytes: int | None = None
     downloaded_at: datetime = Field(default_factory=datetime.utcnow)
-    last_used_at: Optional[datetime] = None
+    last_used_at: datetime | None = None
 
 
 class Setting(SQLModel, table=True):
@@ -139,7 +138,7 @@ class ModelSearchResult(SQLModel):
     estimated_size_gb: float
     tags: list[str]
     is_downloaded: bool
-    last_modified: Optional[str] = None
+    last_modified: str | None = None
 
 
 class LocalModel(SQLModel):
@@ -168,17 +167,17 @@ class SystemInfo(SQLModel):
     chip: str
     memory_gb: float
     python_version: str
-    mlx_version: Optional[str] = None
-    mlx_openai_server_version: Optional[str] = None
+    mlx_version: str | None = None
+    mlx_openai_server_version: str | None = None
 
 
 class HealthStatus(SQLModel):
     """Server health status."""
 
     status: str
-    response_time_ms: Optional[float] = None
-    model_loaded: Optional[bool] = None
-    error: Optional[str] = None
+    response_time_ms: float | None = None
+    model_loaded: bool | None = None
+    error: str | None = None
 
 
 class LaunchdStatus(SQLModel):
@@ -186,5 +185,5 @@ class LaunchdStatus(SQLModel):
 
     installed: bool
     running: bool
-    pid: Optional[int] = None
+    pid: int | None = None
     label: str

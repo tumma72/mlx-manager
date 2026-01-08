@@ -2,13 +2,12 @@
 
 import asyncio
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.models import LocalModel, ModelSearchResult
-from app.services.hf_client import hf_client
+from mlx_manager.models import LocalModel, ModelSearchResult
+from mlx_manager.services.hf_client import hf_client
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -19,7 +18,7 @@ download_tasks: dict[str, dict] = {}
 @router.get("/search", response_model=list[ModelSearchResult])
 async def search_models(
     query: str = Query(..., min_length=1),
-    max_size_gb: Optional[float] = None,
+    max_size_gb: float | None = None,
     limit: int = Query(default=20, le=100),
 ):
     """Search MLX models on HuggingFace."""
@@ -59,7 +58,7 @@ async def get_download_progress(task_id: str):
 
     async def generate():
         if task_id not in download_tasks:
-            yield f"data: {{'error': 'Task not found'}}\n\n"
+            yield "data: {'error': 'Task not found'}\n\n"
             return
 
         task = download_tasks[task_id]

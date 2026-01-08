@@ -3,21 +3,20 @@
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.database import get_db, get_session
-from app.models import (
+from mlx_manager.database import get_db
+from mlx_manager.models import (
     HealthStatus,
     RunningInstance,
     RunningServerResponse,
     ServerProfile,
 )
-from app.services.server_manager import server_manager
+from mlx_manager.services.server_manager import server_manager
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
@@ -67,9 +66,7 @@ async def list_running_servers(session: AsyncSession = Depends(get_db)):
 async def start_server(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Start a server for a profile."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -79,9 +76,7 @@ async def start_server(profile_id: int, session: AsyncSession = Depends(get_db))
         pid = await server_manager.start_server(profile)
 
         # Record in database
-        instance = RunningInstance(
-            profile_id=profile.id, pid=pid, health_status="starting"
-        )
+        instance = RunningInstance(profile_id=profile.id, pid=pid, health_status="starting")
         session.add(instance)
         await session.commit()
 
@@ -118,9 +113,7 @@ async def stop_server(
 async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Restart a server."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -145,9 +138,7 @@ async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db
             instance.health_status = "starting"
             instance.started_at = datetime.utcnow()
         else:
-            instance = RunningInstance(
-                profile_id=profile.id, pid=pid, health_status="starting"
-            )
+            instance = RunningInstance(profile_id=profile.id, pid=pid, health_status="starting")
 
         session.add(instance)
         await session.commit()
@@ -161,9 +152,7 @@ async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db
 async def check_server_health(profile_id: int, session: AsyncSession = Depends(get_db)):
     """Check server health."""
     # Get profile
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id == profile_id)
-    )
+    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
     profile = result.scalar_one_or_none()
 
     if not profile:

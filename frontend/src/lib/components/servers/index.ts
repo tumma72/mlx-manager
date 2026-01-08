@@ -1,1 +1,1 @@
-export { default as ServerCard } from './ServerCard.svelte';
+export { default as ServerCard } from "./ServerCard.svelte";

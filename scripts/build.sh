@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # MLX Model Manager Build Script
-# Creates production builds of frontend and backend
+# Creates production builds with embedded frontend
 
 set -e
 
@@ -18,19 +18,31 @@ echo -e "${GREEN}Building MLX Model Manager${NC}"
 echo ""
 
 # Build frontend
-echo -e "${GREEN}Building frontend...${NC}"
+echo -e "${GREEN}Step 1: Building frontend...${NC}"
 cd "$ROOT_DIR/frontend"
 
 # Install dependencies
-npm install
+npm ci
 
 # Build for production
 npm run build
 
-echo -e "${GREEN}Frontend build complete: frontend/build/${NC}"
+echo -e "${GREEN}Frontend build complete${NC}"
 
-# Package backend
-echo -e "${GREEN}Preparing backend...${NC}"
+# Embed frontend in backend
+echo -e "${GREEN}Step 2: Embedding frontend in backend...${NC}"
+cd "$ROOT_DIR"
+
+# Remove old static files
+rm -rf "$ROOT_DIR/backend/mlx_manager/static"
+
+# Copy frontend build to backend
+cp -r "$ROOT_DIR/frontend/build" "$ROOT_DIR/backend/mlx_manager/static"
+
+echo -e "${GREEN}Frontend embedded in backend/mlx_manager/static/${NC}"
+
+# Build Python package
+echo -e "${GREEN}Step 3: Building Python package...${NC}"
 cd "$ROOT_DIR/backend"
 
 # Create virtual environment if it doesn't exist
@@ -38,23 +50,28 @@ if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 fi
 
-# Install dependencies
+# Activate and install build tools
 source .venv/bin/activate
-pip install -e .
+pip install -q build
 
-echo -e "${GREEN}Backend ready${NC}"
+# Build wheel and sdist
+python -m build
+
+echo -e "${GREEN}Python package built${NC}"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Build complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "To run in production mode:"
+echo "Artifacts:"
+echo "  - Wheel: backend/dist/mlx_manager-*.whl"
+echo "  - Source: backend/dist/mlx-manager-*.tar.gz"
 echo ""
-echo "  # Start backend"
-echo "  cd backend && source .venv/bin/activate"
-echo "  uvicorn app.main:app --host 127.0.0.1 --port 8080"
+echo "To install locally:"
+echo "  pip install backend/dist/mlx_manager-*.whl"
 echo ""
-echo "  # Serve frontend (use any static file server)"
-echo "  cd frontend/build && python -m http.server 5173"
+echo "To run:"
+echo "  mlx-manager serve"
+echo "  mlx-manager menubar"
 echo ""
