@@ -24,8 +24,9 @@
 13. [Project Structure](#13-project-structure)
 14. [Implementation Phases](#14-implementation-phases)
 15. [Testing Strategy](#15-testing-strategy)
-16. [Configuration Files](#16-configuration-files)
-17. [External References](#17-external-references)
+16. [Deployment & Distribution](#16-deployment--distribution)
+17. [Configuration Files](#17-configuration-files)
+18. [External References](#18-external-references)
 
 ---
 
@@ -2150,7 +2151,206 @@ test('can start a server from profile', async ({ page }) => {
 
 ---
 
-## 16. Configuration Files
+## 16. Deployment & Distribution
+
+MLX Model Manager supports multiple distribution channels for easy installation on macOS.
+
+### PyPI Distribution
+
+The project is published to PyPI as `mlx-manager`, enabling installation via pip.
+
+#### Installation from PyPI
+
+```bash
+# Install from PyPI
+pip install mlx-manager
+
+# Or using uv (faster)
+uvx mlx-manager serve
+
+# Or using pipx for isolated installation
+pipx install mlx-manager
+```
+
+#### Publishing to PyPI
+
+The release process uses GitHub Actions to automatically publish to PyPI when a new tag is created:
+
+```bash
+# 1. Update version in backend/pyproject.toml
+# 2. Commit and tag the release
+git add backend/pyproject.toml
+git commit -m "chore: bump version to X.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin main --tags
+
+# The GitHub Action will automatically:
+# - Build the wheel and source distribution
+# - Publish to PyPI
+```
+
+#### Manual Publishing
+
+```bash
+cd backend
+
+# Install build tools
+pip install build twine
+
+# Build distribution
+python -m build
+
+# Upload to PyPI (requires PyPI API token)
+twine upload dist/*
+
+# Or upload to TestPyPI first
+twine upload --repository testpypi dist/*
+```
+
+### Homebrew Distribution
+
+MLX Manager can also be installed via Homebrew using a custom tap.
+
+#### Installation from Homebrew
+
+```bash
+# Add the tap
+brew tap tumma72/mlx-manager
+
+# Install
+brew install mlx-manager
+
+# Run
+mlx-manager serve
+```
+
+#### Homebrew Formula
+
+The Homebrew formula is maintained in a separate tap repository. Here's the formula structure:
+
+```ruby
+# Formula/mlx-manager.rb
+class MlxManager < Formula
+  include Language::Python::Virtualenv
+
+  desc "Web-based manager for MLX models on Apple Silicon"
+  homepage "https://github.com/tumma72/mlx-manager"
+  url "https://files.pythonhosted.org/packages/source/m/mlx-manager/mlx_manager-X.Y.Z.tar.gz"
+  sha256 "CHECKSUM_HERE"
+  license "MIT"
+
+  depends_on "python@3.11"
+  depends_on :macos
+
+  def install
+    virtualenv_install_with_resources
+  end
+
+  service do
+    run [opt_bin/"mlx-manager", "serve"]
+    keep_alive true
+    working_dir var/"mlx-manager"
+    log_path var/"log/mlx-manager.log"
+    error_log_path var/"log/mlx-manager-error.log"
+  end
+
+  test do
+    system "#{bin}/mlx-manager", "--version"
+  end
+end
+```
+
+#### Creating a New Homebrew Release
+
+1. Update the formula with new version and checksum:
+```bash
+# Get the SHA256 of the PyPI release
+curl -sL https://pypi.org/pypi/mlx-manager/X.Y.Z/json | jq -r '.urls[] | select(.packagetype=="sdist") | .digests.sha256'
+```
+
+2. Update the tap repository with the new formula.
+
+### Docker Distribution (Optional)
+
+For users who prefer containerized deployments:
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install mlx-manager
+RUN pip install mlx-manager
+
+# Expose the web UI port
+EXPOSE 8080
+
+# Note: MLX requires macOS with Apple Silicon
+# This Dockerfile is for reference only
+CMD ["mlx-manager", "serve", "--host", "0.0.0.0"]
+```
+
+Note: Docker support is limited since MLX requires macOS with Apple Silicon hardware. The Docker image is primarily for development/testing of the web interface on non-Mac systems.
+
+### Build System
+
+The project uses a Makefile at the root level for consistent build and test commands:
+
+```bash
+# View all available commands
+make help
+
+# Install dependencies
+make install-dev
+
+# Run all tests
+make test
+
+# Build for production
+make build
+
+# Run full CI pipeline
+make ci
+```
+
+See the Makefile for the complete list of available targets.
+
+### Versioning Strategy
+
+The project follows Semantic Versioning (SemVer):
+
+- **Major** (X.0.0): Breaking API changes
+- **Minor** (0.X.0): New features, backward compatible
+- **Patch** (0.0.X): Bug fixes, backward compatible
+
+Version is defined in `backend/pyproject.toml` and should be updated before each release.
+
+### Release Checklist
+
+1. **Pre-release**
+   - [ ] All tests passing (`make test`)
+   - [ ] Linting clean (`make lint`)
+   - [ ] Type checks passing (`make check`)
+   - [ ] Documentation updated
+   - [ ] CHANGELOG updated
+
+2. **Release**
+   - [ ] Update version in `backend/pyproject.toml`
+   - [ ] Commit version bump
+   - [ ] Create and push git tag
+   - [ ] Verify PyPI release
+   - [ ] Update Homebrew formula
+   - [ ] Create GitHub Release with notes
+
+3. **Post-release**
+   - [ ] Verify installation from PyPI works
+   - [ ] Verify Homebrew installation works
+   - [ ] Announce release
+
+---
+
+## 17. Configuration Files
 
 ### Backend: pyproject.toml
 
@@ -2289,7 +2489,7 @@ export default {
 
 ---
 
-## 17. External References
+## 18. External References
 
 ### Core Technologies
 

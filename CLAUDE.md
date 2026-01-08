@@ -39,7 +39,32 @@ mlx-manager status
 
 ## Development Commands
 
-### Quick Start
+### Quick Start (Makefile)
+
+The project includes a root-level Makefile for all common operations:
+
+```bash
+# View all available commands
+make help
+
+# Install development dependencies
+make install-dev
+
+# Run all tests
+make test
+
+# Run all quality checks (lint + check + test)
+make ci
+
+# Start development servers
+make dev
+
+# Build for production
+make build
+```
+
+### Alternative: Direct Commands
+
 ```bash
 # Start both backend and frontend in development mode
 ./scripts/dev.sh
