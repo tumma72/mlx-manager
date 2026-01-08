@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { serverStore, profileStore } from '$stores';
-	import { ServerCard } from '$components/servers';
+	import { ProfileCard } from '$components/profiles';
 	import { Button } from '$components/ui';
 	import { RefreshCw, Plus } from 'lucide-svelte';
+	import type { ServerProfile } from '$api';
 
 	let refreshing = $state(false);
 
@@ -11,8 +13,8 @@
 		serverStore.refresh();
 		profileStore.refresh();
 
-		// Auto-refresh every 10 seconds
-		const interval = setInterval(() => serverStore.refresh(), 10000);
+		// Auto-refresh every 5 seconds
+		const interval = setInterval(() => serverStore.refresh(), 5000);
 		return () => clearInterval(interval);
 	});
 
@@ -20,6 +22,10 @@
 		refreshing = true;
 		await Promise.all([serverStore.refresh(), profileStore.refresh()]);
 		refreshing = false;
+	}
+
+	function handleChat(profile: ServerProfile) {
+		goto(`/chat?profile=${profile.id}`);
 	}
 
 	// Separate running and stopped profiles
@@ -64,7 +70,12 @@
 			{:else}
 				<div class="space-y-4">
 					{#each runningProfiles as profile (profile.id)}
-						<ServerCard {profile} server={serverStore.getServer(profile.id)} />
+						<ProfileCard
+							{profile}
+							server={serverStore.getServer(profile.id)}
+							showManagementActions={false}
+							onChat={handleChat}
+						/>
 					{/each}
 				</div>
 			{/if}
@@ -78,7 +89,7 @@
 				</h2>
 				<div class="space-y-4">
 					{#each stoppedProfiles as profile (profile.id)}
-						<ServerCard {profile} />
+						<ProfileCard {profile} showManagementActions={false} />
 					{/each}
 				</div>
 			</section>

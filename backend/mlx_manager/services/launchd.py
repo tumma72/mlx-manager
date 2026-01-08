@@ -29,16 +29,27 @@ class LaunchdManager:
         return self.launch_agents_dir / f"{self.get_label(profile)}.plist"
 
     def generate_plist(self, profile: ServerProfile) -> dict:
-        """Generate a launchd plist dictionary for a profile."""
+        """Generate a launchd plist dictionary for a profile.
+
+        Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
+        --model-path, --model-type (lm|multimodal), --port, --host,
+        --max-concurrency, --queue-timeout, --queue-size
+        """
         label = self.get_label(profile)
+
+        # Map our model types to mlx-openai-server supported types
+        model_type = profile.model_type
+        if model_type not in ("lm", "multimodal"):
+            model_type = "lm"
 
         # Build program arguments using the mlx-openai-server CLI
         program_args = [
             _find_mlx_openai_server(),
+            "launch",  # Required subcommand
             "--model-path",
             profile.model_path,
             "--model-type",
-            profile.model_type,
+            model_type,
             "--port",
             str(profile.port),
             "--host",
@@ -50,24 +61,6 @@ class LaunchdManager:
             "--queue-size",
             str(profile.queue_size),
         ]
-
-        if profile.context_length:
-            program_args.extend(["--context-length", str(profile.context_length)])
-
-        if profile.tool_call_parser:
-            program_args.extend(["--tool-call-parser", profile.tool_call_parser])
-
-        if profile.reasoning_parser:
-            program_args.extend(["--reasoning-parser", profile.reasoning_parser])
-
-        if profile.enable_auto_tool_choice:
-            program_args.append("--enable-auto-tool-choice")
-
-        if profile.trust_remote_code:
-            program_args.append("--trust-remote-code")
-
-        program_args.extend(["--log-level", profile.log_level])
-        program_args.append("--no-log-file")  # Use launchd logging instead
 
         # Build plist dictionary
         plist = {

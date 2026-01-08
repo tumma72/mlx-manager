@@ -75,13 +75,25 @@ class ServerManager:
         return proc.pid
 
     def _build_command(self, profile: ServerProfile) -> list[str]:
-        """Build the mlx-openai-server command from profile."""
+        """Build the mlx-openai-server command from profile.
+
+        Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
+        --model-path, --model-type (lm|multimodal), --port, --host,
+        --max-concurrency, --queue-timeout, --queue-size
+        """
+        # Map our model types to mlx-openai-server supported types
+        # mlx-openai-server only supports 'lm' and 'multimodal'
+        model_type = profile.model_type
+        if model_type not in ("lm", "multimodal"):
+            model_type = "lm"  # Default to lm for unsupported types
+
         cmd = [
             _find_mlx_openai_server(),
+            "launch",  # Required subcommand
             "--model-path",
             profile.model_path,
             "--model-type",
-            profile.model_type,
+            model_type,
             "--port",
             str(profile.port),
             "--host",
@@ -93,31 +105,6 @@ class ServerManager:
             "--queue-size",
             str(profile.queue_size),
         ]
-
-        if profile.context_length:
-            cmd.extend(["--context-length", str(profile.context_length)])
-
-        if profile.tool_call_parser:
-            cmd.extend(["--tool-call-parser", profile.tool_call_parser])
-
-        if profile.reasoning_parser:
-            cmd.extend(["--reasoning-parser", profile.reasoning_parser])
-
-        if profile.enable_auto_tool_choice:
-            cmd.append("--enable-auto-tool-choice")
-
-        if profile.trust_remote_code:
-            cmd.append("--trust-remote-code")
-
-        if profile.chat_template_file:
-            cmd.extend(["--chat-template-file", profile.chat_template_file])
-
-        cmd.extend(["--log-level", profile.log_level])
-
-        if profile.no_log_file:
-            cmd.append("--no-log-file")
-        elif profile.log_file:
-            cmd.extend(["--log-file", profile.log_file])
 
         return cmd
 

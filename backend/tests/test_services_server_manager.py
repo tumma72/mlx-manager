@@ -32,12 +32,21 @@ def sample_profile():
 
 
 class TestServerManagerBuildCommand:
-    """Tests for the _build_command method."""
+    """Tests for the _build_command method.
+
+    Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
+    --model-path, --model-type (lm|multimodal), --port, --host,
+    --max-concurrency, --queue-timeout, --queue-size
+    """
 
     def test_basic_command(self, server_manager_instance, sample_profile):
-        """Test building basic command."""
+        """Test building basic command with launch subcommand."""
         cmd = server_manager_instance._build_command(sample_profile)
 
+        # Check launch subcommand is present
+        assert "launch" in cmd
+
+        # Check required arguments
         assert "--model-path" in cmd
         assert "mlx-community/test-model" in cmd
         assert "--model-type" in cmd
@@ -46,67 +55,27 @@ class TestServerManagerBuildCommand:
         assert "10240" in cmd
         assert "--host" in cmd
         assert "127.0.0.1" in cmd
+        assert "--max-concurrency" in cmd
+        assert "--queue-timeout" in cmd
+        assert "--queue-size" in cmd
 
-    def test_command_with_context_length(self, server_manager_instance, sample_profile):
-        """Test command includes context length when set."""
-        sample_profile.context_length = 8192
+    def test_command_maps_unsupported_model_types(self, server_manager_instance, sample_profile):
+        """Test that unsupported model types are mapped to 'lm'."""
+        # mlx-openai-server only supports 'lm' and 'multimodal'
+        sample_profile.model_type = "whisper"
         cmd = server_manager_instance._build_command(sample_profile)
 
-        assert "--context-length" in cmd
-        assert "8192" in cmd
+        # Should be mapped to 'lm'
+        model_type_idx = cmd.index("--model-type") + 1
+        assert cmd[model_type_idx] == "lm"
 
-    def test_command_with_tool_call_parser(self, server_manager_instance, sample_profile):
-        """Test command includes tool call parser when set."""
-        sample_profile.tool_call_parser = "qwen3"
+    def test_command_preserves_supported_model_types(self, server_manager_instance, sample_profile):
+        """Test that supported model types are preserved."""
+        sample_profile.model_type = "multimodal"
         cmd = server_manager_instance._build_command(sample_profile)
 
-        assert "--tool-call-parser" in cmd
-        assert "qwen3" in cmd
-
-    def test_command_with_reasoning_parser(self, server_manager_instance, sample_profile):
-        """Test command includes reasoning parser when set."""
-        sample_profile.reasoning_parser = "deepseek_r1"
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--reasoning-parser" in cmd
-        assert "deepseek_r1" in cmd
-
-    def test_command_with_auto_tool_choice(self, server_manager_instance, sample_profile):
-        """Test command includes auto tool choice flag when enabled."""
-        sample_profile.enable_auto_tool_choice = True
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--enable-auto-tool-choice" in cmd
-
-    def test_command_with_trust_remote_code(self, server_manager_instance, sample_profile):
-        """Test command includes trust remote code flag when enabled."""
-        sample_profile.trust_remote_code = True
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--trust-remote-code" in cmd
-
-    def test_command_with_chat_template(self, server_manager_instance, sample_profile):
-        """Test command includes chat template file when set."""
-        sample_profile.chat_template_file = "/path/to/template.jinja"
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--chat-template-file" in cmd
-        assert "/path/to/template.jinja" in cmd
-
-    def test_command_with_no_log_file(self, server_manager_instance, sample_profile):
-        """Test command includes no-log-file flag when set."""
-        sample_profile.no_log_file = True
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--no-log-file" in cmd
-
-    def test_command_with_log_file(self, server_manager_instance, sample_profile):
-        """Test command includes log file path when set."""
-        sample_profile.log_file = "/var/log/mlx.log"
-        cmd = server_manager_instance._build_command(sample_profile)
-
-        assert "--log-file" in cmd
-        assert "/var/log/mlx.log" in cmd
+        model_type_idx = cmd.index("--model-type") + 1
+        assert cmd[model_type_idx] == "multimodal"
 
 
 class TestServerManagerIsRunning:

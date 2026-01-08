@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { systemStore } from '$stores';
-	import { Server, Package, Settings, LayoutDashboard, Cpu } from 'lucide-svelte';
+	import { Server, Package, Settings, MessageSquare, Cpu } from 'lucide-svelte';
 
 	const navigation = [
 		{ href: '/servers', label: 'Servers', icon: Server },
+		{ href: '/chat', label: 'Chat', icon: MessageSquare },
 		{ href: '/models', label: 'Models', icon: Package },
 		{ href: '/profiles', label: 'Profiles', icon: Settings }
 	];

@@ -72,15 +72,21 @@ class TestLaunchdManagerGetPlistPath:
 
 
 class TestLaunchdManagerGeneratePlist:
-    """Tests for the generate_plist method."""
+    """Tests for the generate_plist method.
+
+    Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
+    --model-path, --model-type (lm|multimodal), --port, --host,
+    --max-concurrency, --queue-timeout, --queue-size
+    """
 
     def test_basic_plist(self, launchd_manager, sample_profile):
-        """Test basic plist generation."""
+        """Test basic plist generation with launch subcommand."""
         plist = launchd_manager.generate_plist(sample_profile)
 
         assert plist["Label"] == "com.mlx-manager.test-profile"
         assert plist["RunAtLoad"] is True  # auto_start is True
         assert "ProgramArguments" in plist
+        assert "launch" in plist["ProgramArguments"]
         assert "--model-path" in plist["ProgramArguments"]
         assert "mlx-community/test-model" in plist["ProgramArguments"]
 
@@ -89,6 +95,7 @@ class TestLaunchdManagerGeneratePlist:
         plist = launchd_manager.generate_plist(sample_profile)
         args = plist["ProgramArguments"]
 
+        assert "launch" in args
         assert "--model-type" in args
         assert "lm" in args
         assert "--port" in args
@@ -98,28 +105,15 @@ class TestLaunchdManagerGeneratePlist:
         assert "--max-concurrency" in args
         assert "--queue-timeout" in args
         assert "--queue-size" in args
-        assert "--log-level" in args
-        assert "--no-log-file" in args
 
-    def test_plist_with_optional_params(self, launchd_manager, sample_profile):
-        """Test plist includes optional parameters when set."""
-        sample_profile.context_length = 8192
-        sample_profile.tool_call_parser = "qwen3"
-        sample_profile.reasoning_parser = "deepseek_r1"
-        sample_profile.enable_auto_tool_choice = True
-        sample_profile.trust_remote_code = True
-
+    def test_plist_maps_unsupported_model_types(self, launchd_manager, sample_profile):
+        """Test that unsupported model types are mapped to 'lm'."""
+        sample_profile.model_type = "whisper"
         plist = launchd_manager.generate_plist(sample_profile)
         args = plist["ProgramArguments"]
 
-        assert "--context-length" in args
-        assert "8192" in args
-        assert "--tool-call-parser" in args
-        assert "qwen3" in args
-        assert "--reasoning-parser" in args
-        assert "deepseek_r1" in args
-        assert "--enable-auto-tool-choice" in args
-        assert "--trust-remote-code" in args
+        model_type_idx = args.index("--model-type") + 1
+        assert args[model_type_idx] == "lm"
 
     def test_plist_keepalive_settings(self, launchd_manager, sample_profile):
         """Test plist has correct KeepAlive settings."""
