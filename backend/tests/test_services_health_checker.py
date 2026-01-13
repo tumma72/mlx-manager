@@ -62,12 +62,8 @@ class TestHealthCheckerLoop:
                 health_checker_instance._running = False
 
         with (
-            patch.object(
-                health_checker_instance, "_check_all_servers", side_effect=mock_check_all
-            ),
-            patch(
-                "mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock
-            ),
+            patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check_all),
+            patch("mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock),
         ):
             health_checker_instance._running = True
             await health_checker_instance._health_check_loop()
@@ -88,13 +84,9 @@ class TestHealthCheckerLoop:
                 health_checker_instance._running = False
 
         with (
-            patch.object(
-                health_checker_instance, "_check_all_servers", side_effect=mock_check_all
-            ),
+            patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check_all),
             patch("builtins.print"),  # Suppress error output
-            patch(
-                "mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock
-            ),
+            patch("mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock),
         ):
             health_checker_instance._running = True
             await health_checker_instance._health_check_loop()
