@@ -64,10 +64,16 @@ logs/
 
 # Testing
 .coverage
+.coverage.*
 htmlcov/
 .pytest_cache/
 .tox/
 .nox/
+coverage.json
+coverage.xml
+coverage/
+*.lcov
+.nyc_output/
 
 # mypy
 .mypy_cache/

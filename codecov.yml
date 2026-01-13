@@ -1,0 +1,30 @@
+codecov:
+  require_ci_to_pass: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+
+flags:
+  backend:
+    paths:
+      - backend/mlx_manager/
+    carryforward: true
+  frontend:
+    paths:
+      - frontend/src/
+    carryforward: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
