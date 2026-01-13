@@ -109,7 +109,17 @@ check_node_deps() {
 cleanup() {
     echo ""
     echo -e "${YELLOW}Shutting down...${NC}"
-    jobs -p | xargs -r kill 2>/dev/null
+
+    # Kill background jobs (macOS compatible - no xargs -r)
+    local pids
+    pids=$(jobs -p 2>/dev/null)
+    if [ -n "$pids" ]; then
+        echo "$pids" | xargs kill 2>/dev/null
+    fi
+
+    # Also kill any uvicorn processes we started on port 8080
+    pkill -f "uvicorn mlx_manager.*8080" 2>/dev/null
+
     exit 0
 }
 

@@ -8,7 +8,11 @@
 
 	let { content, defaultExpanded = false }: Props = $props();
 
-	let expanded = $state(defaultExpanded);
+	// Use a function to capture initial value - this is intentional (one-time initialization)
+	let expanded = $state(getInitialExpanded());
+	function getInitialExpanded() {
+		return defaultExpanded;
+	}
 </script>
 
 <div class="my-2 border border-muted rounded-lg overflow-hidden">
