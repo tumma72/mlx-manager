@@ -2,7 +2,8 @@
 
 import asyncio
 import time
-from datetime import datetime
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from mlx_manager.database import get_db
+from mlx_manager.dependencies import get_profile_or_404
 from mlx_manager.models import (
     HealthStatus,
     RunningInstance,
@@ -22,7 +24,9 @@ router = APIRouter(prefix="/api/servers", tags=["servers"])
 
 
 @router.get("", response_model=list[RunningServerResponse])
-async def list_running_servers(session: AsyncSession = Depends(get_db)):
+async def list_running_servers(
+    session: AsyncSession = Depends(get_db),
+) -> list[RunningServerResponse]:
     """List all running server instances."""
     # Get all running processes from server manager
     running = server_manager.get_all_running()
@@ -63,14 +67,21 @@ async def list_running_servers(session: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{profile_id}/start")
-async def start_server(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def start_server(
+    profile: ServerProfile = Depends(get_profile_or_404),
+    session: AsyncSession = Depends(get_db),
+):
     """Start a server for a profile."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+    # Clean up any stale running_instance record for this profile
+    result = await session.execute(
+        select(RunningInstance).where(RunningInstance.profile_id == profile.id)
+    )
+    stale_instance = result.scalar_one_or_none()
+    if stale_instance:
+        # Check if the process is actually running
+        if not server_manager.is_running(profile.id):
+            await session.delete(stale_instance)
+            await session.commit()
 
     try:
         pid = await server_manager.start_server(profile)
@@ -110,17 +121,13 @@ async def stop_server(
 
 
 @router.post("/{profile_id}/restart")
-async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def restart_server(
+    profile: ServerProfile = Depends(get_profile_or_404),
+    session: AsyncSession = Depends(get_db),
+):
     """Restart a server."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     # Stop if running
-    await server_manager.stop_server(profile_id, force=False)
+    await server_manager.stop_server(profile.id, force=False)
     await asyncio.sleep(1)
 
     # Start again
@@ -129,14 +136,14 @@ async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db
 
         # Update database
         result = await session.execute(
-            select(RunningInstance).where(RunningInstance.profile_id == profile_id)
+            select(RunningInstance).where(RunningInstance.profile_id == profile.id)
         )
         instance = result.scalar_one_or_none()
 
         if instance:
             instance.pid = pid
             instance.health_status = "starting"
-            instance.started_at = datetime.utcnow()
+            instance.started_at = datetime.now(tz=UTC)
         else:
             instance = RunningInstance(profile_id=profile.id, pid=pid, health_status="starting")
 
@@ -149,16 +156,9 @@ async def restart_server(profile_id: int, session: AsyncSession = Depends(get_db
 
 
 @router.get("/{profile_id}/health", response_model=HealthStatus)
-async def check_server_health(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def check_server_health(profile: ServerProfile = Depends(get_profile_or_404)):
     """Check server health."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
-    if not server_manager.is_running(profile_id):
+    if not server_manager.is_running(profile.id):
         return HealthStatus(status="stopped")
 
     health = await server_manager.check_health(profile)
@@ -169,7 +169,7 @@ async def check_server_health(profile_id: int, session: AsyncSession = Depends(g
 async def stream_logs(profile_id: int, lines: int = 100):
     """SSE endpoint for live logs."""
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         import json
 
         while True:

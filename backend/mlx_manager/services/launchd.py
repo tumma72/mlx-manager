@@ -6,13 +6,14 @@ import sys
 from pathlib import Path
 
 from mlx_manager.models import ServerProfile
-from mlx_manager.services.server_manager import _find_mlx_openai_server
+from mlx_manager.types import LaunchdStatus
+from mlx_manager.utils.command_builder import build_mlx_server_command
 
 
 class LaunchdManager:
     """Manages launchd service configuration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
         self.label_prefix = "com.mlx-manager"
 
@@ -29,38 +30,11 @@ class LaunchdManager:
         return self.launch_agents_dir / f"{self.get_label(profile)}.plist"
 
     def generate_plist(self, profile: ServerProfile) -> dict:
-        """Generate a launchd plist dictionary for a profile.
-
-        Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
-        --model-path, --model-type (lm|multimodal), --port, --host,
-        --max-concurrency, --queue-timeout, --queue-size
-        """
+        """Generate a launchd plist dictionary for a profile."""
         label = self.get_label(profile)
 
-        # Map our model types to mlx-openai-server supported types
-        model_type = profile.model_type
-        if model_type not in ("lm", "multimodal"):
-            model_type = "lm"
-
-        # Build program arguments using the mlx-openai-server CLI
-        program_args = [
-            _find_mlx_openai_server(),
-            "launch",  # Required subcommand
-            "--model-path",
-            profile.model_path,
-            "--model-type",
-            model_type,
-            "--port",
-            str(profile.port),
-            "--host",
-            profile.host,
-            "--max-concurrency",
-            str(profile.max_concurrency),
-            "--queue-timeout",
-            str(profile.queue_timeout),
-            "--queue-size",
-            str(profile.queue_size),
-        ]
+        # Build program arguments using the shared command builder
+        program_args = build_mlx_server_command(profile)
 
         # Build plist dictionary
         plist = {
@@ -147,18 +121,20 @@ class LaunchdManager:
 
         return result.returncode == 0
 
-    def get_status(self, profile: ServerProfile) -> dict:
+    def get_status(self, profile: ServerProfile) -> LaunchdStatus:
         """Get detailed status of a launchd service."""
         label = self.get_label(profile)
+        plist_path = str(self.get_plist_path(profile))
 
         result = subprocess.run(["launchctl", "list", label], capture_output=True, text=True)
 
         if result.returncode != 0:
-            return {
-                "installed": self.is_installed(profile),
-                "running": False,
-                "label": label,
-            }
+            return LaunchdStatus(
+                installed=self.is_installed(profile),
+                running=False,
+                label=label,
+                plist_path=plist_path,
+            )
 
         # Parse output: PID\tStatus\tLabel
         lines = result.stdout.strip().split("\n")
@@ -166,14 +142,20 @@ class LaunchdManager:
             parts = lines[0].split("\t")
             pid = int(parts[0]) if parts[0] != "-" else None
 
-            return {
-                "installed": True,
-                "running": pid is not None,
-                "pid": pid,
-                "label": label,
-            }
+            return LaunchdStatus(
+                installed=True,
+                running=pid is not None,
+                pid=pid,
+                label=label,
+                plist_path=plist_path,
+            )
 
-        return {"installed": True, "running": False, "label": label}
+        return LaunchdStatus(
+            installed=True,
+            running=False,
+            label=label,
+            plist_path=plist_path,
+        )
 
 
 # Singleton instance

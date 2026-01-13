@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from typing import Any
 
 import httpx
 import rumps
@@ -14,7 +15,7 @@ from mlx_manager import __version__
 class MLXManagerApp(rumps.App):
     """macOS menubar application for MLX Manager."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             "MLX",
             icon=None,  # Could add icon path here
@@ -45,7 +46,7 @@ class MLXManagerApp(rumps.App):
         # Auto-start server
         self._auto_start()
 
-    def _auto_start(self):
+    def _auto_start(self) -> None:
         """Auto-start the server on launch."""
         # Check if already running (e.g., from launchd)
         if self._check_server_running():
@@ -70,7 +71,7 @@ class MLXManagerApp(rumps.App):
         except Exception:
             return False
 
-    def _update_status(self, status: str, is_running: bool):
+    def _update_status(self, status: str, is_running: bool) -> None:
         """Update menu status item and icon."""
         self.menu["Status: Checking..."].title = f"Status: {status}"
 
@@ -84,7 +85,7 @@ class MLXManagerApp(rumps.App):
             self.menu["Stop Server"].set_callback(None)
 
     @rumps.timer(5)
-    def check_health(self, _):
+    def check_health(self, _: Any) -> None:
         """Periodically check server health."""
         if self._check_server_running():
             self._update_status("Running", is_running=True)
@@ -95,7 +96,7 @@ class MLXManagerApp(rumps.App):
 
             self._update_status("Stopped", is_running=False)
 
-    def start_server(self, _):
+    def start_server(self, _: Any) -> None:
         """Start the MLX Manager server."""
         if self.server_process and self.server_process.poll() is None:
             rumps.notification(
@@ -159,7 +160,7 @@ class MLXManagerApp(rumps.App):
             )
             self._update_status("Error", is_running=False)
 
-    def stop_server(self, _):
+    def stop_server(self, _: Any) -> None:
         """Stop the MLX Manager server."""
         if self.server_process and self.server_process.poll() is None:
             try:
@@ -179,7 +180,7 @@ class MLXManagerApp(rumps.App):
 
         self._update_status("Stopped", is_running=False)
 
-    def open_dashboard(self, _):
+    def open_dashboard(self, _: Any) -> None:
         """Open the web dashboard in default browser."""
         if self._check_server_running():
             webbrowser.open(f"http://{self.server_host}:{self.server_port}")
@@ -190,7 +191,7 @@ class MLXManagerApp(rumps.App):
                 "Start the server first to access the dashboard",
             )
 
-    def quit_app(self, _):
+    def quit_app(self, _: Any) -> None:
         """Quit the application."""
         # Ask about stopping server if running
         if self.server_process and self.server_process.poll() is None:
@@ -210,12 +211,12 @@ class MLXManagerApp(rumps.App):
         rumps.quit_application()
 
 
-def run_menubar():
+def run_menubar() -> None:
     """Run the menubar application."""
     MLXManagerApp().run()
 
 
-def main():
+def main() -> None:
     """Entry point for menubar app."""
     run_menubar()
 

@@ -6,6 +6,7 @@ import pytest
 
 from mlx_manager.models import ServerProfile
 from mlx_manager.services.server_manager import ServerManager
+from mlx_manager.utils.command_builder import build_mlx_server_command
 
 
 @pytest.fixture
@@ -31,17 +32,17 @@ def sample_profile():
     )
 
 
-class TestServerManagerBuildCommand:
-    """Tests for the _build_command method.
+class TestBuildMlxServerCommand:
+    """Tests for the build_mlx_server_command utility function.
 
     Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
     --model-path, --model-type (lm|multimodal), --port, --host,
     --max-concurrency, --queue-timeout, --queue-size
     """
 
-    def test_basic_command(self, server_manager_instance, sample_profile):
+    def test_basic_command(self, sample_profile):
         """Test building basic command with launch subcommand."""
-        cmd = server_manager_instance._build_command(sample_profile)
+        cmd = build_mlx_server_command(sample_profile)
 
         # Check launch subcommand is present
         assert "launch" in cmd
@@ -59,20 +60,20 @@ class TestServerManagerBuildCommand:
         assert "--queue-timeout" in cmd
         assert "--queue-size" in cmd
 
-    def test_command_maps_unsupported_model_types(self, server_manager_instance, sample_profile):
+    def test_command_maps_unsupported_model_types(self, sample_profile):
         """Test that unsupported model types are mapped to 'lm'."""
         # mlx-openai-server only supports 'lm' and 'multimodal'
         sample_profile.model_type = "whisper"
-        cmd = server_manager_instance._build_command(sample_profile)
+        cmd = build_mlx_server_command(sample_profile)
 
         # Should be mapped to 'lm'
         model_type_idx = cmd.index("--model-type") + 1
         assert cmd[model_type_idx] == "lm"
 
-    def test_command_preserves_supported_model_types(self, server_manager_instance, sample_profile):
+    def test_command_preserves_supported_model_types(self, sample_profile):
         """Test that supported model types are preserved."""
         sample_profile.model_type = "multimodal"
-        cmd = server_manager_instance._build_command(sample_profile)
+        cmd = build_mlx_server_command(sample_profile)
 
         model_type_idx = cmd.index("--model-type") + 1
         assert cmd[model_type_idx] == "multimodal"
@@ -160,9 +161,7 @@ class TestServerManagerStartServer:
     """Tests for the start_server method."""
 
     @pytest.mark.asyncio
-    async def test_start_already_running_server(
-        self, server_manager_instance, sample_profile
-    ):
+    async def test_start_already_running_server(self, server_manager_instance, sample_profile):
         """Test starting a server that's already running raises error."""
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # Still running
@@ -221,9 +220,7 @@ class TestServerManagerCheckHealth:
         assert result["model_loaded"] is True
 
     @pytest.mark.asyncio
-    async def test_check_health_unhealthy_http_error(
-        self, server_manager_instance, sample_profile
-    ):
+    async def test_check_health_unhealthy_http_error(self, server_manager_instance, sample_profile):
         """Test health check returns unhealthy on HTTP error."""
         mock_response = MagicMock()
         mock_response.status_code = 500
@@ -239,9 +236,7 @@ class TestServerManagerCheckHealth:
         assert "HTTP 500" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_check_health_connection_error(
-        self, server_manager_instance, sample_profile
-    ):
+    async def test_check_health_connection_error(self, server_manager_instance, sample_profile):
         """Test health check returns unhealthy on connection error."""
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value.get = AsyncMock(

@@ -1,6 +1,6 @@
 """Server profiles API router."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,7 @@ from sqlmodel import select
 
 from mlx_manager.config import settings
 from mlx_manager.database import get_db
+from mlx_manager.dependencies import get_profile_or_404
 from mlx_manager.models import (
     ServerProfile,
     ServerProfileCreate,
@@ -45,14 +46,8 @@ async def get_next_port(session: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{profile_id}", response_model=ServerProfileResponse)
-async def get_profile(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def get_profile(profile: ServerProfile = Depends(get_profile_or_404)):
     """Get a specific profile."""
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     return profile
 
 
@@ -117,7 +112,7 @@ async def update_profile(
     for key, value in update_data.items():
         setattr(profile, key, value)
 
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = datetime.now(tz=UTC)
     session.add(profile)
     await session.commit()
     await session.refresh(profile)
@@ -126,31 +121,22 @@ async def update_profile(
 
 
 @router.delete("/{profile_id}", status_code=204)
-async def delete_profile(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def delete_profile(
+    profile: ServerProfile = Depends(get_profile_or_404),
+    session: AsyncSession = Depends(get_db),
+):
     """Delete a server profile."""
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     await session.delete(profile)
     await session.commit()
 
 
 @router.post("/{profile_id}/duplicate", response_model=ServerProfileResponse, status_code=201)
 async def duplicate_profile(
-    profile_id: int,
     new_name: str,
+    profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
     """Duplicate a profile with a new name."""
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     # Check for name conflict
     result = await session.execute(select(ServerProfile).where(ServerProfile.name == new_name))
     if result.scalar_one_or_none():

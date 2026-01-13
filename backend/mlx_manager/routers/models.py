@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -56,7 +57,7 @@ async def start_download(model_id: str):
 async def get_download_progress(task_id: str):
     """SSE endpoint for download progress."""
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         if task_id not in download_tasks:
             yield "data: {'error': 'Task not found'}\n\n"
             return

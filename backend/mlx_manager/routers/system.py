@@ -6,10 +6,10 @@ import sys
 import psutil
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from mlx_manager.config import settings
 from mlx_manager.database import get_db
+from mlx_manager.dependencies import get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
 from mlx_manager.services.launchd import launchd_manager
 
@@ -95,15 +95,11 @@ async def get_system_info():
 
 
 @router.post("/launchd/install/{profile_id}")
-async def install_launchd_service(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def install_launchd_service(
+    profile: ServerProfile = Depends(get_profile_or_404),
+    session: AsyncSession = Depends(get_db),
+):
     """Install profile as launchd service."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     try:
         plist_path = launchd_manager.install(profile)
 
@@ -118,15 +114,11 @@ async def install_launchd_service(profile_id: int, session: AsyncSession = Depen
 
 
 @router.post("/launchd/uninstall/{profile_id}", status_code=204)
-async def uninstall_launchd_service(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def uninstall_launchd_service(
+    profile: ServerProfile = Depends(get_profile_or_404),
+    session: AsyncSession = Depends(get_db),
+):
     """Uninstall launchd service."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     launchd_manager.uninstall(profile)
 
     # Update profile
@@ -136,14 +128,7 @@ async def uninstall_launchd_service(profile_id: int, session: AsyncSession = Dep
 
 
 @router.get("/launchd/status/{profile_id}", response_model=LaunchdStatus)
-async def get_launchd_status(profile_id: int, session: AsyncSession = Depends(get_db)):
+async def get_launchd_status(profile: ServerProfile = Depends(get_profile_or_404)):
     """Get launchd service status."""
-    # Get profile
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
-    profile = result.scalar_one_or_none()
-
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-
     status = launchd_manager.get_status(profile)
     return LaunchdStatus(**status)

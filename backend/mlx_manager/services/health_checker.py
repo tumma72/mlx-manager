@@ -1,7 +1,7 @@
 """Background health checker service."""
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlmodel import select
 
@@ -18,12 +18,12 @@ class HealthChecker:
         self._task: asyncio.Task | None = None
         self._running = False
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the health check loop."""
         self._running = True
         self._task = asyncio.create_task(self._health_check_loop())
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the health check loop."""
         self._running = False
         if self._task:
@@ -33,7 +33,7 @@ class HealthChecker:
             except asyncio.CancelledError:
                 pass
 
-    async def _health_check_loop(self):
+    async def _health_check_loop(self) -> None:
         """Main health check loop."""
         while self._running:
             try:
@@ -43,7 +43,7 @@ class HealthChecker:
 
             await asyncio.sleep(self.interval)
 
-    async def _check_all_servers(self):
+    async def _check_all_servers(self) -> None:
         """Check health of all running servers."""
         async with get_session() as session:
             # Get all running instances
@@ -63,7 +63,7 @@ class HealthChecker:
                 # Check if process is still running
                 if not server_manager.is_running(instance.profile_id):
                     instance.health_status = "stopped"
-                    instance.last_health_check = datetime.utcnow()
+                    instance.last_health_check = datetime.now(tz=UTC)
                     session.add(instance)
                     continue
 
@@ -72,7 +72,7 @@ class HealthChecker:
 
                 # Update instance
                 instance.health_status = health["status"]
-                instance.last_health_check = datetime.utcnow()
+                instance.last_health_check = datetime.now(tz=UTC)
                 session.add(instance)
 
             await session.commit()

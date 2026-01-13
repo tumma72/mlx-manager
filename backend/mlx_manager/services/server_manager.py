@@ -1,38 +1,15 @@
 """Server process manager service."""
 
 import asyncio
-import shutil
 import signal
 import subprocess
-import sys
-from pathlib import Path
 
 import httpx
 import psutil
 
 from mlx_manager.models import ServerProfile
-
-
-def _find_mlx_openai_server() -> str:
-    """Find the mlx-openai-server executable.
-
-    First checks the same directory as the Python executable (for venv installs),
-    then falls back to system PATH.
-    """
-    # Check alongside the Python executable (handles venv correctly)
-    python_dir = Path(sys.executable).parent
-    local_cmd = python_dir / "mlx-openai-server"
-    if local_cmd.exists():
-        return str(local_cmd)
-
-    # Fall back to PATH lookup
-    path_cmd = shutil.which("mlx-openai-server")
-    if path_cmd:
-        return path_cmd
-
-    raise RuntimeError(
-        "mlx-openai-server not found. Please install it with: pip install mlx-openai-server"
-    )
+from mlx_manager.types import HealthCheckResult, RunningServerInfo, ServerStats
+from mlx_manager.utils.command_builder import build_mlx_server_command
 
 
 class ServerManager:
@@ -50,7 +27,7 @@ class ServerManager:
                 raise RuntimeError(f"Server for profile {profile.name} is already running")
 
         # Build command
-        cmd = self._build_command(profile)
+        cmd = build_mlx_server_command(profile)
 
         # Start process
         proc = subprocess.Popen(
@@ -73,40 +50,6 @@ class ServerManager:
             raise RuntimeError(f"Server failed to start: {stdout}")
 
         return proc.pid
-
-    def _build_command(self, profile: ServerProfile) -> list[str]:
-        """Build the mlx-openai-server command from profile.
-
-        Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
-        --model-path, --model-type (lm|multimodal), --port, --host,
-        --max-concurrency, --queue-timeout, --queue-size
-        """
-        # Map our model types to mlx-openai-server supported types
-        # mlx-openai-server only supports 'lm' and 'multimodal'
-        model_type = profile.model_type
-        if model_type not in ("lm", "multimodal"):
-            model_type = "lm"  # Default to lm for unsupported types
-
-        cmd = [
-            _find_mlx_openai_server(),
-            "launch",  # Required subcommand
-            "--model-path",
-            profile.model_path,
-            "--model-type",
-            model_type,
-            "--port",
-            str(profile.port),
-            "--host",
-            profile.host,
-            "--max-concurrency",
-            str(profile.max_concurrency),
-            "--queue-timeout",
-            str(profile.queue_timeout),
-            "--queue-size",
-            str(profile.queue_size),
-        ]
-
-        return cmd
 
     async def stop_server(self, profile_id: int, force: bool = False) -> bool:
         """Stop a running server."""
@@ -134,7 +77,7 @@ class ServerManager:
         del self.processes[profile_id]
         return True
 
-    async def check_health(self, profile: ServerProfile) -> dict:
+    async def check_health(self, profile: ServerProfile) -> HealthCheckResult:
         """Check health of a running server."""
         url = f"http://{profile.host}:{profile.port}/health"
 
@@ -145,21 +88,21 @@ class ServerManager:
                 elapsed = (asyncio.get_event_loop().time() - start) * 1000
 
                 if response.status_code == 200:
-                    return {
-                        "status": "healthy",
-                        "response_time_ms": round(elapsed, 2),
-                        "model_loaded": True,
-                    }
+                    return HealthCheckResult(
+                        status="healthy",
+                        response_time_ms=round(elapsed, 2),
+                        model_loaded=True,
+                    )
                 else:
-                    return {
-                        "status": "unhealthy",
-                        "response_time_ms": round(elapsed, 2),
-                        "error": f"HTTP {response.status_code}",
-                    }
+                    return HealthCheckResult(
+                        status="unhealthy",
+                        response_time_ms=round(elapsed, 2),
+                        error=f"HTTP {response.status_code}",
+                    )
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)}
+            return HealthCheckResult(status="unhealthy", error=str(e))
 
-    def get_server_stats(self, profile_id: int) -> dict | None:
+    def get_server_stats(self, profile_id: int) -> ServerStats | None:
         """Get memory and CPU stats for a running server."""
         if profile_id not in self.processes:
             return None
@@ -172,13 +115,13 @@ class ServerManager:
             p = psutil.Process(proc.pid)
             memory_info = p.memory_info()
 
-            return {
-                "pid": proc.pid,
-                "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
-                "cpu_percent": p.cpu_percent(),
-                "status": p.status(),
-                "create_time": p.create_time(),
-            }
+            return ServerStats(
+                pid=proc.pid,
+                memory_mb=round(memory_info.rss / 1024 / 1024, 2),
+                cpu_percent=p.cpu_percent(),
+                status=p.status(),
+                create_time=p.create_time(),
+            )
         except psutil.NoSuchProcess:
             return None
 
@@ -212,9 +155,9 @@ class ServerManager:
             return False
         return self.processes[profile_id].poll() is None
 
-    def get_all_running(self) -> list[dict]:
+    def get_all_running(self) -> list[RunningServerInfo]:
         """Get info about all running servers."""
-        running = []
+        running: list[RunningServerInfo] = []
 
         for profile_id, proc in list(self.processes.items()):
             if proc.poll() is not None:
@@ -224,11 +167,20 @@ class ServerManager:
 
             stats = self.get_server_stats(profile_id)
             if stats:
-                running.append({"profile_id": profile_id, **stats})
+                running.append(
+                    RunningServerInfo(
+                        profile_id=profile_id,
+                        pid=stats["pid"],
+                        memory_mb=stats["memory_mb"],
+                        cpu_percent=stats["cpu_percent"],
+                        status=stats["status"],
+                        create_time=stats["create_time"],
+                    )
+                )
 
         return running
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Stop all servers on shutdown."""
         for profile_id in list(self.processes.keys()):
             await self.stop_server(profile_id, force=True)

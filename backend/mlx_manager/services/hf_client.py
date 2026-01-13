@@ -8,22 +8,36 @@ from pathlib import Path
 from huggingface_hub import HfApi, snapshot_download
 
 from mlx_manager.config import settings
+from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 
 class HuggingFaceClient:
     """Service for interacting with HuggingFace Hub."""
 
-    def __init__(self):
-        self.api = HfApi()
+    def __init__(self) -> None:
+        self.api = None
         self.cache_dir = settings.hf_cache_path
+
+        # Only initialize HuggingFace API if not in offline mode
+        if not settings.offline_mode:
+            try:
+                self.api = HfApi()
+            except Exception:
+                # If HuggingFace API fails, fall back to offline mode
+                self.api = None
+                settings.offline_mode = True
 
     async def search_mlx_models(
         self,
         query: str,
         max_size_gb: float | None = None,
         limit: int = 20,
-    ) -> list[dict]:
+    ) -> list[ModelSearchResult]:
         """Search for MLX models in mlx-community organization."""
+        if settings.offline_mode or self.api is None:
+            # Return empty list in offline mode or when API unavailable
+            return []
+
         loop = asyncio.get_event_loop()
 
         # Run in executor since huggingface_hub is sync
@@ -37,10 +51,12 @@ class HuggingFaceClient:
                     direction=-1,
                     limit=limit * 2,  # Fetch extra for filtering
                 )
-            ),
+            )
+            if self.api is not None
+            else [],
         )
 
-        results = []
+        results: list[ModelSearchResult] = []
         for model in models:
             estimated_size = await self._estimate_model_size(model.id)
 
@@ -49,18 +65,18 @@ class HuggingFaceClient:
                 continue
 
             results.append(
-                {
-                    "model_id": model.id,
-                    "author": model.author or settings.hf_organization,
-                    "downloads": model.downloads or 0,
-                    "likes": model.likes or 0,
-                    "estimated_size_gb": round(estimated_size, 2),
-                    "tags": list(model.tags) if model.tags else [],
-                    "is_downloaded": self._is_downloaded(model.id),
-                    "last_modified": (
+                ModelSearchResult(
+                    model_id=model.id,
+                    author=model.author or settings.hf_organization,
+                    downloads=model.downloads or 0,
+                    likes=model.likes or 0,
+                    estimated_size_gb=round(estimated_size, 2),
+                    tags=list(model.tags) if model.tags else [],
+                    is_downloaded=self._is_downloaded(model.id),
+                    last_modified=(
                         model.last_modified.isoformat() if model.last_modified else None
                     ),
-                }
+                )
             )
 
             if len(results) >= limit:
@@ -70,10 +86,14 @@ class HuggingFaceClient:
 
     async def _estimate_model_size(self, model_id: str) -> float:
         """Estimate model size in GB based on safetensors files."""
+        if settings.offline_mode or self.api is None:
+            return 0.0
+
         try:
             loop = asyncio.get_event_loop()
             repo_info = await loop.run_in_executor(
-                None, lambda: self.api.repo_info(model_id, files_metadata=True)
+                None,
+                lambda: self.api.repo_info(model_id, files_metadata=True),  # type: ignore
             )
 
             total_bytes = 0
@@ -90,6 +110,9 @@ class HuggingFaceClient:
 
     def _is_downloaded(self, model_id: str) -> bool:
         """Check if model is in local cache."""
+        if settings.offline_mode:
+            return False
+
         cache_name = f"models--{model_id.replace('/', '--')}"
         model_path = self.cache_dir / cache_name
 
@@ -104,6 +127,9 @@ class HuggingFaceClient:
 
     def get_local_path(self, model_id: str) -> str | None:
         """Get the local path for a downloaded model."""
+        if settings.offline_mode:
+            return None
+
         cache_name = f"models--{model_id.replace('/', '--')}"
         model_path = self.cache_dir / cache_name / "snapshots"
 
@@ -122,14 +148,22 @@ class HuggingFaceClient:
     async def download_model(
         self,
         model_id: str,
-    ) -> AsyncGenerator[dict, None]:
+    ) -> AsyncGenerator[DownloadStatus, None]:
         """Download a model with progress updates."""
+        if settings.offline_mode:
+            yield DownloadStatus(
+                status="failed",
+                model_id=model_id,
+                error="Offline mode - cannot download models",
+            )
+            return
+
         loop = asyncio.get_event_loop()
 
         # Get total size first
         total_size = await self._estimate_model_size(model_id)
 
-        yield {"status": "starting", "model_id": model_id, "total_size_gb": total_size}
+        yield DownloadStatus(status="starting", model_id=model_id, total_size_gb=total_size)
 
         try:
             # Use snapshot_download for full model
@@ -142,19 +176,22 @@ class HuggingFaceClient:
                 ),
             )
 
-            yield {
-                "status": "completed",
-                "model_id": model_id,
-                "local_path": local_dir,
-                "progress": 100,
-            }
+            yield DownloadStatus(
+                status="completed",
+                model_id=model_id,
+                local_path=local_dir,
+                progress=100,
+            )
 
         except Exception as e:
-            yield {"status": "failed", "model_id": model_id, "error": str(e)}
+            yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
 
-    def list_local_models(self) -> list[dict]:
+    def list_local_models(self) -> list[LocalModelInfo]:
         """List all locally downloaded MLX models."""
-        models = []
+        if settings.offline_mode:
+            return []
+
+        models: list[LocalModelInfo] = []
 
         if not self.cache_dir.exists():
             return models
@@ -171,12 +208,12 @@ class HuggingFaceClient:
                         )
 
                         models.append(
-                            {
-                                "model_id": model_id,
-                                "local_path": local_path,
-                                "size_bytes": size_bytes,
-                                "size_gb": round(size_bytes / 1e9, 2),
-                            }
+                            LocalModelInfo(
+                                model_id=model_id,
+                                local_path=local_path,
+                                size_bytes=size_bytes,
+                                size_gb=round(size_bytes / 1e9, 2),
+                            )
                         )
         except Exception:
             pass
@@ -185,6 +222,9 @@ class HuggingFaceClient:
 
     async def delete_model(self, model_id: str) -> bool:
         """Delete a model from local cache."""
+        if settings.offline_mode:
+            return False
+
         cache_name = f"models--{model_id.replace('/', '--')}"
         model_path = self.cache_dir / cache_name
 

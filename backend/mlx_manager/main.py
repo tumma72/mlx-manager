@@ -3,13 +3,15 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import select
 
 from mlx_manager import __version__
-from mlx_manager.database import init_db
+from mlx_manager.database import get_session, init_db
+from mlx_manager.models import RunningInstance
 from mlx_manager.routers import models_router, profiles_router, servers_router, system_router
 from mlx_manager.services.health_checker import health_checker
 from mlx_manager.services.server_manager import server_manager
@@ -18,11 +20,24 @@ from mlx_manager.services.server_manager import server_manager
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+async def cleanup_stale_instances() -> None:
+    """Clean up stale running_instances records from previous sessions."""
+    async with get_session() as session:
+        result = await session.execute(select(RunningInstance))
+        instances = result.scalars().all()
+        for instance in instances:
+            # Check if process is actually running
+            if not server_manager.is_running(instance.profile_id):
+                await session.delete(instance)
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     await init_db()
+    await cleanup_stale_instances()
     await health_checker.start()
 
     yield
@@ -63,7 +78,7 @@ app.include_router(system_router)
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy"}
 
@@ -76,7 +91,7 @@ if STATIC_DIR.exists():
         app.mount("/_app", StaticFiles(directory=assets_dir), name="app_assets")
 
     @app.get("/favicon.png")
-    async def favicon():
+    async def favicon() -> Response:
         """Serve favicon."""
         favicon_path = STATIC_DIR / "favicon.png"
         if favicon_path.exists():
@@ -84,7 +99,7 @@ if STATIC_DIR.exists():
         return JSONResponse({"error": "Not found"}, status_code=404)
 
     @app.get("/{full_path:path}")
-    async def serve_spa(request: Request, full_path: str):
+    async def serve_spa(request: Request, full_path: str) -> Response:
         """Serve SPA with fallback to index.html."""
         # Skip API routes (they should be handled by routers)
         if full_path.startswith("api/"):
@@ -106,7 +121,7 @@ else:
     # Development mode - no static files, frontend runs separately
 
     @app.get("/")
-    async def root():
+    async def root() -> dict[str, str]:
         """Root endpoint (dev mode)."""
         return {
             "name": "MLX Model Manager",

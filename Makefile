@@ -3,7 +3,7 @@
 
 .PHONY: help install install-dev build test test-backend test-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        check check-backend check-frontend dev clean
+        check check-backend check-frontend dev dev-offline check-offline clean
 
 # Default target
 help:
@@ -37,6 +37,8 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev            Start both backend and frontend in dev mode"
+	@echo "  make dev-offline    Start development in offline mode"
+	@echo "  make check-offline  Check if system is ready for offline development"
 	@echo "  make clean          Remove build artifacts and caches"
 	@echo ""
 	@echo "CI/CD:"
@@ -49,14 +51,14 @@ help:
 
 install:
 	@echo "Installing backend dependencies..."
-	cd backend && pip install -e .
+	cd backend && if command -v uv >/dev/null 2>&1; then uv pip install -e .; else pip install -e .; fi
 	@echo "Installing frontend dependencies..."
 	cd frontend && npm install
 	@echo "✓ Installation complete"
 
 install-dev:
 	@echo "Installing backend development dependencies..."
-	cd backend && pip install -e ".[dev]"
+	cd backend && if command -v uv >/dev/null 2>&1; then uv pip install -e ".[dev]"; else pip install -e ".[dev]"; fi
 	@echo "Installing frontend dependencies..."
 	cd frontend && npm install
 	@echo "Installing Playwright browsers..."
@@ -74,7 +76,7 @@ build: build-frontend build-backend
 
 build-backend:
 	@echo "Building backend wheel..."
-	cd backend && pip install build && python -m build
+	cd backend && if command -v uv >/dev/null 2>&1; then uv pip install build; else .venv/bin/pip install build; fi && .venv/bin/python -m build
 	@echo "✓ Backend build complete: backend/dist/"
 
 build-frontend:
@@ -91,7 +93,7 @@ test: test-backend test-frontend
 
 test-backend:
 	@echo "Running backend tests..."
-	cd backend && pytest --cov=mlx_manager --cov-report=term-missing -v
+	cd backend && .venv/bin/pytest --cov=mlx_manager --cov-report=term-missing -v
 
 test-frontend:
 	@echo "Running frontend unit tests..."
@@ -111,7 +113,7 @@ lint: lint-backend lint-frontend
 
 lint-backend:
 	@echo "Linting backend..."
-	cd backend && ruff check .
+	cd backend && .venv/bin/ruff check .
 
 lint-frontend:
 	@echo "Linting frontend..."
@@ -126,7 +128,7 @@ format: format-backend format-frontend
 
 format-backend:
 	@echo "Formatting backend..."
-	cd backend && ruff format .
+	cd backend && .venv/bin/ruff format .
 
 format-frontend:
 	@echo "Formatting frontend..."
@@ -141,7 +143,7 @@ check: check-backend check-frontend
 
 check-backend:
 	@echo "Type checking backend..."
-	cd backend && mypy mlx_manager
+	cd backend && .venv/bin/mypy mlx_manager
 
 check-frontend:
 	@echo "Type checking frontend..."
@@ -154,6 +156,13 @@ check-frontend:
 dev:
 	@echo "Starting development servers..."
 	./scripts/dev.sh
+
+dev-offline: ## Start development servers in offline mode
+	@echo "Starting development in offline mode..."
+	MLX_MANAGER_OFFLINE_MODE=true ./scripts/dev.sh --offline
+
+check-offline: ## Check if system is ready for offline development
+	@./scripts/check_deps.sh
 
 # ============================================================================
 # CI/CD
