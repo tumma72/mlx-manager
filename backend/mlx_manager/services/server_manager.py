@@ -9,14 +9,15 @@ import psutil
 
 from mlx_manager.models import ServerProfile
 from mlx_manager.types import HealthCheckResult, RunningServerInfo, ServerStats
-from mlx_manager.utils.command_builder import build_mlx_server_command
+from mlx_manager.utils.command_builder import build_mlx_server_command, get_server_log_path
 
 
 class ServerManager:
     """Manages mlx-openai-server processes."""
 
-    def __init__(self):
-        self.processes: dict[int, subprocess.Popen] = {}  # profile_id -> process
+    def __init__(self) -> None:
+        self.processes: dict[int, subprocess.Popen[bytes]] = {}  # profile_id -> process
+        self._log_positions: dict[int, int] = {}  # profile_id -> last read position
 
     async def start_server(self, profile: ServerProfile) -> int:
         """Start an mlx-openai-server instance for the given profile."""
@@ -32,25 +33,32 @@ class ServerManager:
         # Build command
         cmd = build_mlx_server_command(profile)
 
-        # Start process
+        # Clear the log file for fresh start
+        log_path = get_server_log_path(profile.id)
+        if log_path.exists():
+            log_path.unlink()
+
+        # Start process - don't pipe stdout to avoid buffer blocking
+        # Logs are written to file via --log-file argument
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,  # Line buffered
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         self.processes[profile.id] = proc
+        self._log_positions[profile.id] = 0
 
         # Wait briefly for startup
         await asyncio.sleep(2)
 
         # Check if process is still alive
         if proc.poll() is not None:
-            # Process exited
-            stdout = proc.stdout.read() if proc.stdout else ""
-            raise RuntimeError(f"Server failed to start: {stdout}")
+            # Process exited - read log file for error
+            error_msg = ""
+            if log_path.exists():
+                error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
+            raise RuntimeError(f"Server failed to start: {error_msg}")
 
         return proc.pid
 
@@ -64,6 +72,7 @@ class ServerManager:
         if proc.poll() is not None:
             # Already stopped
             del self.processes[profile_id]
+            self._log_positions.pop(profile_id, None)
             return True
 
         # Send SIGTERM (graceful) or SIGKILL (force)
@@ -78,6 +87,7 @@ class ServerManager:
             proc.wait()
 
         del self.processes[profile_id]
+        self._log_positions.pop(profile_id, None)
         return True
 
     async def check_health(self, profile: ServerProfile) -> HealthCheckResult:
@@ -128,25 +138,28 @@ class ServerManager:
         except psutil.NoSuchProcess:
             return None
 
-    def get_log_lines(self, profile_id: int) -> list[str]:
-        """Get available log lines from a running server."""
+    def get_log_lines(self, profile_id: int, max_lines: int = 100) -> list[str]:
+        """Get new log lines from a running server's log file."""
         if profile_id not in self.processes:
             return []
 
-        proc = self.processes[profile_id]
-        if proc.stdout is None:
+        log_path = get_server_log_path(profile_id)
+        if not log_path.exists():
             return []
 
-        lines = []
+        lines: list[str] = []
         try:
-            # Non-blocking read of available lines
-            import select
+            with open(log_path, encoding="utf-8", errors="replace") as f:
+                # Seek to last read position
+                last_pos = self._log_positions.get(profile_id, 0)
+                f.seek(last_pos)
 
-            while select.select([proc.stdout], [], [], 0)[0]:
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                lines.append(line.strip())
+                # Read new lines
+                new_lines = f.readlines()
+                lines = [line.rstrip() for line in new_lines[-max_lines:]]
+
+                # Update position
+                self._log_positions[profile_id] = f.tell()
         except Exception:
             pass
 
