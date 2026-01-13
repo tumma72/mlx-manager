@@ -7,7 +7,7 @@ import webbrowser
 from typing import Any
 
 import httpx
-import rumps  # type: ignore[import-untyped]
+import rumps  # type: ignore[import-untyped,import-not-found]
 
 from mlx_manager import __version__
 
