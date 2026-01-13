@@ -94,6 +94,8 @@ class TestCreateProfileDirect:
         )
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         # First query for name - no conflict
         mock_result1 = MagicMock()
         mock_result1.scalar_one_or_none.return_value = None
@@ -173,6 +175,8 @@ class TestUpdateProfileDirect:
         profile_data = ServerProfileUpdate(name="New Name")
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         # First query - find existing profile
         mock_result1 = MagicMock()
         mock_result1.scalar_one_or_none.return_value = existing_profile
@@ -275,6 +279,8 @@ class TestDuplicateProfileDirect:
         )
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         # First query - check name conflict (none)
         mock_result1 = MagicMock()
         mock_result1.scalar_one_or_none.return_value = None

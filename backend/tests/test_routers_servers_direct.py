@@ -94,6 +94,8 @@ class TestStartServerDirect:
         mock_profile.port = 10240
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         # Query for stale instance - none
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -118,6 +120,8 @@ class TestStartServerDirect:
         stale_instance = MagicMock(spec=RunningInstance)
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = stale_instance
         mock_session.execute.return_value = mock_result
@@ -234,6 +238,8 @@ class TestRestartServerDirect:
         mock_instance = MagicMock(spec=RunningInstance)
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_instance
         mock_session.execute.return_value = mock_result
@@ -257,6 +263,8 @@ class TestRestartServerDirect:
         mock_profile.id = 1
 
         mock_session = AsyncMock()
+        # session.add is synchronous, so use MagicMock
+        mock_session.add = MagicMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None  # No existing record
         mock_session.execute.return_value = mock_result

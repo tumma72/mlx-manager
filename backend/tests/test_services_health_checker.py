@@ -61,8 +61,13 @@ class TestHealthCheckerLoop:
             if call_count >= 2:
                 health_checker_instance._running = False
 
-        with patch.object(
-            health_checker_instance, "_check_all_servers", side_effect=mock_check_all
+        with (
+            patch.object(
+                health_checker_instance, "_check_all_servers", side_effect=mock_check_all
+            ),
+            patch(
+                "mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock
+            ),
         ):
             health_checker_instance._running = True
             await health_checker_instance._health_check_loop()
@@ -82,12 +87,17 @@ class TestHealthCheckerLoop:
             if call_count >= 2:
                 health_checker_instance._running = False
 
-        with patch.object(
-            health_checker_instance, "_check_all_servers", side_effect=mock_check_all
+        with (
+            patch.object(
+                health_checker_instance, "_check_all_servers", side_effect=mock_check_all
+            ),
+            patch("builtins.print"),  # Suppress error output
+            patch(
+                "mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock
+            ),
         ):
-            with patch("builtins.print"):  # Suppress error output
-                health_checker_instance._running = True
-                await health_checker_instance._health_check_loop()
+            health_checker_instance._running = True
+            await health_checker_instance._health_check_loop()
 
         # Should have continued after error
         assert call_count >= 2

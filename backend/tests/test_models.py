@@ -129,7 +129,10 @@ async def test_get_download_progress_with_valid_task(client):
         yield {"status": "downloading", "progress": 50}
         yield {"status": "completed", "progress": 100}
 
-    with patch("mlx_manager.routers.models.hf_client") as mock:
+    with (
+        patch("mlx_manager.routers.models.hf_client") as mock,
+        patch("mlx_manager.routers.models.asyncio.sleep", new_callable=AsyncMock),
+    ):
         mock.download_model = mock_download_model
 
         response = await client.get(f"/api/models/download/{task_id}/progress")
@@ -157,7 +160,10 @@ async def test_get_download_progress_with_error(client):
         raise Exception("Download failed: network error")
         yield  # Make it a generator (unreachable)
 
-    with patch("mlx_manager.routers.models.hf_client") as mock:
+    with (
+        patch("mlx_manager.routers.models.hf_client") as mock,
+        patch("mlx_manager.routers.models.asyncio.sleep", new_callable=AsyncMock),
+    ):
         mock.download_model = mock_download_model
 
         response = await client.get(f"/api/models/download/{task_id}/progress")
