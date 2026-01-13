@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { ServerProfile, RunningServer } from '$api';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { serverStore, profileStore } from '$stores';
 	import { formatDuration } from '$lib/utils/format';
 	import { Card, Button, Badge } from '$components/ui';
@@ -13,43 +15,64 @@
 		Activity,
 		Cpu,
 		HardDrive,
-		MessageSquare
+		MessageSquare,
+		Loader2
 	} from 'lucide-svelte';
 
 	interface Props {
 		profile: ServerProfile;
 		server?: RunningServer;
-		showManagementActions?: boolean;
-		onChat?: (profile: ServerProfile) => void;
 	}
 
-	let { profile, server, showManagementActions = true, onChat }: Props = $props();
+	let { profile, server }: Props = $props();
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
+	let modelReady = $state(false);
+	let checkingModel = $state(false);
 
 	const isRunning = $derived(!!server || serverStore.isRunning(profile.id));
 	const currentServer = $derived(server || serverStore.getServer(profile.id));
 
-	const healthColor = $derived(() => {
-		if (!currentServer) return 'bg-gray-400';
-		switch (currentServer.health_status) {
-			case 'healthy':
-				return 'bg-green-500';
-			case 'starting':
-				return 'bg-yellow-500';
-			case 'unhealthy':
-				return 'bg-red-500';
-			default:
-				return 'bg-gray-400';
+	// Check if model is loaded when server is running
+	$effect(() => {
+		if (isRunning && !modelReady && !checkingModel) {
+			checkModelReady();
+		}
+		if (!isRunning) {
+			modelReady = false;
 		}
 	});
+
+	async function checkModelReady() {
+		checkingModel = true;
+		try {
+			const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
+			if (response.ok) {
+				const data = await response.json();
+				// Check if any models are loaded
+				modelReady = data.data && data.data.length > 0;
+			}
+		} catch {
+			modelReady = false;
+		} finally {
+			checkingModel = false;
+		}
+
+		// Retry if not ready yet
+		if (isRunning && !modelReady) {
+			setTimeout(checkModelReady, 2000);
+		}
+	}
 
 	async function handleStart() {
 		loading = true;
 		error = null;
+		modelReady = false;
 		try {
 			await serverStore.start(profile.id);
+			// Start checking for model readiness
+			checkModelReady();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to start server';
 		} finally {
@@ -60,6 +83,7 @@
 	async function handleStop() {
 		loading = true;
 		error = null;
+		modelReady = false;
 		try {
 			await serverStore.stop(profile.id);
 		} catch (e) {
@@ -72,8 +96,11 @@
 	async function handleRestart() {
 		loading = true;
 		error = null;
+		modelReady = false;
 		try {
 			await serverStore.restart(profile.id);
+			// Start checking for model readiness
+			setTimeout(checkModelReady, 2000);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to restart server';
 		} finally {
@@ -111,68 +138,81 @@
 		}
 	}
 
-	function handleChat() {
-		onChat?.(profile);
+	async function handleChat() {
+		const chatUrl = `${resolve('/chat')}?profile=${profile.id}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- query params appended to resolved path
+		await goto(chatUrl);
 	}
 </script>
 
 <Card class="p-4">
 	<div class="flex items-start justify-between gap-4">
-		<div class="flex items-start gap-3 flex-1 min-w-0">
-			<div class={`w-3 h-3 rounded-full mt-1.5 flex-shrink-0 ${healthColor()}`}></div>
-			<div class="flex-1 min-w-0">
-				<div class="flex items-center gap-2 flex-wrap">
-					<h3 class="font-semibold text-lg">{profile.name}</h3>
-					{#if isRunning}
-						<Badge variant="success">Running</Badge>
+		<div class="flex-1 min-w-0">
+			<div class="flex items-center gap-2 flex-wrap">
+				<h3 class="font-semibold text-lg">{profile.name}</h3>
+				{#if isRunning}
+					{#if modelReady}
+						<Badge variant="success">Ready</Badge>
+					{:else}
+						<Badge variant="warning">Loading...</Badge>
 					{/if}
-					{#if profile.launchd_installed}
-						<Badge variant="outline">launchd</Badge>
-					{/if}
-				</div>
-				{#if profile.description}
-					<p class="text-sm text-muted-foreground mt-1">{profile.description}</p>
 				{/if}
-				<div class="mt-2 text-sm text-muted-foreground truncate">
-					<span class="font-mono">{profile.model_path}</span>
-				</div>
+				{#if profile.launchd_installed}
+					<Badge variant="outline">launchd</Badge>
+				{/if}
+			</div>
+			{#if profile.description}
+				<p class="text-sm text-muted-foreground mt-1">{profile.description}</p>
+			{/if}
+			<div class="mt-2 text-sm text-muted-foreground truncate">
+				<span class="font-mono">{profile.model_path}</span>
 			</div>
 		</div>
 
 		<div class="flex items-center gap-2 flex-shrink-0">
 			<!-- Server Control Buttons -->
 			{#if isRunning}
-				{#if onChat}
-					<Button variant="default" size="sm" onclick={handleChat} disabled={loading} title="Chat">
+				<Button
+					variant="default"
+					size="sm"
+					onclick={handleChat}
+					disabled={loading || !modelReady}
+					title={modelReady ? "Chat with model" : "Waiting for model to load..."}
+				>
+					{#if checkingModel && !modelReady}
+						<Loader2 class="w-4 h-4 mr-1 animate-spin" />
+					{:else}
 						<MessageSquare class="w-4 h-4 mr-1" />
-						Chat
-					</Button>
-				{/if}
-				<Button variant="outline" size="sm" onclick={handleStop} disabled={loading} title="Stop">
+					{/if}
+					Chat
+				</Button>
+				<Button variant="outline" size="icon" onclick={handleStop} disabled={loading} title="Stop">
 					<Square class="w-4 h-4" />
 				</Button>
-				<Button variant="outline" size="sm" onclick={handleRestart} disabled={loading} title="Restart">
+				<Button variant="outline" size="icon" onclick={handleRestart} disabled={loading} title="Restart">
 					<RotateCw class="w-4 h-4" />
 				</Button>
 			{:else}
 				<Button variant="default" size="sm" onclick={handleStart} disabled={loading} title="Start">
-					<Play class="w-4 h-4 mr-1" />
+					{#if loading}
+						<Loader2 class="w-4 h-4 mr-1 animate-spin" />
+					{:else}
+						<Play class="w-4 h-4 mr-1" />
+					{/if}
 					Start
 				</Button>
 			{/if}
 
-			<!-- Management Buttons -->
-			{#if showManagementActions}
-				<Button variant="outline" size="icon" href={`/profiles/${profile.id}`} title="Edit">
-					<Edit class="w-4 h-4" />
-				</Button>
-				<Button variant="outline" size="icon" onclick={handleDuplicate} disabled={loading} title="Duplicate">
-					<Copy class="w-4 h-4" />
-				</Button>
-				<Button variant="outline" size="icon" onclick={handleDelete} disabled={loading} title="Delete">
-					<Trash2 class="w-4 h-4" />
-				</Button>
-			{/if}
+			<!-- Management Buttons (always shown) -->
+			<Button variant="outline" size="icon" href={`/profiles/${profile.id}`} title="Edit">
+				<Edit class="w-4 h-4" />
+			</Button>
+			<Button variant="outline" size="icon" onclick={handleDuplicate} disabled={loading} title="Duplicate">
+				<Copy class="w-4 h-4" />
+			</Button>
+			<Button variant="outline" size="icon" onclick={handleDelete} disabled={loading} title="Delete">
+				<Trash2 class="w-4 h-4" />
+			</Button>
 		</div>
 	</div>
 

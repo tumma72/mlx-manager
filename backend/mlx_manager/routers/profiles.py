@@ -30,7 +30,12 @@ async def list_profiles(session: AsyncSession = Depends(get_db)):
 @router.get("/next-port")
 async def get_next_port(session: AsyncSession = Depends(get_db)):
     """Get the next available port."""
-    result = await session.execute(select(ServerProfile.port).order_by(ServerProfile.port.desc()))
+    from sqlalchemy import desc
+
+    # SQLModel types port as int, but it's a Column at runtime
+    result = await session.execute(
+        select(ServerProfile.port).order_by(desc(ServerProfile.port))  # type: ignore[arg-type]
+    )
     ports = result.scalars().all()
 
     if not ports:
@@ -143,9 +148,14 @@ async def duplicate_profile(
         raise HTTPException(status_code=409, detail="Profile name already exists")
 
     # Get next available port
-    result = await session.execute(select(ServerProfile.port).order_by(ServerProfile.port.desc()))
-    ports = result.scalars().all()
-    next_port = max(ports) + 1 if ports else settings.default_port_start
+    from sqlalchemy import desc
+
+    # SQLModel types port as int, but it's a Column at runtime
+    port_result = await session.execute(
+        select(ServerProfile.port).order_by(desc(ServerProfile.port))  # type: ignore[arg-type]
+    )
+    ports: list[int] = list(port_result.scalars().all())
+    next_port = ports[0] + 1 if ports else settings.default_port_start
 
     # Create new profile
     new_profile = ServerProfile(

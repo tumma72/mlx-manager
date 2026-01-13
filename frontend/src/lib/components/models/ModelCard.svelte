@@ -22,7 +22,7 @@
 
 	// Reset override when model prop changes
 	$effect(() => {
-		model.model_id; // Track model changes
+		void model.model_id; // Track model changes
 		downloadStatusOverride = null;
 	});
 
@@ -112,7 +112,7 @@
 
 	{#if model.tags.length > 0}
 		<div class="mt-3 flex flex-wrap gap-1">
-			{#each model.tags.slice(0, 5) as tag}
+			{#each model.tags.slice(0, 5) as tag (tag)}
 				<Badge variant="secondary" class="text-xs">{tag}</Badge>
 			{/each}
 			{#if model.tags.length > 5}

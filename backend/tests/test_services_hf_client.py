@@ -18,6 +18,7 @@ def hf_client_instance(mock_hf_api, tmp_path):
     with patch("mlx_manager.services.hf_client.settings") as mock_settings:
         mock_settings.hf_cache_path = tmp_path
         mock_settings.hf_organization = "mlx-community"
+        mock_settings.offline_mode = False
 
         # Import after patching
         from mlx_manager.services.hf_client import HuggingFaceClient
@@ -94,6 +95,7 @@ class TestHuggingFaceClientListLocalModels:
 
         with patch("mlx_manager.services.hf_client.settings") as mock_settings:
             mock_settings.hf_organization = "mlx-community"
+            mock_settings.offline_mode = False
 
             result = hf_client_instance.list_local_models()
 
@@ -151,6 +153,7 @@ class TestHuggingFaceClientSearchModels:
 
         with patch("mlx_manager.services.hf_client.settings") as mock_settings:
             mock_settings.hf_organization = "mlx-community"
+            mock_settings.offline_mode = False
 
             results = await hf_client_instance.search_mlx_models("test", limit=10)
 
@@ -182,6 +185,7 @@ class TestHuggingFaceClientSearchModels:
 
         with patch("mlx_manager.services.hf_client.settings") as mock_settings:
             mock_settings.hf_organization = "mlx-community"
+            mock_settings.offline_mode = False
 
             # Filter for models <= 50GB
             results = await hf_client_instance.search_mlx_models("test", max_size_gb=50)

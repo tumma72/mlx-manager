@@ -69,16 +69,16 @@ async def get_system_info():
     # Try to get MLX version
     mlx_version = None
     try:
-        import mlx
+        import mlx  # type: ignore[import-not-found]
 
-        mlx_version = mlx.__version__
+        mlx_version = getattr(mlx, "__version__", "installed")
     except ImportError:
         pass
 
     # Try to get mlx-openai-server version
     mlx_openai_server_version = None
     try:
-        import mlx_openai_server
+        import mlx_openai_server  # type: ignore[import-not-found]
 
         mlx_openai_server_version = getattr(mlx_openai_server, "__version__", "installed")
     except ImportError:

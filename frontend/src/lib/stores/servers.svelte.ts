@@ -21,30 +21,18 @@ class ServerStore {
   }
 
   async start(profileId: number) {
-    try {
-      await serversApi.start(profileId);
-      await this.refresh();
-    } catch (e) {
-      throw e;
-    }
+    await serversApi.start(profileId);
+    await this.refresh();
   }
 
   async stop(profileId: number, force = false) {
-    try {
-      await serversApi.stop(profileId, force);
-      await this.refresh();
-    } catch (e) {
-      throw e;
-    }
+    await serversApi.stop(profileId, force);
+    await this.refresh();
   }
 
   async restart(profileId: number) {
-    try {
-      await serversApi.restart(profileId);
-      await this.refresh();
-    } catch (e) {
-      throw e;
-    }
+    await serversApi.restart(profileId);
+    await this.refresh();
   }
 
   isRunning(profileId: number): boolean {

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { models } from '$api';
 	import type { ModelSearchResult, LocalModel } from '$api';
 	import { systemStore } from '$stores';
 	import { ModelCard } from '$components/models';
 	import { Button, Input, Card, Badge } from '$components/ui';
-	import { Search, Filter, HardDrive } from 'lucide-svelte';
+	import { Search, HardDrive } from 'lucide-svelte';
 
 	let searchQuery = $state('');
 	let searchResults = $state<ModelSearchResult[]>([]);
@@ -46,9 +47,11 @@
 		}
 	}
 
-	function handleUseModel(modelId: string) {
+	async function handleUseModel(modelId: string) {
 		// Navigate to create profile with this model pre-filled
-		goto(`/profiles/new?model=${encodeURIComponent(modelId)}`);
+		const profileUrl = `${resolve('/profiles/new')}?model=${encodeURIComponent(modelId)}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- query params appended to resolved path
+		await goto(profileUrl);
 	}
 
 	function handleModelDeleted() {

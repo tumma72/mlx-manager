@@ -234,6 +234,12 @@ else
     echo -e "Skipping dependency check ${YELLOW}(--skip-deps)${NC}"
 fi
 
+# Ensure SvelteKit generated files exist (tsconfig, types, etc.)
+if [ ! -f ".svelte-kit/tsconfig.json" ]; then
+    echo "Generating SvelteKit files..."
+    npx svelte-kit sync
+fi
+
 # Start Vite dev server in background
 echo "Starting frontend server..."
 npm run dev &

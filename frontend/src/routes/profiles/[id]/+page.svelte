@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { profiles } from '$api';
@@ -25,11 +26,11 @@
 
 	async function handleSubmit(data: ServerProfileUpdate) {
 		await profileStore.update(profileId, data);
-		goto('/profiles');
+		await goto(resolve('/profiles'));
 	}
 
-	function handleCancel() {
-		goto('/profiles');
+	async function handleCancel() {
+		await goto(resolve('/profiles'));
 	}
 </script>
 

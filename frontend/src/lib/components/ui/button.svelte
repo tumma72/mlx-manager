@@ -57,6 +57,7 @@
 </script>
 
 {#if href}
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- href is passed by caller who controls the value -->
 	<a {href} class={baseClasses} {title}>
 		{@render children?.()}
 	</a>

@@ -2,7 +2,7 @@
 	import type { ServerProfile, RunningServer } from '$api';
 	import { serverStore } from '$stores';
 	import { formatDuration } from '$lib/utils/format';
-	import { Card, Button, Badge } from '$components/ui';
+	import { Card, Button } from '$components/ui';
 	import {
 		Play,
 		Square,

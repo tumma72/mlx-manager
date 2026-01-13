@@ -2,9 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { serverStore, profileStore } from '$stores';
-	import { Card, Button, Input, Select } from '$components/ui';
+	import { Card, Button, Input, Select, Markdown, ThinkingBubble } from '$components/ui';
 	import { Send, Loader2, Bot, User } from 'lucide-svelte';
-	import type { ServerProfile } from '$api';
 
 	interface Message {
 		role: 'user' | 'assistant';
@@ -96,6 +95,23 @@
 		messages = [];
 		error = null;
 	}
+
+	// Extract model name without owner prefix (e.g., "mlx-community/Qwen3-0.6B-4bit" -> "Qwen3-0.6B-4bit")
+	function getModelShortName(modelPath: string): string {
+		const parts = modelPath.split('/');
+		return parts.length > 1 ? parts[parts.length - 1] : modelPath;
+	}
+
+	// Parse thinking content from assistant messages (supports <think>...</think> tags)
+	function parseThinking(content: string): { thinking: string | null; response: string } {
+		const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
+		if (thinkMatch) {
+			const thinking = thinkMatch[1].trim();
+			const response = content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+			return { thinking, response };
+		}
+		return { thinking: null, response: content };
+	}
 </script>
 
 <div class="space-y-6 h-[calc(100vh-8rem)] flex flex-col">
@@ -106,7 +122,7 @@
 				<option value="">Select a running server...</option>
 				{#each runningProfiles as profile (profile.id)}
 					<option value={profile.id.toString()}>
-						{profile.name} (:{profile.port})
+						{profile.name} ({getModelShortName(profile.model_path)})
 					</option>
 				{/each}
 			</Select>
@@ -158,7 +174,15 @@
 									? 'bg-primary text-primary-foreground'
 									: 'bg-muted'}"
 							>
-								<p class="whitespace-pre-wrap">{message.content}</p>
+								{#if message.role === 'assistant'}
+									{@const parsed = parseThinking(message.content)}
+									{#if parsed.thinking}
+										<ThinkingBubble content={parsed.thinking} />
+									{/if}
+									<Markdown content={parsed.response} />
+								{:else}
+									<p class="whitespace-pre-wrap">{message.content}</p>
+								{/if}
 							</div>
 							{#if message.role === 'user'}
 								<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">

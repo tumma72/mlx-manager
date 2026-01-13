@@ -36,8 +36,11 @@ async def list_running_servers(
     if not running_profile_ids:
         return []
 
+    # ServerProfile.id is declared as int | None in SQLModel, but in_() works at runtime
     result = await session.execute(
-        select(ServerProfile).where(ServerProfile.id.in_(running_profile_ids))
+        select(ServerProfile).where(
+            ServerProfile.id.in_(running_profile_ids)  # type: ignore[union-attr]
+        )
     )
     profiles = {p.id: p for p in result.scalars().all()}
 
@@ -72,6 +75,9 @@ async def start_server(
     session: AsyncSession = Depends(get_db),
 ):
     """Start a server for a profile."""
+    # Profile from DB always has an ID
+    assert profile.id is not None
+
     # Clean up any stale running_instance record for this profile
     result = await session.execute(
         select(RunningInstance).where(RunningInstance.profile_id == profile.id)
@@ -126,6 +132,9 @@ async def restart_server(
     session: AsyncSession = Depends(get_db),
 ):
     """Restart a server."""
+    # Profile from DB always has an ID
+    assert profile.id is not None
+
     # Stop if running
     await server_manager.stop_server(profile.id, force=False)
     await asyncio.sleep(1)
@@ -158,6 +167,9 @@ async def restart_server(
 @router.get("/{profile_id}/health", response_model=HealthStatus)
 async def check_server_health(profile: ServerProfile = Depends(get_profile_or_404)):
     """Check server health."""
+    # Profile from DB always has an ID
+    assert profile.id is not None
+
     if not server_manager.is_running(profile.id):
         return HealthStatus(status="stopped")
 

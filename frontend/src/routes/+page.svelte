@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	// Redirect to servers page
-	onMount(() => {
-		goto('/servers');
+	onMount(async () => {
+		await goto(resolve('/servers'));
 	});
 </script>
 

@@ -20,6 +20,9 @@ class ServerManager:
 
     async def start_server(self, profile: ServerProfile) -> int:
         """Start an mlx-openai-server instance for the given profile."""
+        # Profile must be persisted to have an ID
+        assert profile.id is not None, "Profile must be saved before starting server"
+
         # Check if already running
         if profile.id in self.processes:
             proc = self.processes[profile.id]
