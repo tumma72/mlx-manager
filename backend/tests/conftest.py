@@ -18,6 +18,16 @@ from mlx_manager.database import get_db
 from mlx_manager.main import app
 
 
+@pytest.fixture(autouse=True)
+def mock_find_mlx_openai_server():
+    """Mock find_mlx_openai_server globally since it's not available on Linux CI."""
+    with patch(
+        "mlx_manager.utils.command_builder.find_mlx_openai_server",
+        return_value="/usr/local/bin/mlx-openai-server",
+    ):
+        yield
+
+
 @pytest.fixture(scope="function")
 async def test_engine():
     """Create a test database engine with in-memory SQLite."""
