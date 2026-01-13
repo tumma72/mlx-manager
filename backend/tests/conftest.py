@@ -122,26 +122,30 @@ def sample_profile_data_alt():
 def mock_hf_client():
     """Mock HuggingFace client for testing."""
     with patch("mlx_manager.routers.models.hf_client") as mock:
-        mock.search_mlx_models = AsyncMock(return_value=[
-            {
-                "model_id": "mlx-community/test-model",
-                "author": "mlx-community",
-                "downloads": 1000,
-                "likes": 50,
-                "estimated_size_gb": 5.0,
-                "tags": ["test", "4bit"],
-                "is_downloaded": False,
-                "last_modified": "2024-01-01T00:00:00Z",
-            }
-        ])
-        mock.list_local_models = MagicMock(return_value=[
-            {
-                "model_id": "mlx-community/local-model",
-                "local_path": "/path/to/model",
-                "size_bytes": 5000000000,
-                "size_gb": 5.0,
-            }
-        ])
+        mock.search_mlx_models = AsyncMock(
+            return_value=[
+                {
+                    "model_id": "mlx-community/test-model",
+                    "author": "mlx-community",
+                    "downloads": 1000,
+                    "likes": 50,
+                    "estimated_size_gb": 5.0,
+                    "tags": ["test", "4bit"],
+                    "is_downloaded": False,
+                    "last_modified": "2024-01-01T00:00:00Z",
+                }
+            ]
+        )
+        mock.list_local_models = MagicMock(
+            return_value=[
+                {
+                    "model_id": "mlx-community/local-model",
+                    "local_path": "/path/to/model",
+                    "size_bytes": 5000000000,
+                    "size_gb": 5.0,
+                }
+            ]
+        )
         mock.download_model = AsyncMock()
         mock.delete_model = AsyncMock(return_value=True)
         yield mock
@@ -153,18 +157,22 @@ def mock_server_manager():
     with patch("mlx_manager.routers.servers.server_manager") as mock:
         mock.start_server = AsyncMock(return_value=12345)
         mock.stop_server = AsyncMock(return_value=True)
-        mock.check_health = AsyncMock(return_value={
-            "status": "healthy",
-            "response_time_ms": 45.0,
-            "model_loaded": True,
-        })
-        mock.get_server_stats = MagicMock(return_value={
-            "pid": 12345,
-            "memory_mb": 1024.0,
-            "cpu_percent": 10.0,
-            "status": "running",
-            "create_time": 1704067200.0,
-        })
+        mock.check_health = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "response_time_ms": 45.0,
+                "model_loaded": True,
+            }
+        )
+        mock.get_server_stats = MagicMock(
+            return_value={
+                "pid": 12345,
+                "memory_mb": 1024.0,
+                "cpu_percent": 10.0,
+                "status": "running",
+                "create_time": 1704067200.0,
+            }
+        )
         mock.get_all_running = MagicMock(return_value=[])
         mock.processes = {}
         yield mock
@@ -179,9 +187,11 @@ def mock_launchd_manager():
         mock.is_installed = MagicMock(return_value=False)
         mock.is_running = MagicMock(return_value=False)
         mock.get_label = MagicMock(return_value="com.mlx-manager.test")
-        mock.get_status = MagicMock(return_value={
-            "installed": False,
-            "running": False,
-            "label": "com.mlx-manager.test",
-        })
+        mock.get_status = MagicMock(
+            return_value={
+                "installed": False,
+                "running": False,
+                "label": "com.mlx-manager.test",
+            }
+        )
         yield mock

@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     hf_cache_path: Path = Path.home() / ".cache" / "huggingface" / "hub"
     hf_organization: str = "mlx-community"
 
+    # Offline mode - set to True to disable HuggingFace dependencies
+    offline_mode: bool = False
+
     # Server defaults
     default_port_start: int = 10240
     max_memory_percent: int = 80

@@ -1,6 +1,6 @@
 """SQLModel database models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
@@ -32,12 +32,12 @@ class ServerProfileBase(SQLModel):
 class ServerProfile(ServerProfileBase, table=True):
     """Server profile database model."""
 
-    __tablename__ = "server_profiles"
+    __tablename__ = "server_profiles"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     launchd_installed: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 class ServerProfileCreate(ServerProfileBase):
@@ -73,12 +73,12 @@ class ServerProfileUpdate(SQLModel):
 class RunningInstance(SQLModel, table=True):
     """Running server instance tracking."""
 
-    __tablename__ = "running_instances"
+    __tablename__ = "running_instances"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     profile_id: int = Field(foreign_key="server_profiles.id", unique=True)
     pid: int
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     health_status: str = Field(default="starting")
     last_health_check: datetime | None = None
 
@@ -86,24 +86,24 @@ class RunningInstance(SQLModel, table=True):
 class DownloadedModel(SQLModel, table=True):
     """Downloaded models cache tracking."""
 
-    __tablename__ = "downloaded_models"
+    __tablename__ = "downloaded_models"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     model_id: str = Field(unique=True, index=True)
     local_path: str
     size_bytes: int | None = None
-    downloaded_at: datetime = Field(default_factory=datetime.utcnow)
+    downloaded_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     last_used_at: datetime | None = None
 
 
 class Setting(SQLModel, table=True):
     """Application settings."""
 
-    __tablename__ = "settings"
+    __tablename__ = "settings"  # type: ignore
 
     key: str = Field(primary_key=True)
     value: str
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 # Response models for API

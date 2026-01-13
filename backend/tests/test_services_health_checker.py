@@ -20,9 +20,7 @@ class TestHealthCheckerStartStop:
     @pytest.mark.asyncio
     async def test_start_creates_task(self, health_checker_instance):
         """Test that start creates a background task."""
-        with patch.object(
-            health_checker_instance, "_health_check_loop", new_callable=AsyncMock
-        ):
+        with patch.object(health_checker_instance, "_health_check_loop", new_callable=AsyncMock):
             await health_checker_instance.start()
 
             assert health_checker_instance._running is True
@@ -34,9 +32,7 @@ class TestHealthCheckerStartStop:
     @pytest.mark.asyncio
     async def test_stop_cancels_task(self, health_checker_instance):
         """Test that stop cancels the background task."""
-        with patch.object(
-            health_checker_instance, "_health_check_loop", new_callable=AsyncMock
-        ):
+        with patch.object(health_checker_instance, "_health_check_loop", new_callable=AsyncMock):
             await health_checker_instance.start()
             await health_checker_instance.stop()
 
@@ -113,9 +109,7 @@ class TestHealthCheckerCheckAllServers:
         mock_context.__aenter__ = AsyncMock(return_value=mock_session)
         mock_context.__aexit__ = AsyncMock(return_value=None)
 
-        with patch(
-            "mlx_manager.services.health_checker.get_session", return_value=mock_context
-        ):
+        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
             await health_checker_instance._check_all_servers()
 
         # Should complete without error - commit is always called at the end
@@ -147,12 +141,8 @@ class TestHealthCheckerCheckAllServers:
         mock_context.__aenter__ = AsyncMock(return_value=mock_session)
         mock_context.__aexit__ = AsyncMock(return_value=None)
 
-        with patch(
-            "mlx_manager.services.health_checker.get_session", return_value=mock_context
-        ):
-            with patch(
-                "mlx_manager.services.health_checker.server_manager"
-            ) as mock_server_manager:
+        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
+            with patch("mlx_manager.services.health_checker.server_manager") as mock_server_manager:
                 mock_server_manager.is_running.return_value = False
 
                 await health_checker_instance._check_all_servers()
@@ -185,16 +175,10 @@ class TestHealthCheckerCheckAllServers:
         mock_context.__aenter__ = AsyncMock(return_value=mock_session)
         mock_context.__aexit__ = AsyncMock(return_value=None)
 
-        with patch(
-            "mlx_manager.services.health_checker.get_session", return_value=mock_context
-        ):
-            with patch(
-                "mlx_manager.services.health_checker.server_manager"
-            ) as mock_server_manager:
+        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
+            with patch("mlx_manager.services.health_checker.server_manager") as mock_server_manager:
                 mock_server_manager.is_running.return_value = True
-                mock_server_manager.check_health = AsyncMock(
-                    return_value={"status": "healthy"}
-                )
+                mock_server_manager.check_health = AsyncMock(return_value={"status": "healthy"})
 
                 await health_checker_instance._check_all_servers()
 
@@ -223,9 +207,7 @@ class TestHealthCheckerCheckAllServers:
         mock_context.__aenter__ = AsyncMock(return_value=mock_session)
         mock_context.__aexit__ = AsyncMock(return_value=None)
 
-        with patch(
-            "mlx_manager.services.health_checker.get_session", return_value=mock_context
-        ):
+        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
             await health_checker_instance._check_all_servers()
 
         # Instance should not be updated
@@ -244,9 +226,7 @@ class TestHealthCheckerIntegration:
             nonlocal check_count
             check_count += 1
 
-        with patch.object(
-            health_checker_instance, "_check_all_servers", side_effect=mock_check
-        ):
+        with patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check):
             await health_checker_instance.start()
 
             # Let it run for a brief moment

@@ -39,7 +39,7 @@
 	{:else}
 		<div class="space-y-4">
 			{#each profileStore.profiles as profile (profile.id)}
-				<ProfileCard {profile} showManagementActions={true} />
+				<ProfileCard {profile} />
 			{/each}
 		</div>
 	{/if}
