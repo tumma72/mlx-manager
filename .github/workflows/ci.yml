@@ -13,6 +13,8 @@ jobs:
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,18 +42,13 @@ jobs:
         run: uv run mypy mlx_manager
 
       - name: Run tests with coverage
+        id: coverage
         working-directory: backend
         run: |
-          uv run pytest -v --cov=mlx_manager --cov-report=xml --cov-report=term-missing --junitxml=pytest-results.xml
-
-      - name: Upload backend coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: backend/coverage.xml
-          flags: backend
-          name: backend-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          uv run pytest -v --cov=mlx_manager --cov-report=term-missing --junitxml=pytest-results.xml | tee coverage-output.txt
+          # Extract coverage percentage from output
+          COVERAGE=$(grep -oP 'TOTAL\s+\d+\s+\d+\s+\K\d+(?=%)' coverage-output.txt || echo "0")
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -63,6 +60,8 @@ jobs:
   frontend:
     name: Frontend Tests
     runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
 
     steps:
       - uses: actions/checkout@v4
@@ -87,17 +86,13 @@ jobs:
         run: npm run check
 
       - name: Run tests with coverage
+        id: coverage
         working-directory: frontend
-        run: npm run test:coverage
-
-      - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: frontend/coverage/lcov.info
-          flags: frontend
-          name: frontend-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+        run: |
+          npm run test:coverage 2>&1 | tee coverage-output.txt
+          # Extract coverage percentage (All files line)
+          COVERAGE=$(grep -oP 'All files\s*\|\s*\K[\d.]+' coverage-output.txt | head -1 || echo "0")
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
 
   e2e:
     name: E2E Tests
@@ -156,3 +151,47 @@ jobs:
         with:
           name: playwright-report
           path: frontend/playwright-report/
+
+  update-coverage-badge:
+    name: Update Coverage Badge
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Calculate combined coverage
+        id: calc
+        env:
+          BACKEND_COV: ${{ needs.backend.outputs.coverage }}
+          FRONTEND_COV: ${{ needs.frontend.outputs.coverage }}
+        run: |
+          # Calculate average coverage (simple average of backend and frontend)
+          BACKEND=${BACKEND_COV:-0}
+          FRONTEND=${FRONTEND_COV:-0}
+          COMBINED=$(echo "scale=0; ($BACKEND + $FRONTEND) / 2" | bc)
+          echo "coverage=$COMBINED" >> $GITHUB_OUTPUT
+
+          # Determine color based on coverage
+          if [ "$COMBINED" -ge 90 ]; then
+            echo "color=brightgreen" >> $GITHUB_OUTPUT
+          elif [ "$COMBINED" -ge 80 ]; then
+            echo "color=green" >> $GITHUB_OUTPUT
+          elif [ "$COMBINED" -ge 70 ]; then
+            echo "color=yellowgreen" >> $GITHUB_OUTPUT
+          elif [ "$COMBINED" -ge 60 ]; then
+            echo "color=yellow" >> $GITHUB_OUTPUT
+          elif [ "$COMBINED" -ge 50 ]; then
+            echo "color=orange" >> $GITHUB_OUTPUT
+          else
+            echo "color=red" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update coverage badge Gist
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ secrets.GIST_ID }}
+          filename: coverage-badge.json
+          label: coverage
+          message: ${{ steps.calc.outputs.coverage }}%
+          color: ${{ steps.calc.outputs.color }}

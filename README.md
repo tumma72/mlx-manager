@@ -1,7 +1,7 @@
 # MLX Manager
 
 [![CI](https://github.com/tumma72/mlx-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/tumma72/mlx-manager/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/tumma72/mlx-manager/graph/badge.svg)](https://codecov.io/gh/tumma72/mlx-manager)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tumma72/YOUR_GIST_ID/raw/coverage-badge.json)](https://github.com/tumma72/mlx-manager)
 [![PyPI version](https://img.shields.io/pypi/v/mlx-manager.svg)](https://pypi.org/project/mlx-manager/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
