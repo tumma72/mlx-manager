@@ -82,3 +82,27 @@ testpaths = ["tests"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.coverage.run]
+source = ["mlx_manager"]
+omit = [
+    # CLI module: Requires interactive terminal, typer commands, and uvicorn server
+    # startup. Testing would require mocking the entire CLI framework and subprocess
+    # management which provides low value compared to testing the underlying services.
+    "mlx_manager/cli.py",
+    # Menubar module: macOS-specific rumps library for status bar apps. Requires
+    # GUI event loop, system notifications, and subprocess management. Cannot be
+    # meaningfully tested in CI without macOS GUI environment.
+    "mlx_manager/menubar.py",
+    # Manager launchd module: macOS launchd service installation. Requires system-level
+    # plist file creation in ~/Library/LaunchAgents and launchctl commands. Testing
+    # would require mocking filesystem and subprocess calls with little added value.
+    "mlx_manager/services/manager_launchd.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

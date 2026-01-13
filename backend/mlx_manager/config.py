@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings."""
+
+    model_config = SettingsConfigDict(env_prefix="MLX_MANAGER_")
 
     # Database
     database_path: Path = Path.home() / ".mlx-manager" / "mlx-manager.db"
@@ -33,9 +35,6 @@ class Settings(BaseSettings):
         str(Path.home() / ".cache" / "huggingface"),
         str(Path.home() / "models"),
     ]
-
-    class Config:
-        env_prefix = "MLX_MANAGER_"
 
 
 settings = Settings()
