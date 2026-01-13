@@ -16,10 +16,15 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
-    {
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
-    },
+    // WebKit only runs locally (not in CI) due to browser installation complexity
+    ...(process.env.CI
+      ? []
+      : [
+          {
+            name: "webkit",
+            use: { ...devices["Desktop Safari"] },
+          },
+        ]),
   ],
   webServer: {
     command: "npm run dev",
