@@ -19,8 +19,16 @@ from mlx_manager.main import app
 
 
 @pytest.fixture(autouse=True)
-def mock_find_mlx_openai_server():
-    """Mock find_mlx_openai_server globally since it's not available on Linux CI."""
+def mock_find_mlx_openai_server(request):
+    """Mock find_mlx_openai_server globally since it's not available on Linux CI.
+
+    Skipped for test_utils_command_builder.py which tests the function directly.
+    """
+    # Skip for tests that specifically test find_mlx_openai_server
+    if "test_utils_command_builder" in request.fspath.basename:
+        yield
+        return
+
     with patch(
         "mlx_manager.utils.command_builder.find_mlx_openai_server",
         return_value="/usr/local/bin/mlx-openai-server",
