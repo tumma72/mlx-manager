@@ -191,7 +191,7 @@ jobs:
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ secrets.GIST_ID }}
-          filename: coverage-badge.json
+          filename: mlx-manager-coverage.json
           label: coverage
           message: ${{ steps.calc.outputs.coverage }}%
           color: ${{ steps.calc.outputs.color }}
