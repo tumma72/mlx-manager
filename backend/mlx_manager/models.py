@@ -187,3 +187,14 @@ class LaunchdStatus(SQLModel):
     running: bool
     pid: int | None = None
     label: str
+
+
+class ServerStatus(SQLModel):
+    """Detailed server process status."""
+
+    profile_id: int
+    running: bool
+    pid: int | None = None
+    exit_code: int | None = None
+    failed: bool = False
+    error_message: str | None = None

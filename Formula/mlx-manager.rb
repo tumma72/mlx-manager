@@ -6,7 +6,7 @@ class MlxManager < Formula
   url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.0.0.tar.gz"
   sha256 "a0ff93f5bc5ad158acfb7a7cce7e3668143fa9b6ab73c438c0bd48514889a010"
   license "MIT"
-  version "1.0.0"
+  version "1.0.1"
 
   depends_on "python@3.12"
   depends_on :macos

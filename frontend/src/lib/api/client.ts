@@ -11,6 +11,7 @@ import type {
   SystemInfo,
   HealthStatus,
   LaunchdStatus,
+  ServerStatus,
 } from "./types";
 
 const API_BASE = "/api";
@@ -171,6 +172,11 @@ export const servers = {
 
   health: async (profileId: number): Promise<HealthStatus> => {
     const res = await fetch(`${API_BASE}/servers/${profileId}/health`);
+    return handleResponse(res);
+  },
+
+  status: async (profileId: number): Promise<ServerStatus> => {
+    const res = await fetch(`${API_BASE}/servers/${profileId}/status`);
     return handleResponse(res);
   },
 };

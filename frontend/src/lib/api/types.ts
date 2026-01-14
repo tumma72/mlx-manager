@@ -144,3 +144,12 @@ export interface LaunchdStatus {
   pid?: number;
   label: string;
 }
+
+export interface ServerStatus {
+  profile_id: number;
+  running: boolean;
+  pid?: number;
+  exit_code?: number;
+  failed: boolean;
+  error_message?: string;
+}

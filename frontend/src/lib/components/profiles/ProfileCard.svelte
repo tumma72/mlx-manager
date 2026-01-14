@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ServerProfile, RunningServer } from '$api';
+	import { servers as serversApi } from '$api';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore } from '$stores';
@@ -16,8 +17,13 @@
 		Cpu,
 		HardDrive,
 		MessageSquare,
-		Loader2
+		Loader2,
+		AlertCircle
 	} from 'lucide-svelte';
+
+	// Timeout for model loading (2 minutes)
+	const MODEL_LOAD_TIMEOUT_MS = 120_000;
+	const POLL_INTERVAL_MS = 5_000; // Poll every 5 seconds to reduce server load
 
 	interface Props {
 		profile: ServerProfile;
@@ -30,6 +36,9 @@
 	let error = $state<string | null>(null);
 	let modelReady = $state(false);
 	let checkingModel = $state(false);
+	let startTime = $state<number | null>(null);
+	let serverFailed = $state(false);
+	let crashError = $state<string | null>(null);
 
 	const isRunning = $derived(!!server || serverStore.isRunning(profile.id));
 	const currentServer = $derived(server || serverStore.getServer(profile.id));
@@ -46,6 +55,37 @@
 
 	async function checkModelReady() {
 		checkingModel = true;
+
+		// Check for timeout
+		if (startTime && Date.now() - startTime > MODEL_LOAD_TIMEOUT_MS) {
+			checkingModel = false;
+			serverFailed = true;
+			error = 'Model loading timed out after 2 minutes. Check server logs for details.';
+			return;
+		}
+
+		// Check if server process is still alive
+		try {
+			const status = await serversApi.status(profile.id);
+			if (!status.running) {
+				if (status.failed) {
+					serverFailed = true;
+					crashError = status.error_message || 'Server process exited unexpectedly';
+					error = 'Server crashed while loading model';
+					checkingModel = false;
+					// Refresh server list to update UI
+					await serverStore.refresh();
+					return;
+				}
+				// Server stopped gracefully - stop polling
+				checkingModel = false;
+				return;
+			}
+		} catch {
+			// Status endpoint failed - continue with model check
+		}
+
+		// Check if model is loaded
 		try {
 			const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
 			if (response.ok) {
@@ -59,9 +99,9 @@
 			checkingModel = false;
 		}
 
-		// Retry if not ready yet
-		if (isRunning && !modelReady) {
-			setTimeout(checkModelReady, 2000);
+		// Retry if not ready and no error
+		if (isRunning && !modelReady && !serverFailed) {
+			setTimeout(checkModelReady, POLL_INTERVAL_MS);
 		}
 	}
 
@@ -69,12 +109,16 @@
 		loading = true;
 		error = null;
 		modelReady = false;
+		serverFailed = false;
+		crashError = null;
+		startTime = Date.now();
 		try {
 			await serverStore.start(profile.id);
 			// Start checking for model readiness
 			checkModelReady();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to start server';
+			startTime = null;
 		} finally {
 			loading = false;
 		}
@@ -84,6 +128,9 @@
 		loading = true;
 		error = null;
 		modelReady = false;
+		serverFailed = false;
+		crashError = null;
+		startTime = null;
 		try {
 			await serverStore.stop(profile.id);
 		} catch (e) {
@@ -97,12 +144,16 @@
 		loading = true;
 		error = null;
 		modelReady = false;
+		serverFailed = false;
+		crashError = null;
+		startTime = Date.now();
 		try {
 			await serverStore.restart(profile.id);
 			// Start checking for model readiness
-			setTimeout(checkModelReady, 2000);
+			setTimeout(checkModelReady, POLL_INTERVAL_MS);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to restart server';
+			startTime = null;
 		} finally {
 			loading = false;
 		}
@@ -150,8 +201,10 @@
 		<div class="flex-1 min-w-0">
 			<div class="flex items-center gap-2 flex-wrap">
 				<h3 class="font-semibold text-lg">{profile.name}</h3>
-				{#if isRunning}
-					{#if modelReady}
+				{#if isRunning || serverFailed}
+					{#if serverFailed}
+						<Badge variant="destructive">Error</Badge>
+					{:else if modelReady}
 						<Badge variant="success">Ready</Badge>
 					{:else}
 						<Badge variant="warning">Loading...</Badge>
@@ -257,6 +310,21 @@
 	{/if}
 
 	{#if error}
-		<div class="mt-2 text-sm text-red-500">{error}</div>
+		<div class="mt-3 p-3 bg-red-50 dark:bg-red-950/50 rounded-lg border border-red-200 dark:border-red-900">
+			<div class="flex items-start gap-2">
+				<AlertCircle class="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+				<div class="flex-1 min-w-0">
+					<p class="text-sm text-red-600 dark:text-red-400 font-medium">{error}</p>
+					{#if crashError}
+						<details class="mt-2">
+							<summary class="text-xs text-red-500 dark:text-red-400 cursor-pointer hover:underline">
+								Show server log
+							</summary>
+							<pre class="mt-2 text-xs text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{crashError}</pre>
+						</details>
+					{/if}
+				</div>
+			</div>
+		</div>
 	{/if}
 </Card>

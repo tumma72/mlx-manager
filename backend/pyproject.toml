@@ -1,6 +1,6 @@
 [project]
 name = "mlx-manager"
-version = "1.0.0"
+version = "1.0.1"
 description = "Web-based MLX model manager for Apple Silicon Macs"
 readme = "README.md"
 license = {text = "MIT"}

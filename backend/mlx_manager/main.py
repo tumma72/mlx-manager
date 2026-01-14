@@ -1,9 +1,27 @@
 """MLX Model Manager - FastAPI Application."""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+
+# Configure logging to output to console
+# force=True ensures our config takes effect even if uvicorn configured logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
+)
+# Reduce noise from third-party libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,9 +54,11 @@ async def cleanup_stale_instances() -> None:
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
+    logger.info("MLX Manager starting up...")
     await init_db()
     await cleanup_stale_instances()
     await health_checker.start()
+    logger.info("MLX Manager ready")
 
     yield
 

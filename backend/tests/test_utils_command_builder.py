@@ -129,71 +129,18 @@ class TestBuildMlxServerCommand:
         assert "--queue-timeout" in cmd
         assert "--queue-size" in cmd
 
-    def test_no_log_file_option(self, sample_profile, tmp_path):
-        """Test --no-log-file option when no_log_file is True."""
-        sample_profile.no_log_file = True
+    def test_no_log_file_args_in_command(self, sample_profile, tmp_path):
+        """Test that log file args are NOT in command (handled by server_manager)."""
         mock_server = tmp_path / "mlx-openai-server"
         mock_server.touch()
 
         with patch.object(sys, "executable", str(tmp_path / "python")):
             cmd = build_mlx_server_command(sample_profile)
 
-        assert "--no-log-file" in cmd
+        # Log file options should NOT be in command
+        # mlx-openai-server doesn't support them; server_manager redirects stdout/stderr
         assert "--log-file" not in cmd
-
-    def test_custom_log_file_path(self, sample_profile, tmp_path):
-        """Test custom log file path when specified."""
-        sample_profile.log_file = "/custom/path/server.log"
-        mock_server = tmp_path / "mlx-openai-server"
-        mock_server.touch()
-
-        with patch.object(sys, "executable", str(tmp_path / "python")):
-            cmd = build_mlx_server_command(sample_profile)
-
-        assert "--log-file" in cmd
-        log_file_idx = cmd.index("--log-file")
-        assert cmd[log_file_idx + 1] == "/custom/path/server.log"
-
-    def test_default_log_file_path(self, sample_profile, tmp_path):
-        """Test uses default log path when no log file specified."""
-        sample_profile.log_file = None
-        sample_profile.no_log_file = False
-        mock_server = tmp_path / "mlx-openai-server"
-        mock_server.touch()
-
-        expected_log = tmp_path / "logs" / "server-1.log"
-
-        with patch.object(sys, "executable", str(tmp_path / "python")):
-            with patch(
-                "mlx_manager.utils.command_builder.get_server_log_path",
-                return_value=expected_log,
-            ):
-                cmd = build_mlx_server_command(sample_profile)
-
-        assert "--log-file" in cmd
-        log_file_idx = cmd.index("--log-file")
-        assert cmd[log_file_idx + 1] == str(expected_log)
-
-    def test_raises_when_profile_not_saved(self, tmp_path):
-        """Test raises assertion error when profile has no ID."""
-        profile = ServerProfile(
-            id=None,  # Not saved
-            name="Test",
-            model_path="test/model",
-            model_type="lm",
-            port=10240,
-            host="127.0.0.1",
-            max_concurrency=1,
-            queue_timeout=300,
-            queue_size=100,
-        )
-
-        mock_server = tmp_path / "mlx-openai-server"
-        mock_server.touch()
-
-        with patch.object(sys, "executable", str(tmp_path / "python")):
-            with pytest.raises(AssertionError, match="Profile must be saved"):
-                build_mlx_server_command(profile)
+        assert "--no-log-file" not in cmd
 
     def test_maps_whisper_to_lm(self, sample_profile, tmp_path):
         """Test maps unsupported 'whisper' type to 'lm'."""

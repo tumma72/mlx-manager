@@ -17,6 +17,7 @@ from mlx_manager.models import (
     RunningInstance,
     RunningServerResponse,
     ServerProfile,
+    ServerStatus,
 )
 from mlx_manager.services.server_manager import server_manager
 
@@ -175,6 +176,26 @@ async def check_server_health(profile: ServerProfile = Depends(get_profile_or_40
 
     health = await server_manager.check_health(profile)
     return HealthStatus(**health)
+
+
+@router.get("/{profile_id}/status", response_model=ServerStatus)
+async def get_server_status(profile: ServerProfile = Depends(get_profile_or_404)):
+    """Get detailed server status including failure detection.
+
+    Returns process status, exit code, and error message from logs if failed.
+    """
+    assert profile.id is not None
+
+    status = server_manager.get_process_status(profile.id)
+
+    return ServerStatus(
+        profile_id=profile.id,
+        running=status.get("running", False),
+        pid=status.get("pid"),
+        exit_code=status.get("exit_code"),
+        failed=status.get("failed", False),
+        error_message=status.get("error_message"),
+    )
 
 
 @router.get("/{profile_id}/logs")

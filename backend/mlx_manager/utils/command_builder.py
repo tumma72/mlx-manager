@@ -1,10 +1,13 @@
 """Utilities for building mlx-openai-server commands."""
 
+import logging
 import shutil
 import sys
 from pathlib import Path
 
 from mlx_manager.models import ServerProfile
+
+logger = logging.getLogger(__name__)
 
 
 def find_mlx_openai_server() -> str:
@@ -42,25 +45,22 @@ def build_mlx_server_command(profile: ServerProfile) -> list[str]:
     Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
     --model-path, --model-type (lm|multimodal), --port, --host,
     --max-concurrency, --queue-timeout, --queue-size
+
+    Logging is handled by redirecting stdout/stderr in server_manager.
     """
+    logger.debug(f"Building command for profile: {profile.name}")
+    logger.debug(f"  Model path: {profile.model_path}")
+    logger.debug(f"  Model type: {profile.model_type}")
+    logger.debug(f"  Port: {profile.port}, Host: {profile.host}")
+
     # Map our model types to mlx-openai-server supported types
     # mlx-openai-server only supports 'lm' and 'multimodal'
     model_type = profile.model_type
     if model_type not in ("lm", "multimodal"):
+        logger.debug(f"  Mapping unsupported type '{model_type}' to 'lm'")
         model_type = "lm"  # Default to lm for unsupported types
 
-    # Determine log file path
-    if profile.no_log_file:
-        log_args = ["--no-log-file"]
-    elif profile.log_file:
-        log_args = ["--log-file", profile.log_file]
-    else:
-        # Use a profile-specific log file to avoid stdout pipe blocking
-        assert profile.id is not None, "Profile must be saved before building command"
-        log_path = get_server_log_path(profile.id)
-        log_args = ["--log-file", str(log_path)]
-
-    return [
+    cmd = [
         find_mlx_openai_server(),
         "launch",  # Required subcommand
         "--model-path",
@@ -77,5 +77,6 @@ def build_mlx_server_command(profile: ServerProfile) -> list[str]:
         str(profile.queue_timeout),
         "--queue-size",
         str(profile.queue_size),
-        *log_args,
     ]
+    logger.debug(f"  Built command: {' '.join(cmd)}")
+    return cmd

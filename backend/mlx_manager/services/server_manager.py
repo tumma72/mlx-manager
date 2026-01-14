@@ -1,6 +1,7 @@
 """Server process manager service."""
 
 import asyncio
+import logging
 import signal
 import subprocess
 
@@ -8,6 +9,8 @@ import httpx
 import psutil
 
 from mlx_manager.models import ServerProfile
+
+logger = logging.getLogger(__name__)
 from mlx_manager.types import HealthCheckResult, RunningServerInfo, ServerStats
 from mlx_manager.utils.command_builder import build_mlx_server_command, get_server_log_path
 
@@ -24,27 +27,37 @@ class ServerManager:
         # Profile must be persisted to have an ID
         assert profile.id is not None, "Profile must be saved before starting server"
 
+        logger.info(f"Starting server for profile '{profile.name}' (id={profile.id})")
+
         # Check if already running
         if profile.id in self.processes:
             proc = self.processes[profile.id]
             if proc.poll() is None:  # Still running
+                logger.warning(f"Server for profile '{profile.name}' is already running (pid={proc.pid})")
                 raise RuntimeError(f"Server for profile {profile.name} is already running")
 
         # Build command
         cmd = build_mlx_server_command(profile)
+        logger.info(f"Command: {' '.join(cmd)}")
 
-        # Clear the log file for fresh start
+        # Prepare log file for capturing output
         log_path = get_server_log_path(profile.id)
         if log_path.exists():
             log_path.unlink()
+        logger.debug(f"Log file: {log_path}")
 
-        # Start process - don't pipe stdout to avoid buffer blocking
-        # Logs are written to file via --log-file argument
+        # Start process with stdout/stderr redirected to log file
+        # mlx-openai-server doesn't have a --log-file option, so we capture output ourselves
+        log_file = open(log_path, "w")
+        self._log_files: dict[int, object] = getattr(self, "_log_files", {})
+        self._log_files[profile.id] = log_file
+
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
         )
+        logger.info(f"Process spawned with pid={proc.pid}")
 
         self.processes[profile.id] = proc
         self._log_positions[profile.id] = 0
@@ -54,23 +67,37 @@ class ServerManager:
 
         # Check if process is still alive
         if proc.poll() is not None:
-            # Process exited - read log file for error
+            # Process exited - flush and read log file for error
             error_msg = ""
+            try:
+                log_file.flush()
+                log_file.close()
+                if profile.id in self._log_files:
+                    del self._log_files[profile.id]
+            except Exception:
+                pass
             if log_path.exists():
                 error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
+            logger.error(f"Server failed to start for profile '{profile.name}': {error_msg[:500]}")
+            del self.processes[profile.id]
             raise RuntimeError(f"Server failed to start: {error_msg}")
 
+        logger.info(f"Server started successfully for profile '{profile.name}' (pid={proc.pid})")
         return proc.pid
 
     async def stop_server(self, profile_id: int, force: bool = False) -> bool:
         """Stop a running server."""
+        logger.info(f"Stopping server for profile_id={profile_id} (force={force})")
+
         if profile_id not in self.processes:
+            logger.debug(f"No process found for profile_id={profile_id}")
             return False
 
         proc = self.processes[profile_id]
 
         if proc.poll() is not None:
             # Already stopped
+            logger.debug(f"Process already stopped for profile_id={profile_id}")
             del self.processes[profile_id]
             self._log_positions.pop(profile_id, None)
             return True
@@ -78,21 +105,34 @@ class ServerManager:
         # Send SIGTERM (graceful) or SIGKILL (force)
         sig = signal.SIGKILL if force else signal.SIGTERM
         proc.send_signal(sig)
+        logger.debug(f"Sent signal {sig} to pid={proc.pid}")
 
         # Wait for process to exit
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
+            logger.warning(f"Process did not exit gracefully, killing pid={proc.pid}")
             proc.kill()
             proc.wait()
 
         del self.processes[profile_id]
         self._log_positions.pop(profile_id, None)
+        # Close log file if open
+        if hasattr(self, "_log_files") and profile_id in self._log_files:
+            try:
+                self._log_files[profile_id].close()
+            except Exception:
+                pass
+            del self._log_files[profile_id]
+        logger.info(f"Server stopped for profile_id={profile_id}")
         return True
 
     async def check_health(self, profile: ServerProfile) -> HealthCheckResult:
-        """Check health of a running server."""
-        url = f"http://{profile.host}:{profile.port}/health"
+        """Check health of a running server.
+
+        Uses /v1/models endpoint since mlx-openai-server doesn't have /health.
+        """
+        url = f"http://{profile.host}:{profile.port}/v1/models"
 
         try:
             async with httpx.AsyncClient() as client:
@@ -101,10 +141,13 @@ class ServerManager:
                 elapsed = (asyncio.get_event_loop().time() - start) * 1000
 
                 if response.status_code == 200:
+                    # Check if models are loaded
+                    data = response.json()
+                    model_loaded = bool(data.get("data"))
                     return HealthCheckResult(
                         status="healthy",
                         response_time_ms=round(elapsed, 2),
-                        model_loaded=True,
+                        model_loaded=model_loaded,
                     )
                 else:
                     return HealthCheckResult(
@@ -147,6 +190,13 @@ class ServerManager:
         if not log_path.exists():
             return []
 
+        # Flush log file to ensure we read latest content
+        if hasattr(self, "_log_files") and profile_id in self._log_files:
+            try:
+                self._log_files[profile_id].flush()
+            except Exception:
+                pass
+
         lines: list[str] = []
         try:
             with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -170,6 +220,48 @@ class ServerManager:
         if profile_id not in self.processes:
             return False
         return self.processes[profile_id].poll() is None
+
+    def get_process_status(self, profile_id: int) -> dict:
+        """Get detailed process status including exit code and error message."""
+        if profile_id not in self.processes:
+            return {"running": False, "tracked": False}
+
+        proc = self.processes[profile_id]
+        exit_code = proc.poll()
+
+        if exit_code is not None:
+            # Process has exited - close log file and read error
+            log_path = get_server_log_path(profile_id)
+            if hasattr(self, "_log_files") and profile_id in self._log_files:
+                try:
+                    self._log_files[profile_id].flush()
+                    self._log_files[profile_id].close()
+                except Exception:
+                    pass
+                del self._log_files[profile_id]
+
+            error_msg = None
+            if log_path.exists():
+                content = log_path.read_text()
+                error_msg = content[-1000:] if content else "No log output"
+
+            # Clean up the dead process
+            del self.processes[profile_id]
+            self._log_positions.pop(profile_id, None)
+
+            return {
+                "running": False,
+                "tracked": True,
+                "exit_code": exit_code,
+                "failed": exit_code != 0,
+                "error_message": error_msg,
+            }
+
+        return {
+            "running": True,
+            "tracked": True,
+            "pid": proc.pid,
+        }
 
     def get_all_running(self) -> list[RunningServerInfo]:
         """Get info about all running servers."""
@@ -198,8 +290,10 @@ class ServerManager:
 
     async def cleanup(self) -> None:
         """Stop all servers on shutdown."""
+        logger.info(f"Cleaning up {len(self.processes)} running servers...")
         for profile_id in list(self.processes.keys()):
             await self.stop_server(profile_id, force=True)
+        logger.info("Cleanup complete")
 
 
 # Singleton instance
