@@ -12,11 +12,11 @@ class MlxManager < Formula
   depends_on arch: :arm64
 
   def install
-    # Create virtualenv
+    # Create virtualenv with pip
     venv = virtualenv_create(libexec, "python3.12")
 
-    # Install the package from PyPI (not local tarball) to get all dependencies
-    system libexec/"bin/pip", "install", "mlx-manager==1.0.0"
+    # Install from the downloaded source with dependencies
+    venv.pip_install buildpath
 
     # Link the binary
     bin.install_symlink libexec/"bin/mlx-manager"
