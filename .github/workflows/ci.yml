@@ -187,10 +187,11 @@ jobs:
           fi
 
       - name: Update coverage badge Gist
+        if: vars.GIST_ID
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
-          gistID: ${{ secrets.GIST_ID }}
+          gistID: ${{ vars.GIST_ID }}
           filename: mlx-manager-coverage.json
           label: coverage
           message: ${{ steps.calc.outputs.coverage }}%
