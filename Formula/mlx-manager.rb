@@ -3,20 +3,23 @@ class MlxManager < Formula
 
   desc "Web-based MLX model manager for Apple Silicon Macs"
   homepage "https://github.com/tumma72/mlx-manager"
-  url "https://files.pythonhosted.org/packages/86/4a/e3962aa3c26990db27887905fed63dcc5aa6e1a9f4728bc4864cee697c57/mlx_manager-1.0.0.tar.gz"
-  sha256 "590efcd138be891c47565c846ae3cc5e7381fe8f77501c89faf0bb5cc0dff727"
+  # Note: We use PyPI installation instead of tarball to properly resolve dependencies
+  url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "a0ff93f5bc5ad158acfb7a7cce7e3668143fa9b6ab73c438c0bd48514889a010"
   license "MIT"
+  version "1.0.0"
 
   depends_on "python@3.12"
   depends_on :macos
   depends_on arch: :arm64
 
   def install
-    # Create virtualenv with pip
+    # Create virtualenv
     venv = virtualenv_create(libexec, "python3.12")
 
-    # Install from the downloaded source with dependencies
-    venv.pip_install buildpath
+    # Install from PyPI to get all dependencies resolved
+    system libexec/"bin/python", "-m", "pip", "install", "--upgrade", "pip"
+    system libexec/"bin/pip", "install", "mlx-manager==#{version}"
 
     # Link the binary
     bin.install_symlink libexec/"bin/mlx-manager"
