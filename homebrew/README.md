@@ -4,50 +4,40 @@ This directory contains the Homebrew formula for MLX Manager.
 
 ## Setup Instructions
 
-To make MLX Manager installable via Homebrew, you need to create a tap repository:
+To make MLX Manager installable via `brew install tumma72/tap/mlx-manager`:
 
 ### 1. Create the tap repository
 
-Create a new GitHub repository named `homebrew-tap` under your account:
+Create a new **public** GitHub repository named `homebrew-tap`:
+- Go to https://github.com/new
+- Name: `homebrew-tap`
+- Make it **Public**
+- Create repository
+
+### 2. Add the formula
 
 ```bash
-# Create the repository on GitHub, then clone it
+# Clone your new tap repository
 git clone https://github.com/tumma72/homebrew-tap.git
 cd homebrew-tap
-mkdir Formula
-```
 
-### 2. Copy the formula
-
-Copy `Formula/mlx-manager.rb` from this directory to the tap repository:
-
-```bash
+# Create the Formula directory and copy the formula
+mkdir -p Formula
 cp /path/to/mlx-manager/homebrew/Formula/mlx-manager.rb Formula/
-```
 
-### 3. Update the SHA256
-
-Get the SHA256 of the PyPI package and update the formula:
-
-```bash
-# Download and calculate SHA256
-curl -sL https://files.pythonhosted.org/packages/source/m/mlx-manager/mlx_manager-1.0.0.tar.gz | shasum -a 256
-```
-
-Replace `PLACEHOLDER_SHA256` in the formula with the actual hash.
-
-### 4. Commit and push
-
-```bash
+# Commit and push
 git add Formula/mlx-manager.rb
 git commit -m "Add mlx-manager formula"
 git push
 ```
 
-### 5. Test the installation
+### 3. Test the installation
 
 ```bash
+# Tap your repository
 brew tap tumma72/tap
+
+# Install mlx-manager
 brew install mlx-manager
 ```
 
@@ -55,20 +45,33 @@ brew install mlx-manager
 
 When releasing a new version:
 
-1. Update the `url` with the new version
-2. Update the `sha256` hash
+1. Get the new SHA256:
+   ```bash
+   curl -sL "https://pypi.org/pypi/mlx-manager/json" | python3 -c "
+   import sys, json
+   data = json.load(sys.stdin)
+   sdist = next(u for u in data['urls'] if u['packagetype'] == 'sdist')
+   print(f\"Version: {data['info']['version']}\")
+   print(f\"SHA256: {sdist['digests']['sha256']}\")
+   print(f\"URL: {sdist['url']}\")
+   "
+   ```
+
+2. Update `Formula/mlx-manager.rb` with the new URL and SHA256
+
 3. Commit and push to the tap repository
 
+## Users
+
+Once set up, users can install with:
+
 ```bash
-# Get new SHA256
-VERSION=1.0.1
-curl -sL "https://files.pythonhosted.org/packages/source/m/mlx-manager/mlx_manager-${VERSION}.tar.gz" | shasum -a 256
+brew install tumma72/tap/mlx-manager
 ```
 
-## Alternative: GitHub Releases
+Or explicitly tap first:
 
-For larger distributions, you can also use GitHub releases:
-
-```ruby
-url "https://github.com/tumma72/mlx-manager/releases/download/v#{version}/mlx_manager-#{version}.tar.gz"
+```bash
+brew tap tumma72/tap
+brew install mlx-manager
 ```

@@ -3,8 +3,8 @@ class MlxManager < Formula
 
   desc "Web-based manager for MLX language models on Apple Silicon"
   homepage "https://github.com/tumma72/mlx-manager"
-  url "https://files.pythonhosted.org/packages/source/m/mlx-manager/mlx_manager-1.0.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+  url "https://files.pythonhosted.org/packages/86/4a/e3962aa3c26990db27887905fed63dcc5aa6e1a9f4728bc4864cee697c57/mlx_manager-1.0.0.tar.gz"
+  sha256 "590efcd138be891c47565c846ae3cc5e7381fe8f77501c89faf0bb5cc0dff727"
   license "MIT"
 
   depends_on "python@3.12"
@@ -22,19 +22,12 @@ class MlxManager < Formula
 
       Then open http://localhost:8080 in your browser.
 
-      To run as a background service:
-        mlx-manager install-service
-
-      To launch the menubar app:
+      For the menubar app:
         mlx-manager menubar
-    EOS
-  end
 
-  service do
-    run [opt_bin/"mlx-manager", "serve"]
-    keep_alive true
-    log_path var/"log/mlx-manager.log"
-    error_log_path var/"log/mlx-manager.log"
+      To auto-start on login:
+        mlx-manager install-service
+    EOS
   end
 
   test do
