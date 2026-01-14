@@ -1,4 +1,6 @@
 class MlxManager < Formula
+  include Language::Python::Virtualenv
+
   desc "Web-based MLX model manager for Apple Silicon Macs"
   homepage "https://github.com/tumma72/mlx-manager"
   url "https://files.pythonhosted.org/packages/86/4a/e3962aa3c26990db27887905fed63dcc5aa6e1a9f4728bc4864cee697c57/mlx_manager-1.0.0.tar.gz"
