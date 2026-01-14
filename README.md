@@ -28,7 +28,8 @@ Running local LLMs typically requires juggling multiple tools, config files, and
 
 ```bash
 # Homebrew (recommended)
-brew install tumma72/tap/mlx-manager
+brew tap tumma72/mlx-manager https://github.com/tumma72/mlx-manager
+brew install mlx-manager
 
 # Or via pip
 pip install mlx-manager
