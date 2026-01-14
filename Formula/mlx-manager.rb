@@ -3,7 +3,6 @@ class MlxManager < Formula
 
   desc "Web-based MLX model manager for Apple Silicon Macs"
   homepage "https://github.com/tumma72/mlx-manager"
-  # Note: We use PyPI installation instead of tarball to properly resolve dependencies
   url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.0.0.tar.gz"
   sha256 "a0ff93f5bc5ad158acfb7a7cce7e3668143fa9b6ab73c438c0bd48514889a010"
   license "MIT"
@@ -13,13 +12,21 @@ class MlxManager < Formula
   depends_on :macos
   depends_on arch: :arm64
 
-  def install
-    # Create virtualenv
-    venv = virtualenv_create(libexec, "python3.12")
+  # Skip bottle to avoid dylib relocation issues with PIL
+  bottle :unneeded
 
-    # Install from PyPI to get all dependencies resolved
+  def install
+    # Create virtualenv - pip install happens in post_install to avoid dylib fixup
+    virtualenv_create(libexec, "python3.12")
+
+    # Create the bin symlink directory
+    bin.mkpath
+  end
+
+  def post_install
+    # Install from PyPI in post_install to bypass Homebrew's dylib relocation
     system libexec/"bin/python", "-m", "pip", "install", "--upgrade", "pip"
-    system libexec/"bin/pip", "install", "mlx-manager==#{version}"
+    system libexec/"bin/pip", "install", "--no-cache-dir", "mlx-manager==#{version}"
 
     # Link the binary
     bin.install_symlink libexec/"bin/mlx-manager"
