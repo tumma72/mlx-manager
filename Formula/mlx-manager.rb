@@ -12,9 +12,6 @@ class MlxManager < Formula
   depends_on :macos
   depends_on arch: :arm64
 
-  # Skip bottle to avoid dylib relocation issues with PIL
-  bottle :unneeded
-
   def install
     # Create virtualenv - pip install happens in post_install to avoid dylib fixup
     virtualenv_create(libexec, "python3.12")
