@@ -1,8 +1,22 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import { Navbar } from '$components/layout';
+	import { serverStore, profileStore, systemStore, pollingCoordinator } from '$stores';
 
 	let { children } = $props();
+
+	onMount(() => {
+		// Initialize global polling for all stores
+		serverStore.startPolling();
+		profileStore.startPolling();
+		systemStore.startMemoryPolling();
+
+		// Cleanup on unmount (e.g., hot reload)
+		return () => {
+			pollingCoordinator.destroy();
+		};
+	});
 </script>
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900">

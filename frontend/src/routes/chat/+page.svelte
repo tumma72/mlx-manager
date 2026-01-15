@@ -26,6 +26,7 @@
 	);
 
 	onMount(() => {
+		// Initial data load - polling is handled globally by +layout.svelte
 		profileStore.refresh();
 		serverStore.refresh();
 
@@ -34,10 +35,6 @@
 		if (profileParam) {
 			selectedProfileId = parseInt(profileParam, 10);
 		}
-
-		// Auto-refresh to get running servers
-		const interval = setInterval(() => serverStore.refresh(), 5000);
-		return () => clearInterval(interval);
 	});
 
 	async function handleSubmit(e: Event) {

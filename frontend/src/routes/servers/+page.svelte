@@ -7,12 +7,9 @@
 	let refreshing = $state(false);
 
 	onMount(() => {
+		// Initial data load - polling is handled globally by +layout.svelte
 		serverStore.refresh();
 		profileStore.refresh();
-
-		// Auto-refresh every 5 seconds
-		const interval = setInterval(() => serverStore.refresh(), 5000);
-		return () => clearInterval(interval);
 	});
 
 	async function handleRefresh() {

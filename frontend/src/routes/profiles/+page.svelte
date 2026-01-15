@@ -6,12 +6,9 @@
 	import { Plus } from 'lucide-svelte';
 
 	onMount(() => {
+		// Initial data load - polling is handled globally by +layout.svelte
 		profileStore.refresh();
 		serverStore.refresh();
-
-		// Auto-refresh server status every 5 seconds
-		const interval = setInterval(() => serverStore.refresh(), 5000);
-		return () => clearInterval(interval);
 	});
 </script>
 

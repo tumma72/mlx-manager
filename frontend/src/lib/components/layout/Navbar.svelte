@@ -11,11 +11,12 @@
 		{ href: '/profiles' as const, label: 'Profiles', icon: Settings }
 	];
 
-	// Refresh memory on mount
+	// Memory polling is handled globally by +layout.svelte
+	// Just trigger initial load if not already loaded
 	$effect(() => {
-		systemStore.refreshMemory();
-		const interval = setInterval(() => systemStore.refreshMemory(), 30000);
-		return () => clearInterval(interval);
+		if (!systemStore.memory) {
+			systemStore.refreshMemory();
+		}
 	});
 </script>
 

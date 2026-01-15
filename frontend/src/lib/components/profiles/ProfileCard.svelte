@@ -23,7 +23,7 @@
 
 	// Timeout for model loading (2 minutes)
 	const MODEL_LOAD_TIMEOUT_MS = 120_000;
-	const POLL_INTERVAL_MS = 5_000; // Poll every 5 seconds to reduce server load
+	const POLL_INTERVAL_MS = 2_000; // Poll every 2 seconds during startup
 
 	interface Props {
 		profile: ServerProfile;
@@ -33,108 +33,201 @@
 	let { profile, server }: Props = $props();
 
 	let loading = $state(false);
-	let error = $state<string | null>(null);
-	let modelReady = $state(false);
-	let checkingModel = $state(false);
 	let startTime = $state<number | null>(null);
-	let serverFailed = $state(false);
-	let crashError = $state<string | null>(null);
+	let pollTimeoutId = $state<ReturnType<typeof setTimeout> | null>(null);
+	// Track if we're actively polling (independent of store state)
+	let isPolling = $state(false);
 
-	const isRunning = $derived(!!server || serverStore.isRunning(profile.id));
+	// Derived state from store (store is source of truth for status)
+	const isStarting = $derived(serverStore.isStarting(profile.id));
+	const isRunning = $derived(serverStore.isRunning(profile.id));
+	const isFailed = $derived(serverStore.isFailed(profile.id));
+	const failure = $derived(serverStore.getFailure(profile.id));
 	const currentServer = $derived(server || serverStore.getServer(profile.id));
 
-	// Check if model is loaded when server is running
+	// Local state for error details collapse - prevents flickering during re-renders
+	// This is synced from the store but controlled locally for stable DOM behavior
+	let localDetailsOpen = $state(false);
+
+	// Sync local details state from store when failure changes
 	$effect(() => {
-		if (isRunning && !modelReady && !checkingModel) {
-			checkModelReady();
-		}
-		if (!isRunning) {
-			modelReady = false;
+		if (failure) {
+			localDetailsOpen = failure.detailsOpen;
 		}
 	});
 
-	async function checkModelReady() {
-		checkingModel = true;
+	// Handle toggle - update both local state and store
+	function handleDetailsToggle() {
+		serverStore.toggleDetailsOpen(profile.id);
+	}
 
-		// Check for timeout
-		if (startTime && Date.now() - startTime > MODEL_LOAD_TIMEOUT_MS) {
-			checkingModel = false;
-			serverFailed = true;
-			error = 'Model loading timed out after 2 minutes. Check server logs for details.';
+	// On mount: resume polling if profile is still starting AND no other component is polling
+	// Using $effect with empty deps equivalent - runs once on mount
+	let mounted = $state(false);
+	$effect(() => {
+		if (!mounted) {
+			mounted = true;
+			// Check if we need to resume polling (component recreated while profile starting)
+			// Use store's polling tracker to prevent duplicate loops across component recreations
+			if (serverStore.isStarting(profile.id) && !serverStore.isProfilePolling(profile.id)) {
+				console.log(`[${profile.name}] Resuming polling on mount (component recreated while starting)`);
+				if (serverStore.startProfilePolling(profile.id)) {
+					isPolling = true;
+					startTime = Date.now();
+					pollServerStatus();
+				}
+			}
+		}
+	});
+
+	// Cleanup on unmount
+	$effect(() => {
+		return () => {
+			if (pollTimeoutId) {
+				clearTimeout(pollTimeoutId);
+				pollTimeoutId = null;
+			}
+			// Note: Don't stop profile polling here - it should continue even if component unmounts
+			// The polling state is managed by the store and will be cleared when polling actually stops
+		};
+	});
+
+	async function pollServerStatus() {
+		console.log(`[${profile.name}] pollServerStatus - isPolling=${isPolling}, startTime=${startTime}`);
+
+		// Guard: stop if we're no longer supposed to be polling
+		if (!isPolling) {
+			console.log(`[${profile.name}] Polling stopped (isPolling=false)`);
+			serverStore.stopProfilePolling(profile.id);
 			return;
 		}
 
-		// Check if server process is still alive
+		// Check for timeout
+		if (startTime && Date.now() - startTime > MODEL_LOAD_TIMEOUT_MS) {
+			console.log(`[${profile.name}] TIMEOUT after 2 minutes`);
+			serverStore.markStartupFailed(profile.id, 'Model loading timed out after 2 minutes. Check server logs for details.');
+			isPolling = false;
+			pollTimeoutId = null;
+			serverStore.stopProfilePolling(profile.id);
+			return;
+		}
+
+		// Check server status from backend
 		try {
+			console.log(`[${profile.name}] Calling serversApi.status...`);
 			const status = await serversApi.status(profile.id);
+			console.log(`[${profile.name}] Status:`, JSON.stringify(status));
+
 			if (!status.running) {
+				console.log(`[${profile.name}] Server NOT running - failed=${status.failed}`);
+				// Server is not running
 				if (status.failed) {
-					serverFailed = true;
-					crashError = status.error_message || 'Server process exited unexpectedly';
-					error = 'Server crashed while loading model';
-					checkingModel = false;
-					// Refresh server list to update UI
-					await serverStore.refresh();
-					return;
+					console.log(`[${profile.name}] Marking as FAILED`);
+					serverStore.markStartupFailed(
+						profile.id,
+						'Server crashed while loading model',
+						status.error_message || 'Server process exited unexpectedly'
+					);
+				} else {
+					console.log(`[${profile.name}] Marking as SUCCESS (graceful stop)`);
+					// Server stopped gracefully
+					serverStore.markStartupSuccess(profile.id);
 				}
-				// Server stopped gracefully - stop polling
-				checkingModel = false;
+				isPolling = false;
+				pollTimeoutId = null;
+				serverStore.stopProfilePolling(profile.id);
 				return;
 			}
-		} catch {
-			// Status endpoint failed - continue with model check
-		}
 
-		// Check if model is loaded
-		try {
-			const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
-			if (response.ok) {
-				const data = await response.json();
-				// Check if any models are loaded
-				modelReady = data.data && data.data.length > 0;
+			console.log(`[${profile.name}] Server IS running, checking model endpoint...`);
+			// Server is running, check if model is loaded
+			try {
+				const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
+				console.log(`[${profile.name}] Model endpoint response: ${response.status}`);
+				if (response.ok) {
+					const data = await response.json();
+					console.log(`[${profile.name}] Model data:`, JSON.stringify(data));
+					if (data.data && data.data.length > 0) {
+						// Model is loaded - server is ready!
+						console.log(`[${profile.name}] Model LOADED - marking success`);
+						serverStore.markStartupSuccess(profile.id);
+						isPolling = false;
+						pollTimeoutId = null;
+						serverStore.stopProfilePolling(profile.id);
+						return;
+					}
+				}
+			} catch (e) {
+				console.log(`[${profile.name}] Model endpoint error (expected during startup):`, e);
+				// Model endpoint not responding yet, keep polling
 			}
-		} catch {
-			modelReady = false;
-		} finally {
-			checkingModel = false;
-		}
 
-		// Retry if not ready and no error
-		if (isRunning && !modelReady && !serverFailed) {
-			setTimeout(checkModelReady, POLL_INTERVAL_MS);
+			// Continue polling
+			console.log(`[${profile.name}] Scheduling next poll in ${POLL_INTERVAL_MS}ms`);
+			pollTimeoutId = setTimeout(pollServerStatus, POLL_INTERVAL_MS);
+		} catch (e) {
+			console.log(`[${profile.name}] Status API error:`, e);
+			// Status check failed, keep polling
+			pollTimeoutId = setTimeout(pollServerStatus, POLL_INTERVAL_MS);
 		}
 	}
 
 	async function handleStart() {
+		console.log(`[${profile.name}] handleStart called`);
 		loading = true;
-		error = null;
-		modelReady = false;
-		serverFailed = false;
-		crashError = null;
+		serverStore.clearFailure(profile.id);
 		startTime = Date.now();
+
+		// Clear any existing timeout
+		if (pollTimeoutId) {
+			clearTimeout(pollTimeoutId);
+			pollTimeoutId = null;
+		}
+
+		// Register polling with the store (prevents duplicate loops)
+		if (!serverStore.startProfilePolling(profile.id)) {
+			console.log(`[${profile.name}] Another polling loop already active, not starting a new one`);
+			loading = false;
+			return;
+		}
+
+		isPolling = true;
+
 		try {
+			console.log(`[${profile.name}] Calling serverStore.start...`);
 			await serverStore.start(profile.id);
-			// Start checking for model readiness
-			checkModelReady();
+			console.log(`[${profile.name}] serverStore.start completed, starting polling`);
+			// Start polling for server status
+			pollServerStatus();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to start server';
+			console.log(`[${profile.name}] Start failed:`, e);
+			const errorMsg = e instanceof Error ? e.message : 'Failed to start server';
+			serverStore.markStartupFailed(profile.id, errorMsg);
 			startTime = null;
+			isPolling = false;
+			serverStore.stopProfilePolling(profile.id);
 		} finally {
 			loading = false;
+			console.log(`[${profile.name}] handleStart finished`);
 		}
 	}
 
 	async function handleStop() {
 		loading = true;
-		error = null;
-		modelReady = false;
-		serverFailed = false;
-		crashError = null;
 		startTime = null;
+		isPolling = false;
+		if (pollTimeoutId) {
+			clearTimeout(pollTimeoutId);
+			pollTimeoutId = null;
+		}
+		// Stop any polling for this profile
+		serverStore.stopProfilePolling(profile.id);
+
 		try {
 			await serverStore.stop(profile.id);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to stop server';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to stop server';
+			serverStore.markStartupFailed(profile.id, errorMsg);
 		} finally {
 			loading = false;
 		}
@@ -142,18 +235,36 @@
 
 	async function handleRestart() {
 		loading = true;
-		error = null;
-		modelReady = false;
-		serverFailed = false;
-		crashError = null;
+		serverStore.clearFailure(profile.id);
 		startTime = Date.now();
+
+		// Clear any existing timeout
+		if (pollTimeoutId) {
+			clearTimeout(pollTimeoutId);
+			pollTimeoutId = null;
+		}
+
+		// Register polling with the store (prevents duplicate loops)
+		// For restart, we first stop any existing polling then start fresh
+		serverStore.stopProfilePolling(profile.id);
+		if (!serverStore.startProfilePolling(profile.id)) {
+			console.log(`[${profile.name}] Could not start polling for restart`);
+			loading = false;
+			return;
+		}
+
+		isPolling = true;
+
 		try {
 			await serverStore.restart(profile.id);
-			// Start checking for model readiness
-			setTimeout(checkModelReady, POLL_INTERVAL_MS);
+			// Start polling for server status
+			pollServerStatus();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to restart server';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to restart server';
+			serverStore.markStartupFailed(profile.id, errorMsg);
 			startTime = null;
+			isPolling = false;
+			serverStore.stopProfilePolling(profile.id);
 		} finally {
 			loading = false;
 		}
@@ -162,14 +273,15 @@
 	async function handleDelete() {
 		if (!confirm('Are you sure you want to delete this profile?')) return;
 		loading = true;
-		error = null;
+		serverStore.clearFailure(profile.id);
 		try {
 			if (isRunning) {
 				await serverStore.stop(profile.id);
 			}
 			await profileStore.delete(profile.id);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete profile';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to delete profile';
+			serverStore.markStartupFailed(profile.id, errorMsg);
 		} finally {
 			loading = false;
 		}
@@ -179,11 +291,11 @@
 		const newName = prompt('Enter name for the duplicate profile:', `${profile.name} (copy)`);
 		if (!newName) return;
 		loading = true;
-		error = null;
 		try {
 			await profileStore.duplicate(profile.id, newName);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to duplicate profile';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to duplicate profile';
+			alert(errorMsg); // Simple alert for duplicate errors
 		} finally {
 			loading = false;
 		}
@@ -201,14 +313,12 @@
 		<div class="flex-1 min-w-0">
 			<div class="flex items-center gap-2 flex-wrap">
 				<h3 class="font-semibold text-lg">{profile.name}</h3>
-				{#if isRunning || serverFailed}
-					{#if serverFailed}
-						<Badge variant="destructive">Error</Badge>
-					{:else if modelReady}
-						<Badge variant="success">Ready</Badge>
-					{:else}
-						<Badge variant="warning">Loading...</Badge>
-					{/if}
+				{#if isFailed}
+					<Badge variant="destructive">Error</Badge>
+				{:else if isRunning}
+					<Badge variant="success">Running</Badge>
+				{:else if isStarting}
+					<Badge variant="warning">Loading...</Badge>
 				{/if}
 				{#if profile.launchd_installed}
 					<Badge variant="outline">launchd</Badge>
@@ -229,14 +339,10 @@
 					variant="default"
 					size="sm"
 					onclick={handleChat}
-					disabled={loading || !modelReady}
-					title={modelReady ? "Chat with model" : "Waiting for model to load..."}
+					disabled={loading}
+					title="Chat with model"
 				>
-					{#if checkingModel && !modelReady}
-						<Loader2 class="w-4 h-4 mr-1 animate-spin" />
-					{:else}
-						<MessageSquare class="w-4 h-4 mr-1" />
-					{/if}
+					<MessageSquare class="w-4 h-4 mr-1" />
 					Chat
 				</Button>
 				<Button variant="outline" size="icon" onclick={handleStop} disabled={loading} title="Stop">
@@ -244,6 +350,14 @@
 				</Button>
 				<Button variant="outline" size="icon" onclick={handleRestart} disabled={loading} title="Restart">
 					<RotateCw class="w-4 h-4" />
+				</Button>
+			{:else if isStarting}
+				<Button variant="default" size="sm" disabled title="Starting...">
+					<Loader2 class="w-4 h-4 mr-1 animate-spin" />
+					Starting
+				</Button>
+				<Button variant="outline" size="icon" onclick={handleStop} disabled={loading} title="Cancel">
+					<Square class="w-4 h-4" />
 				</Button>
 			{:else}
 				<Button variant="default" size="sm" onclick={handleStart} disabled={loading} title="Start">
@@ -269,8 +383,8 @@
 		</div>
 	</div>
 
-	<!-- Server Stats (when running) -->
-	{#if currentServer}
+	<!-- Server Stats (when running or starting) -->
+	{#if currentServer && isRunning}
 		<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 			<div class="flex items-center gap-2">
 				<Activity class="w-4 h-4 text-muted-foreground" />
@@ -309,18 +423,22 @@
 		</div>
 	{/if}
 
-	{#if error}
+	{#if failure}
 		<div class="mt-3 p-3 bg-red-50 dark:bg-red-950/50 rounded-lg border border-red-200 dark:border-red-900">
 			<div class="flex items-start gap-2">
 				<AlertCircle class="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
 				<div class="flex-1 min-w-0">
-					<p class="text-sm text-red-600 dark:text-red-400 font-medium">{error}</p>
-					{#if crashError}
-						<details class="mt-2">
+					<p class="text-sm text-red-600 dark:text-red-400 font-medium">{failure.error}</p>
+					{#if failure.details}
+						<details
+							class="mt-2"
+							bind:open={localDetailsOpen}
+							ontoggle={handleDetailsToggle}
+						>
 							<summary class="text-xs text-red-500 dark:text-red-400 cursor-pointer hover:underline">
 								Show server log
 							</summary>
-							<pre class="mt-2 text-xs text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{crashError}</pre>
+							<pre class="mt-2 text-xs text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{failure.details}</pre>
 						</details>
 					{/if}
 				</div>
