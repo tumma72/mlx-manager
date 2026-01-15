@@ -74,7 +74,8 @@ async def test_list_local_models(client, mock_hf_client):
 async def test_start_download(client):
     """Test starting a model download."""
     response = await client.post(
-        "/api/models/download?model_id=mlx-community/test-model",
+        "/api/models/download",
+        json={"model_id": "mlx-community/test-model"},
     )
     assert response.status_code == 200
 
@@ -183,7 +184,8 @@ async def test_start_download_creates_task(client):
     len(models.download_tasks)
 
     response = await client.post(
-        "/api/models/download?model_id=mlx-community/new-model",
+        "/api/models/download",
+        json={"model_id": "mlx-community/new-model"},
     )
     assert response.status_code == 200
 

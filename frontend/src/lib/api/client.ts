@@ -34,7 +34,18 @@ async function handleResponse<T>(response: Response): Promise<T> {
     let message = text;
     try {
       const json = JSON.parse(text);
-      message = json.detail || json.message || text;
+      // Handle FastAPI validation errors where detail is an array
+      if (Array.isArray(json.detail)) {
+        // Format validation errors: "field: error message"
+        message = json.detail
+          .map((err: { loc?: string[]; msg?: string }) => {
+            const field = err.loc?.slice(-1)[0] || "field";
+            return `${field}: ${err.msg || "validation error"}`;
+          })
+          .join(", ");
+      } else {
+        message = json.detail || json.message || text;
+      }
     } catch {
       // Use text as-is
     }

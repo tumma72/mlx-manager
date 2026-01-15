@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from mlx_manager.models import LocalModel, ModelSearchResult
 from mlx_manager.services.hf_client import hf_client
@@ -13,6 +14,13 @@ from mlx_manager.services.parser_options import get_parser_options
 from mlx_manager.utils.model_detection import get_model_detection_info
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+class DownloadRequest(BaseModel):
+    """Request body for model download."""
+
+    model_id: str
+
 
 # Store for download tasks
 download_tasks: dict[str, dict] = {}
@@ -41,18 +49,18 @@ async def list_local_models():
 
 
 @router.post("/download")
-async def start_download(model_id: str):
+async def start_download(request: DownloadRequest):
     """Start downloading a model from HuggingFace."""
     task_id = str(uuid.uuid4())
 
     # Store task info
     download_tasks[task_id] = {
-        "model_id": model_id,
+        "model_id": request.model_id,
         "status": "starting",
         "progress": 0,
     }
 
-    return {"task_id": task_id, "model_id": model_id}
+    return {"task_id": task_id, "model_id": request.model_id}
 
 
 @router.get("/download/{task_id}/progress")

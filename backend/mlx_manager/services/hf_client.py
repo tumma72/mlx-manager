@@ -5,9 +5,14 @@ import shutil
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import snapshot_download
 
 from mlx_manager.config import settings
+from mlx_manager.services.hf_api import (
+    estimate_size_from_name,
+    get_model_size_gb,
+    search_models,
+)
 from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 
@@ -15,17 +20,7 @@ class HuggingFaceClient:
     """Service for interacting with HuggingFace Hub."""
 
     def __init__(self) -> None:
-        self.api = None
         self.cache_dir = settings.hf_cache_path
-
-        # Only initialize HuggingFace API if not in offline mode
-        if not settings.offline_mode:
-            try:
-                self.api = HfApi()
-            except Exception:
-                # If HuggingFace API fails, fall back to offline mode
-                self.api = None
-                settings.offline_mode = True
 
     async def search_mlx_models(
         self,
@@ -33,49 +28,42 @@ class HuggingFaceClient:
         max_size_gb: float | None = None,
         limit: int = 20,
     ) -> list[ModelSearchResult]:
-        """Search for MLX models in mlx-community organization."""
-        if settings.offline_mode or self.api is None:
-            # Return empty list in offline mode or when API unavailable
+        """Search for MLX models in mlx-community organization.
+
+        Uses the HuggingFace REST API directly with expand=safetensors
+        to get model sizes in a single request (no N+1 API calls).
+        """
+        if settings.offline_mode:
             return []
 
-        loop = asyncio.get_event_loop()
+        # Fetch extra for filtering, but cap at reasonable limit
+        fetch_limit = min(limit * 2, 100) if max_size_gb else limit
 
-        # Run in executor since huggingface_hub is sync
-        models = await loop.run_in_executor(
-            None,
-            lambda: list(
-                self.api.list_models(
-                    search=query,
-                    author=settings.hf_organization,
-                    sort="downloads",
-                    direction=-1,
-                    limit=limit * 2,  # Fetch extra for filtering
-                )
-            )
-            if self.api is not None
-            else [],
+        models = await search_models(
+            query=query,
+            author=settings.hf_organization,
+            sort="downloads",
+            limit=fetch_limit,
         )
 
         results: list[ModelSearchResult] = []
         for model in models:
-            estimated_size = await self._estimate_model_size(model.id)
+            size_gb = get_model_size_gb(model)
 
             # Filter by size if specified
-            if max_size_gb and estimated_size > max_size_gb:
+            if max_size_gb and size_gb > max_size_gb:
                 continue
 
             results.append(
                 ModelSearchResult(
-                    model_id=model.id,
+                    model_id=model.model_id,
                     author=model.author or settings.hf_organization,
-                    downloads=model.downloads or 0,
-                    likes=model.likes or 0,
-                    estimated_size_gb=round(estimated_size, 2),
-                    tags=list(model.tags) if model.tags else [],
-                    is_downloaded=self._is_downloaded(model.id),
-                    last_modified=(
-                        model.last_modified.isoformat() if model.last_modified else None
-                    ),
+                    downloads=model.downloads,
+                    likes=model.likes,
+                    estimated_size_gb=size_gb,
+                    tags=model.tags,
+                    is_downloaded=self._is_downloaded(model.model_id),
+                    last_modified=model.last_modified,
                 )
             )
 
@@ -83,30 +71,6 @@ class HuggingFaceClient:
                 break
 
         return results
-
-    async def _estimate_model_size(self, model_id: str) -> float:
-        """Estimate model size in GB based on safetensors files."""
-        if settings.offline_mode or self.api is None:
-            return 0.0
-
-        try:
-            loop = asyncio.get_event_loop()
-            repo_info = await loop.run_in_executor(
-                None,
-                lambda: self.api.repo_info(model_id, files_metadata=True),  # type: ignore
-            )
-
-            total_bytes = 0
-            if repo_info.siblings:
-                for sibling in repo_info.siblings:
-                    if sibling.rfilename.endswith((".safetensors", ".bin", ".gguf")):
-                        if sibling.size:
-                            total_bytes += sibling.size
-
-            # Add 20% overhead for KV cache and runtime
-            return (total_bytes / 1e9) * 1.2
-        except Exception:
-            return 0.0
 
     def _is_downloaded(self, model_id: str) -> bool:
         """Check if model is in local cache."""
@@ -160,8 +124,8 @@ class HuggingFaceClient:
 
         loop = asyncio.get_event_loop()
 
-        # Get total size first
-        total_size = await self._estimate_model_size(model_id)
+        # Estimate size from model name (no API call needed)
+        total_size = estimate_size_from_name(model_id) or 0.0
 
         yield DownloadStatus(status="starting", model_id=model_id, total_size_gb=total_size)
 
@@ -212,7 +176,7 @@ class HuggingFaceClient:
                                 model_id=model_id,
                                 local_path=local_path,
                                 size_bytes=size_bytes,
-                                size_gb=round(size_bytes / 1e9, 2),
+                                size_gb=round(size_bytes / (1024**3), 2),
                             )
                         )
         except Exception:
