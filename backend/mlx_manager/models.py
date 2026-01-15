@@ -20,6 +20,7 @@ class ServerProfileBase(SQLModel):
     queue_size: int = Field(default=100)
     tool_call_parser: str | None = None
     reasoning_parser: str | None = None
+    message_converter: str | None = None
     enable_auto_tool_choice: bool = Field(default=False)
     trust_remote_code: bool = Field(default=False)
     chat_template_file: str | None = None
@@ -61,6 +62,7 @@ class ServerProfileUpdate(SQLModel):
     queue_size: int | None = None
     tool_call_parser: str | None = None
     reasoning_parser: str | None = None
+    message_converter: str | None = None
     enable_auto_tool_choice: bool | None = None
     trust_remote_code: bool | None = None
     chat_template_file: str | None = None

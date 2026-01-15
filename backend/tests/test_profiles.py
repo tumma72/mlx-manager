@@ -277,6 +277,7 @@ async def test_update_profile_all_fields(client, sample_profile_data):
         "context_length": 4096,
         "tool_call_parser": "native",
         "reasoning_parser": "deepseek",
+        "message_converter": "minimax_m2",
         "enable_auto_tool_choice": True,
         "trust_remote_code": True,
     }
@@ -293,6 +294,9 @@ async def test_update_profile_all_fields(client, sample_profile_data):
     assert data["max_concurrency"] == 4
     assert data["auto_start"] is True
     assert data["context_length"] == 4096
+    assert data["tool_call_parser"] == "native"
+    assert data["reasoning_parser"] == "deepseek"
+    assert data["message_converter"] == "minimax_m2"
 
 
 @pytest.mark.asyncio
@@ -313,6 +317,7 @@ async def test_duplicate_profile_copies_all_fields(client):
         "context_length": 8192,
         "tool_call_parser": "native",
         "reasoning_parser": "deepseek",
+        "message_converter": "minimax_m2",
         "enable_auto_tool_choice": True,
         "trust_remote_code": True,
         "chat_template_file": "/path/to/template.jinja",
@@ -344,6 +349,7 @@ async def test_duplicate_profile_copies_all_fields(client):
     assert data["context_length"] == profile_data["context_length"]
     assert data["tool_call_parser"] == profile_data["tool_call_parser"]
     assert data["reasoning_parser"] == profile_data["reasoning_parser"]
+    assert data["message_converter"] == profile_data["message_converter"]
     assert data["enable_auto_tool_choice"] == profile_data["enable_auto_tool_choice"]
     assert data["trust_remote_code"] == profile_data["trust_remote_code"]
     assert data["chat_template_file"] == profile_data["chat_template_file"]

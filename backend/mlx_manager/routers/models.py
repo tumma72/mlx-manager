@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from mlx_manager.models import LocalModel, ModelSearchResult
 from mlx_manager.services.hf_client import hf_client
+from mlx_manager.utils.model_detection import AVAILABLE_PARSERS, get_model_detection_info
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -95,3 +96,31 @@ async def delete_model(model_id: str):
         raise HTTPException(status_code=404, detail="Model not found")
 
     return {"deleted": True}
+
+
+@router.get("/detect-options/{model_id:path}")
+async def detect_model_options(model_id: str):
+    """
+    Detect recommended parser options for a model.
+
+    This endpoint works OFFLINE - it reads config.json from the local
+    HuggingFace cache or falls back to model path name matching.
+
+    Returns:
+        model_family: Detected model family (minimax, qwen, glm) or null
+        recommended_options: Parser options for the model family
+        is_downloaded: Whether the model is locally available
+        available_parsers: List of all available parser options
+    """
+    return get_model_detection_info(model_id)
+
+
+@router.get("/available-parsers")
+async def get_available_parsers():
+    """
+    Get list of available parser options for dropdowns.
+
+    Returns a list of parser identifiers that can be used for
+    tool_call_parser, reasoning_parser, and message_converter.
+    """
+    return {"parsers": AVAILABLE_PARSERS}

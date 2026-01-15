@@ -12,6 +12,7 @@ import type {
   HealthStatus,
   LaunchdStatus,
   ServerStatus,
+  ModelDetectionInfo,
 } from "./types";
 
 const API_BASE = "/api";
@@ -134,6 +135,18 @@ export const models = {
         method: "DELETE",
       },
     );
+    return handleResponse(res);
+  },
+
+  detectOptions: async (modelId: string): Promise<ModelDetectionInfo> => {
+    const res = await fetch(
+      `${API_BASE}/models/detect-options/${encodeURIComponent(modelId)}`,
+    );
+    return handleResponse(res);
+  },
+
+  getAvailableParsers: async (): Promise<{ parsers: string[] }> => {
+    const res = await fetch(`${API_BASE}/models/available-parsers`);
     return handleResponse(res);
   },
 };

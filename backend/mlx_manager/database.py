@@ -1,12 +1,16 @@
 """Database setup and session management."""
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
 from mlx_manager.config import ensure_data_dir, settings
+
+logger = logging.getLogger(__name__)
 
 # Create async engine
 engine = create_async_engine(
@@ -23,11 +27,42 @@ async_session = async_sessionmaker(
 )
 
 
+async def migrate_schema() -> None:
+    """Add missing columns to existing tables.
+
+    SQLite doesn't support adding columns in CREATE TABLE IF NOT EXISTS,
+    so we need to manually add new columns to existing databases.
+    """
+    # Define columns that may be missing from existing databases
+    # Format: (table_name, column_name, column_type, default_value)
+    migrations: list[tuple[str, str, str, str | None]] = [
+        ("server_profiles", "tool_call_parser", "TEXT", None),
+        ("server_profiles", "reasoning_parser", "TEXT", None),
+        ("server_profiles", "message_converter", "TEXT", None),
+    ]
+
+    async with engine.begin() as conn:
+        for table, column, col_type, default in migrations:
+            # Check if column exists
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            columns = [row[1] for row in result.fetchall()]
+
+            if column not in columns:
+                # Add the column
+                default_clause = f" DEFAULT {default}" if default is not None else ""
+                sql = f"ALTER TABLE {table} ADD COLUMN {column} {col_type}{default_clause}"
+                logger.info(f"Migrating database: {sql}")
+                await conn.execute(text(sql))
+
+
 async def init_db() -> None:
     """Initialize the database and create tables."""
     ensure_data_dir()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+
+    # Run schema migrations for existing databases
+    await migrate_schema()
 
     # Insert default settings if not present
     async with get_session() as session:

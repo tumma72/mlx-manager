@@ -2,7 +2,7 @@
 	import type { ModelSearchResult } from '$api';
 	import { models } from '$api';
 	import { formatNumber } from '$lib/utils/format';
-	import { Card, Button, Badge } from '$components/ui';
+	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
 
 	interface Props {
@@ -16,6 +16,7 @@
 	let downloading = $state(false);
 	let deleting = $state(false);
 	let error = $state<string | null>(null);
+	let showDeleteConfirm = $state(false);
 	// Track local override for download status (null means use prop value)
 	let downloadStatusOverride = $state<boolean | null>(null);
 	let isDownloaded = $derived(downloadStatusOverride ?? model.is_downloaded);
@@ -59,9 +60,11 @@
 		}
 	}
 
-	async function handleDelete() {
-		if (!confirm(`Delete ${model.model_id}?`)) return;
+	function requestDelete() {
+		showDeleteConfirm = true;
+	}
 
+	async function confirmDelete() {
 		deleting = true;
 		error = null;
 		try {
@@ -123,9 +126,9 @@
 
 	<div class="mt-4 flex justify-end gap-2">
 		{#if isDownloaded}
-			<Button variant="outline" size="sm" onclick={handleDelete} disabled={deleting}>
+			<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
 				<Trash2 class="w-4 h-4 mr-1" />
-				Delete
+				{deleting ? 'Deleting...' : 'Delete'}
 			</Button>
 			<Button variant="default" size="sm" onclick={handleUse}>
 				Use
@@ -142,3 +145,14 @@
 		<div class="mt-2 text-sm text-red-500">{error}</div>
 	{/if}
 </Card>
+
+<ConfirmDialog
+	bind:open={showDeleteConfirm}
+	title="Delete Model"
+	description="Are you sure you want to delete {model.model_id}? This will remove the model from your local cache and free up disk space."
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	variant="destructive"
+	onConfirm={confirmDelete}
+	onCancel={() => {}}
+/>

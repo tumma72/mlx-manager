@@ -5,8 +5,8 @@
 	import type { ModelSearchResult, LocalModel } from '$api';
 	import { systemStore } from '$stores';
 	import { ModelCard } from '$components/models';
-	import { Button, Input, Card, Badge } from '$components/ui';
-	import { Search, HardDrive } from 'lucide-svelte';
+	import { Button, Input, Card, Badge, ConfirmDialog } from '$components/ui';
+	import { Search, HardDrive, Trash2 } from 'lucide-svelte';
 
 	let searchQuery = $state('');
 	let searchResults = $state<ModelSearchResult[]>([]);
@@ -16,6 +16,11 @@
 
 	let filterByMemory = $state(true);
 	let showLocalOnly = $state(false);
+
+	// Delete confirmation state
+	let showDeleteConfirm = $state(false);
+	let modelToDelete = $state<string | null>(null);
+	let deleting = $state(false);
 
 	// Load local models on mount
 	$effect(() => {
@@ -33,6 +38,11 @@
 
 	async function handleSearch() {
 		if (!searchQuery.trim()) return;
+
+		// If searching local only, no need for API call - just use client-side filter
+		if (showLocalOnly) {
+			return;
+		}
 
 		loading = true;
 		error = null;
@@ -58,10 +68,41 @@
 		loadLocalModels();
 	}
 
-	// Filter results based on local-only toggle
+	function requestDeleteModel(modelId: string) {
+		modelToDelete = modelId;
+		showDeleteConfirm = true;
+	}
+
+	async function confirmDeleteModel() {
+		if (!modelToDelete) return;
+
+		deleting = true;
+		try {
+			await models.delete(modelToDelete);
+			await loadLocalModels();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Delete failed';
+		} finally {
+			deleting = false;
+			modelToDelete = null;
+		}
+	}
+
+	// Filter local models by search query (client-side)
+	const filteredLocalModels = $derived(() => {
+		if (!searchQuery.trim()) return localModels;
+		const query = searchQuery.toLowerCase();
+		return localModels.filter((m) => m.model_id.toLowerCase().includes(query));
+	});
+
+	// Filter search results (online) based on local-only toggle
 	const displayResults = $derived(
 		showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults
 	);
+
+	// Determine what to show based on mode
+	const isLocalSearchMode = $derived(showLocalOnly);
+	const hasOnlineResults = $derived(searchResults.length > 0);
 </script>
 
 <div class="space-y-6">
@@ -88,20 +129,24 @@
 				<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 				<Input
 					bind:value={searchQuery}
-					placeholder="Search mlx-community models..."
+					placeholder={showLocalOnly ? 'Filter downloaded models...' : 'Search mlx-community models...'}
 					class="pl-10"
 				/>
 			</div>
-			<Button type="submit" disabled={loading}>
-				{loading ? 'Searching...' : 'Search'}
-			</Button>
+			{#if !showLocalOnly}
+				<Button type="submit" disabled={loading}>
+					{loading ? 'Searching...' : 'Search'}
+				</Button>
+			{/if}
 		</form>
 
 		<div class="flex items-center gap-4 mt-4">
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={filterByMemory} class="rounded" />
-				<span>Fits in memory (&lt;{systemStore.memory?.mlx_recommended_gb.toFixed(0) ?? 80} GB)</span>
-			</label>
+			{#if !showLocalOnly}
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" bind:checked={filterByMemory} class="rounded" />
+					<span>Fits in memory (&lt;{systemStore.memory?.mlx_recommended_gb.toFixed(0) ?? 80} GB)</span>
+				</label>
+			{/if}
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" bind:checked={showLocalOnly} class="rounded" />
 				<span>Downloaded only</span>
@@ -113,8 +158,54 @@
 		<div class="text-center py-8 text-red-500">{error}</div>
 	{/if}
 
-	<!-- Search Results -->
-	{#if searchResults.length > 0}
+	<!-- Local Search Results (when "Downloaded only" is checked) -->
+	{#if isLocalSearchMode}
+		<section>
+			<h2 class="text-lg font-semibold mb-4">
+				Downloaded Models ({filteredLocalModels().length})
+			</h2>
+			{#if filteredLocalModels().length > 0}
+				<div class="grid gap-4">
+					{#each filteredLocalModels() as model (model.model_id)}
+						<Card class="p-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<h3 class="font-medium">{model.model_id}</h3>
+									<p class="text-sm text-muted-foreground">
+										{model.size_gb.toFixed(2)} GB
+									</p>
+								</div>
+								<div class="flex gap-2">
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => requestDeleteModel(model.model_id)}
+										disabled={deleting}
+									>
+										<Trash2 class="w-4 h-4 mr-1" />
+										Delete
+									</Button>
+									<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
+										Use
+									</Button>
+								</div>
+							</div>
+						</Card>
+					{/each}
+				</div>
+			{:else if searchQuery}
+				<div class="text-center py-8 text-muted-foreground">
+					No downloaded models match "{searchQuery}".
+				</div>
+			{:else}
+				<div class="text-center py-8 text-muted-foreground">
+					No models downloaded yet. Uncheck "Downloaded only" to search HuggingFace.
+				</div>
+			{/if}
+		</section>
+
+	<!-- Online Search Results (when "Downloaded only" is unchecked) -->
+	{:else if hasOnlineResults}
 		<section>
 			<h2 class="text-lg font-semibold mb-4">
 				Search Results ({displayResults.length})
@@ -131,8 +222,8 @@
 		</div>
 	{/if}
 
-	<!-- Local Models -->
-	{#if localModels.length > 0 && !searchQuery}
+	<!-- Local Models Section (only show when no search and not in local-only mode) -->
+	{#if localModels.length > 0 && !searchQuery && !isLocalSearchMode}
 		<section>
 			<h2 class="text-lg font-semibold mb-4">
 				Downloaded Models ({localModels.length})
@@ -147,17 +238,39 @@
 									{model.size_gb.toFixed(2)} GB
 								</p>
 							</div>
-							<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
-								Use
-							</Button>
+							<div class="flex gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => requestDeleteModel(model.model_id)}
+									disabled={deleting}
+								>
+									<Trash2 class="w-4 h-4 mr-1" />
+									Delete
+								</Button>
+								<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
+									Use
+								</Button>
+							</div>
 						</div>
 					</Card>
 				{/each}
 			</div>
 		</section>
-	{:else if !searchQuery}
+	{:else if !searchQuery && !isLocalSearchMode}
 		<div class="text-center py-12 text-muted-foreground">
-			Search for models to download, or browse your local models.
+			Search for models to download, or check "Downloaded only" to filter local models.
 		</div>
 	{/if}
 </div>
+
+<ConfirmDialog
+	bind:open={showDeleteConfirm}
+	title="Delete Model"
+	description={modelToDelete ? `Are you sure you want to delete ${modelToDelete}? This will remove the model from your local cache and free up disk space.` : ''}
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	variant="destructive"
+	onConfirm={confirmDeleteModel}
+	onCancel={() => { modelToDelete = null; }}
+/>

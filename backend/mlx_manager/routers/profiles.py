@@ -171,6 +171,7 @@ async def duplicate_profile(
         queue_size=profile.queue_size,
         tool_call_parser=profile.tool_call_parser,
         reasoning_parser=profile.reasoning_parser,
+        message_converter=profile.message_converter,
         enable_auto_tool_choice=profile.enable_auto_tool_choice,
         trust_remote_code=profile.trust_remote_code,
         chat_template_file=profile.chat_template_file,

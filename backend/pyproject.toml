@@ -32,6 +32,7 @@ dependencies = [
     # macOS-only dependencies (menubar app and MLX server)
     "rumps>=0.4.0; sys_platform == 'darwin'",
     "mlx-openai-server>=1.1.2; sys_platform == 'darwin'",
+    "alembic>=1.18.1",
 ]
 
 [project.optional-dependencies]

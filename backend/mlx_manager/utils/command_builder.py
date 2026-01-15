@@ -42,9 +42,10 @@ def get_server_log_path(profile_id: int) -> Path:
 def build_mlx_server_command(profile: ServerProfile) -> list[str]:
     """Build the mlx-openai-server command from profile.
 
-    Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
+    Note: mlx-openai-server CLI uses 'launch' subcommand and supports:
     --model-path, --model-type (lm|multimodal), --port, --host,
-    --max-concurrency, --queue-timeout, --queue-size
+    --max-concurrency, --queue-timeout, --queue-size,
+    --tool-call-parser, --reasoning-parser, --message-converter
 
     Logging is handled by redirecting stdout/stderr in server_manager.
     """
@@ -78,5 +79,17 @@ def build_mlx_server_command(profile: ServerProfile) -> list[str]:
         "--queue-size",
         str(profile.queue_size),
     ]
+
+    # Add parser options for specific model families (MiniMax, Qwen, GLM, etc.)
+    if profile.tool_call_parser:
+        cmd.extend(["--tool-call-parser", profile.tool_call_parser])
+        logger.debug(f"  Tool call parser: {profile.tool_call_parser}")
+    if profile.reasoning_parser:
+        cmd.extend(["--reasoning-parser", profile.reasoning_parser])
+        logger.debug(f"  Reasoning parser: {profile.reasoning_parser}")
+    if profile.message_converter:
+        cmd.extend(["--message-converter", profile.message_converter])
+        logger.debug(f"  Message converter: {profile.message_converter}")
+
     logger.debug(f"  Built command: {' '.join(cmd)}")
     return cmd

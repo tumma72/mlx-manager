@@ -237,3 +237,100 @@ class TestBuildMlxServerCommand:
 
         size_idx = cmd.index("--queue-size")
         assert cmd[size_idx + 1] == "200"
+
+    def test_includes_tool_call_parser(self, sample_profile, tmp_path):
+        """Test includes --tool-call-parser when set."""
+        sample_profile.tool_call_parser = "minimax_m2"
+        mock_server = tmp_path / "mlx-openai-server"
+        mock_server.touch()
+
+        with patch.object(sys, "executable", str(tmp_path / "python")):
+            with patch(
+                "mlx_manager.utils.command_builder.get_server_log_path",
+                return_value=tmp_path / "server.log",
+            ):
+                cmd = build_mlx_server_command(sample_profile)
+
+        assert "--tool-call-parser" in cmd
+        parser_idx = cmd.index("--tool-call-parser")
+        assert cmd[parser_idx + 1] == "minimax_m2"
+
+    def test_includes_reasoning_parser(self, sample_profile, tmp_path):
+        """Test includes --reasoning-parser when set."""
+        sample_profile.reasoning_parser = "qwen3"
+        mock_server = tmp_path / "mlx-openai-server"
+        mock_server.touch()
+
+        with patch.object(sys, "executable", str(tmp_path / "python")):
+            with patch(
+                "mlx_manager.utils.command_builder.get_server_log_path",
+                return_value=tmp_path / "server.log",
+            ):
+                cmd = build_mlx_server_command(sample_profile)
+
+        assert "--reasoning-parser" in cmd
+        parser_idx = cmd.index("--reasoning-parser")
+        assert cmd[parser_idx + 1] == "qwen3"
+
+    def test_includes_message_converter(self, sample_profile, tmp_path):
+        """Test includes --message-converter when set."""
+        sample_profile.message_converter = "glm4"
+        mock_server = tmp_path / "mlx-openai-server"
+        mock_server.touch()
+
+        with patch.object(sys, "executable", str(tmp_path / "python")):
+            with patch(
+                "mlx_manager.utils.command_builder.get_server_log_path",
+                return_value=tmp_path / "server.log",
+            ):
+                cmd = build_mlx_server_command(sample_profile)
+
+        assert "--message-converter" in cmd
+        converter_idx = cmd.index("--message-converter")
+        assert cmd[converter_idx + 1] == "glm4"
+
+    def test_includes_all_parser_options(self, sample_profile, tmp_path):
+        """Test includes all parser options when set."""
+        sample_profile.tool_call_parser = "minimax_m2"
+        sample_profile.reasoning_parser = "minimax_m2"
+        sample_profile.message_converter = "minimax_m2"
+        mock_server = tmp_path / "mlx-openai-server"
+        mock_server.touch()
+
+        with patch.object(sys, "executable", str(tmp_path / "python")):
+            with patch(
+                "mlx_manager.utils.command_builder.get_server_log_path",
+                return_value=tmp_path / "server.log",
+            ):
+                cmd = build_mlx_server_command(sample_profile)
+
+        # All three parser options should be present
+        assert "--tool-call-parser" in cmd
+        assert "--reasoning-parser" in cmd
+        assert "--message-converter" in cmd
+
+        # Verify values
+        assert cmd[cmd.index("--tool-call-parser") + 1] == "minimax_m2"
+        assert cmd[cmd.index("--reasoning-parser") + 1] == "minimax_m2"
+        assert cmd[cmd.index("--message-converter") + 1] == "minimax_m2"
+
+    def test_excludes_parser_options_when_not_set(self, sample_profile, tmp_path):
+        """Test excludes parser options when not set."""
+        # Ensure parser options are None
+        sample_profile.tool_call_parser = None
+        sample_profile.reasoning_parser = None
+        sample_profile.message_converter = None
+        mock_server = tmp_path / "mlx-openai-server"
+        mock_server.touch()
+
+        with patch.object(sys, "executable", str(tmp_path / "python")):
+            with patch(
+                "mlx_manager.utils.command_builder.get_server_log_path",
+                return_value=tmp_path / "server.log",
+            ):
+                cmd = build_mlx_server_command(sample_profile)
+
+        # Parser options should not be present
+        assert "--tool-call-parser" not in cmd
+        assert "--reasoning-parser" not in cmd
+        assert "--message-converter" not in cmd

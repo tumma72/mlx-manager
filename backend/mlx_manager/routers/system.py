@@ -1,6 +1,7 @@
 """System API router."""
 
 import platform
+import subprocess
 import sys
 
 import psutil
@@ -16,15 +17,40 @@ from mlx_manager.services.launchd import launchd_manager
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 
+def get_physical_memory_bytes() -> int:
+    """
+    Get actual physical memory in bytes.
+
+    On macOS, psutil.virtual_memory().total can return inflated values
+    (e.g., 137GB on a 128GB Mac) due to including compressed memory or swap.
+    This function uses sysctl on macOS for accurate physical RAM reporting.
+    """
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return int(result.stdout.strip())
+        except Exception:
+            pass
+    # Fallback to psutil for other platforms or on error
+    return psutil.virtual_memory().total
+
+
 @router.get("/memory", response_model=SystemMemory)
 async def get_memory():
     """Get system memory information."""
     mem = psutil.virtual_memory()
 
-    total_gb = mem.total / 1e9
+    # Use accurate physical memory for total (sysctl on macOS)
+    total_bytes = get_physical_memory_bytes()
+    total_gb = total_bytes / 1e9
     available_gb = mem.available / 1e9
-    used_gb = mem.used / 1e9
-    percent_used = mem.percent
+    used_gb = (total_bytes - mem.available) / 1e9
+    percent_used = ((total_bytes - mem.available) / total_bytes) * 100
 
     # MLX recommended is 80% of total
     mlx_recommended_gb = total_gb * (settings.max_memory_percent / 100)
@@ -47,8 +73,6 @@ async def get_system_info():
     # Get chip info (macOS specific)
     chip = "Unknown"
     try:
-        import subprocess
-
         result = subprocess.run(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
             capture_output=True,
@@ -59,9 +83,8 @@ async def get_system_info():
     except Exception:
         pass
 
-    # Get memory
-    mem = psutil.virtual_memory()
-    memory_gb = round(mem.total / 1e9, 0)
+    # Get memory (use accurate physical memory)
+    memory_gb = round(get_physical_memory_bytes() / 1e9, 0)
 
     # Get Python version
     python_version = sys.version.split()[0]

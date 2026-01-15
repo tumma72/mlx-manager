@@ -20,6 +20,7 @@ export interface ServerProfile {
   queue_size: number;
   tool_call_parser: string | null;
   reasoning_parser: string | null;
+  message_converter: string | null;
   enable_auto_tool_choice: boolean;
   trust_remote_code: boolean;
   chat_template_file: string | null;
@@ -45,6 +46,7 @@ export interface ServerProfileCreate {
   queue_size?: number;
   tool_call_parser?: string;
   reasoning_parser?: string;
+  message_converter?: string;
   enable_auto_tool_choice?: boolean;
   trust_remote_code?: boolean;
   chat_template_file?: string;
@@ -67,6 +69,7 @@ export interface ServerProfileUpdate {
   queue_size?: number;
   tool_call_parser?: string | null;
   reasoning_parser?: string | null;
+  message_converter?: string | null;
   enable_auto_tool_choice?: boolean;
   trust_remote_code?: boolean;
   chat_template_file?: string | null;
@@ -152,4 +155,15 @@ export interface ServerStatus {
   exit_code?: number;
   failed: boolean;
   error_message?: string;
+}
+
+export interface ModelDetectionInfo {
+  model_family: string | null;
+  recommended_options: {
+    tool_call_parser?: string;
+    reasoning_parser?: string;
+    message_converter?: string;
+  };
+  is_downloaded: boolean;
+  available_parsers: string[];
 }

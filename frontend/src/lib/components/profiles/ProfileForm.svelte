@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate } from '$api';
+	import { models as modelsApi } from '$api';
 	import { Card, Button, Input, Select } from '$components/ui';
 
 	interface Props {
@@ -14,10 +15,13 @@
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
+	let detectingOptions = $state(false);
+	let detectedFamily = $state<string | null>(null);
 
 	// Form state - only fields supported by mlx-openai-server CLI
 	// Supported: model-path, model-type (lm|multimodal), port, host,
 	// max-concurrency, queue-timeout, queue-size
+	// Also: tool-call-parser, reasoning-parser, message-converter for MiniMax/Qwen/GLM
 	let name = $state('');
 	let description = $state('');
 	let modelPath = $state('');
@@ -28,8 +32,22 @@
 	let queueTimeout = $state(300);
 	let queueSize = $state(100);
 	let autoStart = $state(false);
+	let toolCallParser = $state('');
+	let reasoningParser = $state('');
+	let messageConverter = $state('');
 
 	let showAdvanced = $state(false);
+
+	// Available parser options
+	const parserOptions = [
+		{ value: '', label: 'Default' },
+		{ value: 'minimax_m2', label: 'MiniMax M2' },
+		{ value: 'qwen3', label: 'Qwen3' },
+		{ value: 'glm4', label: 'GLM4' },
+		{ value: 'hermes', label: 'Hermes' },
+		{ value: 'llama', label: 'Llama' },
+		{ value: 'mistral', label: 'Mistral' }
+	];
 
 	// Reset form when profile, nextPort, or initialModelPath changes
 	$effect(() => {
@@ -45,6 +63,51 @@
 		queueTimeout = profile?.queue_timeout ?? 300;
 		queueSize = profile?.queue_size ?? 100;
 		autoStart = profile?.auto_start ?? false;
+		toolCallParser = profile?.tool_call_parser ?? '';
+		reasoningParser = profile?.reasoning_parser ?? '';
+		messageConverter = profile?.message_converter ?? '';
+	});
+
+	// Auto-detect model family when model path changes
+	async function detectModelOptions(path: string) {
+		if (!path) {
+			detectedFamily = null;
+			return;
+		}
+
+		detectingOptions = true;
+		try {
+			const info = await modelsApi.detectOptions(path);
+			detectedFamily = info.model_family;
+
+			// Only auto-fill if no values are already set
+			if (info.recommended_options) {
+				if (!toolCallParser && info.recommended_options.tool_call_parser) {
+					toolCallParser = info.recommended_options.tool_call_parser;
+				}
+				if (!reasoningParser && info.recommended_options.reasoning_parser) {
+					reasoningParser = info.recommended_options.reasoning_parser;
+				}
+				if (!messageConverter && info.recommended_options.message_converter) {
+					messageConverter = info.recommended_options.message_converter;
+				}
+			}
+		} catch {
+			// Detection failed - not critical, user can still set manually
+			detectedFamily = null;
+		} finally {
+			detectingOptions = false;
+		}
+	}
+
+	// Detect options when model path changes (with debounce)
+	let detectTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (modelPath && !profile) {
+			// Only auto-detect for new profiles
+			if (detectTimeout) clearTimeout(detectTimeout);
+			detectTimeout = setTimeout(() => detectModelOptions(modelPath), 500);
+		}
 	});
 
 	async function handleSubmit(e: Event) {
@@ -63,7 +126,10 @@
 				max_concurrency: maxConcurrency,
 				queue_timeout: queueTimeout,
 				queue_size: queueSize,
-				auto_start: autoStart
+				auto_start: autoStart,
+				tool_call_parser: toolCallParser || undefined,
+				reasoning_parser: reasoningParser || undefined,
+				message_converter: messageConverter || undefined
 			};
 
 			await onSubmit(data);
@@ -158,6 +224,56 @@
 								>Queue Size</label
 							>
 							<Input id="queueSize" type="number" bind:value={queueSize} />
+						</div>
+					</div>
+
+					<!-- Parser Options for MiniMax, Qwen, GLM models -->
+					<div class="pt-4 border-t">
+						<div class="flex items-center gap-2 mb-3">
+							<h3 class="text-sm font-medium">Model-Specific Parsers</h3>
+							{#if detectingOptions}
+								<span class="text-xs text-muted-foreground">Detecting...</span>
+							{:else if detectedFamily}
+								<span class="text-xs text-green-600">Detected: {detectedFamily}</span>
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground mb-3">
+							Required for MiniMax, Qwen3, and GLM models to enable tool calling and reasoning.
+						</p>
+
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div>
+								<label for="toolCallParser" class="block text-sm font-medium mb-1"
+									>Tool Call Parser</label
+								>
+								<Select id="toolCallParser" bind:value={toolCallParser}>
+									{#each parserOptions as opt (opt.value)}
+										<option value={opt.value}>{opt.label}</option>
+									{/each}
+								</Select>
+							</div>
+
+							<div>
+								<label for="reasoningParser" class="block text-sm font-medium mb-1"
+									>Reasoning Parser</label
+								>
+								<Select id="reasoningParser" bind:value={reasoningParser}>
+									{#each parserOptions as opt (opt.value)}
+										<option value={opt.value}>{opt.label}</option>
+									{/each}
+								</Select>
+							</div>
+
+							<div>
+								<label for="messageConverter" class="block text-sm font-medium mb-1"
+									>Message Converter</label
+								>
+								<Select id="messageConverter" bind:value={messageConverter}>
+									{#each parserOptions as opt (opt.value)}
+										<option value={opt.value}>{opt.label}</option>
+									{/each}
+								</Select>
+							</div>
 						</div>
 					</div>
 

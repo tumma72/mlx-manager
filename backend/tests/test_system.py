@@ -8,13 +8,16 @@ import pytest
 @pytest.mark.asyncio
 async def test_get_memory(client):
     """Test getting system memory information."""
-    with patch("mlx_manager.routers.system.psutil") as mock_psutil:
-        # Mock memory info
+    with (
+        patch("mlx_manager.routers.system.get_physical_memory_bytes") as mock_physical,
+        patch("mlx_manager.routers.system.psutil") as mock_psutil,
+    ):
+        # Mock physical memory (from sysctl on macOS)
+        mock_physical.return_value = int(128 * 1e9)  # 128 GB
+
+        # Mock psutil for available memory
         mock_mem = MagicMock()
-        mock_mem.total = 128 * 1e9  # 128 GB
         mock_mem.available = 64 * 1e9  # 64 GB
-        mock_mem.used = 64 * 1e9  # 64 GB
-        mock_mem.percent = 50.0
         mock_psutil.virtual_memory.return_value = mock_mem
 
         response = await client.get("/api/system/memory")

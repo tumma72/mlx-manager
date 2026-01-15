@@ -226,3 +226,75 @@ async def test_delete_model_with_path_separator(client, mock_hf_client):
     response = await client.delete("/api/models/mlx-community/some/nested/model")
     assert response.status_code == 200
     mock_hf_client.delete_model.assert_called_once_with("mlx-community/some/nested/model")
+
+
+@pytest.mark.asyncio
+async def test_detect_model_options_minimax(client, tmp_path):
+    """Test detecting parser options for MiniMax model."""
+    with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
+        mock_detect.return_value = {
+            "model_family": "minimax",
+            "recommended_options": {
+                "tool_call_parser": "minimax_m2",
+                "reasoning_parser": "minimax_m2",
+                "message_converter": "minimax_m2",
+            },
+            "is_downloaded": True,
+            "available_parsers": ["minimax_m2", "qwen3", "glm4"],
+        }
+
+        response = await client.get("/api/models/detect-options/mlx-community/MiniMax-M2")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["model_family"] == "minimax"
+        assert data["recommended_options"]["tool_call_parser"] == "minimax_m2"
+        assert data["recommended_options"]["reasoning_parser"] == "minimax_m2"
+        assert data["recommended_options"]["message_converter"] == "minimax_m2"
+        assert data["is_downloaded"] is True
+
+
+@pytest.mark.asyncio
+async def test_detect_model_options_unknown(client, tmp_path):
+    """Test detecting parser options for unknown model."""
+    with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
+        mock_detect.return_value = {
+            "model_family": None,
+            "recommended_options": {},
+            "is_downloaded": False,
+            "available_parsers": ["minimax_m2", "qwen3", "glm4"],
+        }
+
+        response = await client.get("/api/models/detect-options/mlx-community/Unknown-Model")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["model_family"] is None
+        assert data["recommended_options"] == {}
+        assert data["is_downloaded"] is False
+        assert "available_parsers" in data
+
+
+@pytest.mark.asyncio
+async def test_detect_model_options_with_nested_path(client, tmp_path):
+    """Test detecting parser options for model with nested path."""
+    with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
+        mock_detect.return_value = {
+            "model_family": "qwen",
+            "recommended_options": {
+                "tool_call_parser": "qwen3",
+                "reasoning_parser": "qwen3",
+                "message_converter": "qwen3",
+            },
+            "is_downloaded": False,
+            "available_parsers": ["minimax_m2", "qwen3", "glm4"],
+        }
+
+        response = await client.get(
+            "/api/models/detect-options/mlx-community/Qwen/Qwen2.5-72B-4bit"
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["model_family"] == "qwen"
+        mock_detect.assert_called_once_with("mlx-community/Qwen/Qwen2.5-72B-4bit")
