@@ -99,36 +99,10 @@ def check_mlx_lm_support(model_family: str) -> dict[str, Any]:
     }
 
 
-# Parser options for different model families.
-# These correspond to --tool-call-parser, --reasoning-parser, and --message-converter
-# options in mlx-openai-server.
-MODEL_PARSER_CONFIGS: dict[str, dict[str, str]] = {
-    "minimax": {
-        "tool_call_parser": "minimax_m2",
-        "reasoning_parser": "minimax_m2",
-        "message_converter": "minimax_m2",
-    },
-    "qwen": {
-        "tool_call_parser": "qwen3",
-        "reasoning_parser": "qwen3",
-        "message_converter": "qwen3",
-    },
-    "glm": {
-        "tool_call_parser": "glm4",
-        "reasoning_parser": "glm4",
-        "message_converter": "glm4",
-    },
-}
-
-# Available parser options for frontend dropdown
-AVAILABLE_PARSERS = [
-    "minimax_m2",
-    "qwen3",
-    "glm4",
-    "hermes",
-    "llama",
-    "mistral",
-]
+# NOTE: Static MODEL_PARSER_CONFIGS has been replaced with dynamic fuzzy matching.
+# The fuzzy matcher in fuzzy_matcher.py matches model names to parser options
+# dynamically using the options loaded from mlx-openai-server.
+# See get_parser_options() below for the new implementation.
 
 
 def get_local_model_path(model_id: str) -> Path | None:
@@ -204,52 +178,100 @@ def detect_model_family(model_id: str) -> str | None:
         model_id: HuggingFace model ID (e.g., "mlx-community/MiniMax-M2.1-3bit")
 
     Returns:
-        Model family name (e.g., "minimax", "qwen", "glm") or None if unknown.
+        Model family name (e.g., "minimax", "qwen3", "glm") or None if unknown.
     """
+
+    def _match_family_from_string(text: str) -> str | None:
+        """Match model family from a text string (model_type, architecture, or path)."""
+        text_lower = text.lower()
+
+        # Check specific variants first (more specific matches)
+        # Order matters: check specific variants before base families
+
+        # Qwen variants - check specific types first
+        if "qwen" in text_lower:
+            if "coder" in text_lower:
+                return "qwen3_coder"
+            if "moe" in text_lower:
+                return "qwen3_moe"
+            if "vl" in text_lower:
+                return "qwen3_vl"
+            return "qwen3"
+
+        # GLM models
+        if "glm" in text_lower:
+            return "glm"
+
+        # MiniMax models
+        if "minimax" in text_lower:
+            return "minimax"
+
+        # Nemotron models
+        if "nemotron" in text_lower:
+            return "nemotron"
+
+        # Harmony models
+        if "harmony" in text_lower:
+            return "harmony"
+
+        # Hermes models
+        if "hermes" in text_lower:
+            return "hermes"
+
+        # Solar models
+        if "solar" in text_lower:
+            return "solar"
+
+        return None
+
     # Try to read config.json from local cache (OFFLINE - no API calls)
     config = read_model_config(model_id)
     if config:
-        # Check model_type field
-        model_type = config.get("model_type", "").lower()
-        for family in MODEL_PARSER_CONFIGS:
-            if family in model_type:
-                logger.debug(f"Detected {family} from model_type: {model_type}")
-                return family
+        # Check model_type field first
+        model_type = config.get("model_type", "")
+        family = _match_family_from_string(model_type)
+        if family:
+            logger.debug(f"Detected {family} from model_type: {model_type}")
+            return family
 
         # Check architectures field
         architectures = config.get("architectures", [])
-        for family in MODEL_PARSER_CONFIGS:
-            if any(family in arch.lower() for arch in architectures):
-                logger.debug(f"Detected {family} from architectures: {architectures}")
+        for arch in architectures:
+            family = _match_family_from_string(arch)
+            if family:
+                logger.debug(f"Detected {family} from architecture: {arch}")
                 return family
 
     # Fallback: check model path name (works even if not downloaded)
-    path_lower = model_id.lower()
-    for family in MODEL_PARSER_CONFIGS:
-        if family in path_lower:
-            logger.debug(f"Detected {family} from model path: {model_id}")
-            return family
+    family = _match_family_from_string(model_id)
+    if family:
+        logger.debug(f"Detected {family} from model path: {model_id}")
+        return family
 
     return None
 
 
 def get_parser_options(model_id: str) -> dict[str, str]:
     """
-    Get recommended parser options for a model.
+    Get recommended parser options for a model using fuzzy matching.
 
-    Works OFFLINE - no network calls required.
+    Uses dynamic fuzzy matching to find the best parser options for a model
+    based on its name. This replaces the previous static MODEL_PARSER_CONFIGS
+    approach and scales better to the 100+ model variants available.
+
+    Works OFFLINE - no network calls required (uses cached parser options
+    loaded from mlx-openai-server at startup).
 
     Args:
-        model_id: HuggingFace model ID
+        model_id: HuggingFace model ID (e.g., "mlx-community/Qwen3-8B-4bit")
 
     Returns:
         Dictionary with tool_call_parser, reasoning_parser, message_converter
-        values, or empty dict if no special configuration needed.
+        values (only matched options), or empty dict if no matches found.
     """
-    family = detect_model_family(model_id)
-    if family:
-        return MODEL_PARSER_CONFIGS.get(family, {})
-    return {}
+    from mlx_manager.utils.fuzzy_matcher import find_parser_options
+
+    return find_parser_options(model_id)
 
 
 def get_model_detection_info(model_id: str) -> dict:
@@ -261,10 +283,10 @@ def get_model_detection_info(model_id: str) -> dict:
 
     Returns:
         Dictionary with model_family, recommended_options, is_downloaded,
-        available_parsers, and version_support info.
+        and version_support info.
     """
     family = detect_model_family(model_id)
-    options = MODEL_PARSER_CONFIGS.get(family, {}) if family else {}
+    options = get_parser_options(model_id)  # Use filtered options
     is_downloaded = get_local_model_path(model_id) is not None
 
     # Check if mlx-lm supports this model family
@@ -277,6 +299,5 @@ def get_model_detection_info(model_id: str) -> dict:
         "model_family": family,
         "recommended_options": options,
         "is_downloaded": is_downloaded,
-        "available_parsers": AVAILABLE_PARSERS,
         "version_support": version_support,
     }

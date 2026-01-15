@@ -4,9 +4,7 @@ import json
 from unittest.mock import patch
 
 from mlx_manager.utils.model_detection import (
-    AVAILABLE_PARSERS,
     MODEL_FAMILY_MIN_VERSIONS,
-    MODEL_PARSER_CONFIGS,
     check_mlx_lm_support,
     detect_model_family,
     get_local_model_path,
@@ -18,41 +16,50 @@ from mlx_manager.utils.model_detection import (
 )
 
 
-class TestModelParserConfigs:
-    """Tests for model parser configuration constants."""
+class TestFuzzyParserOptions:
+    """Tests for fuzzy parser options matching (replaces static MODEL_PARSER_CONFIGS)."""
 
-    def test_minimax_config_exists(self):
-        """Test MiniMax parser config exists."""
-        assert "minimax" in MODEL_PARSER_CONFIGS
-        config = MODEL_PARSER_CONFIGS["minimax"]
-        assert config["tool_call_parser"] == "minimax_m2"
-        assert config["reasoning_parser"] == "minimax_m2"
-        assert config["message_converter"] == "minimax_m2"
+    def test_minimax_m2_gets_all_options(self):
+        """Test MiniMax M2 gets all parser options via fuzzy matching."""
+        options = get_parser_options("mlx-community/MiniMax-M2.1-3bit")
+        assert options.get("tool_call_parser") == "minimax_m2"
+        assert options.get("reasoning_parser") == "minimax_m2"
+        assert options.get("message_converter") == "minimax_m2"
 
-    def test_qwen_config_exists(self):
-        """Test Qwen parser config exists."""
-        assert "qwen" in MODEL_PARSER_CONFIGS
-        config = MODEL_PARSER_CONFIGS["qwen"]
-        assert config["tool_call_parser"] == "qwen3"
-        assert config["reasoning_parser"] == "qwen3"
-        assert config["message_converter"] == "qwen3"
+    def test_qwen3_base_gets_tool_and_reasoning(self):
+        """Test base Qwen3 gets tool/reasoning but NOT message_converter."""
+        options = get_parser_options("mlx-community/Qwen3-8B-4bit")
+        assert options.get("tool_call_parser") == "qwen3"
+        assert options.get("reasoning_parser") == "qwen3"
+        # Base Qwen3 should NOT get message_converter (no "coder" in name)
+        assert "message_converter" not in options
 
-    def test_glm_config_exists(self):
-        """Test GLM parser config exists."""
-        assert "glm" in MODEL_PARSER_CONFIGS
-        config = MODEL_PARSER_CONFIGS["glm"]
-        assert config["tool_call_parser"] == "glm4"
-        assert config["reasoning_parser"] == "glm4"
-        assert config["message_converter"] == "glm4"
+    def test_qwen3_coder_gets_all_options(self):
+        """Test Qwen3 Coder gets all options including message_converter."""
+        options = get_parser_options("mlx-community/Qwen3-Coder-7B-4bit")
+        assert options.get("tool_call_parser") == "qwen3_coder"
+        assert options.get("message_converter") == "qwen3_coder"
 
-    def test_available_parsers(self):
-        """Test available parsers list contains expected values."""
-        assert "minimax_m2" in AVAILABLE_PARSERS
-        assert "qwen3" in AVAILABLE_PARSERS
-        assert "glm4" in AVAILABLE_PARSERS
-        assert "hermes" in AVAILABLE_PARSERS
-        assert "llama" in AVAILABLE_PARSERS
-        assert "mistral" in AVAILABLE_PARSERS
+    def test_glm_gets_options_via_single_option_fallback(self):
+        """Test GLM gets parser options via single-option family fallback."""
+        options = get_parser_options("mlx-community/GLM-4-9B")
+        assert options.get("tool_call_parser") == "glm4_moe"
+        assert options.get("reasoning_parser") == "glm4_moe"
+        # Message converter not matched (no "moe" variant in model name)
+        assert "message_converter" not in options
+
+    def test_nemotron_gets_options_via_single_option_fallback(self):
+        """Test Nemotron gets parser options via single-option family fallback."""
+        options = get_parser_options("mlx-community/Nemotron-3-8B")
+        assert options.get("tool_call_parser") == "nemotron3_nano"
+        assert options.get("reasoning_parser") == "nemotron3_nano"
+        # Message converter not matched (no "nano" variant in model name)
+        assert "message_converter" not in options
+
+    def test_unknown_model_returns_empty(self):
+        """Test unknown model family returns empty dict."""
+        options = get_parser_options("mlx-community/Llama-3.1-70B-4bit")
+        assert options == {}
 
 
 class TestGetLocalModelPath:
@@ -165,9 +172,9 @@ class TestDetectModelFamily:
 
         with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
             mock_settings.hf_cache_path = tmp_path
-            # Note: qwen2 contains "qwen" so it should match
+            # Note: qwen2 contains "qwen" so it should match qwen3 family
             result = detect_model_family("mlx-community/Qwen3-8B")
-            assert result == "qwen"
+            assert result == "qwen3"
 
     def test_detects_glm_from_architectures(self, tmp_path):
         """Test detects GLM from architectures field."""
@@ -194,7 +201,14 @@ class TestDetectModelFamily:
         with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
             mock_settings.hf_cache_path = tmp_path
             result = detect_model_family("mlx-community/Qwen2.5-72B-4bit")
-            assert result == "qwen"
+            assert result == "qwen3"
+
+    def test_detects_qwen_coder_from_path(self, tmp_path):
+        """Test detects Qwen Coder from model path."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Qwen2.5-Coder-32B-4bit")
+            assert result == "qwen3_coder"
 
     def test_returns_none_for_unknown_model(self, tmp_path):
         """Test returns None for unknown model family."""
@@ -205,14 +219,16 @@ class TestDetectModelFamily:
 
 
 class TestGetParserOptions:
-    """Tests for get_parser_options function."""
+    """Tests for get_parser_options function (uses fuzzy matching)."""
 
     def test_returns_minimax_options(self, tmp_path):
-        """Test returns MiniMax parser options."""
+        """Test returns MiniMax parser options via fuzzy matching."""
         with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
             mock_settings.hf_cache_path = tmp_path
             result = get_parser_options("mlx-community/MiniMax-M2.1-3bit")
-            assert result == MODEL_PARSER_CONFIGS["minimax"]
+            assert result.get("tool_call_parser") == "minimax_m2"
+            assert result.get("reasoning_parser") == "minimax_m2"
+            assert result.get("message_converter") == "minimax_m2"
 
     def test_returns_empty_dict_for_unknown(self, tmp_path):
         """Test returns empty dict for unknown model."""
@@ -238,9 +254,9 @@ class TestGetModelDetectionInfo:
             result = get_model_detection_info("mlx-community/MiniMax-M2")
 
             assert result["model_family"] == "minimax"
-            assert result["recommended_options"] == MODEL_PARSER_CONFIGS["minimax"]
+            # get_parser_options filters out None values
+            assert result["recommended_options"]["tool_call_parser"] == "minimax_m2"
             assert result["is_downloaded"] is True
-            assert result["available_parsers"] == AVAILABLE_PARSERS
 
     def test_returns_info_for_not_downloaded(self, tmp_path):
         """Test returns info for model not downloaded."""
@@ -250,7 +266,6 @@ class TestGetModelDetectionInfo:
 
             assert result["model_family"] == "minimax"
             assert result["is_downloaded"] is False
-            assert result["available_parsers"] == AVAILABLE_PARSERS
 
     def test_returns_info_for_unknown_model(self, tmp_path):
         """Test returns info for unknown model family."""
