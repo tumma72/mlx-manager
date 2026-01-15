@@ -5,11 +5,15 @@ from unittest.mock import patch
 
 from mlx_manager.utils.model_detection import (
     AVAILABLE_PARSERS,
+    MODEL_FAMILY_MIN_VERSIONS,
     MODEL_PARSER_CONFIGS,
+    check_mlx_lm_support,
     detect_model_family,
     get_local_model_path,
+    get_mlx_lm_version,
     get_model_detection_info,
     get_parser_options,
+    parse_version,
     read_model_config,
 )
 
@@ -257,3 +261,124 @@ class TestGetModelDetectionInfo:
             assert result["model_family"] is None
             assert result["recommended_options"] == {}
             assert result["is_downloaded"] is False
+
+
+class TestVersionParsing:
+    """Tests for version parsing utilities."""
+
+    def test_parse_version_simple(self):
+        """Test parsing simple version string."""
+        assert parse_version("0.28.4") == (0, 28, 4)
+
+    def test_parse_version_two_parts(self):
+        """Test parsing two-part version string."""
+        assert parse_version("1.0") == (1, 0)
+
+    def test_parse_version_single(self):
+        """Test parsing single version number."""
+        assert parse_version("2") == (2,)
+
+    def test_parse_version_invalid(self):
+        """Test parsing invalid version returns (0,)."""
+        assert parse_version("invalid") == (0,)
+
+
+class TestGetMlxLmVersion:
+    """Tests for get_mlx_lm_version function."""
+
+    def test_returns_version_when_installed(self):
+        """Test returns version string when mlx-lm is installed."""
+        with patch("mlx_manager.utils.model_detection.version") as mock_version:
+            mock_version.return_value = "0.30.2"
+            result = get_mlx_lm_version()
+            assert result == "0.30.2"
+            mock_version.assert_called_once_with("mlx-lm")
+
+    def test_returns_none_when_not_installed(self):
+        """Test returns None when mlx-lm is not installed."""
+        from importlib.metadata import PackageNotFoundError
+
+        with patch(
+            "mlx_manager.utils.model_detection.version",
+            side_effect=PackageNotFoundError(),
+        ):
+            result = get_mlx_lm_version()
+            assert result is None
+
+
+class TestCheckMlxLmSupport:
+    """Tests for check_mlx_lm_support function."""
+
+    def test_minimax_supported_with_new_version(self):
+        """Test MiniMax is supported with mlx-lm >= 0.28.4."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value="0.30.2",
+        ):
+            result = check_mlx_lm_support("minimax")
+            assert result["supported"] is True
+            assert result["installed_version"] == "0.30.2"
+            assert result["required_version"] == "0.28.4"
+
+    def test_minimax_not_supported_with_old_version(self):
+        """Test MiniMax is not supported with old mlx-lm."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value="0.28.0",
+        ):
+            result = check_mlx_lm_support("minimax")
+            assert result["supported"] is False
+            assert result["installed_version"] == "0.28.0"
+            assert result["required_version"] == "0.28.4"
+            assert "error" in result
+            assert "0.28.4" in result["error"]
+            assert "upgrade_command" in result
+
+    def test_minimax_exact_version_supported(self):
+        """Test MiniMax is supported with exact minimum version."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value="0.28.4",
+        ):
+            result = check_mlx_lm_support("minimax")
+            assert result["supported"] is True
+
+    def test_not_installed_returns_error(self):
+        """Test returns error when mlx-lm is not installed."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value=None,
+        ):
+            result = check_mlx_lm_support("minimax")
+            assert result["supported"] is False
+            assert result["installed_version"] is None
+            assert "error" in result
+            assert "not installed" in result["error"]
+
+    def test_unknown_family_always_supported(self):
+        """Test unknown model families have no version requirement."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value="0.20.0",
+        ):
+            result = check_mlx_lm_support("unknown_family")
+            assert result["supported"] is True
+            assert result["required_version"] is None
+
+    def test_qwen_no_version_requirement(self):
+        """Test Qwen has no minimum version requirement."""
+        with patch(
+            "mlx_manager.utils.model_detection.get_mlx_lm_version",
+            return_value="0.20.0",
+        ):
+            result = check_mlx_lm_support("qwen")
+            assert result["supported"] is True
+
+
+class TestModelFamilyMinVersions:
+    """Tests for MODEL_FAMILY_MIN_VERSIONS constant."""
+
+    def test_minimax_has_version_requirement(self):
+        """Test MiniMax has a minimum version requirement."""
+        assert "minimax" in MODEL_FAMILY_MIN_VERSIONS
+        assert MODEL_FAMILY_MIN_VERSIONS["minimax"] == "0.28.4"

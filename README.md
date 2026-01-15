@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/mlx-manager.svg)](https://pypi.org/project/mlx-manager/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.11-3.12](https://img.shields.io/badge/Python-3.11--3.12-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00.svg?logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -51,7 +51,7 @@ Open http://localhost:8080 and you're ready to:
 ## System Requirements
 
 - macOS 13+ with Apple Silicon (M1/M2/M3/M4)
-- Python 3.11+
+- Python 3.11 or 3.12
 - 8GB+ RAM (16GB+ recommended for larger models)
 
 ## Commands
@@ -88,4 +88,4 @@ MIT
 
 ## Acknowledgments
 
-Built on [MLX](https://github.com/ml-explore/mlx) and [mlx-lm](https://github.com/ml-explore/mlx-examples).
+Built on [MLX](https://github.com/ml-explore/mlx), [mlx-lm](https://github.com/ml-explore/mlx-lm), and [mlx-openai-server](https://github.com/cubist38/mlx-openai-server).

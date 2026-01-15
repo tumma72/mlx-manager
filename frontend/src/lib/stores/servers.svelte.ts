@@ -282,12 +282,7 @@ class ServerStore {
    * Check if a profile failed to start.
    */
   isFailed(profileId: number): boolean {
-    const result = this.failedProfiles.has(profileId);
-    // Only log when result is true to reduce noise
-    if (result) {
-      console.log(`[ServerStore] isFailed(${profileId}) = ${result}`);
-    }
-    return result;
+    return this.failedProfiles.has(profileId);
   }
 
   /**

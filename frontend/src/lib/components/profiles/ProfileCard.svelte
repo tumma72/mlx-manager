@@ -18,7 +18,9 @@
 		HardDrive,
 		MessageSquare,
 		Loader2,
-		AlertCircle
+		AlertCircle,
+		Clipboard,
+		Check
 	} from 'lucide-svelte';
 
 	// Timeout for model loading (2 minutes)
@@ -45,20 +47,51 @@
 	const failure = $derived(serverStore.getFailure(profile.id));
 	const currentServer = $derived(server || serverStore.getServer(profile.id));
 
-	// Local state for error details collapse - prevents flickering during re-renders
-	// This is synced from the store but controlled locally for stable DOM behavior
+	// Local state for error details collapse - managed locally to prevent infinite loops
+	// The store's detailsOpen state was causing a bidirectional binding loop:
+	// effect syncs from store → updates DOM → ontoggle fires → updates store → repeat
 	let localDetailsOpen = $state(false);
 
-	// Sync local details state from store when failure changes
+	// Track if we're programmatically updating to prevent toggle handler from firing
+	let isUpdatingDetails = false;
+
+	// Sync local details state from store ONLY when failure first appears
+	// After that, manage it locally to avoid loops
+	let lastFailureId = $state<number | null>(null);
 	$effect(() => {
-		if (failure) {
-			localDetailsOpen = failure.detailsOpen;
+		const currentFailure = serverStore.getFailure(profile.id);
+		// Only sync on initial failure or when failure changes (not on every update)
+		if (currentFailure && lastFailureId !== profile.id) {
+			lastFailureId = profile.id;
+			isUpdatingDetails = true;
+			localDetailsOpen = currentFailure.detailsOpen;
+			// Reset flag after DOM update
+			requestAnimationFrame(() => { isUpdatingDetails = false; });
+		} else if (!currentFailure) {
+			lastFailureId = null;
+			localDetailsOpen = false;
 		}
 	});
 
-	// Handle toggle - update both local state and store
+	// Handle toggle - only respond to user interaction, not programmatic changes
 	function handleDetailsToggle() {
-		serverStore.toggleDetailsOpen(profile.id);
+		if (!isUpdatingDetails) {
+			serverStore.toggleDetailsOpen(profile.id);
+		}
+	}
+
+	// Copy error details to clipboard
+	let copySuccess = $state(false);
+	async function copyErrorToClipboard() {
+		if (failure?.details) {
+			try {
+				await navigator.clipboard.writeText(failure.details);
+				copySuccess = true;
+				setTimeout(() => { copySuccess = false; }, 2000);
+			} catch (e) {
+				console.error('Failed to copy to clipboard:', e);
+			}
+		}
 	}
 
 	// On mount: resume polling if profile is still starting AND no other component is polling
@@ -438,7 +471,20 @@
 							<summary class="text-xs text-red-500 dark:text-red-400 cursor-pointer hover:underline">
 								Show server log
 							</summary>
-							<pre class="mt-2 text-xs text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{failure.details}</pre>
+							<div class="mt-2 relative">
+								<button
+									onclick={copyErrorToClipboard}
+									class="absolute top-2 right-2 p-1.5 rounded bg-red-200 dark:bg-red-800 hover:bg-red-300 dark:hover:bg-red-700 transition-colors"
+									title="Copy to clipboard"
+								>
+									{#if copySuccess}
+										<Check class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+									{:else}
+										<Clipboard class="w-3.5 h-3.5 text-red-600 dark:text-red-300" />
+									{/if}
+								</button>
+								<pre class="text-xs text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/50 p-2 pr-10 rounded overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{failure.details}</pre>
+							</div>
 						</details>
 					{/if}
 				</div>

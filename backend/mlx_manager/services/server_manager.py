@@ -9,10 +9,11 @@ import httpx
 import psutil
 
 from mlx_manager.models import ServerProfile
-
-logger = logging.getLogger(__name__)
 from mlx_manager.types import HealthCheckResult, RunningServerInfo, ServerStats
 from mlx_manager.utils.command_builder import build_mlx_server_command, get_server_log_path
+from mlx_manager.utils.model_detection import check_mlx_lm_support, detect_model_family
+
+logger = logging.getLogger(__name__)
 
 
 class ServerManager:
@@ -35,6 +36,15 @@ class ServerManager:
             if proc.poll() is None:  # Still running
                 logger.warning(f"Server for profile '{profile.name}' is already running (pid={proc.pid})")
                 raise RuntimeError(f"Server for profile {profile.name} is already running")
+
+        # Pre-launch check: verify mlx-lm supports this model family
+        model_family = detect_model_family(profile.model_path)
+        if model_family:
+            support = check_mlx_lm_support(model_family)
+            if not support["supported"]:
+                error_msg = support.get("error", f"{model_family} models are not supported")
+                logger.error(f"Version check failed: {error_msg}")
+                raise RuntimeError(error_msg)
 
         # Build command
         cmd = build_mlx_server_command(profile)

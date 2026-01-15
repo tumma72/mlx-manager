@@ -8,12 +8,96 @@ the HuggingFace cache filesystem without any network calls.
 
 import json
 import logging
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 from mlx_manager.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Minimum mlx-lm version requirements for model families
+# MiniMax support was added in mlx-lm v0.28.4
+MODEL_FAMILY_MIN_VERSIONS: dict[str, str] = {
+    "minimax": "0.28.4",
+}
+
+
+def get_mlx_lm_version() -> str | None:
+    """Get the installed mlx-lm version.
+
+    Returns:
+        Version string (e.g., "0.30.2") or None if not installed.
+    """
+    try:
+        return version("mlx-lm")
+    except PackageNotFoundError:
+        return None
+
+
+def parse_version(v: str) -> tuple[int, ...]:
+    """Parse a version string into a tuple of integers for comparison.
+
+    Args:
+        v: Version string like "0.28.4" or "0.30.2"
+
+    Returns:
+        Tuple of integers like (0, 28, 4)
+    """
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return (0,)
+
+
+def check_mlx_lm_support(model_family: str) -> dict[str, Any]:
+    """Check if installed mlx-lm supports a model family.
+
+    Args:
+        model_family: The model family (e.g., "minimax", "qwen")
+
+    Returns:
+        Dictionary with 'supported', 'installed_version',
+        'required_version', and optional 'upgrade_command'.
+    """
+    installed = get_mlx_lm_version()
+    required = MODEL_FAMILY_MIN_VERSIONS.get(model_family)
+
+    if not installed:
+        return {
+            "supported": False,
+            "installed_version": None,
+            "required_version": required,
+            "error": "mlx-lm is not installed. Install with: pip install mlx-lm",
+        }
+
+    if not required:
+        # No version requirement for this family
+        return {
+            "supported": True,
+            "installed_version": installed,
+            "required_version": None,
+        }
+
+    installed_tuple = parse_version(installed)
+    required_tuple = parse_version(required)
+
+    if installed_tuple >= required_tuple:
+        return {
+            "supported": True,
+            "installed_version": installed,
+            "required_version": required,
+        }
+
+    return {
+        "supported": False,
+        "installed_version": installed,
+        "required_version": required,
+        "error": f"{model_family.title()} models require mlx-lm >= {required} "
+        f"(installed: {installed}). Upgrade with: pip install -U mlx-lm",
+        "upgrade_command": "pip install -U mlx-lm",
+    }
+
 
 # Parser options for different model families.
 # These correspond to --tool-call-parser, --reasoning-parser, and --message-converter
@@ -177,15 +261,22 @@ def get_model_detection_info(model_id: str) -> dict:
 
     Returns:
         Dictionary with model_family, recommended_options, is_downloaded,
-        and available_parsers.
+        available_parsers, and version_support info.
     """
     family = detect_model_family(model_id)
     options = MODEL_PARSER_CONFIGS.get(family, {}) if family else {}
     is_downloaded = get_local_model_path(model_id) is not None
+
+    # Check if mlx-lm supports this model family
+    version_support = check_mlx_lm_support(family) if family else {
+        "supported": True,
+        "installed_version": get_mlx_lm_version(),
+    }
 
     return {
         "model_family": family,
         "recommended_options": options,
         "is_downloaded": is_downloaded,
         "available_parsers": AVAILABLE_PARSERS,
+        "version_support": version_support,
     }
