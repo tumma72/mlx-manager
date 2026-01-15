@@ -13,6 +13,7 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
 from mlx_manager.services.launchd import launchd_manager
+from mlx_manager.services.parser_options import ParserOptions, get_parser_options
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -46,10 +47,12 @@ async def get_memory():
     mem = psutil.virtual_memory()
 
     # Use accurate physical memory for total (sysctl on macOS)
+    # Convert bytes to GiB using binary (1024^3), not decimal (1e9)
     total_bytes = get_physical_memory_bytes()
-    total_gb = total_bytes / 1e9
-    available_gb = mem.available / 1e9
-    used_gb = (total_bytes - mem.available) / 1e9
+    bytes_to_gib = 1024**3
+    total_gb = total_bytes / bytes_to_gib
+    available_gb = mem.available / bytes_to_gib
+    used_gb = (total_bytes - mem.available) / bytes_to_gib
     percent_used = ((total_bytes - mem.available) / total_bytes) * 100
 
     # MLX recommended is 80% of total
@@ -83,8 +86,8 @@ async def get_system_info():
     except Exception:
         pass
 
-    # Get memory (use accurate physical memory)
-    memory_gb = round(get_physical_memory_bytes() / 1e9, 0)
+    # Get memory (use accurate physical memory, convert to GiB)
+    memory_gb = round(get_physical_memory_bytes() / (1024**3), 0)
 
     # Get Python version
     python_version = sys.version.split()[0]
@@ -115,6 +118,18 @@ async def get_system_info():
         mlx_version=mlx_version,
         mlx_openai_server_version=mlx_openai_server_version,
     )
+
+
+@router.get("/parser-options")
+async def get_available_parser_options() -> ParserOptions:
+    """
+    Get available parser options from installed mlx-openai-server.
+
+    Returns lists of valid options for tool_call_parser, reasoning_parser,
+    and message_converter. These are dynamically discovered from the
+    installed mlx-openai-server package.
+    """
+    return get_parser_options()
 
 
 @router.post("/launchd/install/{profile_id}")

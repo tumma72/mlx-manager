@@ -9,7 +9,8 @@ from fastapi.responses import StreamingResponse
 
 from mlx_manager.models import LocalModel, ModelSearchResult
 from mlx_manager.services.hf_client import hf_client
-from mlx_manager.utils.model_detection import AVAILABLE_PARSERS, get_model_detection_info
+from mlx_manager.services.parser_options import get_parser_options
+from mlx_manager.utils.model_detection import get_model_detection_info
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -110,7 +111,6 @@ async def detect_model_options(model_id: str):
         model_family: Detected model family (minimax, qwen, glm) or null
         recommended_options: Parser options for the model family
         is_downloaded: Whether the model is locally available
-        available_parsers: List of all available parser options
     """
     return get_model_detection_info(model_id)
 
@@ -120,7 +120,15 @@ async def get_available_parsers():
     """
     Get list of available parser options for dropdowns.
 
-    Returns a list of parser identifiers that can be used for
-    tool_call_parser, reasoning_parser, and message_converter.
+    DEPRECATED: Use /api/system/parser-options instead for separate
+    tool_call_parsers, reasoning_parsers, and message_converters lists.
+
+    Returns a combined list of all parser identifiers for backwards
+    compatibility.
     """
-    return {"parsers": AVAILABLE_PARSERS}
+    options = get_parser_options()
+    # Combine all unique parsers for backwards compatibility
+    all_parsers = set(options["tool_call_parsers"])
+    all_parsers.update(options["reasoning_parsers"])
+    all_parsers.update(options["message_converters"])
+    return {"parsers": sorted(all_parsers)}

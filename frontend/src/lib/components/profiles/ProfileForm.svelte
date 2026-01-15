@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate } from '$api';
-	import { models as modelsApi } from '$api';
+	import { onMount } from 'svelte';
+	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate, ParserOptions } from '$api';
+	import { models as modelsApi, system as systemApi } from '$api';
 	import { Card, Button, Input, Select } from '$components/ui';
 
 	interface Props {
@@ -38,16 +39,40 @@
 
 	let showAdvanced = $state(false);
 
-	// Available parser options
-	const parserOptions = [
-		{ value: '', label: 'Default' },
-		{ value: 'minimax_m2', label: 'MiniMax M2' },
-		{ value: 'qwen3', label: 'Qwen3' },
-		{ value: 'glm4', label: 'GLM4' },
-		{ value: 'hermes', label: 'Hermes' },
-		{ value: 'llama', label: 'Llama' },
-		{ value: 'mistral', label: 'Mistral' }
-	];
+	// Parser options loaded dynamically from API
+	let parserOptionsData = $state<ParserOptions | null>(null);
+	let parserOptionsLoading = $state(true);
+
+	// Derive dropdown options from loaded data
+	const toolCallParserOptions = $derived(
+		parserOptionsData
+			? [{ value: '', label: 'Default' }, ...parserOptionsData.tool_call_parsers.map(p => ({ value: p, label: p }))]
+			: [{ value: '', label: 'Loading...' }]
+	);
+
+	const reasoningParserOptions = $derived(
+		parserOptionsData
+			? [{ value: '', label: 'Default' }, ...parserOptionsData.reasoning_parsers.map(p => ({ value: p, label: p }))]
+			: [{ value: '', label: 'Loading...' }]
+	);
+
+	const messageConverterOptions = $derived(
+		parserOptionsData
+			? [{ value: '', label: 'Default' }, ...parserOptionsData.message_converters.map(p => ({ value: p, label: p }))]
+			: [{ value: '', label: 'Loading...' }]
+	);
+
+	// Load parser options from API on mount
+	onMount(async () => {
+		try {
+			parserOptionsData = await systemApi.parserOptions();
+		} catch (e) {
+			console.error('Failed to load parser options:', e);
+			// Use empty fallback - dropdowns will show "Default" only
+		} finally {
+			parserOptionsLoading = false;
+		}
+	});
 
 	// Reset form when profile, nextPort, or initialModelPath changes
 	$effect(() => {
@@ -246,8 +271,8 @@
 								<label for="toolCallParser" class="block text-sm font-medium mb-1"
 									>Tool Call Parser</label
 								>
-								<Select id="toolCallParser" bind:value={toolCallParser}>
-									{#each parserOptions as opt (opt.value)}
+								<Select id="toolCallParser" bind:value={toolCallParser} disabled={parserOptionsLoading}>
+									{#each toolCallParserOptions as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</Select>
@@ -257,8 +282,8 @@
 								<label for="reasoningParser" class="block text-sm font-medium mb-1"
 									>Reasoning Parser</label
 								>
-								<Select id="reasoningParser" bind:value={reasoningParser}>
-									{#each parserOptions as opt (opt.value)}
+								<Select id="reasoningParser" bind:value={reasoningParser} disabled={parserOptionsLoading}>
+									{#each reasoningParserOptions as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</Select>
@@ -268,8 +293,8 @@
 								<label for="messageConverter" class="block text-sm font-medium mb-1"
 									>Message Converter</label
 								>
-								<Select id="messageConverter" bind:value={messageConverter}>
-									{#each parserOptions as opt (opt.value)}
+								<Select id="messageConverter" bind:value={messageConverter} disabled={parserOptionsLoading}>
+									{#each messageConverterOptions as opt (opt.value)}
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</Select>

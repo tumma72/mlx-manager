@@ -13,6 +13,7 @@ import type {
   LaunchdStatus,
   ServerStatus,
   ModelDetectionInfo,
+  ParserOptions,
 } from "./types";
 
 const API_BASE = "/api";
@@ -203,6 +204,11 @@ export const system = {
 
   info: async (): Promise<SystemInfo> => {
     const res = await fetch(`${API_BASE}/system/info`);
+    return handleResponse(res);
+  },
+
+  parserOptions: async (): Promise<ParserOptions> => {
+    const res = await fetch(`${API_BASE}/system/parser-options`);
     return handleResponse(res);
   },
 

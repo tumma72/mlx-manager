@@ -165,5 +165,10 @@ export interface ModelDetectionInfo {
     message_converter?: string;
   };
   is_downloaded: boolean;
-  available_parsers: string[];
+}
+
+export interface ParserOptions {
+  tool_call_parsers: string[];
+  reasoning_parsers: string[];
+  message_converters: string[];
 }

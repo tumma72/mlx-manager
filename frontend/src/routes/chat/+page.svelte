@@ -99,14 +99,28 @@
 		return parts.length > 1 ? parts[parts.length - 1] : modelPath;
 	}
 
-	// Parse thinking content from assistant messages (supports <think>...</think> tags)
+	// Parse thinking content from assistant messages
+	// Supports multiple tag formats used by different model families:
+	// - <think>...</think> (Qwen3 style)
+	// - <thinking>...</thinking> (alternative format)
+	// - <reasoning>...</reasoning> (reasoning models)
 	function parseThinking(content: string): { thinking: string | null; response: string } {
-		const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
-		if (thinkMatch) {
-			const thinking = thinkMatch[1].trim();
-			const response = content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-			return { thinking, response };
+		// Try each pattern in order of likelihood
+		const patterns = [
+			/<think>([\s\S]*?)<\/think>/,         // Qwen3 style
+			/<thinking>([\s\S]*?)<\/thinking>/,   // Alternative format
+			/<reasoning>([\s\S]*?)<\/reasoning>/, // Reasoning format
+		];
+
+		for (const pattern of patterns) {
+			const match = content.match(pattern);
+			if (match) {
+				const thinking = match[1].trim();
+				const response = content.replace(pattern, '').trim();
+				return { thinking, response };
+			}
 		}
+
 		return { thinking: null, response: content };
 	}
 </script>
