@@ -78,7 +78,8 @@ class ServerManager:
                 pass
             if log_path.exists():
                 error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
-            logger.error(f"Server failed to start for profile '{profile.name}': {error_msg[:500]}")
+            logger.error(f"Server failed to start for profile '{profile.name}' (exit_code={proc.poll()})")
+            logger.error(f"Server log: {error_msg[:500]}")
             del self.processes[profile.id]
             raise RuntimeError(f"Server failed to start: {error_msg}")
 
@@ -224,7 +225,27 @@ class ServerManager:
     def get_process_status(self, profile_id: int) -> dict:
         """Get detailed process status including exit code and error message."""
         if profile_id not in self.processes:
-            return {"running": False, "tracked": False}
+            # Process is not tracked - but check if there's a recent log file with errors
+            # This handles the case where the process crashed and was cleaned up before
+            # the status was checked
+            log_path = get_server_log_path(profile_id)
+            if log_path.exists():
+                try:
+                    content = log_path.read_text()
+                    if content:
+                        error_msg = content[-1000:]
+                        error_patterns = ["ERROR", "Error", "failed", "Failed", "exception", "Exception"]
+                        has_error = any(pattern in error_msg for pattern in error_patterns)
+                        if has_error:
+                            return {
+                                "running": False,
+                                "tracked": False,
+                                "failed": True,
+                                "error_message": error_msg,
+                            }
+                except Exception:
+                    pass
+            return {"running": False, "tracked": False, "failed": False}
 
         proc = self.processes[profile_id]
         exit_code = proc.poll()
@@ -241,19 +262,27 @@ class ServerManager:
                 del self._log_files[profile_id]
 
             error_msg = None
+            has_error_in_log = False
             if log_path.exists():
                 content = log_path.read_text()
                 error_msg = content[-1000:] if content else "No log output"
+                # Check for error patterns in log (mlx-openai-server may exit with code 0 on error)
+                if error_msg:
+                    error_patterns = ["ERROR", "Error", "failed", "Failed", "exception", "Exception"]
+                    has_error_in_log = any(pattern in error_msg for pattern in error_patterns)
 
             # Clean up the dead process
             del self.processes[profile_id]
             self._log_positions.pop(profile_id, None)
 
+            # Consider it failed if exit code is non-zero OR if log contains error patterns
+            is_failed = exit_code != 0 or has_error_in_log
+
             return {
                 "running": False,
                 "tracked": True,
                 "exit_code": exit_code,
-                "failed": exit_code != 0,
+                "failed": is_failed,
                 "error_message": error_msg,
             }
 

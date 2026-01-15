@@ -583,3 +583,151 @@ class TestServerManagerStartServerLogFileCleanup:
                         await server_manager_instance.start_server(sample_profile)
 
         assert "Failed to load model" in str(exc_info.value)
+
+
+class TestServerManagerGetProcessStatus:
+    """Tests for the get_process_status method."""
+
+    def test_get_process_status_not_tracked_no_log(self, server_manager_instance):
+        """Test returns tracked=False when no process exists and no log."""
+        result = server_manager_instance.get_process_status(999)
+        assert result == {"running": False, "tracked": False, "failed": False}
+
+    def test_get_process_status_not_tracked_with_error_log(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test detects failure from log file even when process is not tracked."""
+        # Simulate a log file from a previously crashed server
+        log_file = tmp_path / "server-999.log"
+        log_file.write_text("Starting server...\nERROR: Model type not supported\nShutdown.")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            result = server_manager_instance.get_process_status(999)
+
+        assert result["running"] is False
+        assert result["tracked"] is False
+        assert result["failed"] is True
+        assert "Model type not supported" in result["error_message"]
+
+    def test_get_process_status_not_tracked_with_clean_log(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test reports not failed when log file has no errors."""
+        log_file = tmp_path / "server-999.log"
+        log_file.write_text("Starting server...\nShutdown gracefully.")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            result = server_manager_instance.get_process_status(999)
+
+        assert result["running"] is False
+        assert result["tracked"] is False
+        assert result["failed"] is False
+
+    def test_get_process_status_running(self, server_manager_instance):
+        """Test returns running=True when process is active."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = None  # Still running
+        server_manager_instance.processes[1] = mock_proc
+
+        result = server_manager_instance.get_process_status(1)
+        assert result["running"] is True
+        assert result["tracked"] is True
+        assert result["pid"] == 12345
+
+    def test_get_process_status_exited_with_error_code(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test detects failure when exit code is non-zero."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 1  # Non-zero exit code
+        server_manager_instance.processes[1] = mock_proc
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("Some output before crash")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            result = server_manager_instance.get_process_status(1)
+
+        assert result["running"] is False
+        assert result["tracked"] is True
+        assert result["exit_code"] == 1
+        assert result["failed"] is True
+
+    def test_get_process_status_exit_code_zero_with_error_in_log(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test detects failure when exit code is 0 but log contains error patterns."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0  # Exit code 0
+        server_manager_instance.processes[1] = mock_proc
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("ERROR: Model type minimax not supported.\nApplication startup failed.")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            result = server_manager_instance.get_process_status(1)
+
+        assert result["running"] is False
+        assert result["exit_code"] == 0
+        assert result["failed"] is True  # Should be True due to error in log
+        assert "minimax not supported" in result["error_message"]
+
+    def test_get_process_status_exit_code_zero_no_error(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test reports not failed when exit code is 0 and no error in log."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0  # Exit code 0
+        server_manager_instance.processes[1] = mock_proc
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("Server started successfully.\nShutting down gracefully.")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            result = server_manager_instance.get_process_status(1)
+
+        assert result["running"] is False
+        assert result["exit_code"] == 0
+        assert result["failed"] is False  # Should be False - clean exit
+
+    def test_get_process_status_cleans_up_dead_process(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test removes process from tracking after detecting exit."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0
+        server_manager_instance.processes[1] = mock_proc
+        server_manager_instance._log_positions[1] = 100
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("Normal output")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            server_manager_instance.get_process_status(1)
+
+        # Process should be cleaned up
+        assert 1 not in server_manager_instance.processes
+        assert 1 not in server_manager_instance._log_positions
