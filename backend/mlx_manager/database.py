@@ -55,6 +55,38 @@ async def migrate_schema() -> None:
                 await conn.execute(text(sql))
 
 
+async def recover_incomplete_downloads() -> None:
+    """Mark any in-progress downloads as failed on startup.
+
+    If the server restarted during a download, we need to mark those
+    downloads as failed so they can be retried.
+    """
+    async with get_session() as session:
+        from datetime import UTC, datetime
+
+        from sqlalchemy import or_
+        from sqlmodel import select
+
+        from mlx_manager.models import Download
+
+        result = await session.execute(
+            select(Download).where(
+                or_(Download.status == "pending", Download.status == "downloading")
+            )
+        )
+        incomplete = result.scalars().all()
+
+        for download in incomplete:
+            download.status = "failed"
+            download.error = "Server restarted during download"
+            download.completed_at = datetime.now(tz=UTC)
+            session.add(download)
+
+        if incomplete:
+            await session.commit()
+            logger.info(f"Marked {len(incomplete)} incomplete downloads as failed")
+
+
 async def init_db() -> None:
     """Initialize the database and create tables."""
     ensure_data_dir()
@@ -63,6 +95,9 @@ async def init_db() -> None:
 
     # Run schema migrations for existing databases
     await migrate_schema()
+
+    # Recover any incomplete downloads from previous runs
+    await recover_incomplete_downloads()
 
     # Insert default settings if not present
     async with get_session() as session:

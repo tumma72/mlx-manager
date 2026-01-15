@@ -191,38 +191,77 @@ class TestHuggingFaceClientDownloadModel:
     @pytest.mark.asyncio
     async def test_download_model_success(self, hf_client_instance, tmp_path):
         """Test successful model download."""
-        with patch("mlx_manager.services.hf_client.snapshot_download") as mock_download:
-            mock_download.return_value = str(tmp_path / "downloaded")
 
+        def mock_snapshot_download(repo_id, **kwargs):
+            # Handle dry_run call
+            if kwargs.get("dry_run"):
+                # Return mock DryRunFileInfo objects
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000  # 1GB
+                return [mock_info]
+            # Return actual download path
+            return str(tmp_path / "downloaded")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
             events = []
             async for event in hf_client_instance.download_model(
                 "mlx-community/Qwen3-8B-4bit"
             ):
                 events.append(event)
 
-        assert len(events) == 2
+        # First event is starting, then completed (progress events may or may not appear)
         assert events[0]["status"] == "starting"
-        # Size estimated from name: 8B * 0.5 bytes * 1.1 ≈ 4.4 GB
-        assert events[0]["total_size_gb"] > 0
-        assert events[1]["status"] == "completed"
-        assert events[1]["progress"] == 100
+        assert events[0]["total_bytes"] == 1_000_000_000
+        assert events[-1]["status"] == "completed"
+        assert events[-1]["progress"] == 100
 
     @pytest.mark.asyncio
     async def test_download_model_failure(self, hf_client_instance):
         """Test model download failure."""
-        with patch("mlx_manager.services.hf_client.snapshot_download") as mock_download:
-            mock_download.side_effect = Exception("Download failed")
 
+        def mock_snapshot_download(repo_id, **kwargs):
+            # Handle dry_run call successfully
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            # Actual download fails
+            raise Exception("Download failed")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
             events = []
             async for event in hf_client_instance.download_model(
                 "mlx-community/Qwen3-8B-4bit"
             ):
                 events.append(event)
 
-        assert len(events) == 2
         assert events[0]["status"] == "starting"
-        assert events[1]["status"] == "failed"
-        assert "Download failed" in events[1]["error"]
+        assert events[-1]["status"] == "failed"
+        assert "Download failed" in events[-1]["error"]
+
+    @pytest.mark.asyncio
+    async def test_download_model_dry_run_failure_falls_back_to_estimation(
+        self, hf_client_instance, tmp_path
+    ):
+        """Test that dry_run failure falls back to name-based size estimation."""
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                # dry_run fails
+                raise Exception("API error")
+            return str(tmp_path / "downloaded")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
+            events = []
+            async for event in hf_client_instance.download_model(
+                "mlx-community/Qwen3-8B-4bit"
+            ):
+                events.append(event)
+
+        assert events[0]["status"] == "starting"
+        # Size estimated from name: 8B * 0.5 bytes * 1.1 ≈ 4.1 GiB
+        assert events[0]["total_size_gb"] > 3.5
+        assert events[-1]["status"] == "completed"
 
 
 class TestHuggingFaceClientOfflineMode:

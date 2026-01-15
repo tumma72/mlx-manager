@@ -1,7 +1,9 @@
 """HuggingFace Hub client service."""
 
 import asyncio
+import logging
 import shutil
+import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -14,6 +16,9 @@ from mlx_manager.services.hf_api import (
     search_models,
 )
 from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
+
+# Suppress huggingface_hub warnings at module level
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 
 class HuggingFaceClient:
@@ -124,31 +129,61 @@ class HuggingFaceClient:
 
         loop = asyncio.get_event_loop()
 
-        # Estimate size from model name (no API call needed)
-        total_size = estimate_size_from_name(model_id) or 0.0
+        # Suppress deprecation warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            warnings.filterwarnings("ignore", category=FutureWarning)
 
-        yield DownloadStatus(status="starting", model_id=model_id, total_size_gb=total_size)
+            # Get total size via dry_run first
+            try:
+                dry_run_result = await loop.run_in_executor(
+                    None,
+                    lambda: snapshot_download(repo_id=model_id, dry_run=True),
+                )
+                total_bytes = sum(f.file_size for f in dry_run_result if f.file_size)
+            except Exception:
+                # Fall back to estimation if dry_run fails
+                estimated_gb = estimate_size_from_name(model_id) or 0.0
+                total_bytes = int(estimated_gb * 1024**3)
+
+        # Estimate size for backward compatibility
+        total_size_gb = total_bytes / (1024**3) if total_bytes else 0.0
+
+        yield DownloadStatus(
+            status="starting",
+            model_id=model_id,
+            total_size_gb=total_size_gb,
+            total_bytes=total_bytes,
+            downloaded_bytes=0,
+            progress=0,
+        )
 
         try:
-            # Use snapshot_download for full model
+            # Run download in executor (blocking call)
             local_dir = await loop.run_in_executor(
                 None,
-                lambda: snapshot_download(
-                    repo_id=model_id,
-                    local_dir_use_symlinks=True,
-                    resume_download=True,
-                ),
+                lambda: self._download_with_progress(model_id),
             )
 
             yield DownloadStatus(
                 status="completed",
                 model_id=model_id,
                 local_path=local_dir,
+                total_bytes=total_bytes,
+                downloaded_bytes=total_bytes,
                 progress=100,
             )
 
         except Exception as e:
             yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
+
+    def _download_with_progress(self, model_id: str) -> str:
+        """Perform download (runs in executor)."""
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            warnings.filterwarnings("ignore", category=FutureWarning)
+
+            return snapshot_download(repo_id=model_id)
 
     def list_local_models(self) -> list[LocalModelInfo]:
         """List all locally downloaded MLX models."""

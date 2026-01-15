@@ -58,11 +58,14 @@ class LocalModelInfo(TypedDict):
 class DownloadStatus(TypedDict, total=False):
     """Status update for model download."""
 
-    status: str
+    status: str  # "starting", "downloading", "completed", "failed"
     model_id: str
-    total_size_gb: float
+    total_size_gb: float  # Deprecated, use total_bytes
+    total_bytes: int
+    downloaded_bytes: int
     local_path: str
-    progress: int
+    progress: int  # 0-100
+    speed_mbps: float
     error: str
 
 

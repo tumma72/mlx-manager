@@ -108,6 +108,21 @@ class Setting(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
+class Download(SQLModel, table=True):
+    """Active download tracking."""
+
+    __tablename__ = "downloads"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    model_id: str = Field(index=True)
+    status: str = Field(default="pending")  # pending, downloading, completed, failed
+    total_bytes: int | None = None
+    downloaded_bytes: int = Field(default=0)
+    error: str | None = None
+    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    completed_at: datetime | None = None
+
+
 # Response models for API
 class ServerProfileResponse(ServerProfileBase):
     """Response model for server profile."""

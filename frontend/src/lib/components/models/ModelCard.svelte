@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ModelSearchResult } from '$api';
 	import { models } from '$api';
-	import { formatNumber } from '$lib/utils/format';
+	import { formatNumber, formatBytes } from '$lib/utils/format';
 	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
 
@@ -21,6 +21,12 @@
 	let downloadStatusOverride = $state<boolean | null>(null);
 	let isDownloaded = $derived(downloadStatusOverride ?? model.is_downloaded);
 
+	// Download progress tracking
+	let downloadProgress = $state(0);
+	let downloadedBytes = $state(0);
+	let totalBytes = $state(0);
+	let downloadSpeed = $state(0);
+
 	// Reset override when model prop changes
 	$effect(() => {
 		void model.model_id; // Track model changes
@@ -30,6 +36,11 @@
 	async function handleDownload() {
 		downloading = true;
 		error = null;
+		downloadProgress = 0;
+		downloadedBytes = 0;
+		totalBytes = 0;
+		downloadSpeed = 0;
+
 		try {
 			const { task_id } = await models.startDownload(model.model_id);
 
@@ -38,7 +49,16 @@
 
 			eventSource.onmessage = (event) => {
 				const data = JSON.parse(event.data);
-				if (data.status === 'completed') {
+
+				if (data.status === 'starting') {
+					totalBytes = data.total_bytes || 0;
+				} else if (data.status === 'downloading') {
+					downloadProgress = data.progress || 0;
+					downloadedBytes = data.downloaded_bytes || 0;
+					totalBytes = data.total_bytes || totalBytes;
+					downloadSpeed = data.speed_mbps || 0;
+				} else if (data.status === 'completed') {
+					downloadProgress = 100;
 					downloadStatusOverride = true;
 					downloading = false;
 					eventSource.close();
@@ -124,22 +144,45 @@
 		</div>
 	{/if}
 
-	<div class="mt-4 flex justify-end gap-2">
-		{#if isDownloaded}
-			<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
-				<Trash2 class="w-4 h-4 mr-1" />
-				{deleting ? 'Deleting...' : 'Delete'}
-			</Button>
-			<Button variant="default" size="sm" onclick={handleUse}>
-				Use
-			</Button>
-		{:else}
-			<Button variant="default" size="sm" onclick={handleDownload} disabled={downloading}>
-				<Download class="w-4 h-4 mr-1" />
-				{downloading ? 'Downloading...' : 'Download'}
-			</Button>
-		{/if}
-	</div>
+	{#if downloading}
+		<!-- Download progress bar -->
+		<div class="mt-4 space-y-2">
+			<div class="flex justify-between text-xs text-muted-foreground">
+				<span>
+					{formatBytes(downloadedBytes)} / {formatBytes(totalBytes)}
+				</span>
+				<span>
+					{downloadSpeed > 0 ? `${downloadSpeed.toFixed(1)} MB/s` : 'Starting...'}
+				</span>
+			</div>
+			<div class="w-full bg-muted rounded-full h-2 overflow-hidden">
+				<div
+					class="bg-primary h-2 rounded-full transition-all duration-300"
+					style="width: {downloadProgress}%"
+				></div>
+			</div>
+			<div class="text-center text-xs text-muted-foreground">
+				{downloadProgress}% complete
+			</div>
+		</div>
+	{:else}
+		<div class="mt-4 flex justify-end gap-2">
+			{#if isDownloaded}
+				<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
+					<Trash2 class="w-4 h-4 mr-1" />
+					{deleting ? 'Deleting...' : 'Delete'}
+				</Button>
+				<Button variant="default" size="sm" onclick={handleUse}>
+					Use
+				</Button>
+			{:else}
+				<Button variant="default" size="sm" onclick={handleDownload} disabled={downloading}>
+					<Download class="w-4 h-4 mr-1" />
+					Download
+				</Button>
+			{/if}
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="mt-2 text-sm text-red-500">{error}</div>
