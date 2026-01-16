@@ -217,7 +217,7 @@
 			</div>
 
 			{#if error}
-				<div class="px-4 py-2 bg-red-100 text-red-700 text-sm">
+				<div class="px-4 py-2 bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 text-sm">
 					{error}
 				</div>
 			{/if}

@@ -6,10 +6,25 @@
 	import { RefreshCw, Plus } from 'lucide-svelte';
 	let refreshing = $state(false);
 
+	// Scroll preservation: continuously track scroll position and restore after updates
+	let lastScrollY = 0;
+	let rafId: number | null = null;
+
 	onMount(() => {
 		// Initial data load - polling is handled globally by +layout.svelte
 		serverStore.refresh();
 		profileStore.refresh();
+
+		// Track scroll position continuously
+		function onScroll() {
+			lastScrollY = window.scrollY;
+		}
+		window.addEventListener('scroll', onScroll, { passive: true });
+
+		return () => {
+			window.removeEventListener('scroll', onScroll);
+			if (rafId) cancelAnimationFrame(rafId);
+		};
 	});
 
 	async function handleRefresh() {
@@ -26,6 +41,23 @@
 	const stoppedProfiles = $derived(
 		profileStore.profiles.filter((p) => !serverStore.isRunning(p.id))
 	);
+
+	// Restore scroll position after any store update causes a re-render
+	$effect(() => {
+		// Track these dependencies to run after updates
+		void serverStore.servers;
+		void profileStore.profiles;
+
+		// Use double-RAF to ensure DOM is fully updated before restoring scroll
+		if (rafId) cancelAnimationFrame(rafId);
+		rafId = requestAnimationFrame(() => {
+			rafId = requestAnimationFrame(() => {
+				if (lastScrollY > 0 && Math.abs(window.scrollY - lastScrollY) > 50) {
+					window.scrollTo({ top: lastScrollY, behavior: 'instant' });
+				}
+			});
+		});
+	});
 </script>
 
 <div class="space-y-6">
@@ -46,7 +78,7 @@
 	{#if serverStore.loading && serverStore.servers.length === 0}
 		<div class="text-center py-12 text-muted-foreground">Loading servers...</div>
 	{:else if serverStore.error}
-		<div class="text-center py-12 text-red-500">{serverStore.error}</div>
+		<div class="text-center py-12 text-red-500 dark:text-red-400">{serverStore.error}</div>
 	{:else}
 		<!-- Running Servers -->
 		<section>

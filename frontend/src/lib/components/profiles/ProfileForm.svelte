@@ -259,7 +259,7 @@
 							{#if detectingOptions}
 								<span class="text-xs text-muted-foreground">Detecting...</span>
 							{:else if detectedFamily}
-								<span class="text-xs text-green-600">Detected: {detectedFamily}</span>
+								<span class="text-xs text-green-600 dark:text-green-400">Detected: {detectedFamily}</span>
 							{/if}
 						</div>
 						<p class="text-xs text-muted-foreground mb-3">
@@ -313,7 +313,7 @@
 		</div>
 
 		{#if error}
-			<div class="mt-4 text-sm text-red-500">{error}</div>
+			<div class="mt-4 text-sm text-red-500 dark:text-red-400">{error}</div>
 		{/if}
 
 		<div class="mt-6 flex justify-end gap-3">

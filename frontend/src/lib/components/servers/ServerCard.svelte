@@ -138,6 +138,6 @@
 	</div>
 
 	{#if error}
-		<div class="mt-2 text-sm text-red-500">{error}</div>
+		<div class="mt-2 text-sm text-red-500 dark:text-red-400">{error}</div>
 	{/if}
 </Card>

@@ -77,6 +77,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+# E402: Module level import not at top of file - main.py configures logging before imports
+per-file-ignores = { "mlx_manager/main.py" = ["E402"] }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

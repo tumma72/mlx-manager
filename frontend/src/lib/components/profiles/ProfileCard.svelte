@@ -459,7 +459,7 @@
 	{#if failure}
 		<div class="mt-3 p-3 bg-red-50 dark:bg-red-950/50 rounded-lg border border-red-200 dark:border-red-900">
 			<div class="flex items-start gap-2">
-				<AlertCircle class="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+				<AlertCircle class="w-4 h-4 text-red-500 dark:text-red-400 mt-0.5 flex-shrink-0" />
 				<div class="flex-1 min-w-0">
 					<p class="text-sm text-red-600 dark:text-red-400 font-medium">{failure.error}</p>
 					{#if failure.details}

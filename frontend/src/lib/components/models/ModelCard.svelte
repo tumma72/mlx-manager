@@ -4,6 +4,7 @@
 	import { formatNumber, formatBytes } from '$lib/utils/format';
 	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
+	import { downloadsStore } from '$lib/stores';
 
 	interface Props {
 		model: ModelSearchResult;
@@ -13,19 +14,22 @@
 
 	let { model, onUse, onDeleted }: Props = $props();
 
-	let downloading = $state(false);
 	let deleting = $state(false);
 	let error = $state<string | null>(null);
 	let showDeleteConfirm = $state(false);
 	// Track local override for download status (null means use prop value)
 	let downloadStatusOverride = $state<boolean | null>(null);
-	let isDownloaded = $derived(downloadStatusOverride ?? model.is_downloaded);
 
-	// Download progress tracking
-	let downloadProgress = $state(0);
-	let downloadedBytes = $state(0);
-	let totalBytes = $state(0);
-	let downloadSpeed = $state(0);
+	// Get download state from global store
+	let downloadState = $derived(downloadsStore.getProgress(model.model_id));
+	let downloading = $derived(downloadsStore.isDownloading(model.model_id));
+
+	// Determine if downloaded: check store for completed, then override, then prop
+	let isDownloaded = $derived(() => {
+		if (downloadState?.status === 'completed') return true;
+		if (downloadStatusOverride !== null) return downloadStatusOverride;
+		return model.is_downloaded;
+	});
 
 	// Reset override when model prop changes
 	$effect(() => {
@@ -34,51 +38,22 @@
 	});
 
 	async function handleDownload() {
-		downloading = true;
 		error = null;
-		downloadProgress = 0;
-		downloadedBytes = 0;
-		totalBytes = 0;
-		downloadSpeed = 0;
-
 		try {
-			const { task_id } = await models.startDownload(model.model_id);
-
-			// Connect to SSE for progress
-			const eventSource = new EventSource(`/api/models/download/${task_id}/progress`);
-
-			eventSource.onmessage = (event) => {
-				const data = JSON.parse(event.data);
-
-				if (data.status === 'starting') {
-					totalBytes = data.total_bytes || 0;
-				} else if (data.status === 'downloading') {
-					downloadProgress = data.progress || 0;
-					downloadedBytes = data.downloaded_bytes || 0;
-					totalBytes = data.total_bytes || totalBytes;
-					downloadSpeed = data.speed_mbps || 0;
-				} else if (data.status === 'completed') {
-					downloadProgress = 100;
-					downloadStatusOverride = true;
-					downloading = false;
-					eventSource.close();
-				} else if (data.status === 'failed') {
-					error = data.error || 'Download failed';
-					downloading = false;
-					eventSource.close();
-				}
-			};
-
-			eventSource.onerror = () => {
-				error = 'Connection lost';
-				downloading = false;
-				eventSource.close();
-			};
+			await downloadsStore.startDownload(model.model_id);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Download failed';
-			downloading = false;
 		}
 	}
+
+	// Watch for download completion to update override
+	$effect(() => {
+		if (downloadState?.status === 'completed') {
+			downloadStatusOverride = true;
+		} else if (downloadState?.status === 'failed' && downloadState.error) {
+			error = downloadState.error;
+		}
+	});
 
 	function requestDelete() {
 		showDeleteConfirm = true;
@@ -124,7 +99,7 @@
 		</div>
 
 		<div class="flex items-center gap-2">
-			{#if isDownloaded}
+			{#if isDownloaded()}
 				<Badge variant="success">
 					<Check class="w-3 h-3 mr-1" />
 					Downloaded
@@ -144,30 +119,32 @@
 		</div>
 	{/if}
 
-	{#if downloading}
+	{#if downloading && downloadState}
 		<!-- Download progress bar -->
 		<div class="mt-4 space-y-2">
 			<div class="flex justify-between text-xs text-muted-foreground">
 				<span>
-					{formatBytes(downloadedBytes)} / {formatBytes(totalBytes)}
+					{formatBytes(downloadState.downloaded_bytes)} / {formatBytes(downloadState.total_bytes)}
 				</span>
 				<span>
-					{downloadSpeed > 0 ? `${downloadSpeed.toFixed(1)} MB/s` : 'Starting...'}
+					{downloadState.progress > 0 ? `${downloadState.progress}%` : 'Starting...'}
 				</span>
 			</div>
 			<div class="w-full bg-muted rounded-full h-2 overflow-hidden">
 				<div
 					class="bg-primary h-2 rounded-full transition-all duration-300"
-					style="width: {downloadProgress}%"
+					style="width: {downloadState.progress}%"
 				></div>
 			</div>
 			<div class="text-center text-xs text-muted-foreground">
-				{downloadProgress}% complete
+				{downloadState.status === 'starting' || downloadState.status === 'pending'
+					? 'Preparing download...'
+					: `${downloadState.progress}% complete`}
 			</div>
 		</div>
 	{:else}
 		<div class="mt-4 flex justify-end gap-2">
-			{#if isDownloaded}
+			{#if isDownloaded()}
 				<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
 					<Trash2 class="w-4 h-4 mr-1" />
 					{deleting ? 'Deleting...' : 'Delete'}
@@ -185,7 +162,7 @@
 	{/if}
 
 	{#if error}
-		<div class="mt-2 text-sm text-red-500">{error}</div>
+		<div class="mt-2 text-sm text-red-500 dark:text-red-400">{error}</div>
 	{/if}
 </Card>
 

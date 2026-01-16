@@ -3,8 +3,8 @@
 	import { resolve } from '$app/paths';
 	import { models } from '$api';
 	import type { ModelSearchResult, LocalModel } from '$api';
-	import { systemStore } from '$stores';
-	import { ModelCard } from '$components/models';
+	import { systemStore, downloadsStore } from '$stores';
+	import { ModelCard, DownloadProgressTile } from '$components/models';
 	import { Button, Input, Card, Badge, ConfirmDialog } from '$components/ui';
 	import { Search, HardDrive, Trash2 } from 'lucide-svelte';
 
@@ -96,9 +96,16 @@
 	});
 
 	// Filter search results (online) based on local-only toggle
-	const displayResults = $derived(
-		showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults
-	);
+	const displayResults = $derived(() => {
+		return showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults;
+	});
+
+	// Get active downloads for pinned section
+	const activeDownloads = $derived(() => {
+		return downloadsStore.getAllDownloads().filter(
+			(d) => d.status === 'pending' || d.status === 'starting' || d.status === 'downloading'
+		);
+	});
 
 	// Determine what to show based on mode
 	const isLocalSearchMode = $derived(showLocalOnly);
@@ -106,6 +113,20 @@
 </script>
 
 <div class="space-y-6">
+	<!-- Pinned Active Downloads Section -->
+	{#if activeDownloads().length > 0}
+		<div class="sticky top-0 z-10 bg-background pb-4 -mx-4 px-4 pt-4 border-b mb-2">
+			<h2 class="text-sm font-medium text-muted-foreground mb-2">
+				Downloading ({activeDownloads().length})
+			</h2>
+			<div class="space-y-2">
+				{#each activeDownloads() as download (download.model_id)}
+					<DownloadProgressTile {download} />
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold">Model Browser</h1>
 		{#if systemStore.memory}
@@ -155,7 +176,7 @@
 	</Card>
 
 	{#if error}
-		<div class="text-center py-8 text-red-500">{error}</div>
+		<div class="text-center py-8 text-red-500 dark:text-red-400">{error}</div>
 	{/if}
 
 	<!-- Local Search Results (when "Downloaded only" is checked) -->
@@ -208,10 +229,10 @@
 	{:else if hasOnlineResults}
 		<section>
 			<h2 class="text-lg font-semibold mb-4">
-				Search Results ({displayResults.length})
+				Search Results ({displayResults().length})
 			</h2>
 			<div class="grid gap-4">
-				{#each displayResults as model (model.model_id)}
+				{#each displayResults() as model (model.model_id)}
 					<ModelCard {model} onUse={handleUseModel} onDeleted={handleModelDeleted} />
 				{/each}
 			</div>

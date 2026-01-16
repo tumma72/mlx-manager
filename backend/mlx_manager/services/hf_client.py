@@ -6,8 +6,10 @@ import shutil
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 from huggingface_hub import snapshot_download
+from tqdm.auto import tqdm as tqdm_auto
 
 from mlx_manager.config import settings
 from mlx_manager.services.hf_api import (
@@ -19,6 +21,14 @@ from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+
+class SilentProgress(tqdm_auto):
+    """tqdm subclass that suppresses console output."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["disable"] = True  # Disable console output
+        super().__init__(*args, **kwargs)
 
 
 class HuggingFaceClient:
@@ -138,7 +148,9 @@ class HuggingFaceClient:
             try:
                 dry_run_result = await loop.run_in_executor(
                     None,
-                    lambda: snapshot_download(repo_id=model_id, dry_run=True),
+                    lambda: snapshot_download(
+                        repo_id=model_id, dry_run=True, tqdm_class=SilentProgress
+                    ),
                 )
                 total_bytes = sum(f.file_size for f in dry_run_result if f.file_size)
             except Exception:
@@ -158,12 +170,35 @@ class HuggingFaceClient:
             progress=0,
         )
 
+        # Start download as a background task
+        download_task = loop.run_in_executor(
+            None,
+            lambda: self._download_with_progress(model_id),
+        )
+
+        # Calculate directory path for progress polling
+        cache_name = f"models--{model_id.replace('/', '--')}"
+        download_dir = self.cache_dir / cache_name
+
+        # Poll directory size while downloading
         try:
-            # Run download in executor (blocking call)
-            local_dir = await loop.run_in_executor(
-                None,
-                lambda: self._download_with_progress(model_id),
-            )
+            while not download_task.done():
+                await asyncio.sleep(1.0)  # Poll every second
+
+                current_bytes = self._get_directory_size(download_dir)
+                progress = int((current_bytes / total_bytes) * 100) if total_bytes > 0 else 0
+
+                yield DownloadStatus(
+                    status="downloading",
+                    model_id=model_id,
+                    total_size_gb=total_size_gb,
+                    total_bytes=total_bytes,
+                    downloaded_bytes=current_bytes,
+                    progress=min(progress, 99),  # Cap at 99 until actually done
+                )
+
+            # Get the result (may raise exception)
+            local_dir = await download_task
 
             yield DownloadStatus(
                 status="completed",
@@ -183,7 +218,16 @@ class HuggingFaceClient:
             warnings.filterwarnings("ignore", category=UserWarning)
             warnings.filterwarnings("ignore", category=FutureWarning)
 
-            return snapshot_download(repo_id=model_id)
+            return snapshot_download(repo_id=model_id, tqdm_class=SilentProgress)
+
+    def _get_directory_size(self, path: Path) -> int:
+        """Get total size of files in directory."""
+        if not path.exists():
+            return 0
+        try:
+            return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        except Exception:
+            return 0
 
     def list_local_models(self) -> list[LocalModelInfo]:
         """List all locally downloaded MLX models."""

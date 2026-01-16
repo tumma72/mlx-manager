@@ -1,5 +1,6 @@
 """MLX Model Manager - FastAPI Application."""
 
+import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -28,10 +29,12 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import select
 
 from mlx_manager import __version__
-from mlx_manager.database import get_session, init_db
+from mlx_manager.database import get_session, init_db, recover_incomplete_downloads
 from mlx_manager.models import RunningInstance
 from mlx_manager.routers import models_router, profiles_router, servers_router, system_router
+from mlx_manager.routers.models import download_tasks
 from mlx_manager.services.health_checker import health_checker
+from mlx_manager.services.hf_client import hf_client
 from mlx_manager.services.server_manager import server_manager
 
 # Static files directory (embedded frontend build)
@@ -50,6 +53,79 @@ async def cleanup_stale_instances() -> None:
         await session.commit()
 
 
+# Track running download tasks for cleanup on shutdown
+_download_tasks: list[asyncio.Task[None]] = []
+
+
+async def cancel_download_tasks() -> None:
+    """Cancel all running download tasks on shutdown."""
+    if _download_tasks:
+        logger.info(f"Cancelling {len(_download_tasks)} running download tasks...")
+        for task in _download_tasks:
+            if not task.done():
+                task.cancel()
+        # Wait for all tasks to be cancelled
+        await asyncio.gather(*_download_tasks, return_exceptions=True)
+        _download_tasks.clear()
+        logger.info("Download tasks cancelled")
+
+
+async def resume_pending_downloads(pending: list[tuple[int, str]]) -> None:
+    """Resume downloads that were interrupted by server restart.
+
+    Creates background tasks for each pending download and registers them
+    in download_tasks so the frontend can connect via SSE.
+    """
+    import uuid
+
+    for download_id, model_id in pending:
+        task_id = str(uuid.uuid4())
+
+        # Register in download_tasks so frontend can connect
+        download_tasks[task_id] = {
+            "model_id": model_id,
+            "download_id": download_id,
+            "status": "pending",
+            "progress": 0,
+        }
+
+        # Create background task for the download and track it
+        task = asyncio.create_task(_run_download_task(task_id, download_id, model_id))
+        _download_tasks.append(task)
+        logger.info(f"Resuming download for {model_id} (task_id={task_id})")
+
+
+async def _run_download_task(task_id: str, download_id: int, model_id: str) -> None:
+    """Background task to run a download and update progress."""
+    from mlx_manager.routers.models import _update_download_record
+
+    try:
+        async for progress in hf_client.download_model(model_id):
+            download_tasks[task_id].update(progress)
+
+            status = progress.get("status")
+            is_final = status in ("completed", "failed")
+
+            # Update DB on status changes and completion
+            if is_final:
+                await _update_download_record(
+                    download_id,
+                    status=status or "downloading",
+                    downloaded_bytes=progress.get("downloaded_bytes", 0),
+                    total_bytes=progress.get("total_bytes"),
+                    error=progress.get("error"),
+                    completed=status == "completed",
+                )
+                break
+    except asyncio.CancelledError:
+        # Task was cancelled during shutdown - this is expected
+        logger.info(f"Download task cancelled for {model_id}")
+        raise  # Re-raise to properly mark task as cancelled
+    except Exception as e:
+        logger.error(f"Download failed for {model_id}: {e}")
+        await _update_download_record(download_id, status="failed", error=str(e))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -57,12 +133,19 @@ async def lifespan(app: FastAPI):
     logger.info("MLX Manager starting up...")
     await init_db()
     await cleanup_stale_instances()
+
+    # Resume any incomplete downloads from previous sessions
+    pending_downloads = await recover_incomplete_downloads()
+    if pending_downloads:
+        await resume_pending_downloads(pending_downloads)
+
     await health_checker.start()
     logger.info("MLX Manager ready")
 
     yield
 
     # Shutdown
+    await cancel_download_tasks()
     await health_checker.stop()
     await server_manager.cleanup()
 

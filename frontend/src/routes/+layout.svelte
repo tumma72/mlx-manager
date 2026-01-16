@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { Navbar } from '$components/layout';
-	import { serverStore, profileStore, systemStore, pollingCoordinator } from '$stores';
+	import { serverStore, profileStore, systemStore, downloadsStore, pollingCoordinator } from '$stores';
 
 	let { children } = $props();
 
@@ -12,9 +12,13 @@
 		profileStore.startPolling();
 		systemStore.startMemoryPolling();
 
+		// Load any active downloads and reconnect SSE streams
+		downloadsStore.loadActiveDownloads();
+
 		// Cleanup on unmount (e.g., hot reload)
 		return () => {
 			pollingCoordinator.destroy();
+			downloadsStore.cleanup();
 		};
 	});
 </script>

@@ -55,15 +55,18 @@ async def migrate_schema() -> None:
                 await conn.execute(text(sql))
 
 
-async def recover_incomplete_downloads() -> None:
-    """Mark any in-progress downloads as failed on startup.
+async def recover_incomplete_downloads() -> list[tuple[int, str]]:
+    """Resume any incomplete downloads on startup.
 
-    If the server restarted during a download, we need to mark those
-    downloads as failed so they can be retried.
+    HuggingFace Hub's snapshot_download automatically resumes partial downloads,
+    so we mark them as pending for retry.
+
+    Returns:
+        List of (download_id, model_id) tuples for downloads that need resuming.
     """
-    async with get_session() as session:
-        from datetime import UTC, datetime
+    pending_downloads: list[tuple[int, str]] = []
 
+    async with get_session() as session:
         from sqlalchemy import or_
         from sqlmodel import select
 
@@ -77,14 +80,18 @@ async def recover_incomplete_downloads() -> None:
         incomplete = result.scalars().all()
 
         for download in incomplete:
-            download.status = "failed"
-            download.error = "Server restarted during download"
-            download.completed_at = datetime.now(tz=UTC)
+            # Mark as pending for retry - HF Hub will resume partial downloads
+            download.status = "pending"
+            download.error = None
             session.add(download)
+            if download.id is not None:
+                pending_downloads.append((download.id, download.model_id))
 
         if incomplete:
             await session.commit()
-            logger.info(f"Marked {len(incomplete)} incomplete downloads as failed")
+            logger.info(f"Marked {len(incomplete)} downloads for resume")
+
+    return pending_downloads
 
 
 async def init_db() -> None:

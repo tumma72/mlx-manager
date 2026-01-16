@@ -111,6 +111,16 @@ export const profiles = {
   },
 };
 
+// Active download info from backend
+export interface ActiveDownload {
+  task_id: string;
+  model_id: string;
+  status: string;
+  progress: number;
+  downloaded_bytes: number;
+  total_bytes: number;
+}
+
 // Models API
 export const models = {
   search: async (
@@ -137,6 +147,11 @@ export const models = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model_id: modelId }),
     });
+    return handleResponse(res);
+  },
+
+  getActiveDownloads: async (): Promise<ActiveDownload[]> => {
+    const res = await fetch(`${API_BASE}/models/downloads/active`);
     return handleResponse(res);
   },
 

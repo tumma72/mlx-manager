@@ -5,10 +5,39 @@
 	import { Card, Button } from '$components/ui';
 	import { Plus } from 'lucide-svelte';
 
+	// Scroll preservation: continuously track scroll position and restore after updates
+	let lastScrollY = 0;
+	let rafId: number | null = null;
+
 	onMount(() => {
 		// Initial data load - polling is handled globally by +layout.svelte
 		profileStore.refresh();
 		serverStore.refresh();
+
+		// Track scroll position continuously
+		function onScroll() {
+			lastScrollY = window.scrollY;
+		}
+		window.addEventListener('scroll', onScroll, { passive: true });
+
+		return () => {
+			window.removeEventListener('scroll', onScroll);
+			if (rafId) cancelAnimationFrame(rafId);
+		};
+	});
+
+	// Restore scroll position after any store update causes a re-render
+	$effect(() => {
+		void profileStore.profiles;
+
+		if (rafId) cancelAnimationFrame(rafId);
+		rafId = requestAnimationFrame(() => {
+			rafId = requestAnimationFrame(() => {
+				if (lastScrollY > 0 && Math.abs(window.scrollY - lastScrollY) > 50) {
+					window.scrollTo({ top: lastScrollY, behavior: 'instant' });
+				}
+			});
+		});
 	});
 </script>
 
@@ -24,7 +53,7 @@
 	{#if profileStore.loading}
 		<div class="text-center py-12 text-muted-foreground">Loading profiles...</div>
 	{:else if profileStore.error}
-		<div class="text-center py-12 text-red-500">{profileStore.error}</div>
+		<div class="text-center py-12 text-red-500 dark:text-red-400">{profileStore.error}</div>
 	{:else if profileStore.profiles.length === 0}
 		<Card class="p-12 text-center">
 			<p class="text-muted-foreground mb-4">No profiles configured yet.</p>

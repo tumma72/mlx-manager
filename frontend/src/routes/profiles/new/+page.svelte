@@ -34,5 +34,8 @@
 <div class="max-w-2xl mx-auto">
 	<h1 class="text-2xl font-bold mb-6">Create Server Profile</h1>
 
-	<ProfileForm {nextPort} initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
+	<!-- Use keyed block to prevent ProfileForm recreation during polling updates -->
+	{#key 'new-profile'}
+		<ProfileForm {nextPort} initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
+	{/key}
 </div>

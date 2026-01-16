@@ -40,8 +40,11 @@
 	{#if loading}
 		<div class="text-center py-12 text-muted-foreground">Loading profile...</div>
 	{:else if error}
-		<div class="text-center py-12 text-red-500">{error}</div>
+		<div class="text-center py-12 text-red-500 dark:text-red-400">{error}</div>
 	{:else if profile}
-		<ProfileForm {profile} onSubmit={handleSubmit} onCancel={handleCancel} />
+		<!-- Use keyed block to prevent ProfileForm recreation during polling updates -->
+		{#key profile.id}
+			<ProfileForm {profile} onSubmit={handleSubmit} onCancel={handleCancel} />
+		{/key}
 	{/if}
 </div>
