@@ -143,6 +143,8 @@ class RunningServerResponse(SQLModel):
     health_status: str
     uptime_seconds: float
     memory_mb: float
+    memory_percent: float = 0.0
+    cpu_percent: float = 0.0
 
 
 class ModelSearchResult(SQLModel):

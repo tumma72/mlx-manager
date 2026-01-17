@@ -17,6 +17,7 @@ class ServerStats(TypedDict):
 
     pid: int
     memory_mb: float
+    memory_percent: float
     cpu_percent: float
     status: str
     create_time: float
@@ -28,6 +29,7 @@ class RunningServerInfo(TypedDict):
     profile_id: int
     pid: int
     memory_mb: float
+    memory_percent: float
     cpu_percent: float
     status: str
     create_time: float
