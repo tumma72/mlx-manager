@@ -10,27 +10,26 @@ Polish the UX for models and server panels, add optional API key authentication 
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
+- [x] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
 - [ ] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
 - [ ] **Phase 3: API Key Authentication** - Optional bearer token auth
 - [ ] **Phase 4: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
 ## Phase Details
 
-### Phase 1: Models Panel UX
+### Phase 1: Models Panel UX ✓
 **Goal**: Clean up models panel layout so search stays visible and downloads are consolidated
 **Depends on**: Nothing (first phase)
 **Requirements**: MODELS-01, MODELS-02, MODELS-03
 **Success Criteria** (what must be TRUE):
-  1. Search/filter bar stays visible when scrolling model list
-  2. When download starts, only download tile visible at top (original tile hidden)
-  3. Non-downloading model tiles show no progress bar
-**Research**: Unlikely (internal Svelte UI patterns)
-**Plans**: TBD
+  1. Search/filter bar stays visible when scrolling model list ✓
+  2. When download starts, only download tile visible at top (original tile hidden) ✓
+  3. Non-downloading model tiles show no progress bar ✓
+**Research**: None needed
+**Completed**: 2026-01-17
 
 Plans:
-- [ ] 01-01: Anchor search bar and make model list scrollable
-- [ ] 01-02: Consolidate download state and remove progress bars from normal tiles
+- [x] 01-01: Anchor search bar and consolidate download UX
 
 ### Phase 2: Server Panel Redesign
 **Goal**: Replace profile list with searchable dropdown and show running servers as rich metric tiles
@@ -94,7 +93,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Models Panel UX | 0/2 | Not started | - |
+| 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 0/4 | Not started | - |
 | 3. API Key Authentication | 0/2 | Not started | - |
 | 4. Bug Fixes & Stability | 0/4 | Not started | - |

@@ -9,9 +9,9 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 ### Models Panel
 
-- [ ] **MODELS-01**: Search/filter bar anchored to top of panel with scrollable model list below
-- [ ] **MODELS-02**: When download starts, original model tile is hidden and download tile appears at top
-- [ ] **MODELS-03**: Normal model tiles do not show progress bars (progress only on download tiles)
+- [x] **MODELS-01**: Search/filter bar anchored to top of panel with scrollable model list below
+- [x] **MODELS-02**: When download starts, original model tile is hidden and download tile appears at top
+- [x] **MODELS-03**: Normal model tiles do not show progress bars (progress only on download tiles)
 
 ### Server Panel
 
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODELS-01 | Phase 1 | Pending |
-| MODELS-02 | Phase 1 | Pending |
-| MODELS-03 | Phase 1 | Pending |
+| MODELS-01 | Phase 1 | Complete |
+| MODELS-02 | Phase 1 | Complete |
+| MODELS-03 | Phase 1 | Complete |
 | SERVER-01 | Phase 2 | Pending |
 | SERVER-02 | Phase 2 | Pending |
 | SERVER-03 | Phase 2 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-17 after initial definition*
+*Last updated: 2026-01-17 after Phase 1 completion*
