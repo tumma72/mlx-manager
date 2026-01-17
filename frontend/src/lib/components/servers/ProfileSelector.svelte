@@ -69,6 +69,11 @@
 			searchValue = '';
 		}
 	}
+
+	// Handle value change from Combobox - fixes keyboard Enter selection
+	function handleValueChange(value: string | undefined) {
+		selectedValue = value ?? '';
+	}
 </script>
 
 <div class="flex gap-2">
@@ -77,6 +82,7 @@
 		bind:value={selectedValue}
 		bind:open
 		onOpenChange={handleOpenChange}
+		onValueChange={handleValueChange}
 		{disabled}
 	>
 		<div class="relative flex-1">
