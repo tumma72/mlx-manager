@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ModelSearchResult } from '$api';
 	import { models } from '$api';
-	import { formatNumber, formatBytes } from '$lib/utils/format';
+	import { formatNumber } from '$lib/utils/format';
 	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
 	import { downloadsStore } from '$lib/stores';
@@ -20,9 +20,8 @@
 	// Track local override for download status (null means use prop value)
 	let downloadStatusOverride = $state<boolean | null>(null);
 
-	// Get download state from global store
+	// Get download state from global store (for completion/error tracking)
 	let downloadState = $derived(downloadsStore.getProgress(model.model_id));
-	let downloading = $derived(downloadsStore.isDownloading(model.model_id));
 
 	// Determine if downloaded: check store for completed, then override, then prop
 	let isDownloaded = $derived(() => {
@@ -119,47 +118,22 @@
 		</div>
 	{/if}
 
-	{#if downloading && downloadState}
-		<!-- Download progress bar -->
-		<div class="mt-4 space-y-2">
-			<div class="flex justify-between text-xs text-muted-foreground">
-				<span>
-					{formatBytes(downloadState.downloaded_bytes)} / {formatBytes(downloadState.total_bytes)}
-				</span>
-				<span>
-					{downloadState.progress > 0 ? `${downloadState.progress}%` : 'Starting...'}
-				</span>
-			</div>
-			<div class="w-full bg-muted rounded-full h-2 overflow-hidden">
-				<div
-					class="bg-primary h-2 rounded-full transition-all duration-300"
-					style="width: {downloadState.progress}%"
-				></div>
-			</div>
-			<div class="text-center text-xs text-muted-foreground">
-				{downloadState.status === 'starting' || downloadState.status === 'pending'
-					? 'Preparing download...'
-					: `${downloadState.progress}% complete`}
-			</div>
-		</div>
-	{:else}
-		<div class="mt-4 flex justify-end gap-2">
-			{#if isDownloaded()}
-				<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
-					<Trash2 class="w-4 h-4 mr-1" />
-					{deleting ? 'Deleting...' : 'Delete'}
-				</Button>
-				<Button variant="default" size="sm" onclick={handleUse}>
-					Use
-				</Button>
-			{:else}
-				<Button variant="default" size="sm" onclick={handleDownload} disabled={downloading}>
-					<Download class="w-4 h-4 mr-1" />
-					Download
-				</Button>
-			{/if}
-		</div>
-	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		{#if isDownloaded()}
+			<Button variant="outline" size="sm" onclick={requestDelete} disabled={deleting}>
+				<Trash2 class="w-4 h-4 mr-1" />
+				{deleting ? 'Deleting...' : 'Delete'}
+			</Button>
+			<Button variant="default" size="sm" onclick={handleUse}>
+				Use
+			</Button>
+		{:else}
+			<Button variant="default" size="sm" onclick={handleDownload}>
+				<Download class="w-4 h-4 mr-1" />
+				Download
+			</Button>
+		{/if}
+	</div>
 
 	{#if error}
 		<div class="mt-2 text-sm text-red-500 dark:text-red-400">{error}</div>
