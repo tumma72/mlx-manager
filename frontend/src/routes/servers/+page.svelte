@@ -44,14 +44,22 @@
 		refreshing = false;
 	}
 
-	// Profiles that are starting or failed (show StartingTile)
+	// Starting/failed profiles - these show StartingTile
+	// Includes both: profiles waiting for server process AND servers still loading model
 	const startingOrFailedProfiles = $derived(
 		profileStore.profiles.filter(
 			(p) => serverStore.isStarting(p.id) || serverStore.isFailed(p.id)
 		)
 	);
 
-	// Stopped profiles (for the start dropdown) - exclude starting and failed
+	// Running servers - servers where model is fully loaded (not starting, not failed)
+	const runningServers = $derived(
+		serverStore.servers.filter(
+			(s) => !serverStore.isStarting(s.profile_id) && !serverStore.isFailed(s.profile_id)
+		)
+	);
+
+	// Stopped profiles (for the start dropdown) - exclude starting, failed, and running
 	const stoppedProfiles = $derived(
 		profileStore.profiles.filter(
 			(p) =>
@@ -61,8 +69,8 @@
 		)
 	);
 
-	// Running servers count for the header
-	const runningCount = $derived(serverStore.servers.length);
+	// Total active count (starting + running) - no duplicates since starting excludes running
+	const activeCount = $derived(startingOrFailedProfiles.length + runningServers.length);
 
 	async function handleStartProfile(profile: ServerProfile) {
 		await serverStore.start(profile.id);
@@ -97,37 +105,29 @@
 			</section>
 		{/if}
 
-		<!-- Starting/Failed Servers -->
-		{#if startingOrFailedProfiles.length > 0}
-			<section>
-				<div class="grid gap-4">
-					{#each startingOrFailedProfiles as profile (profile.id)}
-						<StartingTile {profile} />
-					{/each}
-				</div>
-			</section>
-		{/if}
-
-		<!-- Running Servers -->
+		<!-- Active Servers (Starting + Running) - unified list with no duplicates -->
 		<section>
 			<h2 class="mb-4 text-lg font-semibold">
-				Running Servers ({runningCount})
+				Active Servers ({activeCount})
 			</h2>
-			{#if serverStore.servers.length === 0 && startingOrFailedProfiles.length === 0}
+			{#if activeCount === 0}
 				<div
 					class="rounded-lg border bg-white py-8 text-center text-muted-foreground dark:bg-gray-800"
 				>
 					No servers running. Start a profile to begin.
 				</div>
-			{:else if serverStore.servers.length === 0}
-				<!-- Don't show "no servers" message when something is starting -->
 			{:else}
 				<div
 					bind:this={serverListContainer}
 					class="grid gap-4 overflow-auto max-h-[calc(100vh-300px)]"
 					style="contain: layout;"
 				>
-					{#each serverStore.servers as server (server.profile_id)}
+					<!-- Starting/Failed tiles (not yet in server list) -->
+					{#each startingOrFailedProfiles as profile (profile.id)}
+						<StartingTile {profile} />
+					{/each}
+					<!-- Running server tiles (model loaded) -->
+					{#each runningServers as server (server.profile_id)}
 						<ServerTile {server} />
 					{/each}
 				</div>
