@@ -5,34 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 2 — Server Panel Redesign
+**Current focus:** Phase 2 Complete — Ready for Phase 3
 
 ## Current Position
 
-Phase: 2 of 4 (Server Panel Redesign)
-Plan: 3 of 4 complete
-Status: In progress
-Last activity: 2026-01-17 — Completed 02-03-PLAN.md
+Phase: 2 of 4 (Server Panel Redesign) - COMPLETE
+Plan: 4 of 4 complete
+Status: Phase complete
+Last activity: 2026-01-17 — Completed 02-04-PLAN.md
 
-Progress: ███▒░░░░░░ 35% (1/4 phases complete, 3/4 phase 2 plans done)
+Progress: █████░░░░░ 50% (2/4 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: ~6 min
-- Total execution time: ~23 min
+- Total plans completed: 5
+- Average duration: ~5 min
+- Total execution time: ~27 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
-| 2 | 3/4 | ~20 min | ~7 min |
+| 2 | 4/4 | ~24 min | ~6 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01, 02-01, 02-02, 02-03
-- Trend: Fast execution with one user feedback iteration
+- Last 5 plans: 01-01, 02-01, 02-02, 02-03, 02-04
+- Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
 
@@ -48,6 +48,8 @@ Recent decisions affecting current work:
 - Stabilize ProfileSelector profiles via ID comparison to prevent polling flicker
 - Separate StartingTile component for starting/failed states
 - Use servers list directly for running state detection in chat page
+- Container-scoped scroll over window scroll for reliability
+- Use $effect.pre for pre-update capture, $effect for post-update restore
 
 ### Pending Todos
 
@@ -64,6 +66,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-17
-Stopped at: Completed 02-03-PLAN.md (ServerTile with metrics gauges)
+Stopped at: Completed 02-04-PLAN.md (Scroll preservation)
 Resume file: None
-Next plan: 02-04-PLAN.md (if exists, otherwise phase 2 complete)
+Next plan: Phase 3 planning (if exists)
