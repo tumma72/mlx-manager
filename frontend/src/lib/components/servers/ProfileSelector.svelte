@@ -17,17 +17,36 @@
 	let open = $state(false);
 	let starting = $state(false);
 
+	// Stabilize profiles array: only update reference when IDs actually change.
+	// This prevents the Combobox from resetting its internal state on every poll.
+	let stableProfiles = $state<ServerProfile[]>([]);
+	let lastProfileIds = $state<string>('');
+
+	$effect(() => {
+		const currentIds = profiles.map((p) => p.id).join(',');
+		if (currentIds !== lastProfileIds) {
+			// Profile list actually changed - update our stable copy
+			stableProfiles = [...profiles];
+			lastProfileIds = currentIds;
+
+			// Clear selection if the selected profile is no longer available
+			if (selectedValue && !profiles.find((p) => p.id?.toString() === selectedValue)) {
+				selectedValue = '';
+			}
+		}
+	});
+
 	const filteredProfiles = $derived(
 		searchValue === ''
-			? profiles
-			: profiles.filter(
+			? stableProfiles
+			: stableProfiles.filter(
 					(p) =>
 						p.name.toLowerCase().includes(searchValue.toLowerCase()) ||
 						p.model_path.toLowerCase().includes(searchValue.toLowerCase())
 				)
 	);
 
-	const selectedProfile = $derived(profiles.find((p) => p.id?.toString() === selectedValue));
+	const selectedProfile = $derived(stableProfiles.find((p) => p.id?.toString() === selectedValue));
 
 	async function handleStart() {
 		if (selectedProfile && !starting) {

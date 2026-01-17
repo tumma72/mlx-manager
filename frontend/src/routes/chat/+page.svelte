@@ -16,24 +16,40 @@
 	let error = $state<string | null>(null);
 	let selectedProfileId = $state<number | null>(null);
 
-	// Get running profiles
-	const runningProfiles = $derived(
-		profileStore.profiles.filter((p) => serverStore.isRunning(p.id))
-	);
+	// Get running profiles - use servers directly to determine running state
+	// This avoids issues with serverStore.isRunning() which can return false
+	// for profiles that are in the servers list but still in startingProfiles
+	const runningProfiles = $derived.by(() => {
+		const runningIds = new Set(serverStore.servers.map((s) => s.profile_id));
+		return profileStore.profiles.filter((p) => runningIds.has(p.id));
+	});
 
-	const selectedProfile = $derived(
-		runningProfiles.find((p) => p.id === selectedProfileId)
-	);
+	const selectedProfile = $derived(runningProfiles.find((p) => p.id === selectedProfileId));
+
+	// Handle URL query parameter reactively (not just on mount)
+	// This ensures we find the profile even if stores aren't loaded yet
+	let urlProfileId = $state<number | null>(null);
 
 	onMount(() => {
 		// Initial data load - polling is handled globally by +layout.svelte
 		profileStore.refresh();
 		serverStore.refresh();
 
-		// Check for profile query param
+		// Get profile from URL query param
 		const profileParam = $page.url.searchParams.get('profile');
 		if (profileParam) {
-			selectedProfileId = parseInt(profileParam, 10);
+			urlProfileId = parseInt(profileParam, 10);
+		}
+	});
+
+	// Reactively set selectedProfileId when stores load and URL param is present
+	$effect(() => {
+		if (urlProfileId !== null && selectedProfileId === null) {
+			// Check if this profile is actually running
+			const isRunning = runningProfiles.some((p) => p.id === urlProfileId);
+			if (isRunning) {
+				selectedProfileId = urlProfileId;
+			}
 		}
 	});
 
