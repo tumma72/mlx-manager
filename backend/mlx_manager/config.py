@@ -20,7 +20,9 @@ class Settings(BaseSettings):
 
     # HuggingFace
     hf_cache_path: Path = Path.home() / ".cache" / "huggingface" / "hub"
-    hf_organization: str = "mlx-community"
+    # Filter by author/organization (None = search all MLX models from any author)
+    # Set to specific org like "mlx-community" to filter by that author only
+    hf_organization: str | None = None
 
     # Offline mode - set to True to disable HuggingFace dependencies
     offline_mode: bool = False

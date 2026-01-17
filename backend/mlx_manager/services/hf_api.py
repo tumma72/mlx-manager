@@ -88,19 +88,19 @@ def estimate_size_from_name(model_id: str) -> float | None:
 
 async def search_models(
     query: str,
-    author: str = "mlx-community",
+    author: str | None = None,
     sort: str = "downloads",
     limit: int = 20,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> list[ModelInfo]:
-    """Search for models on HuggingFace Hub.
+    """Search for MLX-optimized models on HuggingFace Hub.
 
-    Uses the REST API directly with expand=safetensors to get model
-    sizes in a single request, avoiding N+1 API calls.
+    Uses the REST API directly to search for models with the MLX library tag,
+    finding models from any author (mlx-community, lmstudio-community, etc.).
 
     Args:
         query: Search query string
-        author: Filter by author/organization (default: mlx-community)
+        author: Optional filter by author/organization (None = all authors)
         sort: Sort field (downloads, likes, lastModified)
         limit: Maximum number of results
         timeout: Request timeout in seconds
@@ -109,13 +109,19 @@ async def search_models(
         List of ModelInfo objects with model metadata.
     """
     url = f"{HF_API_BASE}/models"
-    params = {
+    params: dict[str, str | list[str]] = {
         "search": query,
-        "author": author,
+        "filter": "mlx",  # Filter by MLX library - finds models from any author
         "sort": sort,
         "limit": str(limit),
-        "expand": "safetensors",  # Get size info in single request
+        # Get both usedStorage (total repo size) and safetensors (weights only)
+        # usedStorage is more accurate as it includes all files in the repo
+        "expand[]": ["usedStorage", "safetensors"],
     }
+
+    # Optionally filter by specific author
+    if author:
+        params["author"] = author
 
     async with httpx.AsyncClient() as client:
         try:
@@ -134,11 +140,15 @@ async def search_models(
     results: list[ModelInfo] = []
 
     for item in response.json():
-        # Extract size from safetensors if available
-        size_bytes = None
-        safetensors = item.get("safetensors")
-        if safetensors and isinstance(safetensors, dict):
-            size_bytes = safetensors.get("total")
+        # Prefer usedStorage (total repo size) over safetensors.total (weights only)
+        # usedStorage is more accurate as it includes all files (tokenizer, config, etc.)
+        size_bytes = item.get("usedStorage")
+
+        # Fall back to safetensors.total if usedStorage not available
+        if not size_bytes:
+            safetensors = item.get("safetensors")
+            if safetensors and isinstance(safetensors, dict):
+                size_bytes = safetensors.get("total")
 
         results.append(
             ModelInfo(

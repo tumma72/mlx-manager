@@ -69,10 +69,15 @@ class HuggingFaceClient:
             if max_size_gb and size_gb > max_size_gb:
                 continue
 
+            # Extract author from model_id if not provided (format: author/model-name)
+            author = model.author
+            if not author and "/" in model.model_id:
+                author = model.model_id.split("/")[0]
+
             results.append(
                 ModelSearchResult(
                     model_id=model.model_id,
-                    author=model.author or settings.hf_organization,
+                    author=author,
                     downloads=model.downloads,
                     likes=model.likes,
                     estimated_size_gb=size_gb,
