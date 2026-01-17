@@ -87,6 +87,8 @@ export interface RunningServer {
   health_status: "starting" | "healthy" | "unhealthy" | "stopped";
   uptime_seconds: number;
   memory_mb: number;
+  memory_percent: number;
+  cpu_percent: number;
 }
 
 export interface ModelSearchResult {
