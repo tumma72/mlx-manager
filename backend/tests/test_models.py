@@ -85,6 +85,44 @@ async def test_start_download(client):
 
 
 @pytest.mark.asyncio
+async def test_start_download_existing_returns_same_task(client):
+    """Test that starting a download for model with active download returns existing task."""
+    from mlx_manager.routers import models
+    from mlx_manager.models import Download
+    from datetime import datetime, UTC
+
+    model_id = "mlx-community/duplicate-download-test"
+
+    # First, start a download to create the DB record
+    response1 = await client.post(
+        "/api/models/download",
+        json={"model_id": model_id},
+    )
+    assert response1.status_code == 200
+    first_task_id = response1.json()["task_id"]
+
+    # Manually update the task status to simulate an active download
+    models.download_tasks[first_task_id]["status"] = "downloading"
+    models.download_tasks[first_task_id]["progress"] = 50
+
+    try:
+        # Try to start a new download for the same model
+        response2 = await client.post(
+            "/api/models/download",
+            json={"model_id": model_id},
+        )
+        assert response2.status_code == 200
+
+        data = response2.json()
+        # Should return the same task_id, not create a new one
+        assert data["task_id"] == first_task_id
+        assert data["model_id"] == model_id
+    finally:
+        # Clean up
+        models.download_tasks.pop(first_task_id, None)
+
+
+@pytest.mark.asyncio
 async def test_delete_model(client, mock_hf_client):
     """Test deleting a local model."""
     response = await client.delete("/api/models/mlx-community/test-model")

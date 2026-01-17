@@ -1,11 +1,15 @@
 """Tests for HuggingFace REST API wrapper."""
 
+from unittest.mock import AsyncMock, patch
+
+import httpx
 import pytest
 
 from mlx_manager.services.hf_api import (
     ModelInfo,
     estimate_size_from_name,
     get_model_size_gb,
+    search_models,
 )
 
 
@@ -123,14 +127,154 @@ class TestGetModelSizeGb:
 
 
 class TestSearchModels:
-    """Integration tests for search_models (requires network)."""
+    """Tests for search_models function with mocked HTTP."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires network access")
-    async def test_search_returns_results(self):
-        """Search returns results with size info."""
-        from mlx_manager.services.hf_api import search_models
+    async def test_search_returns_results_with_used_storage(self):
+        """Search returns results preferring usedStorage for size."""
+        mock_json_data = [
+            {
+                "id": "mlx-community/Qwen3-8B-4bit",
+                "author": "mlx-community",
+                "downloads": 1000,
+                "likes": 50,
+                "tags": ["mlx", "text-generation"],
+                "lastModified": "2024-01-15T10:00:00Z",
+                "usedStorage": 5_000_000_000,  # 5GB - should be preferred
+                "safetensors": {"total": 4_000_000_000},  # 4GB - fallback
+            }
+        ]
 
-        results = await search_models("Qwen", limit=3)
-        assert len(results) > 0
-        assert all(r.model_id for r in results)
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            # httpx Response.json() is synchronous, not async
+            mock_response_obj = AsyncMock()
+            mock_response_obj.json = lambda: mock_json_data  # Sync method
+            mock_response_obj.raise_for_status = lambda: None
+            mock_instance.get.return_value = mock_response_obj
+
+            results = await search_models("Qwen", limit=3)
+
+            assert len(results) == 1
+            assert results[0].model_id == "mlx-community/Qwen3-8B-4bit"
+            assert results[0].size_bytes == 5_000_000_000  # Used usedStorage
+
+    @pytest.mark.asyncio
+    async def test_search_falls_back_to_safetensors(self):
+        """Search falls back to safetensors.total when usedStorage missing."""
+        mock_json_data = [
+            {
+                "id": "mlx-community/Test-Model",
+                "author": "mlx-community",
+                "downloads": 100,
+                "likes": 5,
+                "tags": [],
+                "lastModified": None,
+                "safetensors": {"total": 3_000_000_000},
+            }
+        ]
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_response_obj = AsyncMock()
+            mock_response_obj.json = lambda: mock_json_data
+            mock_response_obj.raise_for_status = lambda: None
+            mock_instance.get.return_value = mock_response_obj
+
+            results = await search_models("Test", limit=1)
+
+            assert len(results) == 1
+            assert results[0].size_bytes == 3_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_search_with_author_filter(self):
+        """Search passes author filter to API."""
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_response_obj = AsyncMock()
+            mock_response_obj.json = lambda: []
+            mock_response_obj.raise_for_status = lambda: None
+            mock_instance.get.return_value = mock_response_obj
+
+            await search_models("Test", author="lmstudio-community", limit=5)
+
+            # Verify author was passed in params
+            call_args = mock_instance.get.call_args
+            params = call_args.kwargs.get("params", call_args.args[1] if len(call_args.args) > 1 else {})
+            assert params.get("author") == "lmstudio-community"
+
+    @pytest.mark.asyncio
+    async def test_search_handles_timeout(self):
+        """Search returns empty list on timeout."""
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_instance.get.side_effect = httpx.TimeoutException("Timeout")
+
+            results = await search_models("Qwen", limit=3)
+
+            assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_handles_http_error(self):
+        """Search returns empty list on HTTP error."""
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_response_obj = AsyncMock()
+            mock_response_obj.status_code = 500
+
+            def raise_error():
+                raise httpx.HTTPStatusError(
+                    "Server Error", request=AsyncMock(), response=mock_response_obj
+                )
+
+            mock_response_obj.raise_for_status = raise_error
+            mock_instance.get.return_value = mock_response_obj
+
+            results = await search_models("Qwen", limit=3)
+
+            assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_handles_request_error(self):
+        """Search returns empty list on request error."""
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_instance.get.side_effect = httpx.RequestError("Connection failed")
+
+            results = await search_models("Qwen", limit=3)
+
+            assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_handles_missing_fields(self):
+        """Search handles API response with missing optional fields."""
+        mock_json_data = [
+            {
+                "id": "some-author/minimal-model",
+                # All other fields missing
+            }
+        ]
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_client.return_value.__aenter__.return_value = mock_instance
+            mock_response_obj = AsyncMock()
+            mock_response_obj.json = lambda: mock_json_data
+            mock_response_obj.raise_for_status = lambda: None
+            mock_instance.get.return_value = mock_response_obj
+
+            results = await search_models("minimal", limit=1)
+
+            assert len(results) == 1
+            assert results[0].model_id == "some-author/minimal-model"
+            assert results[0].author is None
+            assert results[0].downloads == 0
+            assert results[0].likes == 0
+            assert results[0].tags == []
+            assert results[0].size_bytes is None

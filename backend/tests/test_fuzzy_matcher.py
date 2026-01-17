@@ -122,58 +122,11 @@ class TestFuzzyMatcherRapidfuzz:
             assert result is None, f"Expected no match for {model}, got {result}"
 
 
-@pytest.mark.skip(reason="Difflib implementation kept for reference only; Rapidfuzz is the production implementation")
-class TestFuzzyMatcherDifflib:
-    """Test fuzzy matcher using difflib library.
-
-    Note: These tests are skipped because Rapidfuzz was chosen as the
-    production implementation based on TDD comparison (100% accuracy vs
-    90.6% for Difflib). The class is kept for reference/comparison only.
-    """
-
-    @pytest.fixture
-    def matcher(self):
-        from mlx_manager.utils.fuzzy_matcher import DifflibMatcher
-
-        return DifflibMatcher()
-
-    @pytest.mark.parametrize(
-        "model,parser_type,expected,should_match", TOOL_PARSER_TEST_CASES
-    )
-    def test_tool_call_parser(self, matcher, model, parser_type, expected, should_match):
-        result = matcher.find_best_match(model, parser_type)
-        if should_match:
-            assert result == expected, f"Expected {expected} for {model}, got {result}"
-        else:
-            assert result is None, f"Expected no match for {model}, got {result}"
-
-    @pytest.mark.parametrize(
-        "model,parser_type,expected,should_match", REASONING_PARSER_TEST_CASES
-    )
-    def test_reasoning_parser(self, matcher, model, parser_type, expected, should_match):
-        result = matcher.find_best_match(model, parser_type)
-        if should_match:
-            assert result == expected, f"Expected {expected} for {model}, got {result}"
-        else:
-            assert result is None, f"Expected no match for {model}, got {result}"
-
-    @pytest.mark.parametrize(
-        "model,parser_type,expected,should_match", MESSAGE_CONVERTER_TEST_CASES
-    )
-    def test_message_converter(self, matcher, model, parser_type, expected, should_match):
-        result = matcher.find_best_match(model, parser_type)
-        if should_match:
-            assert result == expected, f"Expected {expected} for {model}, got {result}"
-        else:
-            assert result is None, f"Expected no match for {model}, got {result}"
-
-    @pytest.mark.parametrize("model,parser_type,expected,should_match", EDGE_CASES)
-    def test_edge_cases(self, matcher, model, parser_type, expected, should_match):
-        result = matcher.find_best_match(model, parser_type)
-        if should_match:
-            assert result == expected, f"Expected {expected} for {model}, got {result}"
-        else:
-            assert result is None, f"Expected no match for {model}, got {result}"
+# Note: DifflibMatcher tests were removed. During TDD comparison:
+# - Rapidfuzz: 100% accuracy (32/32 test cases)
+# - Difflib: 90.6% accuracy (29/32 test cases)
+# Rapidfuzz was chosen as the production implementation.
+# See DifflibMatcher class in fuzzy_matcher.py for the reference implementation.
 
 
 class TestMatcherComparison:
