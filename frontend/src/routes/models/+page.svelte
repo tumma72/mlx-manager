@@ -95,16 +95,19 @@
 		return localModels.filter((m) => m.model_id.toLowerCase().includes(query));
 	});
 
-	// Filter search results (online) based on local-only toggle
-	const displayResults = $derived(() => {
-		return showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults;
-	});
-
-	// Get active downloads for pinned section
+	// Get active downloads for pinned section (defined before displayResults as it's used there)
 	const activeDownloads = $derived(() => {
 		return downloadsStore.getAllDownloads().filter(
 			(d) => d.status === 'pending' || d.status === 'starting' || d.status === 'downloading'
 		);
+	});
+
+	// Filter search results (online) based on local-only toggle
+	// Also exclude models that are currently being downloaded (they appear in download section)
+	const displayResults = $derived(() => {
+		const activeIds = new Set(activeDownloads().map((d) => d.model_id));
+		const resultsToShow = showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults;
+		return resultsToShow.filter((r) => !activeIds.has(r.model_id));
 	});
 
 	// Determine what to show based on mode
@@ -113,9 +116,60 @@
 </script>
 
 <div class="space-y-6">
-	<!-- Pinned Active Downloads Section -->
+	<!-- Sticky Header and Search Section -->
+	<div class="sticky top-0 z-20 bg-background pt-2 pb-4 -mx-4 px-4">
+		<div class="flex items-center justify-between mb-4">
+			<h1 class="text-2xl font-bold">Model Browser</h1>
+			{#if systemStore.memory}
+				<Badge variant="outline" class="text-sm">
+					<HardDrive class="w-4 h-4 mr-1" />
+					Recommended: &lt;{systemStore.memory.mlx_recommended_gb.toFixed(0)} GB
+				</Badge>
+			{/if}
+		</div>
+
+		<!-- Search -->
+		<Card class="p-4">
+			<form
+				onsubmit={(e) => {
+					e.preventDefault();
+					handleSearch();
+				}}
+				class="flex gap-4"
+			>
+				<div class="flex-1 relative">
+					<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+					<Input
+						bind:value={searchQuery}
+						placeholder={showLocalOnly ? 'Filter downloaded models...' : 'Search mlx-community models...'}
+						class="pl-10"
+					/>
+				</div>
+				{#if !showLocalOnly}
+					<Button type="submit" disabled={loading}>
+						{loading ? 'Searching...' : 'Search'}
+					</Button>
+				{/if}
+			</form>
+
+			<div class="flex items-center gap-4 mt-4">
+				{#if !showLocalOnly}
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={filterByMemory} class="rounded" />
+						<span>Fits in memory (&lt;{systemStore.memory?.mlx_recommended_gb.toFixed(0) ?? 80} GB)</span>
+					</label>
+				{/if}
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" bind:checked={showLocalOnly} class="rounded" />
+					<span>Downloaded only</span>
+				</label>
+			</div>
+		</Card>
+	</div>
+
+	<!-- Active Downloads Section (below sticky search) -->
 	{#if activeDownloads().length > 0}
-		<div class="sticky top-0 z-10 bg-background pb-4 -mx-4 px-4 pt-4 border-b mb-2">
+		<div class="bg-background pb-4 border-b mb-2">
 			<h2 class="text-sm font-medium text-muted-foreground mb-2">
 				Downloading ({activeDownloads().length})
 			</h2>
@@ -126,54 +180,6 @@
 			</div>
 		</div>
 	{/if}
-
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Model Browser</h1>
-		{#if systemStore.memory}
-			<Badge variant="outline" class="text-sm">
-				<HardDrive class="w-4 h-4 mr-1" />
-				Recommended: &lt;{systemStore.memory.mlx_recommended_gb.toFixed(0)} GB
-			</Badge>
-		{/if}
-	</div>
-
-	<!-- Search -->
-	<Card class="p-4">
-		<form
-			onsubmit={(e) => {
-				e.preventDefault();
-				handleSearch();
-			}}
-			class="flex gap-4"
-		>
-			<div class="flex-1 relative">
-				<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-				<Input
-					bind:value={searchQuery}
-					placeholder={showLocalOnly ? 'Filter downloaded models...' : 'Search mlx-community models...'}
-					class="pl-10"
-				/>
-			</div>
-			{#if !showLocalOnly}
-				<Button type="submit" disabled={loading}>
-					{loading ? 'Searching...' : 'Search'}
-				</Button>
-			{/if}
-		</form>
-
-		<div class="flex items-center gap-4 mt-4">
-			{#if !showLocalOnly}
-				<label class="flex items-center gap-2 text-sm">
-					<input type="checkbox" bind:checked={filterByMemory} class="rounded" />
-					<span>Fits in memory (&lt;{systemStore.memory?.mlx_recommended_gb.toFixed(0) ?? 80} GB)</span>
-				</label>
-			{/if}
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={showLocalOnly} class="rounded" />
-				<span>Downloaded only</span>
-			</label>
-		</div>
-	</Card>
 
 	{#if error}
 		<div class="text-center py-8 text-red-500 dark:text-red-400">{error}</div>
