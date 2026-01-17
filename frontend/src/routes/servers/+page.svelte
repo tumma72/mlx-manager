@@ -7,25 +7,35 @@
 	import { RefreshCw, Plus } from 'lucide-svelte';
 	let refreshing = $state(false);
 
-	// Scroll preservation: continuously track scroll position and restore after updates
-	let lastScrollY = 0;
-	let rafId: number | null = null;
+	// Container-scoped scroll preservation
+	let serverListContainer: HTMLElement | undefined = $state();
+	let savedScrollTop = 0;
 
 	onMount(() => {
 		// Initial data load - polling is handled globally by +layout.svelte
 		serverStore.refresh();
 		profileStore.refresh();
+	});
 
-		// Track scroll position continuously
-		function onScroll() {
-			lastScrollY = window.scrollY;
+	// Capture scroll position BEFORE DOM updates
+	$effect.pre(() => {
+		// Track dependency on server list to run before updates
+		void serverStore.servers.length;
+		if (serverListContainer) {
+			savedScrollTop = serverListContainer.scrollTop;
 		}
-		window.addEventListener('scroll', onScroll, { passive: true });
+	});
 
-		return () => {
-			window.removeEventListener('scroll', onScroll);
-			if (rafId) cancelAnimationFrame(rafId);
-		};
+	// Restore scroll position AFTER DOM updates
+	$effect(() => {
+		// Track dependency to run after updates
+		void serverStore.servers;
+		if (serverListContainer && savedScrollTop > 0) {
+			// Only restore if significantly different (prevents minor drift)
+			if (Math.abs(serverListContainer.scrollTop - savedScrollTop) > 10) {
+				serverListContainer.scrollTop = savedScrollTop;
+			}
+		}
 	});
 
 	async function handleRefresh() {
@@ -57,23 +67,6 @@
 	async function handleStartProfile(profile: ServerProfile) {
 		await serverStore.start(profile.id);
 	}
-
-	// Restore scroll position after any store update causes a re-render
-	$effect(() => {
-		// Track these dependencies to run after updates
-		void serverStore.servers;
-		void profileStore.profiles;
-
-		// Use double-RAF to ensure DOM is fully updated before restoring scroll
-		if (rafId) cancelAnimationFrame(rafId);
-		rafId = requestAnimationFrame(() => {
-			rafId = requestAnimationFrame(() => {
-				if (lastScrollY > 0 && Math.abs(window.scrollY - lastScrollY) > 50) {
-					window.scrollTo({ top: lastScrollY, behavior: 'instant' });
-				}
-			});
-		});
-	});
 </script>
 
 <div class="space-y-6">
@@ -129,7 +122,10 @@
 			{:else if serverStore.servers.length === 0}
 				<!-- Don't show "no servers" message when something is starting -->
 			{:else}
-				<div class="grid gap-4">
+				<div
+					bind:this={serverListContainer}
+					class="grid gap-4 overflow-auto max-h-[calc(100vh-300px)]"
+				>
 					{#each serverStore.servers as server (server.profile_id)}
 						<ServerTile {server} />
 					{/each}
