@@ -74,6 +74,14 @@
 	function handleValueChange(value: string | undefined) {
 		selectedValue = value ?? '';
 	}
+
+	// Handle Enter key when dropdown is closed and profile is selected - starts the server
+	function handleInputKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !open && selectedProfile && !starting && !disabled) {
+			event.preventDefault();
+			handleStart();
+		}
+	}
 </script>
 
 <div class="flex gap-2">
@@ -90,6 +98,7 @@
 				class="h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 				placeholder="Select profile to start..."
 				oninput={(e) => (searchValue = e.currentTarget.value)}
+				onkeydown={handleInputKeydown}
 			/>
 			<Combobox.Trigger
 				class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"

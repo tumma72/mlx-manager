@@ -67,28 +67,24 @@
 		}
 	}
 
-	// On mount: resume polling if profile is still starting
-	let mounted = $state(false);
+	// On mount: start polling if profile is starting and not already polling
 	$effect(() => {
-		if (!mounted) {
-			mounted = true;
-			if (serverStore.isStarting(profile.id) && !serverStore.isProfilePolling(profile.id)) {
-				if (serverStore.startProfilePolling(profile.id)) {
-					isPolling = true;
-					startTime = Date.now();
-					pollServerStatus();
-				}
+		// Start polling when component mounts for a starting profile
+		if (serverStore.isStarting(profile.id) && !isPolling && !serverStore.isProfilePolling(profile.id)) {
+			if (serverStore.startProfilePolling(profile.id)) {
+				isPolling = true;
+				startTime = Date.now();
+				pollServerStatus();
 			}
 		}
-	});
 
-	// Cleanup on unmount
-	$effect(() => {
+		// Cleanup on unmount
 		return () => {
 			if (pollTimeoutId) {
 				clearTimeout(pollTimeoutId);
 				pollTimeoutId = null;
 			}
+			// Don't stop profile polling here - it might be picked up by a re-mounted tile
 		};
 	});
 

@@ -235,7 +235,12 @@ class HuggingFaceClient:
             return 0
 
     def list_local_models(self) -> list[LocalModelInfo]:
-        """List all locally downloaded MLX models."""
+        """List all locally downloaded MLX models.
+
+        If hf_organization is set, only lists models from that organization.
+        If hf_organization is None, lists all models with 'mlx' in the path
+        (common convention for MLX-optimized models).
+        """
         if settings.offline_mode:
             return []
 
@@ -246,23 +251,44 @@ class HuggingFaceClient:
 
         try:
             for item in self.cache_dir.iterdir():
-                if item.name.startswith(f"models--{settings.hf_organization}--"):
-                    model_id = item.name.replace("models--", "").replace("--", "/")
-                    local_path = self.get_local_path(model_id)
+                # Only consider model directories (models--author--name format)
+                if not item.name.startswith("models--"):
+                    continue
 
-                    if local_path:
-                        size_bytes = sum(
-                            f.stat().st_size for f in Path(local_path).rglob("*") if f.is_file()
-                        )
+                # Extract model_id from directory name
+                model_id = item.name.replace("models--", "").replace("--", "/")
 
-                        models.append(
-                            LocalModelInfo(
-                                model_id=model_id,
-                                local_path=local_path,
-                                size_bytes=size_bytes,
-                                size_gb=round(size_bytes / (1024**3), 2),
-                            )
+                # Filter by organization if specified
+                if settings.hf_organization:
+                    if not model_id.startswith(f"{settings.hf_organization}/"):
+                        continue
+                else:
+                    # When no organization filter, show models that appear to be MLX models
+                    # Common patterns: mlx-community/, lmstudio-community/, or 'mlx' in name
+                    model_name_lower = model_id.lower()
+                    is_mlx_model = (
+                        "mlx-community/" in model_name_lower
+                        or "lmstudio-community/" in model_name_lower
+                        or "mlx" in model_name_lower
+                    )
+                    if not is_mlx_model:
+                        continue
+
+                local_path = self.get_local_path(model_id)
+
+                if local_path:
+                    size_bytes = sum(
+                        f.stat().st_size for f in Path(local_path).rglob("*") if f.is_file()
+                    )
+
+                    models.append(
+                        LocalModelInfo(
+                            model_id=model_id,
+                            local_path=local_path,
+                            size_bytes=size_bytes,
+                            size_gb=round(size_bytes / (1024**3), 2),
                         )
+                    )
         except Exception:
             pass
 

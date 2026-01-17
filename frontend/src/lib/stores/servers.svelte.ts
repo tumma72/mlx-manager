@@ -96,6 +96,9 @@ class ServerStore {
   // Track if polling has been initialized
   private pollingInitialized = false;
 
+  // Track if initial load has completed (prevents loading flicker on subsequent polls)
+  private initialLoadComplete = false;
+
   constructor() {
     // Register with polling coordinator
     pollingCoordinator.register("servers", {
@@ -109,13 +112,13 @@ class ServerStore {
    * Internal refresh - called by polling coordinator.
    * Uses reconcileArray to update in-place.
    *
-   * IMPORTANT: Only sets loading=true on initial load (when no data exists).
+   * IMPORTANT: Only sets loading=true on initial load (before first successful fetch).
    * Background polls should not toggle loading state, as this triggers
    * unnecessary re-renders across all components watching the store.
    */
   private async doRefresh() {
     // Only show loading on initial load, not background polls
-    const isInitialLoad = this.servers.length === 0 && !this.error;
+    const isInitialLoad = !this.initialLoadComplete;
     if (isInitialLoad) {
       this.loading = true;
     }
@@ -128,6 +131,9 @@ class ServerStore {
         getKey: (s) => s.profile_id,
         isEqual: serversEqual,
       });
+
+      // Mark initial load complete on first successful fetch
+      this.initialLoadComplete = true;
 
       // Clear any previous error on successful refresh
       if (this.error) {

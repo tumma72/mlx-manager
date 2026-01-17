@@ -114,9 +114,9 @@ async def search_models(
         "filter": "mlx",  # Filter by MLX library - finds models from any author
         "sort": sort,
         "limit": str(limit),
-        # Get both usedStorage (total repo size) and safetensors (weights only)
-        # usedStorage is more accurate as it includes all files in the repo
-        "expand[]": ["usedStorage", "safetensors"],
+        # Expand safetensors to get model weights size
+        # Note: usedStorage is not a valid expand option (causes 400 error)
+        "expand[]": ["safetensors"],
     }
 
     # Optionally filter by specific author
@@ -140,15 +140,11 @@ async def search_models(
     results: list[ModelInfo] = []
 
     for item in response.json():
-        # Prefer usedStorage (total repo size) over safetensors.total (weights only)
-        # usedStorage is more accurate as it includes all files (tokenizer, config, etc.)
-        size_bytes = item.get("usedStorage")
-
-        # Fall back to safetensors.total if usedStorage not available
-        if not size_bytes:
-            safetensors = item.get("safetensors")
-            if safetensors and isinstance(safetensors, dict):
-                size_bytes = safetensors.get("total")
+        # Get size from safetensors.total (total size of model weights)
+        size_bytes = None
+        safetensors = item.get("safetensors")
+        if safetensors and isinstance(safetensors, dict):
+            size_bytes = safetensors.get("total")
 
         results.append(
             ModelInfo(

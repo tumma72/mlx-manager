@@ -130,8 +130,8 @@ class TestSearchModels:
     """Tests for search_models function with mocked HTTP."""
 
     @pytest.mark.asyncio
-    async def test_search_returns_results_with_used_storage(self):
-        """Search returns results preferring usedStorage for size."""
+    async def test_search_returns_results_with_safetensors_size(self):
+        """Search returns results using safetensors.total for size."""
         mock_json_data = [
             {
                 "id": "mlx-community/Qwen3-8B-4bit",
@@ -140,8 +140,7 @@ class TestSearchModels:
                 "likes": 50,
                 "tags": ["mlx", "text-generation"],
                 "lastModified": "2024-01-15T10:00:00Z",
-                "usedStorage": 5_000_000_000,  # 5GB - should be preferred
-                "safetensors": {"total": 4_000_000_000},  # 4GB - fallback
+                "safetensors": {"total": 4_000_000_000},  # 4GB model weights
             }
         ]
 
@@ -158,11 +157,11 @@ class TestSearchModels:
 
             assert len(results) == 1
             assert results[0].model_id == "mlx-community/Qwen3-8B-4bit"
-            assert results[0].size_bytes == 5_000_000_000  # Used usedStorage
+            assert results[0].size_bytes == 4_000_000_000  # Uses safetensors.total
 
     @pytest.mark.asyncio
-    async def test_search_falls_back_to_safetensors(self):
-        """Search falls back to safetensors.total when usedStorage missing."""
+    async def test_search_handles_missing_safetensors(self):
+        """Search returns None for size_bytes when safetensors missing."""
         mock_json_data = [
             {
                 "id": "mlx-community/Test-Model",
@@ -171,7 +170,7 @@ class TestSearchModels:
                 "likes": 5,
                 "tags": [],
                 "lastModified": None,
-                "safetensors": {"total": 3_000_000_000},
+                # No safetensors field
             }
         ]
 
@@ -186,7 +185,7 @@ class TestSearchModels:
             results = await search_models("Test", limit=1)
 
             assert len(results) == 1
-            assert results[0].size_bytes == 3_000_000_000
+            assert results[0].size_bytes is None  # No safetensors = no size
 
     @pytest.mark.asyncio
     async def test_search_with_author_filter(self):
