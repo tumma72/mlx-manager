@@ -45,7 +45,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None.
+1. **Restore test coverage to 95%+** — Backend at 88%, 33 skipped tests need audit
 
 ### Blockers/Concerns
 
