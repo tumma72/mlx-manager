@@ -108,10 +108,18 @@ class ServerStore {
   /**
    * Internal refresh - called by polling coordinator.
    * Uses reconcileArray to update in-place.
+   *
+   * IMPORTANT: Only sets loading=true on initial load (when no data exists).
+   * Background polls should not toggle loading state, as this triggers
+   * unnecessary re-renders across all components watching the store.
    */
   private async doRefresh() {
-    this.loading = true;
-    this.error = null;
+    // Only show loading on initial load, not background polls
+    const isInitialLoad = this.servers.length === 0 && !this.error;
+    if (isInitialLoad) {
+      this.loading = true;
+    }
+
     try {
       const newServers = await serversApi.list();
 
@@ -120,10 +128,17 @@ class ServerStore {
         getKey: (s) => s.profile_id,
         isEqual: serversEqual,
       });
+
+      // Clear any previous error on successful refresh
+      if (this.error) {
+        this.error = null;
+      }
     } catch (e) {
       this.error = e instanceof Error ? e.message : "Failed to fetch servers";
     } finally {
-      this.loading = false;
+      if (isInitialLoad) {
+        this.loading = false;
+      }
     }
   }
 
