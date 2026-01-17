@@ -125,6 +125,7 @@
 				<div
 					bind:this={serverListContainer}
 					class="grid gap-4 overflow-auto max-h-[calc(100vh-300px)]"
+					style="contain: layout;"
 				>
 					{#each serverStore.servers as server (server.profile_id)}
 						<ServerTile {server} />
