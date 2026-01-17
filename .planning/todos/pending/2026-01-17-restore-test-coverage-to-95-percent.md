@@ -24,24 +24,40 @@ Skipping should not be used to hide broken tests.
 
 ## Solution
 
-1. **Audit skipped tests:**
-   - `TestFuzzyMatcherDifflib` (32 tests): These test an alternative implementation kept for reference. Options:
-     - Remove entirely (Difflib not used in production)
-     - Convert to integration tests that run in CI only
-     - Keep as-is if skip is justified documentation
+### Completed ✓
 
-   - `test_search_returns_results`: Network-dependent test. Options:
-     - Mock the network call
-     - Move to integration test suite
-     - Keep skip with clear justification
+1. **Skipped tests audit** — DONE
+   - Removed `TestFuzzyMatcherDifflib` (32 tests) - tested non-production code
+   - Converted `test_search_returns_results` to 7 mocked tests covering all error paths
+   - Result: **0 skipped tests** (was 33)
 
-2. **Restore coverage to 95%+:**
-   - Review uncovered lines in coverage report (88% current)
-   - Add tests for:
-     - `mlx_manager/main.py` (65% → target areas: lines 63-70, 79-95, 100-126)
-     - `mlx_manager/routers/models.py` (59% → target areas: lines 69-98, 135-143)
-     - `mlx_manager/services/hf_api.py` (64% → target areas: lines 111-155)
+2. **hf_api.py coverage** — DONE
+   - Added tests for: success, fallback, timeout, HTTP error, request error, missing fields
+   - Result: **99% coverage** (was 61%)
 
-3. **Update Makefile:**
-   - Add combined coverage report for backend + frontend
-   - Fail CI if coverage drops below threshold
+3. **Existing download test** — DONE
+   - Added test for duplicate download returning existing task_id
+   - Covers lines 69-79 in routers/models.py
+
+### Remaining (89% → 95%)
+
+To reach 95%, need to cover ~95 more lines. Main gaps:
+
+| File | Coverage | Uncovered | Notes |
+|------|----------|-----------|-------|
+| main.py | 65% | 40 lines | Lifespan, static file serving |
+| routers/models.py | 59% | 52 lines | SSE streaming, download progress |
+| server_manager.py | 88% | 24 lines | Process management |
+| parser_options.py | 71% | 10 lines | Exception handlers |
+| database.py | 85% | 11 lines | Migration code |
+| system.py | 85% | 12 lines | Launchd operations |
+
+**Recommended approach:**
+1. Focus on models.py SSE tests (biggest impact)
+2. Add parser_options exception tests (quick win)
+3. Consider 92-93% as realistic near-term target
+
+### Deferred
+
+- Combined coverage report in make test output
+- Coverage threshold enforcement in CI
