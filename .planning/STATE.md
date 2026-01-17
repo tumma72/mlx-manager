@@ -10,28 +10,29 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 2 of 4 (Server Panel Redesign)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-01-17 — Phase 1 complete
+Plan: 2 of 4 complete
+Status: In progress
+Last activity: 2026-01-17 — Completed 02-02-PLAN.md
 
-Progress: ██▒░░░░░░░ 25% (1/4 phases complete)
+Progress: ██▒░░░░░░░ 25% (1/4 phases complete, 2/4 phase 2 plans done)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: —
-- Total execution time: —
+- Total plans completed: 3
+- Average duration: ~3 min
+- Total execution time: ~8 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
+| 2 | 2/4 | ~5 min | ~2.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01
-- Trend: —
+- Last 5 plans: 01-01, 02-01, 02-02
+- Trend: Fast execution
 
 ## Accumulated Context
 
@@ -42,6 +43,8 @@ Recent decisions affecting current work:
 
 - Search now finds all MLX models (filter=mlx) instead of only mlx-community
 - Model sizes use usedStorage API for accuracy (not safetensors.total)
+- bits-ui Combobox for searchable profile dropdown (accessible, keyboard-nav)
+- Profile filter searches both name and model_path for flexibility
 
 ### Pending Todos
 
@@ -54,5 +57,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-17
-Stopped at: Phase 1 complete, ready for Phase 2
+Stopped at: Completed 02-02-PLAN.md (ProfileSelector component)
 Resume file: None
+Next plan: 02-03-PLAN.md (ServerTile with metrics gauges)
