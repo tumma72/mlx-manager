@@ -15,9 +15,9 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 ### Server Panel
 
-- [ ] **SERVER-01**: Profile selection via searchable dropdown with Start button (replaces profile list)
-- [ ] **SERVER-02**: Running servers display as rich tiles showing: profile name, model name, memory consumption (graphical), GPU/CPU usage (graphical), uptime, tokens/second throughput, total tokens generated, stop/restart buttons
-- [ ] **SERVER-03**: Scroll position preserved across 5-second polling updates (no scroll jump)
+- [x] **SERVER-01**: Profile selection via searchable dropdown with Start button (replaces profile list)
+- [x] **SERVER-02**: Running servers display as rich tiles showing: profile name, model name, memory consumption (graphical), GPU/CPU usage (graphical), uptime, stop/restart buttons (Note: tokens/s and total tokens require mlx-openai-server changes - tracked as gap)
+- [x] **SERVER-03**: Scroll position preserved across 5-second polling updates (no scroll jump)
 
 ### Authentication
 
@@ -72,9 +72,9 @@ Which phases cover which requirements. Updated by create-roadmap.
 | MODELS-01 | Phase 1 | Complete |
 | MODELS-02 | Phase 1 | Complete |
 | MODELS-03 | Phase 1 | Complete |
-| SERVER-01 | Phase 2 | Pending |
-| SERVER-02 | Phase 2 | Pending |
-| SERVER-03 | Phase 2 | Pending |
+| SERVER-01 | Phase 2 | Complete |
+| SERVER-02 | Phase 2 | Complete |
+| SERVER-03 | Phase 2 | Complete |
 | AUTH-01 | Phase 3 | Pending |
 | AUTH-02 | Phase 3 | Pending |
 | AUTH-03 | Phase 3 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-17 after Phase 1 completion*
+*Last updated: 2026-01-17 after Phase 2 completion*

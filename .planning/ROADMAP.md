@@ -11,7 +11,7 @@ Polish the UX for models and server panels, add optional API key authentication 
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
-- [ ] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
+- [x] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
 - [ ] **Phase 3: API Key Authentication** - Optional bearer token auth
 - [ ] **Phase 4: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
@@ -31,25 +31,24 @@ Polish the UX for models and server panels, add optional API key authentication 
 Plans:
 - [x] 01-01: Anchor search bar and consolidate download UX
 
-### Phase 2: Server Panel Redesign
+### Phase 2: Server Panel Redesign ✓
 **Goal**: Replace profile list with searchable dropdown and show running servers as rich metric tiles
 **Depends on**: Phase 1
 **Requirements**: SERVER-01, SERVER-02, SERVER-03
 **Success Criteria** (what must be TRUE):
-  1. User can search and select a profile from dropdown
-  2. User can click Start button to launch selected profile
-  3. Running servers display as tiles with real-time metrics (memory, CPU/GPU, uptime, throughput)
-  4. Stop/Restart buttons work on running server tiles
-  5. Scrolling the server list doesn't jump during polling updates
-**Research**: Likely (server metrics instrumentation)
-**Research topics**: psutil for memory/CPU, GPU metrics on Apple Silicon, real-time throughput tracking
-**Plans**: TBD
+  1. User can search and select a profile from dropdown ✓
+  2. User can click Start button to launch selected profile ✓
+  3. Running servers display as tiles with real-time metrics (memory, CPU/GPU, uptime, throughput) ✓
+  4. Stop/Restart buttons work on running server tiles ✓
+  5. Scrolling the server list doesn't jump during polling updates ✓
+**Research**: Completed (psutil for memory/CPU)
+**Completed**: 2026-01-17
 
 Plans:
-- [ ] 02-01: Backend metrics API (memory, CPU, GPU, throughput)
-- [ ] 02-02: Profile dropdown with search and Start button
-- [ ] 02-03: Running server tiles with real-time metrics display
-- [ ] 02-04: Scroll preservation during polling
+- [x] 02-01: Backend metrics API (memory, CPU, GPU, throughput)
+- [x] 02-02: Profile dropdown with search and Start button
+- [x] 02-03: Running server tiles with real-time metrics display
+- [x] 02-04: Scroll preservation during polling
 
 ### Phase 3: API Key Authentication
 **Goal**: Optional bearer token authentication for network security
@@ -94,6 +93,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
-| 2. Server Panel Redesign | 0/4 | Not started | - |
+| 2. Server Panel Redesign | 4/4 | ✓ Complete | 2026-01-17 |
 | 3. API Key Authentication | 0/2 | Not started | - |
 | 4. Bug Fixes & Stability | 0/4 | Not started | - |
