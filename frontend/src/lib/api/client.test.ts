@@ -123,6 +123,21 @@ describe("profiles API", () => {
       expect(result).toEqual({ port: 10242 });
     });
   });
+
+  describe("duplicate", () => {
+    it("duplicates a profile with new name", async () => {
+      const duplicatedProfile = { id: 2, name: "Copy of Profile", port: 10241 };
+      mockFetch.mockResolvedValueOnce(mockResponse(duplicatedProfile, 201));
+
+      const result = await profiles.duplicate(1, "Copy of Profile");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/profiles/1/duplicate?new_name=Copy%20of%20Profile",
+        { method: "POST" },
+      );
+      expect(result).toEqual(duplicatedProfile);
+    });
+  });
 });
 
 describe("models API", () => {
@@ -176,6 +191,59 @@ describe("models API", () => {
         body: JSON.stringify({ model_id: "mlx-community/test" }),
       });
       expect(result).toEqual({ task_id: "abc123" });
+    });
+  });
+
+  describe("getActiveDownloads", () => {
+    it("gets active downloads", async () => {
+      const activeDownloads = [
+        { task_id: "abc123", model_id: "mlx-community/test", status: "downloading", progress: 50 },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(activeDownloads));
+
+      const result = await models.getActiveDownloads();
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/models/downloads/active");
+      expect(result).toEqual(activeDownloads);
+    });
+  });
+
+  describe("delete", () => {
+    it("deletes a model", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await models.delete("mlx-community/test-model");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/mlx-community%2Ftest-model",
+        { method: "DELETE" },
+      );
+    });
+  });
+
+  describe("detectOptions", () => {
+    it("detects model options", async () => {
+      const detectionInfo = { chat_template: "default", model_type: "llama" };
+      mockFetch.mockResolvedValueOnce(mockResponse(detectionInfo));
+
+      const result = await models.detectOptions("mlx-community/test-model");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/detect-options/mlx-community%2Ftest-model",
+      );
+      expect(result).toEqual(detectionInfo);
+    });
+  });
+
+  describe("getAvailableParsers", () => {
+    it("gets available parsers", async () => {
+      const parsers = { parsers: ["default", "llama", "mistral"] };
+      mockFetch.mockResolvedValueOnce(mockResponse(parsers));
+
+      const result = await models.getAvailableParsers();
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/models/available-parsers");
+      expect(result).toEqual(parsers);
     });
   });
 });
@@ -257,6 +325,18 @@ describe("servers API", () => {
       expect(result).toEqual(healthStatus);
     });
   });
+
+  describe("status", () => {
+    it("gets server status", async () => {
+      const serverStatus = { running: true, pid: 12345, health: "healthy" };
+      mockFetch.mockResolvedValueOnce(mockResponse(serverStatus));
+
+      const result = await servers.status(1);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/status");
+      expect(result).toEqual(serverStatus);
+    });
+  });
 });
 
 describe("system API", () => {
@@ -281,6 +361,18 @@ describe("system API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith("/api/system/info");
       expect(result).toEqual(sysInfo);
+    });
+  });
+
+  describe("parserOptions", () => {
+    it("returns parser options", async () => {
+      const parserOpts = { available_parsers: ["default", "custom"] };
+      mockFetch.mockResolvedValueOnce(mockResponse(parserOpts));
+
+      const result = await system.parserOptions();
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/system/parser-options");
+      expect(result).toEqual(parserOpts);
     });
   });
 
@@ -341,6 +433,121 @@ describe("ApiError", () => {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(500);
       expect((error as ApiError).message).toBe("Something went wrong");
+    }
+  });
+
+  it("handles validation errors with array detail", async () => {
+    const validationErrors = {
+      detail: [
+        { loc: ["body", "name"], msg: "field required" },
+        { loc: ["body", "port"], msg: "value is not a valid integer" },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve(validationErrors),
+      text: () => Promise.resolve(JSON.stringify(validationErrors)),
+    });
+
+    try {
+      await profiles.create({ name: "", model_path: "test", port: 0 });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(422);
+      expect((error as ApiError).message).toBe(
+        "name: field required, port: value is not a valid integer",
+      );
+    }
+  });
+
+  it("handles validation errors with missing loc", async () => {
+    const validationErrors = {
+      detail: [{ msg: "some error" }],
+    };
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve(validationErrors),
+      text: () => Promise.resolve(JSON.stringify(validationErrors)),
+    });
+
+    try {
+      await profiles.create({ name: "", model_path: "test", port: 0 });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe("field: some error");
+    }
+  });
+
+  it("handles validation errors with missing msg", async () => {
+    const validationErrors = {
+      detail: [{ loc: ["body", "name"] }],
+    };
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve(validationErrors),
+      text: () => Promise.resolve(JSON.stringify(validationErrors)),
+    });
+
+    try {
+      await profiles.create({ name: "", model_path: "test", port: 0 });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe("name: validation error");
+    }
+  });
+
+  it("handles non-JSON error response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new Error("Not JSON")),
+      text: () => Promise.resolve("Internal Server Error"),
+    });
+
+    try {
+      await profiles.list();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(500);
+      expect((error as ApiError).message).toBe("Internal Server Error");
+    }
+  });
+
+  it("handles error with message field instead of detail", async () => {
+    const errorResponse = { message: "Resource not found" };
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve(errorResponse),
+      text: () => Promise.resolve(JSON.stringify(errorResponse)),
+    });
+
+    try {
+      await profiles.get(999);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe("Resource not found");
+    }
+  });
+
+  it("falls back to raw text when JSON has no detail or message", async () => {
+    const errorResponse = { error: "unknown" };
+    const rawText = JSON.stringify(errorResponse);
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve(errorResponse),
+      text: () => Promise.resolve(rawText),
+    });
+
+    try {
+      await profiles.list();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe(rawText);
     }
   });
 });

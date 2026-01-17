@@ -10,7 +10,7 @@ export default defineConfig({
     setupFiles: ["./src/tests/setup.ts"],
     coverage: {
       provider: "v8",
-      reporter: ["text", "json", "html", "lcov"],
+      reporter: ["text", "json", "html", "lcov", "json-summary"],
       exclude: [
         "node_modules/**",
         "src/tests/**",
@@ -18,6 +18,12 @@ export default defineConfig({
         "**/*.config.*",
         "src/lib/components/ui/**", // Exclude UI primitives from coverage
       ],
+      thresholds: {
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
+      },
     },
   },
 });

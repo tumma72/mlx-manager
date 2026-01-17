@@ -314,3 +314,388 @@ class TestCORSMiddleware:
         # CORS should be configured (FastAPI/Starlette handles this)
         # The middleware should allow the origin
         assert response.status_code in [200, 204, 400]  # Depends on configuration
+
+
+class TestCancelDownloadTasks:
+    """Tests for cancel_download_tasks function."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_with_running_tasks(self):
+        """Test cancel_download_tasks cancels running tasks."""
+        import asyncio
+
+        from mlx_manager import main
+
+        # Save original list and clear it
+        original_tasks = main._download_tasks.copy()
+        main._download_tasks.clear()
+
+        # Create mock running tasks
+        async def long_running():
+            await asyncio.sleep(100)
+
+        task1 = asyncio.create_task(long_running())
+        task2 = asyncio.create_task(long_running())
+        main._download_tasks.extend([task1, task2])
+
+        # Call cancel_download_tasks
+        await main.cancel_download_tasks()
+
+        # Verify tasks were cancelled
+        assert task1.cancelled() or task1.done()
+        assert task2.cancelled() or task2.done()
+        assert len(main._download_tasks) == 0
+
+        # Restore original list
+        main._download_tasks.extend(original_tasks)
+
+    @pytest.mark.asyncio
+    async def test_cancel_with_already_done_tasks(self):
+        """Test cancel_download_tasks handles already-done tasks."""
+        import asyncio
+
+        from mlx_manager import main
+
+        # Save original list and clear it
+        original_tasks = main._download_tasks.copy()
+        main._download_tasks.clear()
+
+        # Create tasks that complete immediately
+        async def quick_task():
+            return "done"
+
+        task1 = asyncio.create_task(quick_task())
+        task2 = asyncio.create_task(quick_task())
+
+        # Wait for them to complete
+        await asyncio.sleep(0.01)
+        main._download_tasks.extend([task1, task2])
+
+        # Call cancel_download_tasks - should not raise
+        await main.cancel_download_tasks()
+
+        # List should be cleared
+        assert len(main._download_tasks) == 0
+
+        # Restore original list
+        main._download_tasks.extend(original_tasks)
+
+    @pytest.mark.asyncio
+    async def test_cancel_with_empty_list(self):
+        """Test cancel_download_tasks with empty task list."""
+        from mlx_manager import main
+
+        # Save original list and clear it
+        original_tasks = main._download_tasks.copy()
+        main._download_tasks.clear()
+
+        # Should not raise with empty list
+        await main.cancel_download_tasks()
+
+        # List should still be empty
+        assert len(main._download_tasks) == 0
+
+        # Restore original list
+        main._download_tasks.extend(original_tasks)
+
+
+class TestResumePendingDownloads:
+    """Tests for resume_pending_downloads function."""
+
+    @pytest.mark.asyncio
+    async def test_resume_creates_tasks_for_pending_downloads(self):
+        """Test that resume_pending_downloads creates tasks for each pending download."""
+        import asyncio
+
+        from mlx_manager import main
+        from mlx_manager.routers.models import download_tasks
+
+        # Save original state
+        original_tasks = main._download_tasks.copy()
+        original_download_tasks = download_tasks.copy()
+        main._download_tasks.clear()
+        download_tasks.clear()
+
+        # Mock _run_download_task to avoid actual downloads
+        async def mock_run_download_task(task_id, download_id, model_id):
+            await asyncio.sleep(0.01)
+
+        with patch.object(main, "_run_download_task", mock_run_download_task):
+            pending = [(1, "mlx-community/model1"), (2, "mlx-community/model2")]
+            await main.resume_pending_downloads(pending)
+
+            # Wait a bit for tasks to be created
+            await asyncio.sleep(0.05)
+
+        # Verify download_tasks dict was populated
+        assert len(download_tasks) == 2
+
+        # Verify task structure
+        for task_id, task_info in download_tasks.items():
+            assert "model_id" in task_info
+            assert "download_id" in task_info
+            assert task_info["status"] == "pending"
+            assert task_info["progress"] == 0
+
+        # Verify asyncio tasks were created
+        assert len(main._download_tasks) == 2
+
+        # Clean up - cancel the tasks
+        for task in main._download_tasks:
+            task.cancel()
+        await asyncio.gather(*main._download_tasks, return_exceptions=True)
+
+        # Restore original state
+        main._download_tasks.clear()
+        main._download_tasks.extend(original_tasks)
+        download_tasks.clear()
+        download_tasks.update(original_download_tasks)
+
+    @pytest.mark.asyncio
+    async def test_resume_with_empty_pending_list(self):
+        """Test resume_pending_downloads with empty pending list."""
+        from mlx_manager import main
+        from mlx_manager.routers.models import download_tasks
+
+        # Save original state
+        original_tasks = main._download_tasks.copy()
+        original_download_tasks = download_tasks.copy()
+        main._download_tasks.clear()
+        download_tasks.clear()
+
+        await main.resume_pending_downloads([])
+
+        # No tasks should be created
+        assert len(main._download_tasks) == 0
+        assert len(download_tasks) == 0
+
+        # Restore original state
+        main._download_tasks.extend(original_tasks)
+        download_tasks.update(original_download_tasks)
+
+
+class TestRunDownloadTask:
+    """Tests for _run_download_task function."""
+
+    @pytest.mark.asyncio
+    async def test_successful_download(self):
+        """Test _run_download_task with successful download."""
+        from mlx_manager import main
+        from mlx_manager.routers.models import download_tasks
+
+        # Save original state
+        original_download_tasks = download_tasks.copy()
+        download_tasks.clear()
+
+        task_id = "test-task-123"
+        download_id = 42
+        model_id = "mlx-community/test-model"
+
+        # Set up initial task state
+        download_tasks[task_id] = {
+            "model_id": model_id,
+            "download_id": download_id,
+            "status": "pending",
+            "progress": 0,
+        }
+
+        # Mock hf_client.download_model to yield progress events
+        async def mock_download_model(model_id):
+            yield {"status": "downloading", "progress": 50, "downloaded_bytes": 500, "total_bytes": 1000}
+            yield {"status": "completed", "progress": 100, "downloaded_bytes": 1000, "total_bytes": 1000}
+
+        # Mock _update_download_record (imported inside _run_download_task from routers.models)
+        update_calls = []
+
+        async def mock_update_record(download_id, **kwargs):
+            update_calls.append((download_id, kwargs))
+
+        with (
+            patch.object(main.hf_client, "download_model", mock_download_model),
+            patch("mlx_manager.routers.models._update_download_record", mock_update_record),
+        ):
+            await main._run_download_task(task_id, download_id, model_id)
+
+        # Verify download_tasks was updated with progress
+        assert download_tasks[task_id]["status"] == "completed"
+        assert download_tasks[task_id]["progress"] == 100
+
+        # Verify _update_download_record was called for final status
+        assert len(update_calls) >= 1
+        final_call = update_calls[-1]
+        assert final_call[0] == download_id
+        assert final_call[1]["status"] == "completed"
+        assert final_call[1]["completed"] is True
+
+        # Restore original state
+        download_tasks.clear()
+        download_tasks.update(original_download_tasks)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_handling(self):
+        """Test _run_download_task handles CancelledError properly."""
+        import asyncio
+
+        from mlx_manager import main
+        from mlx_manager.routers.models import download_tasks
+
+        # Save original state
+        original_download_tasks = download_tasks.copy()
+        download_tasks.clear()
+
+        task_id = "test-task-cancel"
+        download_id = 43
+        model_id = "mlx-community/test-model"
+
+        download_tasks[task_id] = {
+            "model_id": model_id,
+            "download_id": download_id,
+            "status": "pending",
+            "progress": 0,
+        }
+
+        # Mock hf_client.download_model to raise CancelledError
+        async def mock_download_model(model_id):
+            yield {"status": "downloading", "progress": 50}
+            raise asyncio.CancelledError()
+
+        with patch.object(main.hf_client, "download_model", mock_download_model):
+            # CancelledError should be re-raised
+            with pytest.raises(asyncio.CancelledError):
+                await main._run_download_task(task_id, download_id, model_id)
+
+        # Restore original state
+        download_tasks.clear()
+        download_tasks.update(original_download_tasks)
+
+    @pytest.mark.asyncio
+    async def test_exception_handling(self):
+        """Test _run_download_task handles exceptions and updates DB."""
+        from mlx_manager import main
+        from mlx_manager.routers.models import download_tasks
+
+        # Save original state
+        original_download_tasks = download_tasks.copy()
+        download_tasks.clear()
+
+        task_id = "test-task-error"
+        download_id = 44
+        model_id = "mlx-community/test-model"
+
+        download_tasks[task_id] = {
+            "model_id": model_id,
+            "download_id": download_id,
+            "status": "pending",
+            "progress": 0,
+        }
+
+        # Mock hf_client.download_model to raise an exception
+        async def mock_download_model(model_id):
+            yield {"status": "downloading", "progress": 25}
+            raise RuntimeError("Network error")
+
+        # Mock _update_download_record (imported inside _run_download_task from routers.models)
+        update_calls = []
+
+        async def mock_update_record(download_id, **kwargs):
+            update_calls.append((download_id, kwargs))
+
+        with (
+            patch.object(main.hf_client, "download_model", mock_download_model),
+            patch("mlx_manager.routers.models._update_download_record", mock_update_record),
+        ):
+            # Should not raise - exception is caught and logged
+            await main._run_download_task(task_id, download_id, model_id)
+
+        # Verify _update_download_record was called with failure
+        assert len(update_calls) == 1
+        assert update_calls[0][0] == download_id
+        assert update_calls[0][1]["status"] == "failed"
+        assert "Network error" in update_calls[0][1]["error"]
+
+        # Restore original state
+        download_tasks.clear()
+        download_tasks.update(original_download_tasks)
+
+
+class TestLifespanWithPendingDownloads:
+    """Tests for lifespan handler with pending downloads."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_resumes_pending_downloads(self):
+        """Test that lifespan calls resume_pending_downloads when there are pending downloads."""
+        with patch("mlx_manager.main.init_db") as mock_init_db:
+            mock_init_db.return_value = None
+
+            with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
+                mock_cleanup.return_value = None
+
+                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
+                    # Return pending downloads
+                    mock_recover.return_value = [
+                        (1, "mlx-community/model1"),
+                        (2, "mlx-community/model2"),
+                    ]
+
+                    with patch("mlx_manager.main.resume_pending_downloads") as mock_resume:
+                        mock_resume.return_value = None
+
+                        with patch("mlx_manager.main.health_checker") as mock_hc:
+                            mock_hc.start = AsyncMock()
+                            mock_hc.stop = AsyncMock()
+
+                            with patch("mlx_manager.main.cancel_download_tasks") as mock_cancel:
+                                mock_cancel.return_value = None
+
+                                with patch("mlx_manager.main.server_manager") as mock_sm:
+                                    mock_sm.cleanup = AsyncMock()
+
+                                    from mlx_manager.main import lifespan
+
+                                    mock_app = MagicMock()
+
+                                    async with lifespan(mock_app):
+                                        # Verify resume was called with pending downloads
+                                        mock_resume.assert_called_once_with([
+                                            (1, "mlx-community/model1"),
+                                            (2, "mlx-community/model2"),
+                                        ])
+
+                                    # Verify cancel was called on shutdown
+                                    mock_cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_skips_resume_when_no_pending(self):
+        """Test that lifespan doesn't call resume_pending_downloads when no pending downloads."""
+        with patch("mlx_manager.main.init_db") as mock_init_db:
+            mock_init_db.return_value = None
+
+            with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
+                mock_cleanup.return_value = None
+
+                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
+                    # Return empty list - no pending downloads
+                    mock_recover.return_value = []
+
+                    with patch("mlx_manager.main.resume_pending_downloads") as mock_resume:
+                        mock_resume.return_value = None
+
+                        with patch("mlx_manager.main.health_checker") as mock_hc:
+                            mock_hc.start = AsyncMock()
+                            mock_hc.stop = AsyncMock()
+
+                            with patch("mlx_manager.main.cancel_download_tasks") as mock_cancel:
+                                mock_cancel.return_value = None
+
+                                with patch("mlx_manager.main.server_manager") as mock_sm:
+                                    mock_sm.cleanup = AsyncMock()
+
+                                    from mlx_manager.main import lifespan
+
+                                    mock_app = MagicMock()
+
+                                    async with lifespan(mock_app):
+                                        # Verify resume was NOT called
+                                        mock_resume.assert_not_called()
+
+                                    mock_cancel.assert_called_once()

@@ -265,6 +265,96 @@ class TestInitDb:
         assert len(matching) == 1
 
 
+class TestMigrateSchema:
+    """Tests for the migrate_schema function."""
+
+    @pytest.mark.asyncio
+    async def test_migrate_schema_adds_missing_columns(self, test_engine):
+        """Test migrate_schema adds columns that don't exist yet."""
+        from mlx_manager.database import migrate_schema
+
+        with patch("mlx_manager.database.engine", test_engine):
+            # migrate_schema should run without error
+            await migrate_schema()
+
+    @pytest.mark.asyncio
+    async def test_migrate_schema_column_already_exists(self, test_engine):
+        """Test migrate_schema handles columns that already exist."""
+        from sqlalchemy import text
+        from mlx_manager.database import migrate_schema
+
+        with patch("mlx_manager.database.engine", test_engine):
+            # Run twice - second time columns already exist
+            await migrate_schema()
+            await migrate_schema()  # Should not raise
+
+
+class TestRecoverIncompleteDownloads:
+    """Tests for the recover_incomplete_downloads function."""
+
+    @pytest.mark.asyncio
+    async def test_recover_with_no_incomplete_downloads(self, test_engine):
+        """Test recover when no incomplete downloads exist."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+        from mlx_manager.database import recover_incomplete_downloads, get_session
+
+        test_async_session = async_sessionmaker(
+            test_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+        with patch("mlx_manager.database.async_session", test_async_session):
+            with patch("mlx_manager.database.get_session", get_session):
+                pending = await recover_incomplete_downloads()
+                assert pending == []
+
+    @pytest.mark.asyncio
+    async def test_recover_with_pending_downloads(self, test_engine):
+        """Test recover marks pending downloads for resume."""
+        from datetime import datetime, UTC
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+        from sqlmodel import select
+        from mlx_manager.database import recover_incomplete_downloads, get_session
+        from mlx_manager.models import Download
+
+        test_async_session = async_sessionmaker(
+            test_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+        # Create a pending download
+        async with test_async_session() as session:
+            download = Download(
+                model_id="mlx-community/test-model",
+                status="downloading",  # Incomplete status
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add(download)
+            await session.commit()
+            await session.refresh(download)
+            download_id = download.id
+
+        with patch("mlx_manager.database.async_session", test_async_session):
+            with patch("mlx_manager.database.get_session", get_session):
+                pending = await recover_incomplete_downloads()
+
+        # Should return the download for resuming
+        assert len(pending) == 1
+        assert pending[0][0] == download_id
+        assert pending[0][1] == "mlx-community/test-model"
+
+        # Verify status was set to pending
+        async with test_async_session() as session:
+            result = await session.execute(
+                select(Download).where(Download.id == download_id)
+            )
+            recovered = result.scalars().first()
+            assert recovered.status == "pending"
+            assert recovered.error is None
+
+
 class TestEnsureDataDir:
     """Tests for the ensure_data_dir function."""
 

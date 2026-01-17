@@ -35,6 +35,11 @@ describe("formatBytes", () => {
     expect(formatBytes(1536, 1)).toBe("1.5 KB");
     expect(formatBytes(1536, 3)).toBe("1.5 KB");
   });
+
+  it("handles negative decimals by using 0", () => {
+    expect(formatBytes(1536, -1)).toBe("2 KB");
+    expect(formatBytes(1536, -5)).toBe("2 KB");
+  });
 });
 
 describe("formatDuration", () => {

@@ -89,15 +89,16 @@ build-frontend:
 # ============================================================================
 
 test: test-backend test-frontend
+	@./scripts/coverage_summary.sh
 	@echo "✓ All tests passed"
 
 test-backend:
-	@echo "Running backend tests..."
-	cd backend && .venv/bin/pytest --cov=mlx_manager --cov-report=term-missing -v
+	@echo "Running backend tests (95% coverage required)..."
+	cd backend && .venv/bin/pytest --cov=mlx_manager --cov-report=term-missing --cov-fail-under=95 -v
 
 test-frontend:
-	@echo "Running frontend unit tests..."
-	cd frontend && npm run test
+	@echo "Running frontend unit tests (95% coverage required)..."
+	cd frontend && npm run test:coverage
 
 test-e2e:
 	@echo "Running frontend E2E tests..."

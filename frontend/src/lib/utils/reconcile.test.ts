@@ -64,6 +64,16 @@ describe("deepEqual", () => {
     expect(deepEqual({ a: 1, b: 2 }, { a: 1, b: 2 })).toBe(true);
   });
 
+  it("returns false for objects with different primitive values", () => {
+    expect(deepEqual({ a: 1, b: 2 }, { a: 1, b: 3 })).toBe(false);
+    expect(deepEqual({ x: "hello" }, { x: "world" })).toBe(false);
+  });
+
+  it("returns false for objects with different number of keys", () => {
+    expect(deepEqual({ a: 1, b: 2 }, { a: 1 })).toBe(false);
+    expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+  });
+
   it("returns true for equal nested objects (one level)", () => {
     expect(deepEqual({ a: { x: 1, y: 2 } }, { a: { x: 1, y: 2 } })).toBe(true);
   });
