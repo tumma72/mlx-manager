@@ -64,6 +64,8 @@ async def list_running_servers(
                 health_status=r.get("status", "unknown"),
                 uptime_seconds=uptime,
                 memory_mb=r.get("memory_mb", 0),
+                memory_percent=r.get("memory_percent", 0),
+                cpu_percent=r.get("cpu_percent", 0),
             )
         )
 
