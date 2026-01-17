@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { serverStore, profileStore } from '$stores';
-	import { ProfileCard } from '$components/profiles';
-	import { ProfileSelector } from '$components/servers';
+	import { ProfileSelector, ServerTile } from '$components/servers';
 	import { Button } from '$components/ui';
 	import type { ServerProfile } from '$api';
 	import { RefreshCw, Plus } from 'lucide-svelte';
@@ -35,14 +34,13 @@
 		refreshing = false;
 	}
 
-	// Separate running and stopped profiles
-	const runningProfiles = $derived(
-		profileStore.profiles.filter((p) => serverStore.isRunning(p.id))
-	);
-
+	// Stopped profiles (for the start dropdown)
 	const stoppedProfiles = $derived(
 		profileStore.profiles.filter((p) => !serverStore.isRunning(p.id))
 	);
+
+	// Running servers count for the header
+	const runningCount = $derived(serverStore.servers.length);
 
 	async function handleStartProfile(profile: ServerProfile) {
 		await serverStore.start(profile.id);
@@ -97,18 +95,18 @@
 		<!-- Running Servers -->
 		<section>
 			<h2 class="mb-4 text-lg font-semibold">
-				Running Servers ({runningProfiles.length})
+				Running Servers ({runningCount})
 			</h2>
-			{#if runningProfiles.length === 0}
+			{#if serverStore.servers.length === 0}
 				<div
 					class="rounded-lg border bg-white py-8 text-center text-muted-foreground dark:bg-gray-800"
 				>
 					No servers running. Start a profile to begin.
 				</div>
 			{:else}
-				<div class="space-y-4">
-					{#each runningProfiles as profile (profile.id)}
-						<ProfileCard {profile} server={serverStore.getServer(profile.id)} />
+				<div class="grid gap-4">
+					{#each serverStore.servers as server (server.profile_id)}
+						<ServerTile {server} />
 					{/each}
 				</div>
 			{/if}

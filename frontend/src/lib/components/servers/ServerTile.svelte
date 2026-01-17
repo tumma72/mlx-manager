@@ -36,7 +36,9 @@
 	}
 
 	async function handleChat() {
-		await goto(`${resolve('/chat')}?profile=${server.profile_id}`);
+		const url = `${resolve('/chat')}?profile=${server.profile_id}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- url contains resolved path
+		await goto(url);
 	}
 
 	// Derive model path from profile_name (shown in card)
