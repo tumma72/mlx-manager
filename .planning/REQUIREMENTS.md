@@ -69,26 +69,26 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODELS-01 | — | Pending |
-| MODELS-02 | — | Pending |
-| MODELS-03 | — | Pending |
-| SERVER-01 | — | Pending |
-| SERVER-02 | — | Pending |
-| SERVER-03 | — | Pending |
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| BUGFIX-01 | — | Pending |
-| BUGFIX-02 | — | Pending |
-| BUGFIX-03 | — | Pending |
-| BUGFIX-04 | — | Pending |
-| BUGFIX-05 | — | Pending |
+| MODELS-01 | Phase 1 | Pending |
+| MODELS-02 | Phase 1 | Pending |
+| MODELS-03 | Phase 1 | Pending |
+| SERVER-01 | Phase 2 | Pending |
+| SERVER-02 | Phase 2 | Pending |
+| SERVER-03 | Phase 2 | Pending |
+| AUTH-01 | Phase 3 | Pending |
+| AUTH-02 | Phase 3 | Pending |
+| AUTH-03 | Phase 3 | Pending |
+| AUTH-04 | Phase 3 | Pending |
+| BUGFIX-01 | Phase 4 | Pending |
+| BUGFIX-02 | Phase 4 | Pending |
+| BUGFIX-03 | Phase 4 | Pending |
+| BUGFIX-04 | Phase 4 | Pending |
+| BUGFIX-05 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-17*
