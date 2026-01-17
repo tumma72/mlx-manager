@@ -185,6 +185,7 @@ class ServerManager:
             return ServerStats(
                 pid=proc.pid,
                 memory_mb=round(memory_info.rss / 1024 / 1024, 2),
+                memory_percent=p.memory_percent(),
                 cpu_percent=p.cpu_percent(),
                 status=p.status(),
                 create_time=p.create_time(),
@@ -319,6 +320,7 @@ class ServerManager:
                         profile_id=profile_id,
                         pid=stats["pid"],
                         memory_mb=stats["memory_mb"],
+                        memory_percent=stats["memory_percent"],
                         cpu_percent=stats["cpu_percent"],
                         status=stats["status"],
                         create_time=stats["create_time"],
