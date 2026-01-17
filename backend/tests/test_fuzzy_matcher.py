@@ -122,13 +122,13 @@ class TestFuzzyMatcherRapidfuzz:
             assert result is None, f"Expected no match for {model}, got {result}"
 
 
-@pytest.mark.xfail(reason="Difflib has lower accuracy than Rapidfuzz; Rapidfuzz is the chosen implementation")
+@pytest.mark.skip(reason="Difflib implementation kept for reference only; Rapidfuzz is the production implementation")
 class TestFuzzyMatcherDifflib:
     """Test fuzzy matcher using difflib library.
 
-    Note: These tests are marked as expected failures because Rapidfuzz
-    was chosen as the production implementation based on TDD comparison
-    (100% accuracy vs 90.6% for Difflib).
+    Note: These tests are skipped because Rapidfuzz was chosen as the
+    production implementation based on TDD comparison (100% accuracy vs
+    90.6% for Difflib). The class is kept for reference/comparison only.
     """
 
     @pytest.fixture

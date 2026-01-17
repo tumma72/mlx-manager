@@ -152,27 +152,31 @@ class TestLifespan:
             with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
                 mock_cleanup.return_value = None
 
-                with patch("mlx_manager.main.health_checker") as mock_hc:
-                    mock_hc.start = AsyncMock()
-                    mock_hc.stop = AsyncMock()
+                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
+                    mock_recover.return_value = []  # No pending downloads
 
-                    with patch("mlx_manager.main.server_manager") as mock_sm:
-                        mock_sm.cleanup = AsyncMock()
+                    with patch("mlx_manager.main.health_checker") as mock_hc:
+                        mock_hc.start = AsyncMock()
+                        mock_hc.stop = AsyncMock()
 
-                        from mlx_manager.main import lifespan
+                        with patch("mlx_manager.main.server_manager") as mock_sm:
+                            mock_sm.cleanup = AsyncMock()
 
-                        # Create a mock app
-                        mock_app = MagicMock()
+                            from mlx_manager.main import lifespan
 
-                        # Run through the lifespan
-                        async with lifespan(mock_app):
-                            mock_init_db.assert_called_once()
-                            mock_cleanup.assert_called_once()
-                            mock_hc.start.assert_called_once()
+                            # Create a mock app
+                            mock_app = MagicMock()
 
-                        # After exiting context, shutdown should have occurred
-                        mock_hc.stop.assert_called_once()
-                        mock_sm.cleanup.assert_called_once()
+                            # Run through the lifespan
+                            async with lifespan(mock_app):
+                                mock_init_db.assert_called_once()
+                                mock_cleanup.assert_called_once()
+                                mock_recover.assert_called_once()
+                                mock_hc.start.assert_called_once()
+
+                            # After exiting context, shutdown should have occurred
+                            mock_hc.stop.assert_called_once()
+                            mock_sm.cleanup.assert_called_once()
 
 
 class TestStaticFileServing:
