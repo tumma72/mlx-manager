@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { serverStore, profileStore } from '$stores';
 	import { ProfileCard } from '$components/profiles';
+	import { ProfileSelector } from '$components/servers';
 	import { Button } from '$components/ui';
+	import type { ServerProfile } from '$api';
 	import { RefreshCw, Plus } from 'lucide-svelte';
 	let refreshing = $state(false);
 
@@ -42,6 +44,10 @@
 		profileStore.profiles.filter((p) => !serverStore.isRunning(p.id))
 	);
 
+	async function handleStartProfile(profile: ServerProfile) {
+		await serverStore.start(profile.id);
+	}
+
 	// Restore scroll position after any store update causes a re-render
 	$effect(() => {
 		// Track these dependencies to run after updates
@@ -76,50 +82,43 @@
 	</div>
 
 	{#if serverStore.loading && serverStore.servers.length === 0}
-		<div class="text-center py-12 text-muted-foreground">Loading servers...</div>
+		<div class="py-12 text-center text-muted-foreground">Loading servers...</div>
 	{:else if serverStore.error}
-		<div class="text-center py-12 text-red-500 dark:text-red-400">{serverStore.error}</div>
+		<div class="py-12 text-center text-red-500 dark:text-red-400">{serverStore.error}</div>
 	{:else}
+		<!-- Start Server Section -->
+		{#if stoppedProfiles.length > 0}
+			<section>
+				<h2 class="mb-3 text-lg font-semibold">Start Server</h2>
+				<ProfileSelector profiles={stoppedProfiles} onStart={handleStartProfile} />
+			</section>
+		{/if}
+
 		<!-- Running Servers -->
 		<section>
-			<h2 class="text-lg font-semibold mb-4">
+			<h2 class="mb-4 text-lg font-semibold">
 				Running Servers ({runningProfiles.length})
 			</h2>
 			{#if runningProfiles.length === 0}
-				<div class="text-center py-8 text-muted-foreground bg-white dark:bg-gray-800 rounded-lg border">
+				<div
+					class="rounded-lg border bg-white py-8 text-center text-muted-foreground dark:bg-gray-800"
+				>
 					No servers running. Start a profile to begin.
 				</div>
 			{:else}
 				<div class="space-y-4">
 					{#each runningProfiles as profile (profile.id)}
-						<ProfileCard
-							{profile}
-							server={serverStore.getServer(profile.id)}
-						/>
+						<ProfileCard {profile} server={serverStore.getServer(profile.id)} />
 					{/each}
 				</div>
 			{/if}
 		</section>
 
-		<!-- Stopped Profiles -->
-		{#if stoppedProfiles.length > 0}
-			<section>
-				<h2 class="text-lg font-semibold mb-4">
-					Available Profiles ({stoppedProfiles.length})
-				</h2>
-				<div class="space-y-4">
-					{#each stoppedProfiles as profile (profile.id)}
-						<ProfileCard {profile} />
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		{#if profileStore.profiles.length === 0}
-			<div class="text-center py-12">
-				<p class="text-muted-foreground mb-4">No profiles configured yet.</p>
+			<div class="py-12 text-center">
+				<p class="mb-4 text-muted-foreground">No profiles configured yet.</p>
 				<Button href="/profiles/new">
-					<Plus class="w-4 h-4 mr-2" />
+					<Plus class="mr-2 h-4 w-4" />
 					Create Your First Profile
 				</Button>
 			</div>
