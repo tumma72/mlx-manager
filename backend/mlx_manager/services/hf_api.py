@@ -2,14 +2,16 @@
 
 This module provides direct access to the HuggingFace Hub REST API,
 bypassing the huggingface_hub SDK for search operations. This allows us to:
-1. Use expand=safetensors to get model sizes in a single request
-2. Avoid N+1 API calls that made search slow
+1. Fetch accurate model sizes via usedStorage (requires per-model API calls
+   since usedStorage is not available as an expand option in the list endpoint)
+2. Run parallel requests for efficient batch size fetching
 3. Have more control over request parameters
 
 The SDK is still used for snapshot_download which handles complex
 download logic (resumable, LFS, caching, etc.).
 """
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -35,7 +37,7 @@ class ModelInfo:
     likes: int
     tags: list[str]
     last_modified: str | None
-    size_bytes: int | None  # From safetensors.total if available
+    size_bytes: int | None  # From usedStorage (accurate total repository size)
 
 
 def estimate_size_from_name(model_id: str) -> float | None:
@@ -86,6 +88,32 @@ def estimate_size_from_name(model_id: str) -> float | None:
     return round(size_gib, 2)
 
 
+async def _fetch_model_size(
+    client: httpx.AsyncClient,
+    model_id: str,
+    timeout: float,
+) -> tuple[str, int | None]:
+    """Fetch the usedStorage for a single model.
+
+    Args:
+        client: Shared httpx client
+        model_id: HuggingFace model ID
+        timeout: Request timeout
+
+    Returns:
+        Tuple of (model_id, size_bytes or None if failed)
+    """
+    url = f"{HF_API_BASE}/models/{model_id}"
+    try:
+        response = await client.get(url, timeout=timeout)
+        if response.status_code == 200:
+            data = response.json()
+            return (model_id, data.get("usedStorage"))
+    except Exception as e:
+        logger.debug(f"Failed to fetch size for {model_id}: {e}")
+    return (model_id, None)
+
+
 async def search_models(
     query: str,
     author: str | None = None,
@@ -98,6 +126,10 @@ async def search_models(
     Uses the REST API directly to search for models with the MLX library tag,
     finding models from any author (mlx-community, lmstudio-community, etc.).
 
+    After the initial search, fetches accurate sizes via parallel API calls
+    to get usedStorage for each model. This provides accurate download sizes
+    rather than estimates.
+
     Args:
         query: Search query string
         author: Optional filter by author/organization (None = all authors)
@@ -106,7 +138,7 @@ async def search_models(
         timeout: Request timeout in seconds
 
     Returns:
-        List of ModelInfo objects with model metadata.
+        List of ModelInfo objects with model metadata and accurate sizes.
     """
     url = f"{HF_API_BASE}/models"
     params: dict[str, str | list[str]] = {
@@ -114,9 +146,8 @@ async def search_models(
         "filter": "mlx",  # Filter by MLX library - finds models from any author
         "sort": sort,
         "limit": str(limit),
-        # Expand safetensors to get model weights size
-        # Note: usedStorage is not a valid expand option (causes 400 error)
-        "expand[]": ["safetensors"],
+        # Note: usedStorage is not available as an expand option in list endpoint
+        # We fetch it separately via parallel per-model API calls
     }
 
     # Optionally filter by specific author
@@ -124,6 +155,7 @@ async def search_models(
         params["author"] = author
 
     async with httpx.AsyncClient() as client:
+        # Step 1: Fetch search results
         try:
             response = await client.get(url, params=params, timeout=timeout)
             response.raise_for_status()
@@ -137,18 +169,29 @@ async def search_models(
             logger.warning(f"HuggingFace API request failed: {e}")
             return []
 
+        search_results = response.json()
+
+        # Step 2: Fetch accurate sizes in parallel
+        # Use shorter timeout for individual size fetches to avoid slowing down search
+        size_timeout = min(timeout, 10.0)
+        size_tasks = [
+            _fetch_model_size(client, item.get("id", item.get("modelId", "")), size_timeout)
+            for item in search_results
+        ]
+        size_results = await asyncio.gather(*size_tasks)
+        size_map = {model_id: size for model_id, size in size_results}
+
+    # Step 3: Build results with accurate sizes
     results: list[ModelInfo] = []
 
-    for item in response.json():
-        # Get size from safetensors.total (total size of model weights)
-        size_bytes = None
-        safetensors = item.get("safetensors")
-        if safetensors and isinstance(safetensors, dict):
-            size_bytes = safetensors.get("total")
+    for item in search_results:
+        model_id = item.get("id", item.get("modelId", ""))
+        # Use usedStorage from parallel fetch (accurate total repository size)
+        size_bytes = size_map.get(model_id)
 
         results.append(
             ModelInfo(
-                model_id=item.get("id", item.get("modelId", "")),
+                model_id=model_id,
                 author=item.get("author"),
                 downloads=item.get("downloads", 0),
                 likes=item.get("likes", 0),
@@ -162,7 +205,7 @@ async def search_models(
 
 
 def get_model_size_gb(model: ModelInfo) -> float:
-    """Get model size in GiB, using safetensors data or name estimation.
+    """Get model size in GiB, using usedStorage or name estimation as fallback.
 
     Args:
         model: ModelInfo object from search
@@ -170,7 +213,7 @@ def get_model_size_gb(model: ModelInfo) -> float:
     Returns:
         Size in GiB (binary, 1024^3) - estimated if not available from API.
     """
-    # Use safetensors total if available (convert to binary GiB)
+    # Use usedStorage if available (accurate total repository size)
     if model.size_bytes:
         return round(model.size_bytes / (1024**3), 2)
 
