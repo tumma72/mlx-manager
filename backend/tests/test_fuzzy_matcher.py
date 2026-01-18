@@ -67,10 +67,7 @@ EDGE_CASES = [
 
 # Combine all test cases
 ALL_TEST_CASES = (
-    TOOL_PARSER_TEST_CASES
-    + REASONING_PARSER_TEST_CASES
-    + MESSAGE_CONVERTER_TEST_CASES
-    + EDGE_CASES
+    TOOL_PARSER_TEST_CASES + REASONING_PARSER_TEST_CASES + MESSAGE_CONVERTER_TEST_CASES + EDGE_CASES
 )
 
 
@@ -83,9 +80,7 @@ class TestFuzzyMatcherRapidfuzz:
 
         return RapidfuzzMatcher()
 
-    @pytest.mark.parametrize(
-        "model,parser_type,expected,should_match", TOOL_PARSER_TEST_CASES
-    )
+    @pytest.mark.parametrize("model,parser_type,expected,should_match", TOOL_PARSER_TEST_CASES)
     def test_tool_call_parser(self, matcher, model, parser_type, expected, should_match):
         result = matcher.find_best_match(model, parser_type)
         if should_match:
@@ -93,9 +88,7 @@ class TestFuzzyMatcherRapidfuzz:
         else:
             assert result is None, f"Expected no match for {model}, got {result}"
 
-    @pytest.mark.parametrize(
-        "model,parser_type,expected,should_match", REASONING_PARSER_TEST_CASES
-    )
+    @pytest.mark.parametrize("model,parser_type,expected,should_match", REASONING_PARSER_TEST_CASES)
     def test_reasoning_parser(self, matcher, model, parser_type, expected, should_match):
         result = matcher.find_best_match(model, parser_type)
         if should_match:
@@ -185,19 +178,13 @@ class TestMatcherComparison:
         print("FUZZY MATCHER COMPARISON RESULTS")
         print("=" * 60)
         print(f"\nTotal test cases: {total}")
-        print(
-            f"\nRapidfuzz: {rapidfuzz_correct}/{total} "
-            f"({100*rapidfuzz_correct/total:.1f}%)"
-        )
+        print(f"\nRapidfuzz: {rapidfuzz_correct}/{total} ({100 * rapidfuzz_correct / total:.1f}%)")
         if rapidfuzz_failures:
             print("Rapidfuzz failures:")
             for f in rapidfuzz_failures:
                 print(f)
 
-        print(
-            f"\nDifflib: {difflib_correct}/{total} "
-            f"({100*difflib_correct/total:.1f}%)"
-        )
+        print(f"\nDifflib: {difflib_correct}/{total} ({100 * difflib_correct / total:.1f}%)")
         if difflib_failures:
             print("Difflib failures:")
             for f in difflib_failures:

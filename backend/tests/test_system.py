@@ -8,18 +8,18 @@ import pytest
 @pytest.mark.asyncio
 async def test_get_memory(client):
     """Test getting system memory information."""
-    GiB = 1024**3  # Binary gibibyte (1,073,741,824 bytes)
+    gib = 1024**3  # Binary gibibyte (1,073,741,824 bytes)
 
     with (
         patch("mlx_manager.routers.system.get_physical_memory_bytes") as mock_physical,
         patch("mlx_manager.routers.system.psutil") as mock_psutil,
     ):
         # Mock physical memory (from sysctl on macOS)
-        mock_physical.return_value = 128 * GiB  # 128 GiB
+        mock_physical.return_value = 128 * gib  # 128 GiB
 
         # Mock psutil for available memory
         mock_mem = MagicMock()
-        mock_mem.available = 64 * GiB  # 64 GiB
+        mock_mem.available = 64 * gib  # 64 GiB
         mock_psutil.virtual_memory.return_value = mock_mem
 
         response = await client.get("/api/system/memory")

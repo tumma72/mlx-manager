@@ -87,9 +87,7 @@ def get_parser_options() -> ParserOptions:
         tool_parsers = set(TOOL_PARSER_MAP.keys()) | set(UNIFIED_PARSER_MAP.keys())
 
         # Reasoning parsers = REASONING_PARSER_MAP + UNIFIED_PARSER_MAP
-        reasoning_parsers = set(REASONING_PARSER_MAP.keys()) | set(
-            UNIFIED_PARSER_MAP.keys()
-        )
+        reasoning_parsers = set(REASONING_PARSER_MAP.keys()) | set(UNIFIED_PARSER_MAP.keys())
 
         # Message converters
         message_converters = set(MESSAGE_CONVERTER_MAP.keys())
@@ -104,8 +102,7 @@ def get_parser_options() -> ParserOptions:
     except ImportError as e:
         # Fallback if mlx-openai-server not installed
         logger.warning(
-            f"Could not import mlx-openai-server parser maps ({e}), "
-            "using fallback values"
+            f"Could not import mlx-openai-server parser maps ({e}), using fallback values"
         )
         tool_parsers = FALLBACK_TOOL_PARSERS.copy()
         reasoning_parsers = FALLBACK_REASONING_PARSERS.copy()

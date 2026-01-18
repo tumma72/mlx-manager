@@ -92,7 +92,7 @@
 				</span>
 				<span class="flex items-center gap-1">
 					<HardDrive class="w-4 h-4" />
-					~{model.estimated_size_gb} GB
+					{model.estimated_size_gb} GB
 				</span>
 			</div>
 		</div>

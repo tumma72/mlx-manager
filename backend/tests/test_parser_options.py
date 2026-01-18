@@ -25,7 +25,8 @@ class TestGetParserOptionsImportError:
 
     def test_import_error_returns_fallback_tool_parsers(self):
         """Test that ImportError returns fallback tool parsers."""
-        with patch.dict("sys.modules", {"app": None, "app.parsers": None, "app.message_converters": None}):
+        modules_patch = {"app": None, "app.parsers": None, "app.message_converters": None}
+        with patch.dict("sys.modules", modules_patch):
             with patch(
                 "mlx_manager.services.parser_options.get_parser_options.__wrapped__",
                 side_effect=None,
@@ -34,7 +35,10 @@ class TestGetParserOptionsImportError:
                 get_parser_options.cache_clear()
 
                 # Mock the import to raise ImportError
-                original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+                if hasattr(__builtins__, "__import__"):
+                    original_import = __builtins__.__import__
+                else:
+                    original_import = __import__
 
                 def mock_import(name, *args, **kwargs):
                     if name.startswith("app"):
@@ -293,7 +297,7 @@ class TestGetParserOptionsSuccess:
         ):
             result = get_parser_options()
 
-        # Reasoning parsers should include both REASONING_PARSER_MAP and UNIFIED_PARSER_MAP keys, sorted
+        # Reasoning parsers include REASONING_PARSER_MAP + UNIFIED_PARSER_MAP keys, sorted
         assert result["reasoning_parsers"] == ["reason_a", "reason_z", "unified_m"]
 
     def test_success_returns_sorted_message_converters(self):
@@ -304,7 +308,11 @@ class TestGetParserOptionsSuccess:
         mock_app_parsers.UNIFIED_PARSER_MAP = {}
 
         mock_app_message_converters = MagicMock()
-        mock_app_message_converters.MESSAGE_CONVERTER_MAP = {"conv_c": None, "conv_a": None, "conv_b": None}
+        mock_app_message_converters.MESSAGE_CONVERTER_MAP = {
+            "conv_c": None,
+            "conv_a": None,
+            "conv_b": None,
+        }
 
         with patch.dict(
             "sys.modules",

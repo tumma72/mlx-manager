@@ -16,8 +16,9 @@
 
 Running local LLMs typically requires juggling multiple tools, config files, and terminal commands. MLX Manager gives you:
 
-- **One-click model downloads** from HuggingFace's [mlx-community](https://huggingface.co/mlx-community)
-- **Visual server management** - start, stop, and monitor models from a web UI
+- **One-click model downloads** from HuggingFace MLX models (mlx-community, lmstudio-community, and more)
+- **Visual server management** - start, stop, and monitor models with real-time CPU/memory metrics
+- **Built-in chat interface** - test your models directly in the browser
 - **OpenAI-compatible API** - use your local models with any OpenAI client
 - **Background service** - models auto-start on login via macOS launchd
 - **Menubar app** - quick access from your Mac's status bar
@@ -43,9 +44,9 @@ mlx-manager serve
 
 Open http://localhost:8080 and you're ready to:
 
-1. **Browse** - Search mlx-community models
-2. **Download** - One-click download to your Mac
-3. **Configure** - Create a server profile
+1. **Browse** - Search HuggingFace for MLX-optimized models
+2. **Download** - One-click download with progress tracking
+3. **Configure** - Create a server profile with custom settings
 4. **Run** - Start serving and chat with your model
 
 ## System Requirements

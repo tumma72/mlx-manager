@@ -97,6 +97,7 @@ class FuzzyMatcher(ABC):
             # For "m2" variant, also check for "m2.1", "m2.x" patterns
             if variant == "m2":
                 import re
+
                 if re.search(r"m2[\.\d]?", model_lower):
                     return True
             # Variant not found - this option doesn't match

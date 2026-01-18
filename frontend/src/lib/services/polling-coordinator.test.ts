@@ -844,10 +844,8 @@ describe('PollingCoordinator', () => {
 			await Promise.resolve();
 			await Promise.resolve();
 
-			// Get the visibility handler
-			const visibilityHandler = mockDocument.addEventListener.mock.calls.find(
-				(call) => call[0] === 'visibilitychange'
-			)?.[1];
+			// Note: visibility handler is registered but we test resumeAll path
+			// through setGlobalPause instead of simulating visibility events
 
 			// Calling resumeAll while polling is already running
 			// The condition !state.intervalId fails because interval is already set

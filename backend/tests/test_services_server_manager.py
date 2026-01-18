@@ -593,9 +593,7 @@ class TestServerManagerGetProcessStatus:
         result = server_manager_instance.get_process_status(999)
         assert result == {"running": False, "tracked": False, "failed": False}
 
-    def test_get_process_status_not_tracked_with_error_log(
-        self, server_manager_instance, tmp_path
-    ):
+    def test_get_process_status_not_tracked_with_error_log(self, server_manager_instance, tmp_path):
         """Test detects failure from log file even when process is not tracked."""
         # Simulate a log file from a previously crashed server
         log_file = tmp_path / "server-999.log"
@@ -612,9 +610,7 @@ class TestServerManagerGetProcessStatus:
         assert result["failed"] is True
         assert "Model type not supported" in result["error_message"]
 
-    def test_get_process_status_not_tracked_with_clean_log(
-        self, server_manager_instance, tmp_path
-    ):
+    def test_get_process_status_not_tracked_with_clean_log(self, server_manager_instance, tmp_path):
         """Test reports not failed when log file has no errors."""
         log_file = tmp_path / "server-999.log"
         log_file.write_text("Starting server...\nShutdown gracefully.")
@@ -641,9 +637,7 @@ class TestServerManagerGetProcessStatus:
         assert result["tracked"] is True
         assert result["pid"] == 12345
 
-    def test_get_process_status_exited_with_error_code(
-        self, server_manager_instance, tmp_path
-    ):
+    def test_get_process_status_exited_with_error_code(self, server_manager_instance, tmp_path):
         """Test detects failure when exit code is non-zero."""
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -687,9 +681,7 @@ class TestServerManagerGetProcessStatus:
         assert result["failed"] is True  # Should be True due to error in log
         assert "minimax not supported" in result["error_message"]
 
-    def test_get_process_status_exit_code_zero_no_error(
-        self, server_manager_instance, tmp_path
-    ):
+    def test_get_process_status_exit_code_zero_no_error(self, server_manager_instance, tmp_path):
         """Test reports not failed when exit code is 0 and no error in log."""
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -709,9 +701,7 @@ class TestServerManagerGetProcessStatus:
         assert result["exit_code"] == 0
         assert result["failed"] is False  # Should be False - clean exit
 
-    def test_get_process_status_cleans_up_dead_process(
-        self, server_manager_instance, tmp_path
-    ):
+    def test_get_process_status_cleans_up_dead_process(self, server_manager_instance, tmp_path):
         """Test removes process from tracking after detecting exit."""
         mock_proc = MagicMock()
         mock_proc.pid = 12345

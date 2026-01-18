@@ -501,8 +501,18 @@ class TestRunDownloadTask:
 
         # Mock hf_client.download_model to yield progress events
         async def mock_download_model(model_id):
-            yield {"status": "downloading", "progress": 50, "downloaded_bytes": 500, "total_bytes": 1000}
-            yield {"status": "completed", "progress": 100, "downloaded_bytes": 1000, "total_bytes": 1000}
+            yield {
+                "status": "downloading",
+                "progress": 50,
+                "downloaded_bytes": 500,
+                "total_bytes": 1000,
+            }
+            yield {
+                "status": "completed",
+                "progress": 100,
+                "downloaded_bytes": 1000,
+                "total_bytes": 1000,
+            }
 
         # Mock _update_download_record (imported inside _run_download_task from routers.models)
         update_calls = []
@@ -656,10 +666,12 @@ class TestLifespanWithPendingDownloads:
 
                                     async with lifespan(mock_app):
                                         # Verify resume was called with pending downloads
-                                        mock_resume.assert_called_once_with([
-                                            (1, "mlx-community/model1"),
-                                            (2, "mlx-community/model2"),
-                                        ])
+                                        mock_resume.assert_called_once_with(
+                                            [
+                                                (1, "mlx-community/model1"),
+                                                (2, "mlx-community/model2"),
+                                            ]
+                                        )
 
                                     # Verify cancel was called on shutdown
                                     mock_cancel.assert_called_once()

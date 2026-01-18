@@ -34,7 +34,9 @@ class ServerManager:
         if profile.id in self.processes:
             proc = self.processes[profile.id]
             if proc.poll() is None:  # Still running
-                logger.warning(f"Server for profile '{profile.name}' is already running (pid={proc.pid})")
+                logger.warning(
+                    f"Server for profile '{profile.name}' already running (pid={proc.pid})"
+                )
                 raise RuntimeError(f"Server for profile {profile.name} is already running")
 
         # Pre-launch check: verify mlx-lm supports this model family
@@ -88,7 +90,8 @@ class ServerManager:
                 pass
             if log_path.exists():
                 error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
-            logger.error(f"Server failed to start for profile '{profile.name}' (exit_code={proc.poll()})")
+            exit_code = proc.poll()
+            logger.error(f"Server failed to start for '{profile.name}' (exit={exit_code})")
             logger.error(f"Server log: {error_msg[:500]}")
             del self.processes[profile.id]
             raise RuntimeError(f"Server failed to start: {error_msg}")
@@ -245,7 +248,14 @@ class ServerManager:
                     content = log_path.read_text()
                     if content:
                         error_msg = content[-1000:]
-                        error_patterns = ["ERROR", "Error", "failed", "Failed", "exception", "Exception"]
+                        error_patterns = [
+                            "ERROR",
+                            "Error",
+                            "failed",
+                            "Failed",
+                            "exception",
+                            "Exception",
+                        ]
                         has_error = any(pattern in error_msg for pattern in error_patterns)
                         if has_error:
                             return {
@@ -277,9 +287,16 @@ class ServerManager:
             if log_path.exists():
                 content = log_path.read_text()
                 error_msg = content[-1000:] if content else "No log output"
-                # Check for error patterns in log (mlx-openai-server may exit with code 0 on error)
+                # Check for error patterns (mlx-openai-server may exit with code 0 on error)
                 if error_msg:
-                    error_patterns = ["ERROR", "Error", "failed", "Failed", "exception", "Exception"]
+                    error_patterns = [
+                        "ERROR",
+                        "Error",
+                        "failed",
+                        "Failed",
+                        "exception",
+                        "Exception",
+                    ]
                     has_error_in_log = any(pattern in error_msg for pattern in error_patterns)
 
             # Clean up the dead process

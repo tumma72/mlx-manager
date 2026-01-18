@@ -5,7 +5,8 @@
  * Uses Server-Sent Events (SSE) for real-time progress updates.
  */
 
-import { models as modelsApi, type ActiveDownload } from "$api";
+/* eslint-disable svelte/prefer-svelte-reactivity -- Using Map with reassignment for reactivity */
+import { models as modelsApi } from "$api";
 
 export interface DownloadState {
   model_id: string;

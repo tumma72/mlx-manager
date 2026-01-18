@@ -290,10 +290,14 @@ def get_model_detection_info(model_id: str) -> dict:
     is_downloaded = get_local_model_path(model_id) is not None
 
     # Check if mlx-lm supports this model family
-    version_support = check_mlx_lm_support(family) if family else {
-        "supported": True,
-        "installed_version": get_mlx_lm_version(),
-    }
+    version_support = (
+        check_mlx_lm_support(family)
+        if family
+        else {
+            "supported": True,
+            "installed_version": get_mlx_lm_version(),
+        }
+    )
 
     return {
         "model_family": family,

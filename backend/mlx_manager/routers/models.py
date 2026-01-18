@@ -149,9 +149,7 @@ async def get_download_progress(task_id: str):
             yield f"data: {json.dumps({'status': 'failed', 'error': error_msg})}\n\n"
             # Update DB with failure
             if download_id:
-                await _update_download_record(
-                    download_id, status="failed", error=error_msg
-                )
+                await _update_download_record(download_id, status="failed", error=error_msg)
         finally:
             # Clean up task after a delay
             await asyncio.sleep(60)
@@ -172,9 +170,7 @@ async def _update_download_record(
     from mlx_manager.database import get_session
 
     async with get_session() as session:
-        result = await session.execute(
-            select(Download).where(Download.id == download_id)
-        )
+        result = await session.execute(select(Download).where(Download.id == download_id))
         download = result.scalars().first()
         if download:
             download.status = status
@@ -206,14 +202,16 @@ async def get_active_downloads(db: AsyncSession = Depends(get_db)):
         model_id = task.get("model_id")
         if status in ("starting", "pending", "downloading") and model_id:
             seen_model_ids.add(model_id)
-            active.append({
-                "task_id": task_id,
-                "model_id": model_id,
-                "status": status,
-                "progress": task.get("progress", 0),
-                "downloaded_bytes": task.get("downloaded_bytes", 0),
-                "total_bytes": task.get("total_bytes", 0),
-            })
+            active.append(
+                {
+                    "task_id": task_id,
+                    "model_id": model_id,
+                    "status": status,
+                    "progress": task.get("progress", 0),
+                    "downloaded_bytes": task.get("downloaded_bytes", 0),
+                    "total_bytes": task.get("total_bytes", 0),
+                }
+            )
 
     # Also include DB-backed downloads that aren't in memory
     # (these are downloads that need to be resumed)
@@ -229,19 +227,21 @@ async def get_active_downloads(db: AsyncSession = Depends(get_db)):
             # This is a download from a previous server session that needs resuming
             # Generate a new task_id for it
             task_id = f"resume-{download.id}"
-            active.append({
-                "task_id": task_id,
-                "model_id": download.model_id,
-                "status": download.status,
-                "progress": (
-                    int((download.downloaded_bytes / download.total_bytes) * 100)
-                    if download.total_bytes
-                    else 0
-                ),
-                "downloaded_bytes": download.downloaded_bytes,
-                "total_bytes": download.total_bytes or 0,
-                "needs_resume": True,  # Signal to frontend this needs resuming
-            })
+            active.append(
+                {
+                    "task_id": task_id,
+                    "model_id": download.model_id,
+                    "status": download.status,
+                    "progress": (
+                        int((download.downloaded_bytes / download.total_bytes) * 100)
+                        if download.total_bytes
+                        else 0
+                    ),
+                    "downloaded_bytes": download.downloaded_bytes,
+                    "total_bytes": download.total_bytes or 0,
+                    "needs_resume": True,  # Signal to frontend this needs resuming
+                }
+            )
 
     return active
 

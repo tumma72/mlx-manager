@@ -87,9 +87,8 @@ async def test_start_download(client):
 @pytest.mark.asyncio
 async def test_start_download_existing_returns_same_task(client):
     """Test that starting a download for model with active download returns existing task."""
+
     from mlx_manager.routers import models
-    from mlx_manager.models import Download
-    from datetime import datetime, UTC
 
     model_id = "mlx-community/duplicate-download-test"
 
@@ -683,9 +682,7 @@ async def test_get_active_downloads_db_backed_needs_resume(client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_db_progress_calculation_no_total(
-    client, test_engine
-):
+async def test_get_active_downloads_db_progress_calculation_no_total(client, test_engine):
     """Test progress calculation when total_bytes is 0 or None."""
     from datetime import UTC, datetime
 
@@ -886,8 +883,18 @@ async def test_download_progress_sse_updates_db_periodically(client):
     update_calls = []
 
     async def mock_download_model(model_id):
-        yield {"status": "downloading", "progress": 50, "downloaded_bytes": 5000, "total_bytes": 10000}
-        yield {"status": "completed", "progress": 100, "downloaded_bytes": 10000, "total_bytes": 10000}
+        yield {
+            "status": "downloading",
+            "progress": 50,
+            "downloaded_bytes": 5000,
+            "total_bytes": 10000,
+        }
+        yield {
+            "status": "completed",
+            "progress": 100,
+            "downloaded_bytes": 10000,
+            "total_bytes": 10000,
+        }
 
     async def mock_update_record(*args, **kwargs):
         update_calls.append({"args": args, "kwargs": kwargs})
@@ -982,9 +989,7 @@ async def test_download_progress_sse_without_download_id(client):
     with (
         patch("mlx_manager.routers.models.hf_client") as mock_hf,
         patch("mlx_manager.routers.models.asyncio.sleep", new_callable=AsyncMock),
-        patch(
-            "mlx_manager.routers.models._update_download_record"
-        ) as mock_update,
+        patch("mlx_manager.routers.models._update_download_record") as mock_update,
     ):
         mock_hf.download_model = mock_download_model
 
@@ -1005,13 +1010,10 @@ async def test_download_progress_sse_without_download_id(client):
 @pytest.mark.asyncio
 async def test_start_download_function_no_existing(test_engine):
     """Test start_download function directly when no existing download."""
-    from contextlib import asynccontextmanager
-    from datetime import UTC, datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
 
-    from mlx_manager.models import Download
     from mlx_manager.routers import models
     from mlx_manager.routers.models import DownloadRequest, start_download
 
@@ -1191,7 +1193,6 @@ async def test_get_active_downloads_function_no_total_bytes(test_engine):
             session.add(download)
             await session.commit()
             await session.refresh(download)
-            download_id = download.id
 
         # Call function directly
         async with async_session() as session:
@@ -1250,9 +1251,7 @@ async def test_start_download_no_existing_creates_db_record(client, test_engine)
         )
         async with async_session() as session:
             result = await session.execute(
-                select(Download).where(
-                    Download.model_id == "mlx-community/new-test-model-db"
-                )
+                select(Download).where(Download.model_id == "mlx-community/new-test-model-db")
             )
             download = result.scalars().first()
             assert download is not None
@@ -1261,7 +1260,8 @@ async def test_start_download_no_existing_creates_db_record(client, test_engine)
     finally:
         # Clean up
         for tid in list(models.download_tasks.keys()):
-            if models.download_tasks.get(tid, {}).get("model_id") == "mlx-community/new-test-model-db":
+            task_model = models.download_tasks.get(tid, {}).get("model_id")
+            if task_model == "mlx-community/new-test-model-db":
                 models.download_tasks.pop(tid, None)
         models.download_tasks.update(original_tasks)
 

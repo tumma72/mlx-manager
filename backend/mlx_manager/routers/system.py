@@ -35,10 +35,10 @@ def get_physical_memory_bytes() -> int:
             )
             if result.returncode == 0:
                 return int(result.stdout.strip())
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
     # Fallback to psutil for other platforms or on error
-    return psutil.virtual_memory().total
+    return psutil.virtual_memory().total  # pragma: no cover
 
 
 @router.get("/memory", response_model=SystemMemory)
@@ -83,7 +83,7 @@ async def get_system_info():
         )
         if result.returncode == 0:
             chip = result.stdout.strip()
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
 
     # Get memory (use accurate physical memory, convert to GiB)
@@ -98,7 +98,7 @@ async def get_system_info():
         import mlx  # type: ignore[import-not-found]
 
         mlx_version = getattr(mlx, "__version__", "installed")
-    except ImportError:
+    except ImportError:  # pragma: no cover
         pass
 
     # Try to get mlx-openai-server version
@@ -107,7 +107,7 @@ async def get_system_info():
         import mlx_openai_server  # type: ignore[import-not-found]
 
         mlx_openai_server_version = getattr(mlx_openai_server, "__version__", "installed")
-    except ImportError:
+    except ImportError:  # pragma: no cover
         pass
 
     return SystemInfo(

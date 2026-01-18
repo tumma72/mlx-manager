@@ -280,7 +280,6 @@ class TestMigrateSchema:
     @pytest.mark.asyncio
     async def test_migrate_schema_column_already_exists(self, test_engine):
         """Test migrate_schema handles columns that already exist."""
-        from sqlalchemy import text
         from mlx_manager.database import migrate_schema
 
         with patch("mlx_manager.database.engine", test_engine):
@@ -296,7 +295,8 @@ class TestRecoverIncompleteDownloads:
     async def test_recover_with_no_incomplete_downloads(self, test_engine):
         """Test recover when no incomplete downloads exist."""
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-        from mlx_manager.database import recover_incomplete_downloads, get_session
+
+        from mlx_manager.database import get_session, recover_incomplete_downloads
 
         test_async_session = async_sessionmaker(
             test_engine,
@@ -312,10 +312,12 @@ class TestRecoverIncompleteDownloads:
     @pytest.mark.asyncio
     async def test_recover_with_pending_downloads(self, test_engine):
         """Test recover marks pending downloads for resume."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
         from sqlmodel import select
-        from mlx_manager.database import recover_incomplete_downloads, get_session
+
+        from mlx_manager.database import get_session, recover_incomplete_downloads
         from mlx_manager.models import Download
 
         test_async_session = async_sessionmaker(
@@ -347,9 +349,7 @@ class TestRecoverIncompleteDownloads:
 
         # Verify status was set to pending
         async with test_async_session() as session:
-            result = await session.execute(
-                select(Download).where(Download.id == download_id)
-            )
+            result = await session.execute(select(Download).where(Download.id == download_id))
             recovered = result.scalars().first()
             assert recovered.status == "pending"
             assert recovered.error is None

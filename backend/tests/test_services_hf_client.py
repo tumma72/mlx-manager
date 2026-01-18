@@ -204,9 +204,7 @@ class TestHuggingFaceClientDownloadModel:
 
         with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
             events = []
-            async for event in hf_client_instance.download_model(
-                "mlx-community/Qwen3-8B-4bit"
-            ):
+            async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
         # First event is starting, then completed (progress events may or may not appear)
@@ -230,9 +228,7 @@ class TestHuggingFaceClientDownloadModel:
 
         with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
             events = []
-            async for event in hf_client_instance.download_model(
-                "mlx-community/Qwen3-8B-4bit"
-            ):
+            async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
         assert events[0]["status"] == "starting"
@@ -253,9 +249,7 @@ class TestHuggingFaceClientDownloadModel:
 
         with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
             events = []
-            async for event in hf_client_instance.download_model(
-                "mlx-community/Qwen3-8B-4bit"
-            ):
+            async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
         assert events[0]["status"] == "starting"
