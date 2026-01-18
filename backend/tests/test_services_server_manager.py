@@ -238,9 +238,11 @@ class TestServerManagerCheckHealth:
     @pytest.mark.asyncio
     async def test_check_health_connection_error(self, server_manager_instance, sample_profile):
         """Test health check returns unhealthy on connection error."""
+        import httpx
+
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-                side_effect=Exception("Connection refused")
+                side_effect=httpx.ConnectError("Connection refused")
             )
 
             result = await server_manager_instance.check_health(sample_profile)
@@ -583,6 +585,182 @@ class TestServerManagerStartServerLogFileCleanup:
                         await server_manager_instance.start_server(sample_profile)
 
         assert "Failed to load model" in str(exc_info.value)
+
+
+class TestServerManagerStartServerModelFamilyCheck:
+    """Tests for model family version check during server start."""
+
+    @pytest.mark.asyncio
+    async def test_start_server_model_family_not_supported(
+        self, server_manager_instance, sample_profile
+    ):
+        """Test start fails when model family is not supported (lines 45-49)."""
+        # Configure model path to trigger minimax detection
+        sample_profile.model_path = "mlx-community/MiniMax-M2.1-3bit"
+
+        # Mock detect_model_family to return "minimax"
+        # Mock check_mlx_lm_support to return unsupported
+        with (
+            patch(
+                "mlx_manager.services.server_manager.detect_model_family",
+                return_value="minimax",
+            ),
+            patch(
+                "mlx_manager.services.server_manager.check_mlx_lm_support",
+                return_value={
+                    "supported": False,
+                    "error": "minimax models require mlx-lm >= 0.28.4 (installed: 0.26.0)",
+                },
+            ),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await server_manager_instance.start_server(sample_profile)
+
+        assert "minimax models require mlx-lm >= 0.28.4" in str(exc_info.value)
+
+
+class TestServerManagerLogFileHandling:
+    """Tests for log file handling edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_start_server_log_file_close_exception(
+        self, server_manager_instance, sample_profile, tmp_path
+    ):
+        """Test handles exception when closing log file on startup failure (lines 89-90)."""
+        log_file = tmp_path / "server-1.log"
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 1  # Exited with error
+
+        # Create a mock log file object that raises on close
+        mock_log_file = MagicMock()
+        mock_log_file.flush.side_effect = OSError("Flush failed")
+        mock_log_file.close.side_effect = OSError("Close failed")
+
+        def popen_side_effect(*args, **kwargs):
+            # Store the mock log file in _log_files
+            server_manager_instance._log_files = {sample_profile.id: mock_log_file}
+            return mock_proc
+
+        with (
+            patch("subprocess.Popen", side_effect=popen_side_effect),
+            patch("asyncio.sleep"),
+            patch(
+                "mlx_manager.services.server_manager.get_server_log_path",
+                return_value=log_file,
+            ),
+            patch(
+                "mlx_manager.services.server_manager.detect_model_family",
+                return_value=None,
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="failed to start"):
+                await server_manager_instance.start_server(sample_profile)
+
+    @pytest.mark.asyncio
+    async def test_stop_server_log_file_close_exception(
+        self, server_manager_instance, sample_profile
+    ):
+        """Test handles exception when closing log file on stop (lines 136-140)."""
+        mock_proc = MagicMock()
+        mock_proc.poll.side_effect = [None, 0]  # Running, then exited
+        mock_proc.wait.return_value = 0
+
+        # Create a mock log file that raises on close
+        mock_log_file = MagicMock()
+        mock_log_file.close.side_effect = OSError("Close failed")
+
+        server_manager_instance.processes[sample_profile.id] = mock_proc
+        server_manager_instance._log_files = {sample_profile.id: mock_log_file}
+
+        # Should not raise despite close failure
+        result = await server_manager_instance.stop_server(sample_profile.id)
+
+        assert result is True
+        assert sample_profile.id not in server_manager_instance.processes
+        assert sample_profile.id not in server_manager_instance._log_files
+
+
+class TestServerManagerGetLogLinesEdgeCases:
+    """Tests for get_log_lines edge cases."""
+
+    def test_get_log_lines_flush_exception(self, server_manager_instance, tmp_path):
+        """Test handles exception when flushing log file (lines 210-213)."""
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        server_manager_instance.processes[1] = mock_proc
+
+        # Create a mock log file that raises on flush
+        mock_log_file = MagicMock()
+        mock_log_file.flush.side_effect = OSError("Flush failed")
+        server_manager_instance._log_files = {1: mock_log_file}
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("Line 1\nLine 2\n")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            # Should not raise, should still read log file
+            result = server_manager_instance.get_log_lines(1)
+
+        assert len(result) == 2
+        assert result[0] == "Line 1"
+
+
+class TestServerManagerGetProcessStatusEdgeCases:
+    """Additional tests for get_process_status edge cases."""
+
+    def test_get_process_status_log_read_exception(self, server_manager_instance, tmp_path):
+        """Test handles exception when reading log file (lines 267-268)."""
+        # Create a log file path that will fail on read
+        log_file = tmp_path / "server-999.log"
+        log_file.write_text("Some error content")
+
+        with (
+            patch(
+                "mlx_manager.services.server_manager.get_server_log_path",
+                return_value=log_file,
+            ),
+            patch.object(log_file.__class__, "read_text", side_effect=PermissionError),
+        ):
+            result = server_manager_instance.get_process_status(999)
+
+        # Should return non-failed status since we couldn't read the log
+        assert result == {"running": False, "tracked": False, "failed": False}
+
+    def test_get_process_status_exited_log_file_close_exception(
+        self, server_manager_instance, tmp_path
+    ):
+        """Test handles exception when closing log file for exited process (lines 278-283)."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.poll.return_value = 0  # Exited with code 0
+
+        # Create a mock log file that raises on flush/close
+        mock_log_file = MagicMock()
+        mock_log_file.flush.side_effect = OSError("Flush failed")
+        mock_log_file.close.side_effect = OSError("Close failed")
+
+        server_manager_instance.processes[1] = mock_proc
+        server_manager_instance._log_files = {1: mock_log_file}
+
+        log_file = tmp_path / "server-1.log"
+        log_file.write_text("Normal output")
+
+        with patch(
+            "mlx_manager.services.server_manager.get_server_log_path",
+            return_value=log_file,
+        ):
+            # Should not raise despite close failure
+            result = server_manager_instance.get_process_status(1)
+
+        assert result["running"] is False
+        assert result["tracked"] is True
+        assert result["failed"] is False  # Exit code 0, no error in log
+        assert 1 not in server_manager_instance._log_files
 
 
 class TestServerManagerGetProcessStatus:

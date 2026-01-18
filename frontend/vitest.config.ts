@@ -3,6 +3,10 @@ import { sveltekit } from "@sveltejs/kit/vite";
 
 export default defineConfig({
   plugins: [sveltekit()],
+  resolve: {
+    // Ensure browser conditions are used for Svelte packages
+    conditions: ["browser"],
+  },
   test: {
     include: ["src/**/*.{test,spec}.{js,ts}"],
     environment: "jsdom",

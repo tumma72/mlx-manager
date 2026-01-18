@@ -489,3 +489,215 @@ class TestHuggingFaceClientSearchModelsEdgeCases:
             results = await hf_client_instance.search_mlx_models("test", limit=5)
 
         assert len(results) == 5
+
+
+# ============================================================================
+# Tests for SilentProgress class (lines 30-31)
+# ============================================================================
+
+
+class TestSilentProgress:
+    """Tests for the SilentProgress class."""
+
+    def test_silent_progress_disables_output(self):
+        """Test that SilentProgress disables console output."""
+        from mlx_manager.services.hf_client import SilentProgress
+
+        # Create instance - should not raise
+        progress = SilentProgress(total=100)
+
+        # Verify disable is set to True
+        assert progress.disable is True
+
+        # Clean up
+        progress.close()
+
+    def test_silent_progress_accepts_args(self):
+        """Test that SilentProgress accepts standard tqdm arguments."""
+        from mlx_manager.services.hf_client import SilentProgress
+
+        # Should accept common tqdm arguments without raising
+        progress = SilentProgress(total=100, desc="Test", unit="B", unit_scale=True)
+        assert progress.disable is True
+        progress.close()
+
+
+# ============================================================================
+# Tests for _get_directory_size exception handling (lines 232-235)
+# ============================================================================
+
+
+class TestGetDirectorySize:
+    """Tests for the _get_directory_size method."""
+
+    def test_get_directory_size_nonexistent(self, hf_client_instance, tmp_path):
+        """Test returns 0 for non-existent directory."""
+        nonexistent = tmp_path / "nonexistent"
+        result = hf_client_instance._get_directory_size(nonexistent)
+        assert result == 0
+
+    def test_get_directory_size_success(self, hf_client_instance, tmp_path):
+        """Test returns correct size for directory with files."""
+        (tmp_path / "file1.txt").write_bytes(b"x" * 1000)
+        (tmp_path / "file2.txt").write_bytes(b"y" * 500)
+
+        result = hf_client_instance._get_directory_size(tmp_path)
+        assert result == 1500
+
+    def test_get_directory_size_exception(self, hf_client_instance, tmp_path):
+        """Test returns 0 when exception occurs (line 234-235)."""
+        # Create directory
+        test_dir = tmp_path / "test_dir"
+        test_dir.mkdir()
+
+        # Mock rglob to raise an exception
+        with patch.object(test_dir.__class__, "rglob", side_effect=PermissionError("No access")):
+            result = hf_client_instance._get_directory_size(test_dir)
+
+        assert result == 0
+
+
+# ============================================================================
+# Tests for list_local_models non-organization filtering (lines 264-275)
+# ============================================================================
+
+
+class TestListLocalModelsNoOrganization:
+    """Tests for list_local_models when no organization filter is set."""
+
+    def test_list_local_models_mlx_community_model(self, tmp_path):
+        """Test lists mlx-community models when no org filter."""
+        # Create model with mlx-community in name
+        model_dir = tmp_path / "models--mlx-community--Qwen-7B" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = None  # No org filter
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        assert len(result) == 1
+        assert result[0]["model_id"] == "mlx-community/Qwen-7B"
+
+    def test_list_local_models_lmstudio_community_model(self, tmp_path):
+        """Test lists lmstudio-community models when no org filter."""
+        model_dir = tmp_path / "models--lmstudio-community--Llama-3-8B" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = None  # No org filter
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        assert len(result) == 1
+        assert result[0]["model_id"] == "lmstudio-community/Llama-3-8B"
+
+    def test_list_local_models_mlx_in_name(self, tmp_path):
+        """Test lists models with 'mlx' in name when no org filter."""
+        model_dir = tmp_path / "models--someorg--model-mlx-optimized" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = None
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        assert len(result) == 1
+        assert result[0]["model_id"] == "someorg/model-mlx-optimized"
+
+    def test_list_local_models_excludes_non_mlx(self, tmp_path):
+        """Test excludes non-MLX models when no org filter (line 274-275)."""
+        # Create a non-MLX model
+        model_dir = tmp_path / "models--someorg--regular-model" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = None  # No org filter
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        # Should be filtered out - no mlx in name
+        assert len(result) == 0
+
+    def test_list_local_models_filters_by_organization(self, tmp_path):
+        """Test filters by organization when org is set (line 263-264)."""
+        # Create models from different orgs
+        mlx_dir = tmp_path / "models--mlx-community--Model-A" / "snapshots" / "abc"
+        mlx_dir.mkdir(parents=True)
+        (mlx_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        other_dir = tmp_path / "models--other-org--Model-B" / "snapshots" / "abc"
+        other_dir.mkdir(parents=True)
+        (other_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = "mlx-community"  # Filter by org
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        # Should only include mlx-community model
+        assert len(result) == 1
+        assert result[0]["model_id"] == "mlx-community/Model-A"
+
+    def test_list_local_models_skips_non_model_dirs(self, tmp_path):
+        """Test skips directories that don't start with models--."""
+        # Create a non-model directory
+        (tmp_path / "some-other-dir").mkdir()
+
+        # Create valid model
+        model_dir = tmp_path / "models--mlx-community--Test" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_bytes(b"x" * 1000)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = "mlx-community"
+            mock_settings.offline_mode = False
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+
+            result = client.list_local_models()
+
+        assert len(result) == 1

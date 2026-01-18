@@ -86,8 +86,8 @@ class ServerManager:
                 log_file.close()
                 if profile.id in self._log_files:
                     del self._log_files[profile.id]
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to close log file for {profile.name}: {e}")
             if log_path.exists():
                 error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
             exit_code = proc.poll()
@@ -135,8 +135,8 @@ class ServerManager:
         if hasattr(self, "_log_files") and profile_id in self._log_files:
             try:
                 self._log_files[profile_id].close()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"Failed to close log file for profile_id={profile_id}: {e}")
             del self._log_files[profile_id]
         logger.info(f"Server stopped for profile_id={profile_id}")
         return True
@@ -169,7 +169,7 @@ class ServerManager:
                         response_time_ms=round(elapsed, 2),
                         error=f"HTTP {response.status_code}",
                     )
-        except Exception as e:
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
             return HealthCheckResult(status="unhealthy", error=str(e))
 
     def get_server_stats(self, profile_id: int) -> ServerStats | None:
@@ -209,8 +209,8 @@ class ServerManager:
         if hasattr(self, "_log_files") and profile_id in self._log_files:
             try:
                 self._log_files[profile_id].flush()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"Failed to flush log file: {e}")
 
         lines: list[str] = []
         try:
@@ -225,8 +225,8 @@ class ServerManager:
 
                 # Update position
                 self._log_positions[profile_id] = f.tell()
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError) as e:
+            logger.debug(f"Failed to read log file: {e}")
 
         return lines
 
@@ -264,8 +264,8 @@ class ServerManager:
                                 "failed": True,
                                 "error_message": error_msg,
                             }
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.debug(f"Failed to read log for status check: {e}")
             return {"running": False, "tracked": False, "failed": False}
 
         proc = self.processes[profile_id]
@@ -278,8 +278,8 @@ class ServerManager:
                 try:
                     self._log_files[profile_id].flush()
                     self._log_files[profile_id].close()
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.debug(f"Failed to close log file: {e}")
                 del self._log_files[profile_id]
 
             error_msg = None

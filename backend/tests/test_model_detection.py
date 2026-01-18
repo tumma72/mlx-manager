@@ -397,3 +397,136 @@ class TestModelFamilyMinVersions:
         """Test MiniMax has a minimum version requirement."""
         assert "minimax" in MODEL_FAMILY_MIN_VERSIONS
         assert MODEL_FAMILY_MIN_VERSIONS["minimax"] == "0.28.4"
+
+
+# ============================================================================
+# Tests for get_local_model_path exception handling (lines 137-139)
+# ============================================================================
+
+
+class TestGetLocalModelPathExceptions:
+    """Tests for get_local_model_path exception handling."""
+
+    def test_get_local_model_path_stat_exception(self, tmp_path):
+        """Test handles exception when reading model snapshots (line 137-139)."""
+        # Create model directory with snapshots
+        model_dir = tmp_path / "models--mlx-community--test-model" / "snapshots"
+        snapshot_dir = model_dir / "abc123"
+        snapshot_dir.mkdir(parents=True)
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+
+            # Mock sorted to raise an exception during iteration
+            original_sorted = sorted
+
+            def mock_sorted(iterable, **kwargs):
+                # Raise when trying to sort (during stat access)
+                if "key" in kwargs:
+                    raise OSError("Permission denied")
+                return original_sorted(iterable, **kwargs)
+
+            with patch("mlx_manager.utils.model_detection.sorted", side_effect=mock_sorted):
+                result = get_local_model_path("mlx-community/test-model")
+
+        # Should return None and log warning
+        assert result is None
+
+
+# ============================================================================
+# Tests for detect_model_family additional variants (lines 196, 198, 211, 215, 219, 223)
+# ============================================================================
+
+
+class TestDetectModelFamilyVariants:
+    """Tests for additional model family detection variants."""
+
+    def test_detects_qwen_moe_from_path(self, tmp_path):
+        """Test detects Qwen MOE variant from model path (line 196)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Qwen2.5-MoE-72B-4bit")
+            assert result == "qwen3_moe"
+
+    def test_detects_qwen_vl_from_path(self, tmp_path):
+        """Test detects Qwen VL variant from model path (line 198)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Qwen2-VL-7B-4bit")
+            assert result == "qwen3_vl"
+
+    def test_detects_nemotron_from_path(self, tmp_path):
+        """Test detects Nemotron from model path (line 211)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Nemotron-3-8B-4bit")
+            assert result == "nemotron"
+
+    def test_detects_harmony_from_path(self, tmp_path):
+        """Test detects Harmony from model path (line 215)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Harmony-LLM-7B-4bit")
+            assert result == "harmony"
+
+    def test_detects_hermes_from_path(self, tmp_path):
+        """Test detects Hermes from model path (line 219)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Hermes-3-Llama-3.1-8B-4bit")
+            assert result == "hermes"
+
+    def test_detects_solar_from_path(self, tmp_path):
+        """Test detects Solar from model path (line 223)."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Solar-10.7B-4bit")
+            assert result == "solar"
+
+    def test_detects_nemotron_from_config(self, tmp_path):
+        """Test detects Nemotron from config.json model_type."""
+        model_dir = tmp_path / "models--mlx-community--Nemotron" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        config = {"model_type": "nemotron"}
+        (model_dir / "config.json").write_text(json.dumps(config))
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/Nemotron")
+            assert result == "nemotron"
+
+    def test_detects_harmony_from_architectures(self, tmp_path):
+        """Test detects Harmony from architectures field."""
+        model_dir = tmp_path / "models--mlx-community--HarmonyModel" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        config = {"architectures": ["HarmonyForCausalLM"]}
+        (model_dir / "config.json").write_text(json.dumps(config))
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/HarmonyModel")
+            assert result == "harmony"
+
+    def test_detects_hermes_from_config(self, tmp_path):
+        """Test detects Hermes from config.json model_type."""
+        model_dir = tmp_path / "models--mlx-community--HermesModel" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        config = {"model_type": "hermes"}
+        (model_dir / "config.json").write_text(json.dumps(config))
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/HermesModel")
+            assert result == "hermes"
+
+    def test_detects_solar_from_config(self, tmp_path):
+        """Test detects Solar from config.json model_type."""
+        model_dir = tmp_path / "models--mlx-community--SolarModel" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        config = {"model_type": "solar_pro"}
+        (model_dir / "config.json").write_text(json.dumps(config))
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = detect_model_family("mlx-community/SolarModel")
+            assert result == "solar"
