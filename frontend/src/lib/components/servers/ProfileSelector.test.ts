@@ -56,7 +56,7 @@ describe("ProfileSelector", () => {
     }),
   ];
 
-  let mockOnStart: ReturnType<typeof vi.fn>;
+  let mockOnStart: (profile: ServerProfile) => Promise<void>;
 
   beforeEach(() => {
     mockOnStart = vi.fn().mockResolvedValue(undefined);

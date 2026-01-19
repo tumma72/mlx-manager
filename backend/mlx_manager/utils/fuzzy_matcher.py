@@ -16,6 +16,7 @@ Two implementations are provided:
 
 from abc import ABC, abstractmethod
 from functools import lru_cache
+from typing import cast
 
 from mlx_manager.services.parser_options import get_parser_options
 
@@ -142,7 +143,8 @@ class FuzzyMatcher(ABC):
         options = get_parser_options()
 
         # Get available options for this parser type
-        available = options.get(f"{parser_type}s", [])  # e.g., "tool_call_parsers"
+        key = f"{parser_type}s"  # e.g., "tool_call_parsers"
+        available = cast(list[str], options.get(key, []))
         if not available:
             return None
 

@@ -67,9 +67,9 @@ describe("ServerStore", () => {
     vi.doMock("$api", () => ({
       servers: {
         list: vi.fn().mockResolvedValue([]),
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        restart: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn().mockResolvedValue({ pid: 12345, port: 10240 }),
+        stop: vi.fn().mockResolvedValue({ stopped: true }),
+        restart: vi.fn().mockResolvedValue({ pid: 12345 }),
       },
     }));
 
@@ -125,7 +125,7 @@ describe("ServerStore", () => {
   describe("start", () => {
     it("adds profile to startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       await serverStore.start(42);
 
@@ -134,7 +134,7 @@ describe("ServerStore", () => {
 
     it("clears any existing failure", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       // Set up a failure first
       serverStore.markStartupFailed(42, "Previous error");
@@ -147,7 +147,7 @@ describe("ServerStore", () => {
 
     it("calls API to start server", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       await serverStore.start(42);
 
@@ -158,8 +158,8 @@ describe("ServerStore", () => {
   describe("stop", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
-      vi.mocked(serversApi.stop).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       await serverStore.start(42);
       expect(serverStore.isStarting(42)).toBe(true);
@@ -170,7 +170,7 @@ describe("ServerStore", () => {
 
     it("clears any existing failure", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.stop).mockResolvedValue(undefined);
+      vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       serverStore.markStartupFailed(42, "Previous error");
       expect(serverStore.isFailed(42)).toBe(true);
@@ -182,7 +182,7 @@ describe("ServerStore", () => {
 
     it("calls API to stop server", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.stop).mockResolvedValue(undefined);
+      vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       await serverStore.stop(42);
 
@@ -191,7 +191,7 @@ describe("ServerStore", () => {
 
     it("calls API with force flag when specified", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.stop).mockResolvedValue(undefined);
+      vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       await serverStore.stop(42, true);
 
@@ -201,7 +201,7 @@ describe("ServerStore", () => {
     it("triggers refresh after stop", async () => {
       const { servers: serversApi } = await import("$api");
       const { pollingCoordinator } = await import("$lib/services");
-      vi.mocked(serversApi.stop).mockResolvedValue(undefined);
+      vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       await serverStore.stop(42);
 
@@ -212,7 +212,7 @@ describe("ServerStore", () => {
   describe("restart", () => {
     it("adds profile to startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.restart).mockResolvedValue(undefined);
+      vi.mocked(serversApi.restart).mockResolvedValue({ pid: 12345 });
 
       await serverStore.restart(42);
 
@@ -221,7 +221,7 @@ describe("ServerStore", () => {
 
     it("clears any existing failure", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.restart).mockResolvedValue(undefined);
+      vi.mocked(serversApi.restart).mockResolvedValue({ pid: 12345 });
 
       serverStore.markStartupFailed(42, "Previous error");
       expect(serverStore.isFailed(42)).toBe(true);
@@ -233,7 +233,7 @@ describe("ServerStore", () => {
 
     it("calls API to restart server", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.restart).mockResolvedValue(undefined);
+      vi.mocked(serversApi.restart).mockResolvedValue({ pid: 12345 });
 
       await serverStore.restart(42);
 
@@ -244,7 +244,7 @@ describe("ServerStore", () => {
   describe("markStartupSuccess", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       await serverStore.start(42);
       expect(serverStore.isStarting(42)).toBe(true);
@@ -275,7 +275,7 @@ describe("ServerStore", () => {
   describe("markStartupFailed", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       await serverStore.start(42);
       expect(serverStore.isStarting(42)).toBe(true);
@@ -380,7 +380,7 @@ describe("ServerStore", () => {
 
     it("returns false when server in list but starting", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       // Add server to list
       serverStore.servers.push(createMockServer({ profile_id: 42 }));
@@ -405,7 +405,7 @@ describe("ServerStore", () => {
 
     it("returns true after start called", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue(undefined);
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
 
       await serverStore.start(42);
 
@@ -544,7 +544,7 @@ describe("ServerStore", () => {
     it("returns true during restart operation", async () => {
       const { servers: serversApi } = await import("$api");
       // Make restart hang so we can check the intermediate state
-      let resolveRestart: () => void;
+      let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
         () => new Promise((resolve) => { resolveRestart = resolve; })
       );
@@ -556,7 +556,7 @@ describe("ServerStore", () => {
       expect(serverStore.isRestarting(42)).toBe(true);
 
       // Complete the restart
-      resolveRestart!();
+      resolveRestart!({ pid: 12345 });
       await restartPromise;
 
       // After restart completes, it transitions to starting
@@ -869,7 +869,7 @@ describe("ServerStore", () => {
   describe("restart state transitions", () => {
     it("marks profile as restarting then starting", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.restart).mockResolvedValue(undefined);
+      vi.mocked(serversApi.restart).mockResolvedValue({ pid: 12345 });
 
       await serverStore.restart(42);
 
@@ -880,7 +880,7 @@ describe("ServerStore", () => {
 
     it("clears restarting state on markStartupSuccess", async () => {
       const { servers: serversApi } = await import("$api");
-      let resolveRestart: () => void;
+      let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
         () => new Promise((resolve) => { resolveRestart = resolve; })
       );
@@ -888,7 +888,7 @@ describe("ServerStore", () => {
       const restartPromise = serverStore.restart(42);
       expect(serverStore.isRestarting(42)).toBe(true);
 
-      resolveRestart!();
+      resolveRestart!({ pid: 12345 });
       await restartPromise;
 
       // Now in starting state
@@ -903,7 +903,7 @@ describe("ServerStore", () => {
 
     it("clears restarting state on markStartupFailed", async () => {
       const { servers: serversApi } = await import("$api");
-      let resolveRestart: () => void;
+      let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
         () => new Promise((resolve) => { resolveRestart = resolve; })
       );
@@ -911,7 +911,7 @@ describe("ServerStore", () => {
       const restartPromise = serverStore.restart(42);
       expect(serverStore.isRestarting(42)).toBe(true);
 
-      resolveRestart!();
+      resolveRestart!({ pid: 12345 });
       await restartPromise;
 
       // Simulate failure during startup

@@ -76,8 +76,8 @@ def get_parser_options() -> ParserOptions:
 
     try:
         # Import from mlx-openai-server package (installed as 'app' module)
-        from app.message_converters import MESSAGE_CONVERTER_MAP
-        from app.parsers import (
+        from app.message_converters import MESSAGE_CONVERTER_MAP  # type: ignore[import-untyped]
+        from app.parsers import (  # type: ignore[import-untyped]
             REASONING_PARSER_MAP,
             TOOL_PARSER_MAP,
             UNIFIED_PARSER_MAP,

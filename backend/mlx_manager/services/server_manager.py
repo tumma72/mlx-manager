@@ -4,6 +4,7 @@ import asyncio
 import logging
 import signal
 import subprocess
+from typing import IO
 
 import httpx
 import psutil
@@ -61,7 +62,7 @@ class ServerManager:
         # Start process with stdout/stderr redirected to log file
         # mlx-openai-server doesn't have a --log-file option, so we capture output ourselves
         log_file = open(log_path, "w")
-        self._log_files: dict[int, object] = getattr(self, "_log_files", {})
+        self._log_files: dict[int, IO[str]] = getattr(self, "_log_files", {})
         self._log_files[profile.id] = log_file
 
         proc = subprocess.Popen(
@@ -247,7 +248,7 @@ class ServerManager:
                 try:
                     content = log_path.read_text()
                     if content:
-                        error_msg = content[-1000:]
+                        log_tail = content[-1000:]
                         error_patterns = [
                             "ERROR",
                             "Error",
@@ -256,13 +257,13 @@ class ServerManager:
                             "exception",
                             "Exception",
                         ]
-                        has_error = any(pattern in error_msg for pattern in error_patterns)
+                        has_error = any(pattern in log_tail for pattern in error_patterns)
                         if has_error:
                             return {
                                 "running": False,
                                 "tracked": False,
                                 "failed": True,
-                                "error_message": error_msg,
+                                "error_message": log_tail,
                             }
                 except OSError as e:
                     logger.debug(f"Failed to read log for status check: {e}")
@@ -282,7 +283,7 @@ class ServerManager:
                     logger.debug(f"Failed to close log file: {e}")
                 del self._log_files[profile_id]
 
-            error_msg = None
+            error_msg: str | None = None
             has_error_in_log = False
             if log_path.exists():
                 content = log_path.read_text()

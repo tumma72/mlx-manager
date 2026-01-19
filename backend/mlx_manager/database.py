@@ -74,7 +74,7 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
 
         result = await session.execute(
             select(Download).where(
-                or_(Download.status == "pending", Download.status == "downloading")
+                or_(Download.status == "pending", Download.status == "downloading")  # type: ignore[arg-type]
             )
         )
         incomplete = result.scalars().all()

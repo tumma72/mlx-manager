@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from huggingface_hub import snapshot_download
-from tqdm.auto import tqdm as tqdm_auto
+from tqdm.auto import tqdm  # type: ignore[import-untyped]
 
 from mlx_manager.config import settings
 from mlx_manager.services.hf_api import (
@@ -23,7 +23,7 @@ from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 
-class SilentProgress(tqdm_auto):
+class SilentProgress(tqdm):
     """tqdm subclass that suppresses console output."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -73,6 +73,7 @@ class HuggingFaceClient:
             author = model.author
             if not author and "/" in model.model_id:
                 author = model.model_id.split("/")[0]
+            author = author or "unknown"
 
             results.append(
                 ModelSearchResult(
