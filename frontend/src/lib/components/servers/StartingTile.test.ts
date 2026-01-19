@@ -96,6 +96,7 @@ describe("StartingTile", () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
     vi.useRealTimers();
   });
 
@@ -251,6 +252,86 @@ describe("StartingTile", () => {
 
       expect(serverStore.stopProfilePolling).toHaveBeenCalledWith(42);
     });
+
+    it("marks failure with error message when stop throws Error (line 165)", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.mocked(serverStore.stop).mockRejectedValue(new Error("Connection failed"));
+
+      render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      const cancelButton = screen.getByText("Cancel");
+      await user.click(cancelButton);
+
+      await waitFor(() => {
+        expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
+          42,
+          "Connection failed"
+        );
+      });
+    });
+
+    it("marks failure with generic message when stop throws non-Error (line 165)", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.mocked(serverStore.stop).mockRejectedValue("string error");
+
+      render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      const cancelButton = screen.getByText("Cancel");
+      await user.click(cancelButton);
+
+      await waitFor(() => {
+        expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
+          42,
+          "Failed to stop server"
+        );
+      });
+    });
+
+    it("clears poll timeout when cancelling while polling (lines 156-157)", async () => {
+      // This test verifies the clearTimeout path in handleStop
+      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+      const { servers: serversApi } = await import("$api");
+
+      // Mock status to return running: true to keep polling alive
+      vi.mocked(serversApi.status).mockResolvedValue({
+        running: true,
+        failed: false,
+      } as never);
+
+      // Mock fetch to fail so polling schedules next poll (sets pollTimeoutId)
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("Model not ready"));
+
+      // Enable polling
+      vi.mocked(serverStore.isProfilePolling).mockReturnValue(false);
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(StartingTile, {
+        props: {
+          profile: createMockProfile({ id: 42, host: "127.0.0.1", port: 10240 }),
+        },
+      });
+
+      // Wait for first poll to complete and schedule next poll (pollTimeoutId is now set)
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Clear spy before cancel
+      clearTimeoutSpy.mockClear();
+
+      // Click cancel - this should clear the poll timeout (lines 156-157)
+      const cancelButton = screen.getByText("Cancel");
+      await user.click(cancelButton);
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(serverStore.stop).toHaveBeenCalledWith(42);
+
+      globalThis.fetch = originalFetch;
+      clearTimeoutSpy.mockRestore();
+    });
   });
 
   describe("retry action", () => {
@@ -302,6 +383,40 @@ describe("StartingTile", () => {
           "Start failed"
         );
       });
+    });
+
+    it("marks failure with generic message if start throws non-Error", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.mocked(serverStore.start).mockRejectedValue("string error");
+
+      render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      const retryButton = screen.getByText("Retry");
+      await user.click(retryButton);
+
+      await waitFor(() => {
+        expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
+          42,
+          "Failed to start server"
+        );
+      });
+    });
+
+    it("does not start server if startProfilePolling returns false", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      vi.mocked(serverStore.startProfilePolling).mockReturnValue(false);
+
+      render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      const retryButton = screen.getByText("Retry");
+      await user.click(retryButton);
+
+      expect(serverStore.clearFailure).toHaveBeenCalledWith(42);
+      expect(serverStore.start).not.toHaveBeenCalled();
     });
   });
 
@@ -358,6 +473,95 @@ describe("StartingTile", () => {
       render(StartingTile, { props: { profile: createMockProfile() } });
 
       expect(screen.queryByTitle("Copy to clipboard")).not.toBeInTheDocument();
+    });
+
+    it("shows check icon after successful copy (line 276)", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+      // Mock clipboard
+      const originalClipboard = navigator.clipboard;
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: writeTextMock },
+        writable: true,
+        configurable: true,
+      });
+
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Detailed error log content",
+          detailsOpen: true,
+        })
+      );
+
+      const { container } = render(StartingTile, {
+        props: { profile: createMockProfile() },
+      });
+
+      const copyButton = screen.getByTitle("Copy to clipboard");
+      await user.click(copyButton);
+
+      expect(writeTextMock).toHaveBeenCalledWith("Detailed error log content");
+
+      // Check that the Check icon is displayed (green color indicates success)
+      await waitFor(() => {
+        const greenIcon = container.querySelector(
+          ".text-green-600, .text-green-400"
+        );
+        expect(greenIcon).toBeInTheDocument();
+      });
+
+      // Restore clipboard
+      Object.defineProperty(navigator, "clipboard", {
+        value: originalClipboard,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it("handles clipboard write failure gracefully", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const writeTextMock = vi.fn().mockRejectedValue(new Error("Permission denied"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Mock clipboard
+      const originalClipboard = navigator.clipboard;
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: writeTextMock },
+        writable: true,
+        configurable: true,
+      });
+
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Error details",
+          detailsOpen: true,
+        })
+      );
+
+      render(StartingTile, {
+        props: { profile: createMockProfile() },
+      });
+
+      const copyButton = screen.getByTitle("Copy to clipboard");
+      await user.click(copyButton);
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith(
+          "Failed to copy to clipboard:",
+          expect.any(Error)
+        );
+      });
+
+      // Restore
+      Object.defineProperty(navigator, "clipboard", {
+        value: originalClipboard,
+        writable: true,
+        configurable: true,
+      });
+      consoleSpy.mockRestore();
     });
   });
 
@@ -425,5 +629,16 @@ describe("StartingTile", () => {
 
       expect(serverStore.startProfilePolling).not.toHaveBeenCalled();
     });
+
+    // NOTE: Tests for lines 137, 147, 180-181 require async polling which causes
+    // OOM (JavaScript heap out of memory) in vitest with Svelte 5 $effect.
+    // These lines represent edge cases in the polling loop that are covered by:
+    // - E2E tests (frontend/tests/servers.spec.ts)
+    // - Manual testing with real server instances
+    //
+    // The OOM occurs because Svelte 5's $effect creates reactive subscriptions
+    // that interact poorly with vitest's timer mocking and async handling.
+    // Both fake timers (vi.advanceTimersByTimeAsync) and real timers with
+    // waitFor cause memory exhaustion when the polling loop runs.
   });
 });
