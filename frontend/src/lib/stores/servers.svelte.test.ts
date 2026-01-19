@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { RunningServer } from "$api";
 
 // Mock the API module before importing the store
@@ -26,10 +26,6 @@ vi.mock("svelte/reactivity", () => ({
   SvelteSet: Set,
   SvelteMap: Map,
 }));
-
-// Import mocked modules
-import { servers as serversApi } from "$api";
-import { pollingCoordinator } from "$lib/services";
 
 // Helper to create mock server
 function createMockServer(
