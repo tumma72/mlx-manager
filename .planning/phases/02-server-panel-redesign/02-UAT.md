@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 02-server-panel-redesign
 source: 02-01-SUMMARY.md, 02-02-SUMMARY.md, 02-03-SUMMARY.md, 02-04-SUMMARY.md
 started: 2026-01-19T10:00:00Z
@@ -61,5 +61,14 @@ skipped: 0
   reason: "User reported: pass but when restarting the tile of the server completely disappears for a couple of seconds, and then reappears, it would be better to show status changes 'restarting' or 'shutting down...' then 'starting...' which we already have, and then 'running' again, without destroying the tile and recreating it"
   severity: minor
   test: 5
-  artifacts: []
-  missing: []
+  root_cause: "Server page uses two separate tile lists (ServerTile for running, StartingTile for starting) with mutually exclusive filters. During restart, startingProfiles.add() immediately removes server from runningServers (unmounting ServerTile), but StartingTile may not appear immediately due to reactive update batching, causing visible gap."
+  artifacts:
+    - path: "frontend/src/routes/servers/+page.svelte"
+      issue: "Lines 49-60: mutually exclusive filter conditions between runningServers and startingOrFailedProfiles"
+    - path: "frontend/src/lib/stores/servers.svelte.ts"
+      issue: "Lines 193-199: restart() adds to startingProfiles before API completes, causing immediate state transition"
+  missing:
+    - "Add restartingProfiles SvelteSet to track profiles currently restarting"
+    - "Keep ServerTile mounted with 'Restarting...' badge while in restartingProfiles set"
+    - "Only transition to StartingTile after backend confirms server stopped"
+  debug_session: ".planning/debug/server-tile-disappears-restart.md"
