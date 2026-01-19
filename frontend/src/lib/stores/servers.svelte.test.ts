@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import type { RunningServer } from "$api";
 
 // Mock the API module before importing the store
@@ -537,6 +537,393 @@ describe("ServerStore", () => {
       serverStore.startPolling();
 
       expect(pollingCoordinator.start).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("isRestarting", () => {
+    it("returns false initially", () => {
+      expect(serverStore.isRestarting(42)).toBe(false);
+    });
+
+    it("returns true during restart operation", async () => {
+      const { servers: serversApi } = await import("$api");
+      // Make restart hang so we can check the intermediate state
+      let resolveRestart: () => void;
+      vi.mocked(serversApi.restart).mockImplementation(
+        () => new Promise((resolve) => { resolveRestart = resolve; })
+      );
+
+      // Start the restart but don't await it
+      const restartPromise = serverStore.restart(42);
+
+      // During the restart, the profile should be marked as restarting
+      expect(serverStore.isRestarting(42)).toBe(true);
+
+      // Complete the restart
+      resolveRestart!();
+      await restartPromise;
+
+      // After restart completes, it transitions to starting
+      expect(serverStore.isRestarting(42)).toBe(false);
+      expect(serverStore.isStarting(42)).toBe(true);
+    });
+  });
+
+  describe("doRefresh (internal refresh logic)", () => {
+    // To test doRefresh, we need to capture the refreshFn that was registered
+    // with the polling coordinator and call it directly
+
+    async function getRefreshFn(): Promise<() => Promise<void>> {
+      const { pollingCoordinator } = await import("$lib/services");
+      const registerCall = vi.mocked(pollingCoordinator.register).mock.calls[0];
+      return registerCall[1].refreshFn as () => Promise<void>;
+    }
+
+    it("sets loading to true on initial load", async () => {
+      const { servers: serversApi } = await import("$api");
+      let resolveList: (value: RunningServer[]) => void;
+      vi.mocked(serversApi.list).mockImplementation(
+        () => new Promise((resolve) => { resolveList = resolve; })
+      );
+
+      const refreshFn = await getRefreshFn();
+      const refreshPromise = refreshFn();
+
+      // During initial load, loading should be true
+      expect(serverStore.loading).toBe(true);
+
+      // Complete the request
+      resolveList!([]);
+      await refreshPromise;
+
+      // After completion, loading should be false
+      expect(serverStore.loading).toBe(false);
+    });
+
+    it("does not set loading on subsequent refreshes", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.list).mockResolvedValue([]);
+
+      const refreshFn = await getRefreshFn();
+
+      // First refresh (initial load)
+      await refreshFn();
+      expect(serverStore.loading).toBe(false);
+
+      // Second refresh (background poll) - should not set loading
+      let resolveList: (value: RunningServer[]) => void;
+      vi.mocked(serversApi.list).mockImplementation(
+        () => new Promise((resolve) => { resolveList = resolve; })
+      );
+
+      const refreshPromise = refreshFn();
+
+      // During background poll, loading should stay false
+      expect(serverStore.loading).toBe(false);
+
+      resolveList!([]);
+      await refreshPromise;
+    });
+
+    it("updates servers array via reconciliation", async () => {
+      const { servers: serversApi } = await import("$api");
+      const mockServer = createMockServer({ profile_id: 1 });
+      vi.mocked(serversApi.list).mockResolvedValue([mockServer]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.servers).toHaveLength(1);
+      expect(serverStore.servers[0].profile_id).toBe(1);
+    });
+
+    it("clears error on successful refresh", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // First, cause an error
+      vi.mocked(serversApi.list).mockRejectedValueOnce(new Error("Network error"));
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+      expect(serverStore.error).toBe("Network error");
+
+      // Then refresh successfully
+      vi.mocked(serversApi.list).mockResolvedValue([]);
+      await refreshFn();
+      expect(serverStore.error).toBe(null);
+    });
+
+    it("sets error message on fetch failure with Error object", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.list).mockRejectedValue(new Error("Network error"));
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.error).toBe("Network error");
+    });
+
+    it("sets default error message on fetch failure with non-Error", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.list).mockRejectedValue("string error");
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.error).toBe("Failed to fetch servers");
+    });
+
+    it("sets loading false even on error during initial load", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.list).mockRejectedValue(new Error("Network error"));
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.loading).toBe(false);
+    });
+
+    it("reconciles servers using custom equality (small uptime drift ignored)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // Initial server
+      const server1 = createMockServer({ profile_id: 1, uptime_seconds: 100 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      // Store the original array reference
+      const originalArray = serverStore.servers;
+      const originalServer = originalArray[0];
+
+      // Update with small uptime drift (< 2 seconds) - should be considered equal
+      const server2 = createMockServer({ profile_id: 1, uptime_seconds: 101 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Array should still be the same reference (reconciled in-place)
+      expect(serverStore.servers).toBe(originalArray);
+      // Server object should not have been replaced (considered equal)
+      expect(serverStore.servers[0]).toBe(originalServer);
+    });
+
+    it("reconciles servers using custom equality (large uptime drift triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // Initial server
+      const server1 = createMockServer({ profile_id: 1, uptime_seconds: 100 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      // Store the original uptime
+      const originalUptime = serverStore.servers[0].uptime_seconds;
+      expect(originalUptime).toBe(100);
+
+      // Update with large uptime drift (>= 2 seconds) - should trigger update
+      const server2 = createMockServer({ profile_id: 1, uptime_seconds: 105 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].uptime_seconds).toBe(105);
+    });
+
+    it("reconciles servers using custom equality (small memory drift ignored)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // Initial server
+      const server1 = createMockServer({ profile_id: 1, memory_mb: 500 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      const originalServer = serverStore.servers[0];
+
+      // Update with small memory drift (< 1 MB) - should be considered equal
+      const server2 = createMockServer({ profile_id: 1, memory_mb: 500.5 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Server object should not have been replaced (considered equal)
+      expect(serverStore.servers[0]).toBe(originalServer);
+    });
+
+    it("reconciles servers using custom equality (large memory drift triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // Initial server
+      const server1 = createMockServer({ profile_id: 1, memory_mb: 500 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      // Store the original memory
+      const originalMemory = serverStore.servers[0].memory_mb;
+      expect(originalMemory).toBe(500);
+
+      // Update with large memory drift (>= 1 MB) - should trigger update
+      const server2 = createMockServer({ profile_id: 1, memory_mb: 502 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].memory_mb).toBe(502);
+    });
+
+    it("reconciles servers using custom equality (different profile_id triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      // Initial server
+      const server1 = createMockServer({ profile_id: 1 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      // Replace with different server (new key)
+      const server2 = createMockServer({ profile_id: 2 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      expect(serverStore.servers).toHaveLength(1);
+      expect(serverStore.servers[0].profile_id).toBe(2);
+    });
+
+    it("reconciles servers using custom equality (different profile_name triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      const server1 = createMockServer({ profile_id: 1, profile_name: "Server A" });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.servers[0].profile_name).toBe("Server A");
+
+      const server2 = createMockServer({ profile_id: 1, profile_name: "Server B" });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].profile_name).toBe("Server B");
+    });
+
+    it("reconciles servers using custom equality (different pid triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      const server1 = createMockServer({ profile_id: 1, pid: 1000 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.servers[0].pid).toBe(1000);
+
+      const server2 = createMockServer({ profile_id: 1, pid: 2000 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].pid).toBe(2000);
+    });
+
+    it("reconciles servers using custom equality (different port triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      const server1 = createMockServer({ profile_id: 1, port: 10240 });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.servers[0].port).toBe(10240);
+
+      const server2 = createMockServer({ profile_id: 1, port: 10241 });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].port).toBe(10241);
+    });
+
+    it("reconciles servers using custom equality (different health_status triggers update)", async () => {
+      const { servers: serversApi } = await import("$api");
+
+      const server1 = createMockServer({ profile_id: 1, health_status: "healthy" });
+      vi.mocked(serversApi.list).mockResolvedValue([server1]);
+
+      const refreshFn = await getRefreshFn();
+      await refreshFn();
+
+      expect(serverStore.servers[0].health_status).toBe("healthy");
+
+      const server2 = createMockServer({ profile_id: 1, health_status: "unhealthy" });
+      vi.mocked(serversApi.list).mockResolvedValue([server2]);
+      await refreshFn();
+
+      // Value should have been updated in-place
+      expect(serverStore.servers[0].health_status).toBe("unhealthy");
+    });
+  });
+
+  describe("restart state transitions", () => {
+    it("marks profile as restarting then starting", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.restart).mockResolvedValue(undefined);
+
+      await serverStore.restart(42);
+
+      // After restart completes, profile should be in starting state, not restarting
+      expect(serverStore.isRestarting(42)).toBe(false);
+      expect(serverStore.isStarting(42)).toBe(true);
+    });
+
+    it("clears restarting state on markStartupSuccess", async () => {
+      const { servers: serversApi } = await import("$api");
+      let resolveRestart: () => void;
+      vi.mocked(serversApi.restart).mockImplementation(
+        () => new Promise((resolve) => { resolveRestart = resolve; })
+      );
+
+      const restartPromise = serverStore.restart(42);
+      expect(serverStore.isRestarting(42)).toBe(true);
+
+      resolveRestart!();
+      await restartPromise;
+
+      // Now in starting state
+      expect(serverStore.isStarting(42)).toBe(true);
+
+      // Mark as successful
+      serverStore.markStartupSuccess(42);
+
+      expect(serverStore.isRestarting(42)).toBe(false);
+      expect(serverStore.isStarting(42)).toBe(false);
+    });
+
+    it("clears restarting state on markStartupFailed", async () => {
+      const { servers: serversApi } = await import("$api");
+      let resolveRestart: () => void;
+      vi.mocked(serversApi.restart).mockImplementation(
+        () => new Promise((resolve) => { resolveRestart = resolve; })
+      );
+
+      const restartPromise = serverStore.restart(42);
+      expect(serverStore.isRestarting(42)).toBe(true);
+
+      resolveRestart!();
+      await restartPromise;
+
+      // Simulate failure during startup
+      serverStore.markStartupFailed(42, "Startup failed");
+
+      expect(serverStore.isRestarting(42)).toBe(false);
+      expect(serverStore.isStarting(42)).toBe(false);
+      expect(serverStore.isFailed(42)).toBe(true);
     });
   });
 });
