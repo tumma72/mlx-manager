@@ -8,6 +8,7 @@ vi.mock("$stores", () => ({
   serverStore: {
     stop: vi.fn().mockResolvedValue(undefined),
     restart: vi.fn().mockResolvedValue(undefined),
+    isRestarting: vi.fn().mockReturnValue(false),
   },
 }));
 

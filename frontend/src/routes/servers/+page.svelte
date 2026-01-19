@@ -46,16 +46,22 @@
 
 	// Starting/failed profiles - these show StartingTile
 	// Includes both: profiles waiting for server process AND servers still loading model
+	// EXCLUDES restarting profiles (they stay in runningServers as ServerTile)
 	const startingOrFailedProfiles = $derived(
 		profileStore.profiles.filter(
-			(p) => serverStore.isStarting(p.id) || serverStore.isFailed(p.id)
+			(p) =>
+				(serverStore.isStarting(p.id) || serverStore.isFailed(p.id)) &&
+				!serverStore.isRestarting(p.id)
 		)
 	);
 
 	// Running servers - servers where model is fully loaded (not starting, not failed)
+	// INCLUDES restarting servers so their ServerTile stays mounted
 	const runningServers = $derived(
 		serverStore.servers.filter(
-			(s) => !serverStore.isStarting(s.profile_id) && !serverStore.isFailed(s.profile_id)
+			(s) =>
+				(!serverStore.isStarting(s.profile_id) && !serverStore.isFailed(s.profile_id)) ||
+				serverStore.isRestarting(s.profile_id)
 		)
 	);
 
