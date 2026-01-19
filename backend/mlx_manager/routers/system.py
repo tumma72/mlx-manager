@@ -6,8 +6,6 @@ import subprocess
 import sys
 
 import psutil
-
-logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +15,8 @@ from mlx_manager.dependencies import get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
 from mlx_manager.services.launchd import launchd_manager
 from mlx_manager.services.parser_options import ParserOptions, get_parser_options
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
