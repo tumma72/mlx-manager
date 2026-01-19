@@ -42,13 +42,14 @@ Plans:
   4. Stop/Restart buttons work on running server tiles ✓
   5. Scrolling the server list doesn't jump during polling updates ✓
 **Research**: Completed (psutil for memory/CPU)
-**Completed**: 2026-01-17
+**Completed**: 2026-01-19
 
 Plans:
 - [x] 02-01: Backend metrics API (memory, CPU, GPU, throughput)
 - [x] 02-02: Profile dropdown with search and Start button
 - [x] 02-03: Running server tiles with real-time metrics display
 - [x] 02-04: Scroll preservation during polling
+- [x] 02-05: Gap closure - restart tile disappearing fix
 
 ### Phase 3: API Key Authentication
 **Goal**: Optional bearer token authentication for network security
@@ -93,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
-| 2. Server Panel Redesign | 4/4 | ✓ Complete | 2026-01-17 |
+| 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. API Key Authentication | 0/2 | Not started | - |
 | 4. Bug Fixes & Stability | 0/4 | Not started | - |
