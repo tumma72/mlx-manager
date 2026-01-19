@@ -74,6 +74,8 @@ coverage.xml
 coverage/
 *.lcov
 .nyc_output/
+playwright-report/
+test-results/
 
 # mypy
 .mypy_cache/
