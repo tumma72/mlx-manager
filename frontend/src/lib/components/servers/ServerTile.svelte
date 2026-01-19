@@ -17,6 +17,9 @@
 	let stopping = $state(false);
 	let restarting = $state(false);
 
+	// Check if this server is in the process of restarting
+	const isRestarting = $derived(serverStore.isRestarting(server.profile_id));
+
 	async function handleStop() {
 		stopping = true;
 		try {
@@ -52,7 +55,11 @@
 	<div class="mb-3 flex items-start justify-between gap-2">
 		<div class="min-w-0 flex-1">
 			<div class="mb-1 flex items-center gap-2">
-				<Badge variant="success" class="shrink-0">Running</Badge>
+				{#if isRestarting}
+					<Badge variant="warning" class="shrink-0">Restarting...</Badge>
+				{:else}
+					<Badge variant="success" class="shrink-0">Running</Badge>
+				{/if}
 				<h3 class="truncate font-semibold">{displayName}</h3>
 			</div>
 			<p class="truncate text-sm text-muted-foreground">Port {server.port}</p>
@@ -66,7 +73,7 @@
 				variant="outline"
 				size="sm"
 				onclick={handleRestart}
-				disabled={restarting || stopping}
+				disabled={restarting || stopping || isRestarting}
 				title="Restart Server"
 			>
 				{#if restarting}
@@ -79,7 +86,7 @@
 				variant="destructive"
 				size="sm"
 				onclick={handleStop}
-				disabled={stopping || restarting}
+				disabled={stopping || restarting || isRestarting}
 				title="Stop Server"
 			>
 				{#if stopping}
