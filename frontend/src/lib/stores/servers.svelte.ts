@@ -45,6 +45,7 @@ interface HmrState {
   servers: RunningServer[];
   startingProfiles: SvelteSet<number>;
   failedProfiles: SvelteMap<number, FailedServer>;
+  restartingProfiles: SvelteSet<number>;
   // Track which profiles have active polling loops (prevents duplicates)
   pollingProfiles: Set<number>;
 }
@@ -60,6 +61,7 @@ function getOrCreateHmrState(): HmrState {
         servers: [],
         startingProfiles: new SvelteSet<number>(),
         failedProfiles: new SvelteMap<number, FailedServer>(),
+        restartingProfiles: new SvelteSet<number>(),
         pollingProfiles: new Set<number>(),
       };
     }
@@ -70,6 +72,7 @@ function getOrCreateHmrState(): HmrState {
     servers: [],
     startingProfiles: new SvelteSet<number>(),
     failedProfiles: new SvelteMap<number, FailedServer>(),
+    restartingProfiles: new SvelteSet<number>(),
     pollingProfiles: new Set<number>(),
   };
 }
@@ -88,6 +91,7 @@ class ServerStore {
   // These are preserved across HMR
   startingProfiles = hmrState.startingProfiles;
   failedProfiles = hmrState.failedProfiles;
+  restartingProfiles = hmrState.restartingProfiles;
 
   // Track which profiles have active polling loops (prevents duplicate loops)
   // This is NOT reactive - just used for coordination
@@ -191,10 +195,13 @@ class ServerStore {
   }
 
   async restart(profileId: number) {
-    // Direct mutation
-    this.startingProfiles.add(profileId);
+    // Direct mutation - mark as restarting (keeps tile mounted)
+    this.restartingProfiles.add(profileId);
     this.failedProfiles.delete(profileId);
     await serversApi.restart(profileId);
+    // After backend confirms stop, transition to starting state
+    this.restartingProfiles.delete(profileId);
+    this.startingProfiles.add(profileId);
     // Don't refresh yet - let ProfileCard handle health checking
   }
 
@@ -205,6 +212,7 @@ class ServerStore {
     // Direct mutation
     this.startingProfiles.delete(profileId);
     this.failedProfiles.delete(profileId);
+    this.restartingProfiles.delete(profileId);
     // Use coordinator for deduped refresh
     this.refresh();
   }
@@ -232,6 +240,7 @@ class ServerStore {
 
     // Direct mutation on SvelteSet/SvelteMap
     this.startingProfiles.delete(profileId);
+    this.restartingProfiles.delete(profileId);
 
     // Preserve detailsOpen state if already failed
     const existing = this.failedProfiles.get(profileId);
@@ -297,6 +306,13 @@ class ServerStore {
    */
   isStarting(profileId: number): boolean {
     return this.startingProfiles.has(profileId);
+  }
+
+  /**
+   * Check if a profile is currently restarting.
+   */
+  isRestarting(profileId: number): boolean {
+    return this.restartingProfiles.has(profileId);
   }
 
   /**
