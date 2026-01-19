@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 2 Complete — Ready for Phase 3
+**Current focus:** Phase 2 Complete (Gap Closure) — Ready for Phase 3
 
 ## Current Position
 
 Phase: 2 of 4 (Server Panel Redesign) - COMPLETE
-Plan: 4 of 4 complete
+Plan: 5 of 5 complete (including gap closure)
 Status: Phase complete
-Last activity: 2026-01-17 — Completed 02-04-PLAN.md
+Last activity: 2026-01-19 — Completed 02-05-PLAN.md (Gap Closure: Restart tile disappearing)
 
 Progress: █████░░░░░ 50% (2/4 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: ~5 min
-- Total execution time: ~27 min
+- Total execution time: ~30 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
-| 2 | 4/4 | ~24 min | ~6 min |
+| 2 | 5/5 | ~27 min | ~5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01, 02-01, 02-02, 02-03, 02-04
+- Last 5 plans: 02-01, 02-02, 02-03, 02-04, 02-05
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -50,6 +50,7 @@ Recent decisions affecting current work:
 - Use servers list directly for running state detection in chat page
 - Container-scoped scroll over window scroll for reliability
 - Use $effect.pre for pre-update capture, $effect for post-update restore
+- Track restarting state separately from starting state (restartingProfiles SvelteSet)
 
 ### Pending Todos
 
@@ -65,7 +66,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-17
-Stopped at: Completed 02-04-PLAN.md (Scroll preservation)
+Last session: 2026-01-19
+Stopped at: Completed 02-05-PLAN.md (Gap Closure: Restart tile disappearing)
 Resume file: None
 Next plan: Phase 3 planning (if exists)
