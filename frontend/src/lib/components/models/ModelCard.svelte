@@ -4,7 +4,8 @@
 	import { formatNumber } from '$lib/utils/format';
 	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
-	import { downloadsStore } from '$lib/stores';
+	import { downloadsStore, modelConfigStore } from '$lib/stores';
+	import { ModelBadges, ModelSpecs } from '$components/models';
 
 	interface Props {
 		model: ModelSearchResult;
@@ -23,6 +24,9 @@
 	// Get download state from global store (for completion/error tracking)
 	let downloadState = $derived(downloadsStore.getProgress(model.model_id));
 
+	// Get config state for badges
+	let configState = $derived(modelConfigStore.getConfig(model.model_id));
+
 	// Determine if downloaded: check store for completed, then override, then prop
 	let isDownloaded = $derived(() => {
 		if (downloadState?.status === 'completed') return true;
@@ -34,6 +38,11 @@
 	$effect(() => {
 		void model.model_id; // Track model changes
 		downloadStatusOverride = null;
+	});
+
+	// Lazy load config for this model
+	$effect(() => {
+		modelConfigStore.fetchConfig(model.model_id);
 	});
 
 	async function handleDownload() {
@@ -95,6 +104,13 @@
 					{model.estimated_size_gb} GB
 				</span>
 			</div>
+			<!-- Model badges (architecture, multimodal, quantization) -->
+			<div class="mt-2">
+				<ModelBadges
+					characteristics={configState?.characteristics}
+					loading={configState?.loading ?? true}
+				/>
+			</div>
 		</div>
 
 		<div class="flex items-center gap-2">
@@ -106,6 +122,11 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Technical specs (expandable) -->
+	{#if configState?.characteristics}
+		<ModelSpecs characteristics={configState.characteristics} />
+	{/if}
 
 	{#if model.tags.length > 0}
 		<div class="mt-3 flex flex-wrap gap-1">
