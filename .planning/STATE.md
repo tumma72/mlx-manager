@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 2 Complete — Ready for Phase 3 (User-Based Authentication)
+**Current focus:** Phase 3 (User-Based Authentication) - Plan 1 Complete
 
 ## Current Position
 
-Phase: 2 of 6 (Server Panel Redesign) - COMPLETE
-Plan: 5 of 5 complete (including gap closure)
-Status: Phase complete
-Last activity: 2026-01-19 — Completed 02-05-PLAN.md (Gap Closure: Restart tile disappearing)
+Phase: 3 of 6 (User-Based Authentication)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-01-20 — Completed 03-01-PLAN.md (Backend Auth Foundation)
 
-Progress: ███░░░░░░░ 33% (2/6 phases complete)
+Progress: ███▒░░░░░░ 37% (2 phases + 1 plan complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: ~5 min
-- Total execution time: ~30 min
+- Total plans completed: 7
+- Average duration: ~4 min
+- Total execution time: ~33 min
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: ███░░░░░░░ 33% (2/6 phases complete)
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
 | 2 | 5/5 | ~27 min | ~5 min |
+| 3 | 1/4 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01, 02-02, 02-03, 02-04, 02-05
+- Last 5 plans: 02-02, 02-03, 02-04, 02-05, 03-01
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -51,6 +52,9 @@ Recent decisions affecting current work:
 - Container-scoped scroll over window scroll for reliability
 - Use $effect.pre for pre-update capture, $effect for post-update restore
 - Track restarting state separately from starting state (restartingProfiles SvelteSet)
+- PyJWT over python-jose (abandoned) per FastAPI official recommendation
+- pwdlib[argon2] over passlib for Python 3.13+ compatibility
+- UserStatus enum for approval workflow (PENDING -> APPROVED -> DISABLED)
 
 ### Pending Todos
 
@@ -66,7 +70,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-19
-Stopped at: Completed 02-05-PLAN.md (Gap Closure: Restart tile disappearing)
+Last session: 2026-01-20
+Stopped at: Completed 03-01-PLAN.md (Backend Auth Foundation)
 Resume file: None
-Next plan: Phase 3 planning (if exists)
+Next plan: 03-02-PLAN.md (Auth Endpoints)
