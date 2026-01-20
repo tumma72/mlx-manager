@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 3 (User-Based Authentication) - Plan 2 Complete
+**Current focus:** Phase 3 (User-Based Authentication) - Plan 3 Complete
 
 ## Current Position
 
 Phase: 3 of 6 (User-Based Authentication)
-Plan: 2 of 4 complete
+Plan: 3 of 4 complete
 Status: In progress
-Last activity: 2026-01-20 — Completed 03-02-PLAN.md (Auth API Endpoints)
+Last activity: 2026-01-20 — Completed 03-03-PLAN.md (Frontend Auth Integration)
 
-Progress: ███▓░░░░░░ 40% (2 phases + 2 plans complete)
+Progress: ███▓░░░░░░ 45% (2 phases + 3 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: ~4 min
-- Total execution time: ~38 min
+- Total execution time: ~44 min
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: ███▓░░░░░░ 40% (2 phases + 2 plans complete)
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
 | 2 | 5/5 | ~27 min | ~5 min |
-| 3 | 2/4 | 8 min | 4 min |
+| 3 | 3/4 | 14 min | ~5 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03, 02-04, 02-05, 03-01, 03-02
+- Last 5 plans: 02-04, 02-05, 03-01, 03-02, 03-03
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -59,6 +59,9 @@ Recent decisions affecting current work:
 - First user auto-approved and admin, subsequent users pending
 - Admin endpoint pattern: Depends(get_admin_user) for admin-only routes
 - Prevent last admin from demoting/deleting self
+- All endpoints require get_current_user dependency (no unauthenticated access)
+- Class-based auth store with Svelte 5 runes (consistent with existing stores)
+- Auto-clear auth and redirect to /login on 401 response
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-20
-Stopped at: Completed 03-02-PLAN.md (Auth API Endpoints)
+Stopped at: Completed 03-03-PLAN.md (Frontend Auth Integration)
 Resume file: None
-Next plan: 03-03-PLAN.md (Frontend Auth Integration)
+Next plan: 03-04-PLAN.md (Auth UI Pages)
