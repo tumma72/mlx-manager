@@ -72,6 +72,12 @@ class Token(SQLModel):
     token_type: str = "bearer"
 
 
+class PasswordReset(SQLModel):
+    """Schema for admin password reset."""
+
+    password: str
+
+
 class ServerProfileBase(SQLModel):
     """Base model for server profiles."""
 
