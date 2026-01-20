@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/svelte";
+import { render, screen, waitFor, fireEvent } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import type { ServerProfile } from "$api";
 import type { FailedServer } from "$stores/servers.svelte";
@@ -563,12 +563,118 @@ describe("StartingTile", () => {
       });
       consoleSpy.mockRestore();
     });
+
+    it("resets copySuccess after 2 seconds (line 62)", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+      // Mock clipboard
+      const originalClipboard = navigator.clipboard;
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: writeTextMock },
+        writable: true,
+        configurable: true,
+      });
+
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Error details to copy",
+          detailsOpen: true,
+        })
+      );
+
+      const { container } = render(StartingTile, {
+        props: { profile: createMockProfile() },
+      });
+
+      const copyButton = screen.getByTitle("Copy to clipboard");
+      await user.click(copyButton);
+
+      // Verify success state (green icon)
+      await waitFor(() => {
+        const greenIcon = container.querySelector(".text-green-600");
+        expect(greenIcon).toBeInTheDocument();
+      });
+
+      // Advance timers by 2000ms to trigger the timeout (line 62)
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // Verify success state is cleared (clipboard icon returns)
+      await waitFor(() => {
+        const clipboardIcon = container.querySelector(".text-red-600");
+        expect(clipboardIcon).toBeInTheDocument();
+      });
+
+      // Restore clipboard
+      Object.defineProperty(navigator, "clipboard", {
+        value: originalClipboard,
+        writable: true,
+        configurable: true,
+      });
+    });
   });
 
   describe("details toggle", () => {
     beforeEach(() => {
       vi.mocked(serverStore.isStarting).mockReturnValue(false);
       vi.mocked(serverStore.isFailed).mockReturnValue(true);
+    });
+
+    it("syncs localDetailsOpen from store failure on mount (lines 35-41)", async () => {
+      // This test verifies the $effect sync logic that sets localDetailsOpen
+      // from the store's detailsOpen value when a failure is first detected
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Error details here",
+          detailsOpen: true, // Store says details should be open
+        })
+      );
+
+      const { container } = render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      // The details element should be open immediately (synced from store)
+      const details = container.querySelector("details");
+      expect(details).toHaveAttribute("open");
+
+      // Wait for the isUpdatingDetails flag to be cleared by requestAnimationFrame (line 40)
+      await vi.advanceTimersByTimeAsync(16);
+
+      // Verify toggleDetailsOpen was NOT called during sync (because isUpdatingDetails was true)
+      expect(serverStore.toggleDetailsOpen).not.toHaveBeenCalled();
+    });
+
+    it("clears localDetailsOpen when failure is cleared (lines 42-45)", async () => {
+      // First render with a failure
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Error details",
+          detailsOpen: true,
+        })
+      );
+
+      const { container, rerender } = render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      // Verify details is open
+      let details = container.querySelector("details");
+      expect(details).toHaveAttribute("open");
+
+      // Now clear the failure
+      vi.mocked(serverStore.getFailure).mockReturnValue(undefined);
+      vi.mocked(serverStore.isFailed).mockReturnValue(false);
+
+      // Re-render to trigger the $effect
+      await rerender({ profile: createMockProfile({ id: 42 }) });
+
+      // The failure section should be gone entirely
+      details = container.querySelector("details");
+      expect(details).not.toBeInTheDocument();
     });
 
     it("shows details element with correct open state when detailsOpen is true", () => {
@@ -605,8 +711,33 @@ describe("StartingTile", () => {
       expect(details).not.toHaveAttribute("open");
     });
 
-    // NOTE: handleDetailsToggle (line 48) is tested indirectly through E2E tests
-    // Testing details toggle event in Svelte 5 unit tests is problematic
+    it("calls toggleDetailsOpen when details is toggled (line 50)", async () => {
+      vi.mocked(serverStore.getFailure).mockReturnValue(
+        createMockFailure({
+          error: "Server crashed",
+          details: "Error details",
+          detailsOpen: false,
+        })
+      );
+
+      const { container } = render(StartingTile, {
+        props: { profile: createMockProfile({ id: 42 }) },
+      });
+
+      // Wait for the isUpdatingDetails flag to be cleared by requestAnimationFrame
+      // The component sets isUpdatingDetails=true in $effect, then clears it via RAF
+      await vi.advanceTimersByTimeAsync(16); // RAF typically fires at ~16ms (60fps)
+
+      // Find the details element and dispatch toggle event directly
+      // (jsdom doesn't properly simulate click->toggle on summary elements)
+      const details = container.querySelector("details");
+      expect(details).toBeInTheDocument();
+
+      // Dispatch the toggle event on the details element
+      await fireEvent(details!, new Event("toggle"));
+
+      expect(serverStore.toggleDetailsOpen).toHaveBeenCalledWith(42);
+    });
   });
 
   describe("polling behavior", () => {
@@ -634,30 +765,13 @@ describe("StartingTile", () => {
     });
 
     // ============================================================================
-    // COVERAGE NOTE: Uncovered polling branches
+    // COVERAGE NOTE: Uncovered polling branches (lines 93, 99-105, 114, 132-137, 147)
     // ============================================================================
-    // The following branches cannot be tested in unit tests due to a known issue
-    // with Svelte 5's $effect reactivity system and vitest's timer mocking.
-    // Attempting to test these scenarios causes JavaScript heap out of memory (OOM)
-    // errors because the $effect creates reactive subscriptions that interact
-    // poorly with both fake timers (vi.advanceTimersByTimeAsync) and real timers
-    // with waitFor, causing memory exhaustion.
-    //
-    // Uncovered branches:
-    // - Line 98-107: Timeout scenario (MODEL_LOAD_TIMEOUT_MS exceeded)
-    // - Line 113-118: Server crashes during startup (status.failed = true)
-    // - Line 133-139: Model endpoint returns empty data array (data.data.length = 0)
-    // - Line 147: API error catch and retry (serversApi.status throws error)
-    // - Line 180-181: clearTimeout in handleRetry when pollTimeoutId exists
-    //
-    // These scenarios are covered by:
+    // The polling branches cannot be unit tested due to Svelte 5's $effect system
+    // interacting with vitest's fake timers, causing memory exhaustion and worker
+    // crashes. These scenarios are covered by:
     // 1. Manual testing with real server instances
-    // 2. Production usage monitoring
-    // 3. Integration testing during development
-    //
-    // The polling logic is critical for the user experience but is inherently
-    // difficult to test in isolation due to its async, timer-dependent nature
-    // combined with Svelte 5's fine-grained reactivity.
+    // 2. Integration/E2E testing
     // ============================================================================
   });
 
