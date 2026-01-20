@@ -20,6 +20,7 @@ classifiers = [
 keywords = ["mlx", "apple-silicon", "llm", "model-manager", "fastapi"]
 dependencies = [
     "fastapi>=0.115.0",
+    "python-multipart>=0.0.6",  # Required for OAuth2PasswordRequestForm
     "uvicorn[standard]>=0.32.0",
     "sqlmodel>=0.0.22",
     "aiosqlite>=0.20.0",
