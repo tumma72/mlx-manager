@@ -83,13 +83,13 @@ Plans:
   2. Visual badges displayed on model tiles (text-only vs multimodal, architecture type)
   3. Technical specs shown: context window, parameters, quantization level
   4. Filter/search by model characteristics works
-**Research**: Likely (HuggingFace config.json schema, MLX model metadata patterns)
-**Plans**: TBD
+**Research**: Completed (HuggingFace config.json schema, MLX model metadata patterns)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Backend model characteristics extraction
-- [ ] 04-02: Model tile badges and specs display
-- [ ] 04-03: Filter by model characteristics
+- [ ] 04-01-PLAN.md — Backend model characteristics extraction (types, extraction logic, API endpoint)
+- [ ] 04-02-PLAN.md — Model tile badges and specs display (badge components, expandable specs, lazy loading)
+- [ ] 04-03-PLAN.md — Search UX refactor with filters (toggle switch, filter modal, filter chips)
 
 ### Phase 5: Chat Multimodal Support
 **Goal**: Support image/video attachments for testing multimodal models
@@ -137,6 +137,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
-| 4. Model Discovery & Badges | 0/3 | Not started | - |
+| 4. Model Discovery & Badges | 0/3 | Ready | - |
 | 5. Chat Multimodal Support | 0/3 | Not started | - |
 | 6. Bug Fixes & Stability | 0/4 | Not started | - |
