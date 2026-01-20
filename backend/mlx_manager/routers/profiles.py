@@ -1,6 +1,7 @@
 """Server profiles API router."""
 
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,19 +9,23 @@ from sqlmodel import select
 
 from mlx_manager.config import settings
 from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_profile_or_404
+from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import (
     ServerProfile,
     ServerProfileCreate,
     ServerProfileResponse,
     ServerProfileUpdate,
+    User,
 )
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
 
 @router.get("", response_model=list[ServerProfileResponse])
-async def list_profiles(session: AsyncSession = Depends(get_db)):
+async def list_profiles(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
     """List all server profiles."""
     result = await session.execute(select(ServerProfile))
     profiles = result.scalars().all()
@@ -28,7 +33,10 @@ async def list_profiles(session: AsyncSession = Depends(get_db)):
 
 
 @router.get("/next-port")
-async def get_next_port(session: AsyncSession = Depends(get_db)):
+async def get_next_port(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
     """Get the next available port."""
     from sqlalchemy import desc
 
@@ -51,14 +59,19 @@ async def get_next_port(session: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{profile_id}", response_model=ServerProfileResponse)
-async def get_profile(profile: ServerProfile = Depends(get_profile_or_404)):
+async def get_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile: ServerProfile = Depends(get_profile_or_404),
+):
     """Get a specific profile."""
     return profile
 
 
 @router.post("", response_model=ServerProfileResponse, status_code=201)
 async def create_profile(
-    profile_data: ServerProfileCreate, session: AsyncSession = Depends(get_db)
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile_data: ServerProfileCreate,
+    session: AsyncSession = Depends(get_db),
 ):
     """Create a new server profile."""
     # Check for unique name
@@ -85,6 +98,7 @@ async def create_profile(
 
 @router.put("/{profile_id}", response_model=ServerProfileResponse)
 async def update_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
     profile_data: ServerProfileUpdate,
     session: AsyncSession = Depends(get_db),
@@ -127,6 +141,7 @@ async def update_profile(
 
 @router.delete("/{profile_id}", status_code=204)
 async def delete_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
@@ -137,6 +152,7 @@ async def delete_profile(
 
 @router.post("/{profile_id}/duplicate", response_model=ServerProfileResponse, status_code=201)
 async def duplicate_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
     new_name: str,
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),

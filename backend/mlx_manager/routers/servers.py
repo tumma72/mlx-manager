@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_profile_or_404
+from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import (
     HealthStatus,
     RunningInstance,
     RunningServerResponse,
     ServerProfile,
     ServerStatus,
+    User,
 )
 from mlx_manager.services.server_manager import server_manager
 
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/api/servers", tags=["servers"])
 
 @router.get("", response_model=list[RunningServerResponse])
 async def list_running_servers(
+    current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ) -> list[RunningServerResponse]:
     """List all running server instances."""
@@ -74,6 +77,7 @@ async def list_running_servers(
 
 @router.post("/{profile_id}/start")
 async def start_server(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
@@ -109,7 +113,10 @@ async def start_server(
 
 @router.post("/{profile_id}/stop")
 async def stop_server(
-    profile_id: int, force: bool = False, session: AsyncSession = Depends(get_db)
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile_id: int,
+    force: bool = False,
+    session: AsyncSession = Depends(get_db),
 ):
     """Stop a running server."""
     success = await server_manager.stop_server(profile_id, force=force)
@@ -131,6 +138,7 @@ async def stop_server(
 
 @router.post("/{profile_id}/restart")
 async def restart_server(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
@@ -168,7 +176,10 @@ async def restart_server(
 
 
 @router.get("/{profile_id}/health", response_model=HealthStatus)
-async def check_server_health(profile: ServerProfile = Depends(get_profile_or_404)):
+async def check_server_health(
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile: ServerProfile = Depends(get_profile_or_404),
+):
     """Check server health."""
     # Profile from DB always has an ID
     assert profile.id is not None
@@ -181,7 +192,10 @@ async def check_server_health(profile: ServerProfile = Depends(get_profile_or_40
 
 
 @router.get("/{profile_id}/status", response_model=ServerStatus)
-async def get_server_status(profile: ServerProfile = Depends(get_profile_or_404)):
+async def get_server_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile: ServerProfile = Depends(get_profile_or_404),
+):
     """Get detailed server status including failure detection.
 
     Returns process status, exit code, and error message from logs if failed.
@@ -201,7 +215,11 @@ async def get_server_status(profile: ServerProfile = Depends(get_profile_or_404)
 
 
 @router.get("/{profile_id}/logs")
-async def stream_logs(profile_id: int, lines: int = 100):
+async def stream_logs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile_id: int,
+    lines: int = 100,
+):
     """SSE endpoint for live logs."""
 
     async def generate() -> AsyncGenerator[str, None]:

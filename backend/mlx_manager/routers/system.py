@@ -4,6 +4,7 @@ import logging
 import platform
 import subprocess
 import sys
+from typing import Annotated
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.config import settings
 from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_profile_or_404
-from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory
+from mlx_manager.dependencies import get_current_user, get_profile_or_404
+from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory, User
 from mlx_manager.services.launchd import launchd_manager
 from mlx_manager.services.parser_options import ParserOptions, get_parser_options
 
@@ -45,7 +46,9 @@ def get_physical_memory_bytes() -> int:
 
 
 @router.get("/memory", response_model=SystemMemory)
-async def get_memory():
+async def get_memory(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """Get system memory information."""
     mem = psutil.virtual_memory()
 
@@ -71,7 +74,9 @@ async def get_memory():
 
 
 @router.get("/info", response_model=SystemInfo)
-async def get_system_info():
+async def get_system_info(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """Get system information."""
     # Get OS info
     os_version = f"{platform.system()} {platform.release()}"
@@ -124,7 +129,9 @@ async def get_system_info():
 
 
 @router.get("/parser-options")
-async def get_available_parser_options() -> ParserOptions:
+async def get_available_parser_options(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ParserOptions:
     """
     Get available parser options from installed mlx-openai-server.
 
@@ -137,6 +144,7 @@ async def get_available_parser_options() -> ParserOptions:
 
 @router.post("/launchd/install/{profile_id}")
 async def install_launchd_service(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
@@ -156,6 +164,7 @@ async def install_launchd_service(
 
 @router.post("/launchd/uninstall/{profile_id}", status_code=204)
 async def uninstall_launchd_service(
+    current_user: Annotated[User, Depends(get_current_user)],
     profile: ServerProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
@@ -169,7 +178,10 @@ async def uninstall_launchd_service(
 
 
 @router.get("/launchd/status/{profile_id}", response_model=LaunchdStatus)
-async def get_launchd_status(profile: ServerProfile = Depends(get_profile_or_404)):
+async def get_launchd_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    profile: ServerProfile = Depends(get_profile_or_404),
+):
     """Get launchd service status."""
     status = launchd_manager.get_status(profile)
     return LaunchdStatus(**status)

@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -14,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from mlx_manager.database import get_db
-from mlx_manager.models import Download, LocalModel, ModelSearchResult
+from mlx_manager.dependencies import get_current_user
+from mlx_manager.models import Download, LocalModel, ModelSearchResult, User
 from mlx_manager.services.hf_client import hf_client
 from mlx_manager.services.parser_options import get_parser_options
 from mlx_manager.utils.model_detection import get_model_detection_info
@@ -34,6 +36,7 @@ download_tasks: dict[str, dict] = {}
 
 @router.get("/search", response_model=list[ModelSearchResult])
 async def search_models(
+    current_user: Annotated[User, Depends(get_current_user)],
     query: str = Query(..., min_length=1),
     max_size_gb: float | None = None,
     limit: int = Query(default=20, le=100),
@@ -49,13 +52,19 @@ async def search_models(
 
 
 @router.get("/local", response_model=list[LocalModel])
-async def list_local_models():
+async def list_local_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """List locally downloaded MLX models."""
     return hf_client.list_local_models()
 
 
 @router.post("/download")
-async def start_download(request: DownloadRequest, db: AsyncSession = Depends(get_db)):
+async def start_download(
+    current_user: Annotated[User, Depends(get_current_user)],
+    request: DownloadRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """Start downloading a model from HuggingFace."""
     task_id = str(uuid.uuid4())
 
@@ -99,7 +108,10 @@ async def start_download(request: DownloadRequest, db: AsyncSession = Depends(ge
 
 
 @router.get("/download/{task_id}/progress")
-async def get_download_progress(task_id: str):
+async def get_download_progress(
+    current_user: Annotated[User, Depends(get_current_user)],
+    task_id: str,
+):
     """SSE endpoint for download progress."""
 
     async def generate() -> AsyncGenerator[str, None]:
@@ -186,7 +198,10 @@ async def _update_download_record(
 
 
 @router.get("/downloads/active")
-async def get_active_downloads(db: AsyncSession = Depends(get_db)):
+async def get_active_downloads(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
     """Get all active/in-progress downloads with their task IDs.
 
     Returns downloads that are currently in progress or pending.
@@ -247,7 +262,10 @@ async def get_active_downloads(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{model_id:path}")
-async def delete_model(model_id: str):
+async def delete_model(
+    current_user: Annotated[User, Depends(get_current_user)],
+    model_id: str,
+):
     """Delete a local model."""
     success = await hf_client.delete_model(model_id)
 
@@ -258,7 +276,10 @@ async def delete_model(model_id: str):
 
 
 @router.get("/detect-options/{model_id:path}")
-async def detect_model_options(model_id: str):
+async def detect_model_options(
+    current_user: Annotated[User, Depends(get_current_user)],
+    model_id: str,
+):
     """
     Detect recommended parser options for a model.
 
@@ -274,7 +295,9 @@ async def detect_model_options(model_id: str):
 
 
 @router.get("/available-parsers")
-async def get_available_parsers():
+async def get_available_parsers(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     Get list of available parser options for dropdowns.
 
