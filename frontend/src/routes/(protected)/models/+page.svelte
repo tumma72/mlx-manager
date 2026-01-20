@@ -10,6 +10,7 @@
 		ModelToggle,
 		FilterModal,
 		FilterChips,
+		ModelBadges,
 		type FilterState,
 		createEmptyFilters
 	} from '$components/models';
@@ -297,11 +298,14 @@
 					{#each filteredLocalModels() as model (model.model_id)}
 						<Card class="p-4">
 							<div class="flex items-center justify-between">
-								<div>
+								<div class="space-y-1">
 									<h3 class="font-medium">{model.model_id}</h3>
 									<p class="text-sm text-muted-foreground">
 										{model.size_gb.toFixed(2)} GB
 									</p>
+									{#if model.characteristics}
+										<ModelBadges characteristics={model.characteristics} />
+									{/if}
 								</div>
 								<div class="flex gap-2">
 									<Button
