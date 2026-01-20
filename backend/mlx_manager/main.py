@@ -31,7 +31,13 @@ from sqlmodel import select
 from mlx_manager import __version__
 from mlx_manager.database import get_session, init_db, recover_incomplete_downloads
 from mlx_manager.models import RunningInstance
-from mlx_manager.routers import models_router, profiles_router, servers_router, system_router
+from mlx_manager.routers import (
+    auth_router,
+    models_router,
+    profiles_router,
+    servers_router,
+    system_router,
+)
 from mlx_manager.routers.models import download_tasks
 from mlx_manager.services.health_checker import health_checker
 from mlx_manager.services.hf_client import hf_client
@@ -174,6 +180,7 @@ app.add_middleware(
 )
 
 # Include API routers
+app.include_router(auth_router)
 app.include_router(profiles_router)
 app.include_router(models_router)
 app.include_router(servers_router)
