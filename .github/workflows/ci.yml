@@ -46,8 +46,10 @@ jobs:
         working-directory: backend
         run: |
           uv run pytest -v --cov=mlx_manager --cov-report=term-missing --junitxml=pytest-results.xml | tee coverage-output.txt
-          # Extract coverage percentage from TOTAL line (format: TOTAL <stmts> <miss> <cover>%)
-          COVERAGE=$(grep -E '^TOTAL' coverage-output.txt | grep -oE '[0-9]+%' | grep -oE '[0-9]+' || echo "0")
+          # Extract coverage percentage from TOTAL line
+          # The line format is: TOTAL <stmts> <miss> <cover>% (e.g., "TOTAL 1942 66 97%")
+          # Use grep to find TOTAL, then extract the percentage
+          COVERAGE=$(grep 'TOTAL' coverage-output.txt | tail -1 | awk '{print $NF}' | tr -d '%' || echo "0")
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Upload test results
