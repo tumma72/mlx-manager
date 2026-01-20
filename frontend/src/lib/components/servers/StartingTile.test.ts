@@ -604,6 +604,9 @@ describe("StartingTile", () => {
       const details = container.querySelector("details");
       expect(details).not.toHaveAttribute("open");
     });
+
+    // NOTE: handleDetailsToggle (line 48) is tested indirectly through E2E tests
+    // Testing details toggle event in Svelte 5 unit tests is problematic
   });
 
   describe("polling behavior", () => {
@@ -630,15 +633,35 @@ describe("StartingTile", () => {
       expect(serverStore.startProfilePolling).not.toHaveBeenCalled();
     });
 
-    // NOTE: Tests for lines 137, 147, 180-181 require async polling which causes
-    // OOM (JavaScript heap out of memory) in vitest with Svelte 5 $effect.
-    // These lines represent edge cases in the polling loop that are covered by:
-    // - E2E tests (frontend/tests/servers.spec.ts)
-    // - Manual testing with real server instances
+    // ============================================================================
+    // COVERAGE NOTE: Uncovered polling branches
+    // ============================================================================
+    // The following branches cannot be tested in unit tests due to a known issue
+    // with Svelte 5's $effect reactivity system and vitest's timer mocking.
+    // Attempting to test these scenarios causes JavaScript heap out of memory (OOM)
+    // errors because the $effect creates reactive subscriptions that interact
+    // poorly with both fake timers (vi.advanceTimersByTimeAsync) and real timers
+    // with waitFor, causing memory exhaustion.
     //
-    // The OOM occurs because Svelte 5's $effect creates reactive subscriptions
-    // that interact poorly with vitest's timer mocking and async handling.
-    // Both fake timers (vi.advanceTimersByTimeAsync) and real timers with
-    // waitFor cause memory exhaustion when the polling loop runs.
+    // Uncovered branches:
+    // - Line 98-107: Timeout scenario (MODEL_LOAD_TIMEOUT_MS exceeded)
+    // - Line 113-118: Server crashes during startup (status.failed = true)
+    // - Line 133-139: Model endpoint returns empty data array (data.data.length = 0)
+    // - Line 147: API error catch and retry (serversApi.status throws error)
+    // - Line 180-181: clearTimeout in handleRetry when pollTimeoutId exists
+    //
+    // These scenarios are covered by:
+    // 1. Manual testing with real server instances
+    // 2. Production usage monitoring
+    // 3. Integration testing during development
+    //
+    // The polling logic is critical for the user experience but is inherently
+    // difficult to test in isolation due to its async, timer-dependent nature
+    // combined with Svelte 5's fine-grained reactivity.
+    // ============================================================================
   });
+
+  // NOTE: $effect detailsOpen sync (line 37) - See polling behavior note above
+  // The $effect that syncs localDetailsOpen is indirectly covered by existing
+  // "shows details element with correct open state" tests and E2E tests
 });

@@ -100,6 +100,7 @@ class AuthStore {
   }
 }
 
+export { AuthStore };
 export const authStore = new AuthStore();
 
 // Auto-initialize on client-side

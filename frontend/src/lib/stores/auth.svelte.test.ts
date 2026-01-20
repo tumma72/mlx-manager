@@ -90,6 +90,73 @@ describe("AuthStore", () => {
       expect(authStore.isAuthenticated).toBe(true);
     });
 
+    it("handles SSR environment (window undefined)", async () => {
+      // Mock SSR environment
+      const originalWindow = global.window;
+      // @ts-expect-error - Intentionally making window undefined for SSR test
+      delete global.window;
+
+      vi.resetModules();
+
+      // Create a new AuthStore instance that will go through SSR branch
+      const { AuthStore } = await import("./auth.svelte");
+      const ssrStore = new AuthStore();
+
+      // Call initialize manually since auto-init won't run in SSR
+      ssrStore.initialize();
+
+      expect(ssrStore.loading).toBe(false);
+      expect(ssrStore.token).toBeNull();
+      expect(ssrStore.user).toBeNull();
+
+      // Restore window
+      global.window = originalWindow;
+    });
+
+    it("handles localStorage not available", async () => {
+      // Mock localStorage as undefined
+      const originalLocalStorage = window.localStorage;
+      // @ts-expect-error - Intentionally making localStorage undefined
+      Object.defineProperty(window, "localStorage", {
+        value: undefined,
+        writable: true,
+      });
+
+      vi.resetModules();
+
+      const { AuthStore } = await import("./auth.svelte");
+      const testStore = new AuthStore();
+      testStore.initialize();
+
+      expect(testStore.loading).toBe(false);
+      expect(testStore.token).toBeNull();
+      expect(testStore.user).toBeNull();
+
+      // Restore localStorage
+      Object.defineProperty(window, "localStorage", {
+        value: originalLocalStorage,
+        writable: true,
+      });
+    });
+
+    it("handles localStorage without getItem method", async () => {
+      // Mock localStorage without getItem
+      Object.defineProperty(window, "localStorage", {
+        value: {},
+        writable: true,
+      });
+
+      vi.resetModules();
+
+      const { AuthStore } = await import("./auth.svelte");
+      const testStore = new AuthStore();
+      testStore.initialize();
+
+      expect(testStore.loading).toBe(false);
+      expect(testStore.token).toBeNull();
+      expect(testStore.user).toBeNull();
+    });
+
     it("handles missing localStorage data gracefully", async () => {
       // No data in localStorage
       vi.resetModules();
@@ -162,6 +229,27 @@ describe("AuthStore", () => {
         JSON.stringify(mockUser)
       );
     });
+
+    it("handles SSR environment (window undefined)", async () => {
+      const originalWindow = global.window;
+      // @ts-expect-error - Intentionally making window undefined for SSR test
+      delete global.window;
+
+      vi.resetModules();
+
+      const { AuthStore } = await import("./auth.svelte");
+      const ssrStore = new AuthStore();
+      const mockUser = createMockUser();
+
+      // Should not throw, should update state without localStorage
+      ssrStore.setAuth("ssr-token", mockUser);
+
+      expect(ssrStore.token).toBe("ssr-token");
+      expect(ssrStore.user).toEqual(mockUser);
+
+      // Restore window
+      global.window = originalWindow;
+    });
   });
 
   describe("clearAuth", () => {
@@ -186,6 +274,47 @@ describe("AuthStore", () => {
       authStore.clearAuth();
 
       expect(localStorage.removeItem).toHaveBeenCalledWith("mlx_auth_user");
+    });
+
+    it("handles SSR environment (window undefined)", async () => {
+      const originalWindow = global.window;
+      // @ts-expect-error - Intentionally making window undefined for SSR test
+      delete global.window;
+
+      vi.resetModules();
+
+      const { AuthStore } = await import("./auth.svelte");
+      const ssrStore = new AuthStore();
+      const mockUser = createMockUser();
+
+      ssrStore.setAuth("ssr-token", mockUser);
+      ssrStore.clearAuth();
+
+      expect(ssrStore.token).toBeNull();
+      expect(ssrStore.user).toBeNull();
+
+      // Restore window
+      global.window = originalWindow;
+    });
+
+    it("handles localStorage.removeItem throwing error", () => {
+      const localStorageMock = {
+        getItem: vi.fn(),
+        setItem: vi.fn(),
+        removeItem: vi.fn(() => {
+          throw new Error("Storage quota exceeded");
+        }),
+        clear: vi.fn(),
+      };
+      Object.defineProperty(window, "localStorage", {
+        value: localStorageMock,
+        writable: true,
+      });
+
+      // Should not throw, should gracefully handle error
+      expect(() => authStore.clearAuth()).not.toThrow();
+      expect(authStore.token).toBeNull();
+      expect(authStore.user).toBeNull();
     });
   });
 
@@ -222,6 +351,27 @@ describe("AuthStore", () => {
       authStore.updateUser(updatedUser);
 
       expect(authStore.token).toBe("original-token");
+    });
+
+    it("handles SSR environment (window undefined)", async () => {
+      const originalWindow = global.window;
+      // @ts-expect-error - Intentionally making window undefined for SSR test
+      delete global.window;
+
+      vi.resetModules();
+
+      const { AuthStore } = await import("./auth.svelte");
+      const ssrStore = new AuthStore();
+      const initialUser = createMockUser({ email: "old@example.com" });
+      const updatedUser = createMockUser({ email: "new@example.com" });
+
+      ssrStore.setAuth("ssr-token", initialUser);
+      ssrStore.updateUser(updatedUser);
+
+      expect(ssrStore.user).toEqual(updatedUser);
+
+      // Restore window
+      global.window = originalWindow;
     });
   });
 
