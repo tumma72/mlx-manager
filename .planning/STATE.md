@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 3 (User-Based Authentication) - Plan 1 Complete
+**Current focus:** Phase 3 (User-Based Authentication) - Plan 2 Complete
 
 ## Current Position
 
 Phase: 3 of 6 (User-Based Authentication)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-01-20 — Completed 03-01-PLAN.md (Backend Auth Foundation)
+Last activity: 2026-01-20 — Completed 03-02-PLAN.md (Auth API Endpoints)
 
-Progress: ███▒░░░░░░ 37% (2 phases + 1 plan complete)
+Progress: ███▓░░░░░░ 40% (2 phases + 2 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: ~4 min
-- Total execution time: ~33 min
+- Total execution time: ~38 min
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: ███▒░░░░░░ 37% (2 phases + 1 plan complete)
 |-------|-------|-------|----------|
 | 1 | 1/1 | — | — |
 | 2 | 5/5 | ~27 min | ~5 min |
-| 3 | 1/4 | 3 min | 3 min |
+| 3 | 2/4 | 8 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02, 02-03, 02-04, 02-05, 03-01
+- Last 5 plans: 02-03, 02-04, 02-05, 03-01, 03-02
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -55,6 +55,10 @@ Recent decisions affecting current work:
 - PyJWT over python-jose (abandoned) per FastAPI official recommendation
 - pwdlib[argon2] over passlib for Python 3.13+ compatibility
 - UserStatus enum for approval workflow (PENDING -> APPROVED -> DISABLED)
+- OAuth2PasswordRequestForm for login (username field contains email)
+- First user auto-approved and admin, subsequent users pending
+- Admin endpoint pattern: Depends(get_admin_user) for admin-only routes
+- Prevent last admin from demoting/deleting self
 
 ### Pending Todos
 
@@ -71,6 +75,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-20
-Stopped at: Completed 03-01-PLAN.md (Backend Auth Foundation)
+Stopped at: Completed 03-02-PLAN.md (Auth API Endpoints)
 Resume file: None
-Next plan: 03-02-PLAN.md (Auth Endpoints)
+Next plan: 03-03-PLAN.md (Frontend Auth Integration)
