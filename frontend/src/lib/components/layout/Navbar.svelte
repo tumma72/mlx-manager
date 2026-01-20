@@ -2,9 +2,20 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
+	import { DropdownMenu } from 'bits-ui';
 	import { systemStore, authStore } from '$stores';
 	import { auth } from '$lib/api/client';
-	import { Server, Package, Settings, MessageSquare, Cpu, Users, LogOut } from 'lucide-svelte';
+	import {
+		Server,
+		Package,
+		Settings,
+		MessageSquare,
+		Cpu,
+		Users,
+		LogOut,
+		User,
+		ChevronDown
+	} from 'lucide-svelte';
 
 	const navigation = [
 		{ href: '/servers' as const, label: 'Servers', icon: Server },
@@ -112,23 +123,41 @@
 					</div>
 				{/if}
 
-				<!-- User info and logout -->
+				<!-- User profile dropdown -->
 				{#if authStore.isAuthenticated}
-					<div class="flex items-center gap-3">
-						{#if authStore.user}
-							<span class="hidden lg:inline text-sm text-muted-foreground">
-								{authStore.user.email}
-							</span>
-						{/if}
-						<button
-							onclick={handleLogout}
-							class="flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-							title="Logout"
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger
+							class="flex items-center gap-1 px-2 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
 						>
-							<LogOut class="w-4 h-4" />
-							<span class="hidden sm:inline">Logout</span>
-						</button>
-					</div>
+							<User class="w-5 h-5" />
+							<ChevronDown class="w-3 h-3" />
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Portal>
+							<DropdownMenu.Content
+								class="z-50 min-w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 py-1"
+								sideOffset={5}
+								align="end"
+							>
+								{#if authStore.user}
+									<div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+										<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+											Signed in as
+										</p>
+										<p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+											{authStore.user.email}
+										</p>
+									</div>
+								{/if}
+								<DropdownMenu.Item
+									class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+									onSelect={handleLogout}
+								>
+									<LogOut class="w-4 h-4" />
+									Logout
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Portal>
+					</DropdownMenu.Root>
 				{/if}
 			</div>
 		</div>
