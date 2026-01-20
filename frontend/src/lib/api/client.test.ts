@@ -410,8 +410,9 @@ describe("models API", () => {
 
       await models.delete("mlx-community/test-model");
 
+      // Note: No URL encoding - backend uses {model_id:path} which expects literal slashes
       expect(mockFetch).toHaveBeenCalledWith(
-        "/api/models/mlx-community%2Ftest-model",
+        "/api/models/mlx-community/test-model",
         expect.objectContaining({
           method: "DELETE",
           ...defaultHeaders,
@@ -427,8 +428,9 @@ describe("models API", () => {
 
       const result = await models.detectOptions("mlx-community/test-model");
 
+      // Note: No URL encoding - backend uses {model_id:path} which expects literal slashes
       expect(mockFetch).toHaveBeenCalledWith(
-        "/api/models/detect-options/mlx-community%2Ftest-model",
+        "/api/models/detect-options/mlx-community/test-model",
         expect.objectContaining(defaultHeaders),
       );
       expect(result).toEqual(detectionInfo);

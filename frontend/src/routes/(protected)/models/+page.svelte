@@ -11,6 +11,7 @@
 		FilterModal,
 		FilterChips,
 		ModelBadges,
+		ModelSpecs,
 		type FilterState,
 		createEmptyFilters
 	} from '$components/models';
@@ -297,17 +298,18 @@
 				<div class="grid gap-4">
 					{#each filteredLocalModels() as model (model.model_id)}
 						<Card class="p-4">
-							<div class="flex items-center justify-between">
-								<div class="space-y-1">
+							<div class="flex items-start justify-between">
+								<div class="flex-1 min-w-0 space-y-1">
 									<h3 class="font-medium">{model.model_id}</h3>
 									<p class="text-sm text-muted-foreground">
 										{model.size_gb.toFixed(2)} GB
 									</p>
 									{#if model.characteristics}
 										<ModelBadges characteristics={model.characteristics} />
+										<ModelSpecs characteristics={model.characteristics} />
 									{/if}
 								</div>
-								<div class="flex gap-2">
+								<div class="flex gap-2 ml-4">
 									<Button
 										variant="outline"
 										size="sm"

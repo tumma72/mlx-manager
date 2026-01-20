@@ -40,9 +40,9 @@
 		downloadStatusOverride = null;
 	});
 
-	// Lazy load config for this model
+	// Lazy load config for this model (passes tags for fallback parsing if API fails)
 	$effect(() => {
-		modelConfigStore.fetchConfig(model.model_id);
+		modelConfigStore.fetchConfig(model.model_id, model.tags);
 	});
 
 	async function handleDownload() {

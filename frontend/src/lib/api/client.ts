@@ -272,23 +272,19 @@ export const models = {
   },
 
   delete: async (modelId: string): Promise<void> => {
-    const res = await fetch(
-      `${API_BASE}/models/${encodeURIComponent(modelId)}`,
-      {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      },
-    );
+    // Note: Don't use encodeURIComponent - backend uses {model_id:path}
+    const res = await fetch(`${API_BASE}/models/${modelId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   detectOptions: async (modelId: string): Promise<ModelDetectionInfo> => {
-    const res = await fetch(
-      `${API_BASE}/models/detect-options/${encodeURIComponent(modelId)}`,
-      {
-        headers: getAuthHeaders(),
-      },
-    );
+    // Note: Don't use encodeURIComponent - backend uses {model_id:path}
+    const res = await fetch(`${API_BASE}/models/detect-options/${modelId}`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
@@ -300,12 +296,11 @@ export const models = {
   },
 
   getConfig: async (modelId: string): Promise<ModelCharacteristics> => {
-    const res = await fetch(
-      `${API_BASE}/models/config/${encodeURIComponent(modelId)}`,
-      {
-        headers: getAuthHeaders(),
-      },
-    );
+    // Note: Don't use encodeURIComponent here - the backend uses {model_id:path}
+    // which expects slashes to be literal path segments, not URL-encoded
+    const res = await fetch(`${API_BASE}/models/config/${modelId}`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 };

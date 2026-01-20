@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { modelConfigStore } from "./models.svelte";
+import { modelConfigStore, parseCharacteristicsFromName } from "./models.svelte";
 import { flushSync } from "svelte";
 
 // Mock the API client
@@ -111,28 +111,35 @@ describe("ModelConfigStore", () => {
       expect(modelsApi.getConfig).toHaveBeenCalledTimes(1);
     });
 
-    it("handles fetch errors gracefully", async () => {
+    it("handles fetch errors by using name-based fallback", async () => {
       vi.mocked(modelsApi.getConfig).mockRejectedValue(
         new Error("Network error")
       );
 
-      await modelConfigStore.fetchConfig("error-model");
+      // Model name contains parseable info: "Llama" and "8bit"
+      await modelConfigStore.fetchConfig("mlx-community/Llama-3-8B-8bit", [
+        "mlx",
+      ]);
       flushSync();
 
-      const state = modelConfigStore.getConfig("error-model");
+      const state = modelConfigStore.getConfig("mlx-community/Llama-3-8B-8bit");
       expect(state?.loading).toBe(false);
-      expect(state?.characteristics).toBeNull();
-      expect(state?.error).toBe("Network error");
+      expect(state?.error).toBeNull(); // No error when fallback works
+      expect(state?.characteristics?.architecture_family).toBe("Llama");
+      expect(state?.characteristics?.quantization_bits).toBe(8);
     });
 
-    it("handles non-Error rejections", async () => {
+    it("handles fetch errors with no parseable info", async () => {
       vi.mocked(modelsApi.getConfig).mockRejectedValue("string error");
 
-      await modelConfigStore.fetchConfig("string-error-model");
+      // Model name has no parseable architecture or quantization
+      await modelConfigStore.fetchConfig("some-random-model");
       flushSync();
 
-      const state = modelConfigStore.getConfig("string-error-model");
-      expect(state?.error).toBe("Failed to load config");
+      const state = modelConfigStore.getConfig("some-random-model");
+      expect(state?.loading).toBe(false);
+      expect(state?.characteristics).toBeNull();
+      expect(state?.error).toBeNull(); // No error shown to user
     });
 
     it("calls API with correct model ID", async () => {
@@ -215,5 +222,63 @@ describe("ModelConfigStore", () => {
       expect(state?.characteristics?.architecture_family).toBe("DeepSeek");
       expect(state?.characteristics?.max_position_embeddings).toBe(8192);
     });
+  });
+});
+
+describe("parseCharacteristicsFromName", () => {
+  it("detects Llama architecture", () => {
+    const result = parseCharacteristicsFromName("mlx-community/Llama-3.1-8B-4bit");
+    expect(result.architecture_family).toBe("Llama");
+  });
+
+  it("detects GLM architecture", () => {
+    const result = parseCharacteristicsFromName("mlx-community/GLM-4.7-Flash-8bit");
+    expect(result.architecture_family).toBe("GLM");
+  });
+
+  it("detects Qwen architecture", () => {
+    const result = parseCharacteristicsFromName("Qwen2.5-0.5B-Instruct-4bit");
+    expect(result.architecture_family).toBe("Qwen");
+  });
+
+  it("detects quantization from model name", () => {
+    expect(
+      parseCharacteristicsFromName("Model-4bit").quantization_bits
+    ).toBe(4);
+    expect(
+      parseCharacteristicsFromName("Model-8bit").quantization_bits
+    ).toBe(8);
+    expect(
+      parseCharacteristicsFromName("Model-bf16").quantization_bits
+    ).toBe(16);
+  });
+
+  it("detects multimodal from name patterns", () => {
+    expect(
+      parseCharacteristicsFromName("Qwen-VL-4bit").is_multimodal
+    ).toBe(true);
+    expect(
+      parseCharacteristicsFromName("LLaVA-1.5-7B").is_multimodal
+    ).toBe(true);
+  });
+
+  it("detects multimodal from tags", () => {
+    const result = parseCharacteristicsFromName("some-model", ["vision", "mlx"]);
+    expect(result.is_multimodal).toBe(true);
+  });
+
+  it("combines architecture and quantization", () => {
+    const result = parseCharacteristicsFromName(
+      "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
+    );
+    expect(result.architecture_family).toBe("Mistral");
+    expect(result.quantization_bits).toBe(4);
+  });
+
+  it("returns empty object for unparseable names", () => {
+    const result = parseCharacteristicsFromName("random-model-name");
+    expect(result.architecture_family).toBeUndefined();
+    expect(result.quantization_bits).toBeUndefined();
+    expect(result.is_multimodal).toBeUndefined();
   });
 });
