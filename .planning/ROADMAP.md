@@ -13,7 +13,7 @@ Polish the UX for models and server panels, add optional API key authentication 
 - [x] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
 - [x] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
-- [ ] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
+- [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
 - [ ] **Phase 5: Chat Multimodal Support** - Image/video attachments, thinking model display
 - [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
@@ -74,22 +74,22 @@ Plans:
 - [x] 03-04-PLAN.md — Login/register page and protected route structure
 - [x] 03-05-PLAN.md — Admin user management page and nav badge
 
-### Phase 4: Model Discovery & Badges
+### Phase 4: Model Discovery & Badges ✓
 **Goal**: Detect model characteristics and display visual badges for capabilities
 **Depends on**: Phase 3
 **Requirements**: DISC-01, DISC-02, DISC-03
 **Success Criteria** (what must be TRUE):
-  1. Model config.json parsed to extract: architecture, context window, multimodal support, KV cache
-  2. Visual badges displayed on model tiles (text-only vs multimodal, architecture type)
-  3. Technical specs shown: context window, parameters, quantization level
-  4. Filter/search by model characteristics works
+  1. Model config.json parsed to extract: architecture, context window, multimodal support, KV cache ✓
+  2. Visual badges displayed on model tiles (text-only vs multimodal, architecture type) ✓
+  3. Technical specs shown: context window, parameters, quantization level ✓
+  4. Filter/search by model characteristics works ✓
 **Research**: Completed (HuggingFace config.json schema, MLX model metadata patterns)
-**Plans**: 3 plans
+**Completed**: 2026-01-20
 
 Plans:
-- [ ] 04-01-PLAN.md — Backend model characteristics extraction (types, extraction logic, API endpoint)
-- [ ] 04-02-PLAN.md — Model tile badges and specs display (badge components, expandable specs, lazy loading)
-- [ ] 04-03-PLAN.md — Search UX refactor with filters (toggle switch, filter modal, filter chips)
+- [x] 04-01-PLAN.md — Backend model characteristics extraction (types, extraction logic, API endpoint)
+- [x] 04-02-PLAN.md — Model tile badges and specs display (badge components, expandable specs, lazy loading)
+- [x] 04-03-PLAN.md — Search UX refactor with filters (toggle switch, filter modal, filter chips)
 
 ### Phase 5: Chat Multimodal Support
 **Goal**: Support image/video attachments for testing multimodal models
@@ -137,6 +137,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
-| 4. Model Discovery & Badges | 0/3 | Ready | - |
+| 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal Support | 0/3 | Not started | - |
 | 6. Bug Fixes & Stability | 0/4 | Not started | - |

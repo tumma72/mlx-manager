@@ -30,9 +30,9 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 ### Model Discovery
 
-- [ ] **DISC-01**: Detect model characteristics from config.json or metadata (architecture, context window, multimodal, KV cache)
-- [ ] **DISC-02**: Visual badges for capabilities (text-only vs multimodal, architecture type, quantization)
-- [ ] **DISC-03**: Filter/search by model characteristics
+- [x] **DISC-01**: Detect model characteristics from config.json or metadata (architecture, context window, multimodal, KV cache)
+- [x] **DISC-02**: Visual badges for capabilities (text-only vs multimodal, architecture type, quantization)
+- [x] **DISC-03**: Filter/search by model characteristics
 
 ### Chat Multimodal
 
@@ -89,9 +89,9 @@ Which phases cover which requirements. Updated by create-roadmap.
 | AUTH-04 | Phase 3 | Complete |
 | AUTH-05 | Phase 3 | Complete |
 | AUTH-06 | Phase 3 | Complete |
-| DISC-01 | Phase 4 | Pending |
-| DISC-02 | Phase 4 | Pending |
-| DISC-03 | Phase 4 | Pending |
+| DISC-01 | Phase 4 | Complete |
+| DISC-02 | Phase 4 | Complete |
+| DISC-03 | Phase 4 | Complete |
 | CHAT-01 | Phase 5 | Pending |
 | CHAT-02 | Phase 5 | Pending |
 | CHAT-03 | Phase 5 | Pending |
