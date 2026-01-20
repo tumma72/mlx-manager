@@ -56,7 +56,7 @@ Plans:
 ### Phase 3: User-Based Authentication
 **Goal**: User registration/login with email+password, JWT sessions, admin approval flow
 **Depends on**: Phase 2
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06
 **Success Criteria** (what must be TRUE):
   1. First user to register becomes admin automatically
   2. Subsequent users can request accounts, admin must approve
@@ -64,15 +64,15 @@ Plans:
   4. Unauthenticated requests redirect to /login page
   5. Admin can manage users from dedicated /users page
   6. Pending approval requests show badge count in nav (admin only)
-**Research**: Likely (FastAPI JWT patterns, password hashing, SQLModel user schema)
-**Plans**: TBD
+**Research**: Completed (PyJWT + pwdlib, FastAPI dependencies, SvelteKit SPA auth)
+**Plans:** 5 plans in 3 waves
 
 Plans:
-- [ ] 03-01: User database schema and password hashing
-- [ ] 03-02: Registration and login API endpoints
-- [ ] 03-03: JWT middleware and auth guards
-- [ ] 03-04: Frontend login/register pages
-- [ ] 03-05: Admin user management page
+- [ ] 03-01-PLAN.md — Backend auth foundation (User model, password hashing, JWT, dependencies)
+- [ ] 03-02-PLAN.md — Auth API endpoints (register, login, user management)
+- [ ] 03-03-PLAN.md — Secure existing APIs and frontend auth infrastructure
+- [ ] 03-04-PLAN.md — Login/register page and protected route structure
+- [ ] 03-05-PLAN.md — Admin user management page and nav badge
 
 ### Phase 4: Model Discovery & Badges
 **Goal**: Detect model characteristics and display visual badges for capabilities
@@ -136,7 +136,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
-| 3. User-Based Authentication | 0/5 | Not started | - |
+| 3. User-Based Authentication | 0/5 | Planned | - |
 | 4. Model Discovery & Badges | 0/3 | Not started | - |
 | 5. Chat Multimodal Support | 0/3 | Not started | - |
 | 6. Bug Fixes & Stability | 0/4 | Not started | - |
