@@ -116,7 +116,6 @@ describe("AuthStore", () => {
     it("handles localStorage not available", async () => {
       // Mock localStorage as undefined
       const originalLocalStorage = window.localStorage;
-      // @ts-expect-error - Intentionally making localStorage undefined
       Object.defineProperty(window, "localStorage", {
         value: undefined,
         writable: true,
