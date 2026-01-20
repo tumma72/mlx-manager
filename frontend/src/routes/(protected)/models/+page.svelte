@@ -2,11 +2,19 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { models } from '$api';
-	import type { ModelSearchResult, LocalModel } from '$api';
+	import type { ModelSearchResult, LocalModel, ModelCharacteristics } from '$api';
 	import { systemStore, downloadsStore } from '$stores';
-	import { ModelCard, DownloadProgressTile } from '$components/models';
+	import {
+		ModelCard,
+		DownloadProgressTile,
+		ModelToggle,
+		FilterModal,
+		FilterChips,
+		type FilterState,
+		createEmptyFilters
+	} from '$components/models';
 	import { Button, Input, Card, Badge, ConfirmDialog } from '$components/ui';
-	import { Search, HardDrive, Trash2 } from 'lucide-svelte';
+	import { Search, HardDrive, Trash2, Filter } from 'lucide-svelte';
 
 	let searchQuery = $state('');
 	let searchResults = $state<ModelSearchResult[]>([]);
@@ -14,8 +22,13 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
+	// Mode toggle: 'local' = My Models, 'online' = HuggingFace search
+	let searchMode = $state<'local' | 'online'>('local');
+
+	// Filter state
 	let filterByMemory = $state(true);
-	let showLocalOnly = $state(false);
+	let filters = $state<FilterState>(createEmptyFilters());
+	let showFilterModal = $state(false);
 
 	// Delete confirmation state
 	let showDeleteConfirm = $state(false);
@@ -40,7 +53,7 @@
 		if (!searchQuery.trim()) return;
 
 		// If searching local only, no need for API call - just use client-side filter
-		if (showLocalOnly) {
+		if (searchMode === 'local') {
 			return;
 		}
 
@@ -48,7 +61,8 @@
 		error = null;
 
 		try {
-			const maxSize = filterByMemory && systemStore.memory ? systemStore.memory.mlx_recommended_gb : undefined;
+			const maxSize =
+				filterByMemory && systemStore.memory ? systemStore.memory.mlx_recommended_gb : undefined;
 			searchResults = await models.search(searchQuery, maxSize, 20);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Search failed';
@@ -88,31 +102,102 @@
 		}
 	}
 
-	// Filter local models by search query (client-side)
+	// Check if model characteristics match current filters
+	function matchesFilters(characteristics: ModelCharacteristics | null | undefined): boolean {
+		if (!characteristics) return true; // Show models without loaded characteristics
+
+		// Architecture filter
+		if (filters.architectures.length > 0) {
+			if (
+				!characteristics.architecture_family ||
+				!filters.architectures.includes(characteristics.architecture_family)
+			) {
+				return false;
+			}
+		}
+
+		// Multimodal filter
+		if (filters.multimodal !== null) {
+			if (filters.multimodal && !characteristics.is_multimodal) return false;
+			if (!filters.multimodal && characteristics.is_multimodal) return false;
+		}
+
+		// Quantization filter
+		if (filters.quantization.length > 0) {
+			if (
+				!characteristics.quantization_bits ||
+				!filters.quantization.includes(characteristics.quantization_bits)
+			) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	// Filter local models by search query and characteristic filters (client-side)
 	const filteredLocalModels = $derived(() => {
-		if (!searchQuery.trim()) return localModels;
-		const query = searchQuery.toLowerCase();
-		return localModels.filter((m) => m.model_id.toLowerCase().includes(query));
+		let result = localModels;
+
+		// Apply text search filter
+		if (searchQuery.trim()) {
+			const query = searchQuery.toLowerCase();
+			result = result.filter((m) => m.model_id.toLowerCase().includes(query));
+		}
+
+		// Apply characteristic filters
+		result = result.filter((m) => matchesFilters(m.characteristics));
+
+		return result;
 	});
 
 	// Get active downloads for pinned section (defined before displayResults as it's used there)
 	const activeDownloads = $derived(() => {
-		return downloadsStore.getAllDownloads().filter(
-			(d) => d.status === 'pending' || d.status === 'starting' || d.status === 'downloading'
-		);
+		return downloadsStore
+			.getAllDownloads()
+			.filter(
+				(d) => d.status === 'pending' || d.status === 'starting' || d.status === 'downloading'
+			);
 	});
 
-	// Filter search results (online) based on local-only toggle
+	// Filter search results (online)
 	// Also exclude models that are currently being downloaded (they appear in download section)
 	const displayResults = $derived(() => {
 		const activeIds = new Set(activeDownloads().map((d) => d.model_id));
-		const resultsToShow = showLocalOnly ? searchResults.filter((m) => m.is_downloaded) : searchResults;
-		return resultsToShow.filter((r) => !activeIds.has(r.model_id));
+		// Note: For online results, we don't have characteristics loaded yet
+		// Filter matching will be done when characteristics are available
+		return searchResults.filter((r) => !activeIds.has(r.model_id));
 	});
 
 	// Determine what to show based on mode
-	const isLocalSearchMode = $derived(showLocalOnly);
+	const isLocalSearchMode = $derived(searchMode === 'local');
 	const hasOnlineResults = $derived(searchResults.length > 0);
+
+	// Filter state helpers
+	const hasActiveFilters = $derived(
+		filters.architectures.length > 0 ||
+			filters.multimodal !== null ||
+			filters.quantization.length > 0
+	);
+
+	const activeFilterCount = $derived(
+		filters.architectures.length +
+			(filters.multimodal !== null ? 1 : 0) +
+			filters.quantization.length
+	);
+
+	function handleRemoveFilter(
+		type: 'architecture' | 'multimodal' | 'quantization',
+		value?: string | number
+	) {
+		if (type === 'architecture' && typeof value === 'string') {
+			filters.architectures = filters.architectures.filter((a) => a !== value);
+		} else if (type === 'multimodal') {
+			filters.multimodal = null;
+		} else if (type === 'quantization' && typeof value === 'number') {
+			filters.quantization = filters.quantization.filter((q) => q !== value);
+		}
+	}
 </script>
 
 <div class="space-y-6">
@@ -138,14 +223,18 @@
 				class="flex gap-4"
 			>
 				<div class="flex-1 relative">
-					<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+					<Search
+						class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+					/>
 					<Input
 						bind:value={searchQuery}
-						placeholder={showLocalOnly ? 'Filter downloaded models...' : 'Search mlx-community models...'}
+						placeholder={searchMode === 'local'
+							? 'Filter downloaded models...'
+							: 'Search MLX models...'}
 						class="pl-10"
 					/>
 				</div>
-				{#if !showLocalOnly}
+				{#if searchMode === 'online'}
 					<Button type="submit" disabled={loading}>
 						{loading ? 'Searching...' : 'Search'}
 					</Button>
@@ -153,17 +242,29 @@
 			</form>
 
 			<div class="flex items-center gap-4 mt-4">
-				{#if !showLocalOnly}
+				<ModelToggle bind:mode={searchMode} />
+
+				{#if searchMode === 'online'}
 					<label class="flex items-center gap-2 text-sm">
 						<input type="checkbox" bind:checked={filterByMemory} class="rounded" />
-						<span>Fits in memory (&lt;{systemStore.memory?.mlx_recommended_gb.toFixed(0) ?? 80} GB)</span>
+						<span>Fits in memory</span>
 					</label>
 				{/if}
-				<label class="flex items-center gap-2 text-sm">
-					<input type="checkbox" bind:checked={showLocalOnly} class="rounded" />
-					<span>Downloaded only</span>
-				</label>
+
+				<Button variant="outline" size="sm" onclick={() => (showFilterModal = true)}>
+					<Filter class="w-4 h-4 mr-1" />
+					Filters
+					{#if hasActiveFilters}
+						<Badge variant="secondary" class="ml-1">{activeFilterCount}</Badge>
+					{/if}
+				</Button>
 			</div>
+
+			{#if hasActiveFilters}
+				<div class="mt-3">
+					<FilterChips {filters} onRemove={handleRemoveFilter} />
+				</div>
+			{/if}
 		</Card>
 	</div>
 
@@ -185,7 +286,7 @@
 		<div class="text-center py-8 text-red-500 dark:text-red-400">{error}</div>
 	{/if}
 
-	<!-- Local Search Results (when "Downloaded only" is checked) -->
+	<!-- Local Search Results (when "My Models" mode is selected) -->
 	{#if isLocalSearchMode}
 		<section>
 			<h2 class="text-lg font-semibold mb-4">
@@ -220,18 +321,18 @@
 						</Card>
 					{/each}
 				</div>
-			{:else if searchQuery}
+			{:else if searchQuery || hasActiveFilters}
 				<div class="text-center py-8 text-muted-foreground">
-					No downloaded models match "{searchQuery}".
+					No downloaded models match your filters.
 				</div>
 			{:else}
 				<div class="text-center py-8 text-muted-foreground">
-					No models downloaded yet. Uncheck "Downloaded only" to search HuggingFace.
+					No models downloaded yet. Switch to HuggingFace to search and download models.
 				</div>
 			{/if}
 		</section>
 
-	<!-- Online Search Results (when "Downloaded only" is unchecked) -->
+		<!-- Online Search Results (when "HuggingFace" mode is selected) -->
 	{:else if hasOnlineResults}
 		<section>
 			<h2 class="text-lg font-semibold mb-4">
@@ -247,57 +348,26 @@
 		<div class="text-center py-8 text-muted-foreground">
 			No models found. Try a different search term.
 		</div>
-	{/if}
-
-	<!-- Local Models Section (only show when no search and not in local-only mode) -->
-	{#if localModels.length > 0 && !searchQuery && !isLocalSearchMode}
-		<section>
-			<h2 class="text-lg font-semibold mb-4">
-				Downloaded Models ({localModels.length})
-			</h2>
-			<div class="grid gap-4">
-				{#each localModels as model (model.model_id)}
-					<Card class="p-4">
-						<div class="flex items-center justify-between">
-							<div>
-								<h3 class="font-medium">{model.model_id}</h3>
-								<p class="text-sm text-muted-foreground">
-									{model.size_gb.toFixed(2)} GB
-								</p>
-							</div>
-							<div class="flex gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => requestDeleteModel(model.model_id)}
-									disabled={deleting}
-								>
-									<Trash2 class="w-4 h-4 mr-1" />
-									Delete
-								</Button>
-								<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
-									Use
-								</Button>
-							</div>
-						</div>
-					</Card>
-				{/each}
-			</div>
-		</section>
-	{:else if !searchQuery && !isLocalSearchMode}
+	{:else if !searchQuery}
 		<div class="text-center py-12 text-muted-foreground">
-			Search for models to download, or check "Downloaded only" to filter local models.
+			Search for models on HuggingFace to download.
 		</div>
 	{/if}
 </div>
 
+<FilterModal bind:open={showFilterModal} bind:filters />
+
 <ConfirmDialog
 	bind:open={showDeleteConfirm}
 	title="Delete Model"
-	description={modelToDelete ? `Are you sure you want to delete ${modelToDelete}? This will remove the model from your local cache and free up disk space.` : ''}
+	description={modelToDelete
+		? `Are you sure you want to delete ${modelToDelete}? This will remove the model from your local cache and free up disk space.`
+		: ''}
 	confirmLabel="Delete"
 	cancelLabel="Cancel"
 	variant="destructive"
 	onConfirm={confirmDeleteModel}
-	onCancel={() => { modelToDelete = null; }}
+	onCancel={() => {
+		modelToDelete = null;
+	}}
 />
