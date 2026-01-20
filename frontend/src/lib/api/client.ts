@@ -14,7 +14,11 @@ import type {
   ServerStatus,
   ModelDetectionInfo,
   ParserOptions,
+  User,
+  Token,
+  UserUpdate,
 } from "./types";
+import { authStore } from "$lib/stores";
 
 const API_BASE = "/api";
 
@@ -28,7 +32,27 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Get headers with auth token if available.
+ */
+function getAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (authStore.token) {
+    headers["Authorization"] = `Bearer ${authStore.token}`;
+  }
+  return headers;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
+  // Handle 401 - clear auth and redirect to login
+  if (response.status === 401) {
+    authStore.clearAuth();
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    throw new ApiError(401, "Session expired");
+  }
+
   if (!response.ok) {
     const text = await response.text();
     let message = text;
@@ -57,22 +81,101 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+// Auth API
+export const auth = {
+  register: async (data: { email: string; password: string }): Promise<User> => {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  login: async (email: string, password: string): Promise<Token> => {
+    const formData = new URLSearchParams();
+    formData.append("username", email); // OAuth2 form uses "username"
+    formData.append("password", password);
+
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
+  me: async (): Promise<User> => {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  listUsers: async (): Promise<User[]> => {
+    const res = await fetch(`${API_BASE}/auth/users`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  getPendingCount: async (): Promise<{ count: number }> => {
+    const res = await fetch(`${API_BASE}/auth/users/pending/count`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  updateUser: async (userId: number, data: UserUpdate): Promise<User> => {
+    const res = await fetch(`${API_BASE}/auth/users/${userId}`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteUser: async (userId: number): Promise<void> => {
+    const res = await fetch(`${API_BASE}/auth/users/${userId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  resetPassword: async (
+    userId: number,
+    password: string,
+  ): Promise<{ message: string }> => {
+    const res = await fetch(`${API_BASE}/auth/users/${userId}/reset-password`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ password }),
+    });
+    return handleResponse(res);
+  },
+};
+
 // Profiles API
 export const profiles = {
   list: async (): Promise<ServerProfile[]> => {
-    const res = await fetch(`${API_BASE}/profiles`);
+    const res = await fetch(`${API_BASE}/profiles`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   get: async (id: number): Promise<ServerProfile> => {
-    const res = await fetch(`${API_BASE}/profiles/${id}`);
+    const res = await fetch(`${API_BASE}/profiles/${id}`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   create: async (data: ServerProfileCreate): Promise<ServerProfile> => {
     const res = await fetch(`${API_BASE}/profiles`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
@@ -84,14 +187,17 @@ export const profiles = {
   ): Promise<ServerProfile> => {
     const res = await fetch(`${API_BASE}/profiles/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(res);
   },
 
   delete: async (id: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/profiles/${id}`, { method: "DELETE" });
+    const res = await fetch(`${API_BASE}/profiles/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
@@ -100,13 +206,16 @@ export const profiles = {
       `${API_BASE}/profiles/${id}/duplicate?new_name=${encodeURIComponent(newName)}`,
       {
         method: "POST",
+        headers: getAuthHeaders(),
       },
     );
     return handleResponse(res);
   },
 
   getNextPort: async (): Promise<{ port: number }> => {
-    const res = await fetch(`${API_BASE}/profiles/next-port`);
+    const res = await fetch(`${API_BASE}/profiles/next-port`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 };
@@ -132,26 +241,32 @@ export const models = {
     if (maxSizeGb !== undefined) {
       params.set("max_size_gb", maxSizeGb.toString());
     }
-    const res = await fetch(`${API_BASE}/models/search?${params}`);
+    const res = await fetch(`${API_BASE}/models/search?${params}`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   listLocal: async (): Promise<LocalModel[]> => {
-    const res = await fetch(`${API_BASE}/models/local`);
+    const res = await fetch(`${API_BASE}/models/local`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   startDownload: async (modelId: string): Promise<{ task_id: string }> => {
     const res = await fetch(`${API_BASE}/models/download`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ model_id: modelId }),
     });
     return handleResponse(res);
   },
 
   getActiveDownloads: async (): Promise<ActiveDownload[]> => {
-    const res = await fetch(`${API_BASE}/models/downloads/active`);
+    const res = await fetch(`${API_BASE}/models/downloads/active`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
@@ -160,6 +275,7 @@ export const models = {
       `${API_BASE}/models/${encodeURIComponent(modelId)}`,
       {
         method: "DELETE",
+        headers: getAuthHeaders(),
       },
     );
     return handleResponse(res);
@@ -168,12 +284,17 @@ export const models = {
   detectOptions: async (modelId: string): Promise<ModelDetectionInfo> => {
     const res = await fetch(
       `${API_BASE}/models/detect-options/${encodeURIComponent(modelId)}`,
+      {
+        headers: getAuthHeaders(),
+      },
     );
     return handleResponse(res);
   },
 
   getAvailableParsers: async (): Promise<{ parsers: string[] }> => {
-    const res = await fetch(`${API_BASE}/models/available-parsers`);
+    const res = await fetch(`${API_BASE}/models/available-parsers`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 };
@@ -181,13 +302,16 @@ export const models = {
 // Servers API
 export const servers = {
   list: async (): Promise<RunningServer[]> => {
-    const res = await fetch(`${API_BASE}/servers`);
+    const res = await fetch(`${API_BASE}/servers`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   start: async (profileId: number): Promise<{ pid: number; port: number }> => {
     const res = await fetch(`${API_BASE}/servers/${profileId}/start`, {
       method: "POST",
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
@@ -199,6 +323,7 @@ export const servers = {
     const params = force ? "?force=true" : "";
     const res = await fetch(`${API_BASE}/servers/${profileId}/stop${params}`, {
       method: "POST",
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
@@ -206,17 +331,22 @@ export const servers = {
   restart: async (profileId: number): Promise<{ pid: number }> => {
     const res = await fetch(`${API_BASE}/servers/${profileId}/restart`, {
       method: "POST",
+      headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
   health: async (profileId: number): Promise<HealthStatus> => {
-    const res = await fetch(`${API_BASE}/servers/${profileId}/health`);
+    const res = await fetch(`${API_BASE}/servers/${profileId}/health`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   status: async (profileId: number): Promise<ServerStatus> => {
-    const res = await fetch(`${API_BASE}/servers/${profileId}/status`);
+    const res = await fetch(`${API_BASE}/servers/${profileId}/status`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 };
@@ -224,17 +354,23 @@ export const servers = {
 // System API
 export const system = {
   memory: async (): Promise<SystemMemory> => {
-    const res = await fetch(`${API_BASE}/system/memory`);
+    const res = await fetch(`${API_BASE}/system/memory`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   info: async (): Promise<SystemInfo> => {
-    const res = await fetch(`${API_BASE}/system/info`);
+    const res = await fetch(`${API_BASE}/system/info`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
   parserOptions: async (): Promise<ParserOptions> => {
-    const res = await fetch(`${API_BASE}/system/parser-options`);
+    const res = await fetch(`${API_BASE}/system/parser-options`, {
+      headers: getAuthHeaders(),
+    });
     return handleResponse(res);
   },
 
@@ -246,6 +382,7 @@ export const system = {
         `${API_BASE}/system/launchd/install/${profileId}`,
         {
           method: "POST",
+          headers: getAuthHeaders(),
         },
       );
       return handleResponse(res);
@@ -256,13 +393,16 @@ export const system = {
         `${API_BASE}/system/launchd/uninstall/${profileId}`,
         {
           method: "POST",
+          headers: getAuthHeaders(),
         },
       );
       return handleResponse(res);
     },
 
     status: async (profileId: number): Promise<LaunchdStatus> => {
-      const res = await fetch(`${API_BASE}/system/launchd/status/${profileId}`);
+      const res = await fetch(`${API_BASE}/system/launchd/status/${profileId}`, {
+        headers: getAuthHeaders(),
+      });
       return handleResponse(res);
     },
   },
