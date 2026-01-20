@@ -176,6 +176,21 @@ async def update_user(
                 detail="Cannot remove last admin",
             )
 
+    # Prevent admin from disabling self if they're the only active admin
+    if user_data.status == UserStatus.DISABLED and user_id == admin.id:
+        active_admin_count_result = await session.execute(
+            select(func.count(User.id)).where(  # type: ignore[arg-type]
+                User.is_admin == True,  # noqa: E712
+                User.status == UserStatus.APPROVED,
+            )
+        )
+        active_admin_count = active_admin_count_result.scalar() or 0
+        if active_admin_count == 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot disable last active admin",
+            )
+
     # Update provided fields
     update_data = user_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():

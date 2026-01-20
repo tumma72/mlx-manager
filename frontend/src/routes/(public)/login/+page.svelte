@@ -51,10 +51,13 @@
 				}
 			} else {
 				const token = await auth.login(email, password);
+				// Store token first so auth.me() can use it
+				authStore.token = token.access_token;
 				const user = await auth.me();
 
 				// Handle non-approved users (backend returns 403, but just in case)
 				if (user.status !== 'approved') {
+					authStore.clearAuth();
 					error = 'Your account is pending approval. Please wait for an administrator to approve your access.';
 					loading = false;
 					return;
