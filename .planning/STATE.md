@@ -76,7 +76,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-1. **Standardize profile/server tile buttons** — Use smaller button style from ServerTile across both ProfileTile and ServerTile (UI polish)
+1. **Local models don't show characteristics** — Model list doesn't display characteristics badges for local models (frontend)
+2. **Standardize profile/server tile buttons** — Use smaller button style from ServerTile across both ProfileTile and ServerTile (UI polish)
 
 ### Known Gaps
 
