@@ -241,7 +241,11 @@ class HuggingFaceClient:
         If hf_organization is set, only lists models from that organization.
         If hf_organization is None, lists all models with 'mlx' in the path
         (common convention for MLX-optimized models).
+
+        Includes model characteristics extracted from config.json when available.
         """
+        from mlx_manager.utils.model_detection import extract_characteristics_from_model
+
         if settings.offline_mode:
             return []
 
@@ -282,12 +286,16 @@ class HuggingFaceClient:
                         f.stat().st_size for f in Path(local_path).rglob("*") if f.is_file()
                     )
 
+                    # Extract model characteristics from config.json
+                    characteristics = extract_characteristics_from_model(model_id)
+
                     models.append(
                         LocalModelInfo(
                             model_id=model_id,
                             local_path=local_path,
                             size_bytes=size_bytes,
                             size_gb=round(size_bytes / (1024**3), 2),
+                            characteristics=characteristics,
                         )
                     )
         except Exception:

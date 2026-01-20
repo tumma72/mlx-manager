@@ -224,3 +224,37 @@ def get_model_size_gb(model: ModelInfo) -> float:
 
     # Unknown size
     return 0.0
+
+
+async def fetch_remote_config(
+    model_id: str,
+    timeout: float = 10.0,
+) -> dict[str, object] | None:
+    """Fetch config.json from a HuggingFace model repository.
+
+    Uses the resolve API to fetch the config.json file directly.
+
+    Args:
+        model_id: HuggingFace model ID (e.g., "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+        timeout: Request timeout in seconds
+
+    Returns:
+        Parsed config.json as a dictionary, or None if not available.
+    """
+    url = f"https://huggingface.co/{model_id}/resolve/main/config.json"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=timeout)
+            if response.status_code == 200:
+                data: dict[str, object] = response.json()
+                return data
+            logger.debug(f"Config fetch for {model_id} returned status {response.status_code}")
+    except httpx.TimeoutException:
+        logger.warning(f"Timeout fetching config for {model_id}")
+    except httpx.RequestError as e:
+        logger.warning(f"Error fetching config for {model_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error fetching config for {model_id}: {e}")
+
+    return None

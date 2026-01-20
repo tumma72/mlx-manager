@@ -240,6 +240,7 @@ class LocalModel(SQLModel):
     local_path: str
     size_bytes: int
     size_gb: float
+    characteristics: dict | None = None  # ModelCharacteristics from config.json
 
 
 class SystemMemory(SQLModel):

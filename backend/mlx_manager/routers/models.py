@@ -275,6 +275,38 @@ async def delete_model(
     return {"deleted": True}
 
 
+@router.get("/config/{model_id:path}")
+async def get_model_config(
+    current_user: Annotated[User, Depends(get_current_user)],
+    model_id: str,
+):
+    """Get model characteristics from config.json.
+
+    For local models: reads from HuggingFace cache.
+    For remote models: fetches via HuggingFace resolve API.
+
+    Returns:
+        ModelCharacteristics with architecture, context window, quantization, etc.
+    """
+    from mlx_manager.services.hf_api import fetch_remote_config
+    from mlx_manager.utils.model_detection import (
+        extract_characteristics,
+        extract_characteristics_from_model,
+    )
+
+    # Try local first
+    chars = extract_characteristics_from_model(model_id)
+    if chars:
+        return chars
+
+    # Fetch remote
+    config = await fetch_remote_config(model_id)
+    if config:
+        return extract_characteristics(config)
+
+    raise HTTPException(status_code=404, detail="Config not found")
+
+
 @router.get("/detect-options/{model_id:path}")
 async def detect_model_options(
     current_user: Annotated[User, Depends(get_current_user)],
