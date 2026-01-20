@@ -77,6 +77,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 1. **Standardize profile/server tile buttons** — Use smaller button style from ServerTile across both ProfileTile and ServerTile (UI polish)
+2. **Navbar user profile dropdown** — Replace crowded email+logout with profile icon dropdown; optionally extend User model with username/full_name
 
 ### Known Gaps
 
