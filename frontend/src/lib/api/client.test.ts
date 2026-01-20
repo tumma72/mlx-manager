@@ -799,8 +799,10 @@ describe("ApiError", () => {
   it("clears auth and throws on 401 response", async () => {
     // Mock window.location
     const originalLocation = window.location;
-    delete (window as { location?: Location }).location;
-    window.location = { href: "" } as Location;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (window as any).location;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).location = { href: "" };
 
     // Mock authStore
     const { authStore } = await import("$lib/stores");
@@ -824,7 +826,8 @@ describe("ApiError", () => {
     }
 
     // Restore
-    window.location = originalLocation;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).location = originalLocation;
     clearAuthSpy.mockRestore();
   });
 });

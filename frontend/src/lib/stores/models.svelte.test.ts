@@ -56,7 +56,7 @@ describe("ModelConfigStore", () => {
       );
 
       // Start fetch but don't await
-      const fetchPromise = modelConfigStore.fetchConfig("loading-model");
+      void modelConfigStore.fetchConfig("loading-model");
       flushSync();
 
       const state = modelConfigStore.getConfig("loading-model");
@@ -200,7 +200,7 @@ describe("ModelConfigStore", () => {
         architecture_family: "DeepSeek",
         is_multimodal: false,
         quantization_bits: 4,
-        context_window: 8192,
+        max_position_embeddings: 8192,
       };
       vi.mocked(modelsApi.getConfig).mockResolvedValue(mockCharacteristics);
 
@@ -213,7 +213,7 @@ describe("ModelConfigStore", () => {
       // Now should have data
       const state = modelConfigStore.getConfig("reactive-model");
       expect(state?.characteristics?.architecture_family).toBe("DeepSeek");
-      expect(state?.characteristics?.context_window).toBe(8192);
+      expect(state?.characteristics?.max_position_embeddings).toBe(8192);
     });
   });
 });

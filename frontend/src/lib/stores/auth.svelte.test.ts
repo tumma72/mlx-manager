@@ -8,6 +8,7 @@ function createMockUser(overrides: Partial<User> = {}): User {
     email: "test@example.com",
     is_admin: false,
     status: "approved",
+    created_at: "2024-01-01T00:00:00Z",
     ...overrides,
   };
 }

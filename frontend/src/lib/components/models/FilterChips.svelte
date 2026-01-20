@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FilterState } from './FilterModal.svelte';
+	import type { FilterState } from './filter-types';
 	import { Badge } from '$components/ui';
 	import { X } from 'lucide-svelte';
 

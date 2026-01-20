@@ -1,37 +1,13 @@
-<script lang="ts" module>
-	export interface FilterState {
-		architectures: string[];
-		multimodal: boolean | null;
-		quantization: number[];
-	}
-
-	export const ARCHITECTURE_OPTIONS = [
-		'Llama',
-		'Qwen',
-		'Mistral',
-		'Gemma',
-		'Phi',
-		'DeepSeek',
-		'StarCoder',
-		'GLM',
-		'MiniMax'
-	];
-
-	export const QUANTIZATION_OPTIONS = [2, 3, 4, 8, 16];
-
-	export function createEmptyFilters(): FilterState {
-		return {
-			architectures: [],
-			multimodal: null,
-			quantization: []
-		};
-	}
-</script>
-
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { Button } from '$components/ui';
 	import { X } from 'lucide-svelte';
+	import {
+		type FilterState,
+		ARCHITECTURE_OPTIONS,
+		QUANTIZATION_OPTIONS,
+		createEmptyFilters
+	} from './filter-types';
 
 	interface Props {
 		open: boolean;
