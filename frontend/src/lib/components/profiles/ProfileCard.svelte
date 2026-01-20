@@ -365,53 +365,44 @@
 			</div>
 		</div>
 
-		<div class="flex items-center gap-2 flex-shrink-0">
+		<div class="flex shrink-0 gap-1">
 			<!-- Server Control Buttons -->
 			{#if isRunning}
-				<Button
-					variant="default"
-					size="sm"
-					onclick={handleChat}
-					disabled={loading}
-					title="Chat with model"
-				>
-					<MessageSquare class="w-4 h-4 mr-1" />
-					Chat
+				<Button variant="outline" size="sm" onclick={handleChat} disabled={loading} title="Chat">
+					<MessageSquare class="h-4 w-4" />
 				</Button>
-				<Button variant="outline" size="icon" onclick={handleStop} disabled={loading} title="Stop">
-					<Square class="w-4 h-4" />
+				<Button variant="outline" size="sm" onclick={handleRestart} disabled={loading} title="Restart">
+					<RotateCw class="h-4 w-4" />
 				</Button>
-				<Button variant="outline" size="icon" onclick={handleRestart} disabled={loading} title="Restart">
-					<RotateCw class="w-4 h-4" />
+				<Button variant="destructive" size="sm" onclick={handleStop} disabled={loading} title="Stop">
+					<Square class="h-4 w-4" />
 				</Button>
 			{:else if isStarting}
-				<Button variant="default" size="sm" disabled title="Starting...">
-					<Loader2 class="w-4 h-4 mr-1 animate-spin" />
-					Starting
+				<Button variant="outline" size="sm" disabled title="Starting...">
+					<Loader2 class="h-4 w-4 animate-spin" />
 				</Button>
-				<Button variant="outline" size="icon" onclick={handleStop} disabled={loading} title="Cancel">
-					<Square class="w-4 h-4" />
+				<Button variant="destructive" size="sm" onclick={handleStop} disabled={loading} title="Cancel">
+					<Square class="h-4 w-4" />
 				</Button>
 			{:else}
 				<Button variant="default" size="sm" onclick={handleStart} disabled={loading} title="Start">
 					{#if loading}
-						<Loader2 class="w-4 h-4 mr-1 animate-spin" />
+						<Loader2 class="h-4 w-4 animate-spin" />
 					{:else}
-						<Play class="w-4 h-4 mr-1" />
+						<Play class="h-4 w-4" />
 					{/if}
-					Start
 				</Button>
 			{/if}
 
 			<!-- Management Buttons (always shown) -->
-			<Button variant="outline" size="icon" href={`/profiles/${profile.id}`} title="Edit">
-				<Edit class="w-4 h-4" />
+			<Button variant="outline" size="sm" href={`/profiles/${profile.id}`} title="Edit">
+				<Edit class="h-4 w-4" />
 			</Button>
-			<Button variant="outline" size="icon" onclick={handleDuplicate} disabled={loading} title="Duplicate">
-				<Copy class="w-4 h-4" />
+			<Button variant="outline" size="sm" onclick={handleDuplicate} disabled={loading} title="Duplicate">
+				<Copy class="h-4 w-4" />
 			</Button>
-			<Button variant="outline" size="icon" onclick={handleDelete} disabled={loading} title="Delete">
-				<Trash2 class="w-4 h-4" />
+			<Button variant="outline" size="sm" onclick={handleDelete} disabled={loading} title="Delete">
+				<Trash2 class="h-4 w-4" />
 			</Button>
 		</div>
 	</div>
