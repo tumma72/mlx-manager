@@ -174,3 +174,34 @@ export interface ParserOptions {
   reasoning_parsers: string[];
   message_converters: string[];
 }
+
+// Auth types
+export type UserStatus = "pending" | "approved" | "disabled";
+
+export interface User {
+  id: number;
+  email: string;
+  is_admin: boolean;
+  status: UserStatus;
+  created_at: string;
+}
+
+export interface Token {
+  access_token: string;
+  token_type: string;
+}
+
+export interface UserCreate {
+  email: string;
+  password: string;
+}
+
+export interface PasswordReset {
+  password: string;
+}
+
+export interface UserUpdate {
+  email?: string;
+  is_admin?: boolean;
+  status?: UserStatus;
+}
