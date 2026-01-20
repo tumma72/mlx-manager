@@ -21,10 +21,24 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: API key authentication via `MLX_MANAGER_API_KEY` environment variable
-- [ ] **AUTH-02**: When API key is set, all API endpoints require `Authorization: Bearer <key>` header
-- [ ] **AUTH-03**: When API key is not set, API endpoints are open (current behavior for localhost)
-- [ ] **AUTH-04**: Frontend prompts for API key and stores in localStorage when auth is enabled
+- [ ] **AUTH-01**: User registration with email + password (first user becomes admin)
+- [ ] **AUTH-02**: Subsequent users request accounts, admin must approve before active
+- [ ] **AUTH-03**: JWT-based authentication with 7-day session duration
+- [ ] **AUTH-04**: Unauthenticated requests redirect to /login page
+- [ ] **AUTH-05**: Admin user management page (approve, delete, reset passwords)
+- [ ] **AUTH-06**: Pending approval badge count in nav (admin only)
+
+### Model Discovery
+
+- [ ] **DISC-01**: Detect model characteristics from config.json or metadata (architecture, context window, multimodal, KV cache)
+- [ ] **DISC-02**: Visual badges for capabilities (text-only vs multimodal, architecture type, quantization)
+- [ ] **DISC-03**: Filter/search by model characteristics
+
+### Chat Multimodal
+
+- [ ] **CHAT-01**: Thinking model support (collapsible thinking panel, handle various formats)
+- [ ] **CHAT-02**: Multimodal support — attach images via button and drag-drop
+- [ ] **CHAT-03**: Video attachments (frame extraction or direct if model supports)
 
 ### Bug Fixes
 
@@ -38,18 +52,12 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 Deferred to future release. Tracked but not in current roadmap.
 
-### Chat
+### Chat History
 
-- **CHAT-01**: Thinking model support (collapsible thinking panel, handle various formats)
-- **CHAT-02**: Multimodal support — attach images via button and drag-drop
-- **CHAT-03**: Persist chat history to database
-- **CHAT-04**: Chat history sidebar per server
-
-### Model Discovery
-
-- **DISC-01**: Detect model characteristics from config.json or metadata
-- **DISC-02**: Visual badges for capabilities (multimodal, tool support, MCP, thinking, architecture)
-- **DISC-03**: Filter/search by model characteristics
+- **CHAT-04**: Persist chat history to database
+- **CHAT-05**: Chat history sidebar per server
+- **CHAT-06**: Server-scoped chats (switching server loads relevant history)
+- **CHAT-07**: Create new / delete existing chats
 
 ## Out of Scope
 
@@ -57,11 +65,11 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| JWT/user management | Simple API key sufficient for single-user local app |
+| OAuth2/SSO | User-based auth with email+password covers local network use |
 | Cloud deployment | Designed for local Apple Silicon use |
 | Non-MLX models | Focused on mlx-community ecosystem |
 | Windows/Linux support | macOS-specific (launchd, menubar) |
-| Multi-user authentication | Local-only application, API key covers network access |
+| Email-based password recovery | Requires SMTP setup, out of scope for local-first tool |
 
 ## Traceability
 
@@ -79,17 +87,25 @@ Which phases cover which requirements. Updated by create-roadmap.
 | AUTH-02 | Phase 3 | Pending |
 | AUTH-03 | Phase 3 | Pending |
 | AUTH-04 | Phase 3 | Pending |
-| BUGFIX-01 | Phase 4 | Pending |
-| BUGFIX-02 | Phase 4 | Pending |
-| BUGFIX-03 | Phase 4 | Pending |
-| BUGFIX-04 | Phase 4 | Pending |
-| BUGFIX-05 | Phase 4 | Pending |
+| AUTH-05 | Phase 3 | Pending |
+| AUTH-06 | Phase 3 | Pending |
+| DISC-01 | Phase 4 | Pending |
+| DISC-02 | Phase 4 | Pending |
+| DISC-03 | Phase 4 | Pending |
+| CHAT-01 | Phase 5 | Pending |
+| CHAT-02 | Phase 5 | Pending |
+| CHAT-03 | Phase 5 | Pending |
+| BUGFIX-01 | Phase 6 | Pending |
+| BUGFIX-02 | Phase 6 | Pending |
+| BUGFIX-03 | Phase 6 | Pending |
+| BUGFIX-04 | Phase 6 | Pending |
+| BUGFIX-05 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 15 total
-- Mapped to phases: 15 ✓
+- v1.1 requirements: 23 total
+- Mapped to phases: 23 ✓
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-17 after Phase 2 completion*
+*Last updated: 2026-01-20 — added auth, model discovery, chat multimodal to v1.1*

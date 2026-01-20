@@ -13,7 +13,9 @@ Polish the UX for models and server panels, add optional API key authentication 
 - [x] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
 - [x] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
 - [ ] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
-- [ ] **Phase 4: Bug Fixes & Stability** - Logging, cleanup, validation, polling
+- [ ] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
+- [ ] **Phase 5: Chat Multimodal Support** - Image/video attachments, thinking model display
+- [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
 ## Phase Details
 
@@ -72,9 +74,43 @@ Plans:
 - [ ] 03-04: Frontend login/register pages
 - [ ] 03-05: Admin user management page
 
-### Phase 4: Bug Fixes & Stability
-**Goal**: Clean up technical debt: logging, cleanup, validation, polling
+### Phase 4: Model Discovery & Badges
+**Goal**: Detect model characteristics and display visual badges for capabilities
 **Depends on**: Phase 3
+**Requirements**: DISC-01, DISC-02, DISC-03
+**Success Criteria** (what must be TRUE):
+  1. Model config.json parsed to extract: architecture, context window, multimodal support, KV cache
+  2. Visual badges displayed on model tiles (text-only vs multimodal, architecture type)
+  3. Technical specs shown: context window, parameters, quantization level
+  4. Filter/search by model characteristics works
+**Research**: Likely (HuggingFace config.json schema, MLX model metadata patterns)
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: Backend model characteristics extraction
+- [ ] 04-02: Model tile badges and specs display
+- [ ] 04-03: Filter by model characteristics
+
+### Phase 5: Chat Multimodal Support
+**Goal**: Support image/video attachments for testing multimodal models
+**Depends on**: Phase 4
+**Requirements**: CHAT-01, CHAT-02
+**Success Criteria** (what must be TRUE):
+  1. Users can attach images via button and drag-drop
+  2. Attached images display in chat and are sent to model
+  3. Video attachments supported (frame extraction or direct if model supports)
+  4. Thinking models show collapsible thinking panel
+**Research**: Likely (MLX multimodal API, image encoding patterns)
+**Plans**: TBD
+
+Plans:
+- [ ] 05-01: Image attachment UI and encoding
+- [ ] 05-02: Multimodal message API integration
+- [ ] 05-03: Thinking model display
+
+### Phase 6: Bug Fixes & Stability
+**Goal**: Clean up technical debt: logging, cleanup, validation, polling
+**Depends on**: Phase 5
 **Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05
 **Success Criteria** (what must be TRUE):
   1. Silent exceptions are logged (no more `except: pass`)
@@ -86,19 +122,21 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 04-01: Add logging to silent exception handlers
-- [ ] 04-02: Server process cleanup and log file management
-- [ ] 04-03: Replace assertions with HTTPException
-- [ ] 04-04: Fix polling re-renders and remove debug logs
+- [ ] 06-01: Add logging to silent exception handlers
+- [ ] 06-02: Server process cleanup and log file management
+- [ ] 06-03: Replace assertions with HTTPException
+- [ ] 06-04: Fix polling re-renders and remove debug logs
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 0/5 | Not started | - |
-| 4. Bug Fixes & Stability | 0/4 | Not started | - |
+| 4. Model Discovery & Badges | 0/3 | Not started | - |
+| 5. Chat Multimodal Support | 0/3 | Not started | - |
+| 6. Bug Fixes & Stability | 0/4 | Not started | - |
