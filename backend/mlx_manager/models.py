@@ -1,8 +1,75 @@
 """SQLModel database models."""
 
 from datetime import UTC, datetime
+from enum import Enum
 
 from sqlmodel import Field, SQLModel
+
+
+class UserStatus(str, Enum):
+    """User account status."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    DISABLED = "disabled"
+
+
+class UserBase(SQLModel):
+    """Base model for users."""
+
+    email: str = Field(unique=True, index=True)
+
+
+class User(UserBase, table=True):
+    """User database model."""
+
+    __tablename__ = "users"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    hashed_password: str
+    is_admin: bool = Field(default=False)
+    status: UserStatus = Field(default=UserStatus.PENDING)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    approved_at: datetime | None = None
+    approved_by: int | None = Field(default=None, foreign_key="users.id")
+
+
+class UserCreate(SQLModel):
+    """Schema for creating a user (registration)."""
+
+    email: str
+    password: str
+
+
+class UserPublic(UserBase):
+    """Public response model for user (no password)."""
+
+    id: int
+    is_admin: bool
+    status: UserStatus
+    created_at: datetime
+
+
+class UserLogin(SQLModel):
+    """Schema for login request."""
+
+    email: str
+    password: str
+
+
+class UserUpdate(SQLModel):
+    """Schema for admin user updates."""
+
+    email: str | None = None
+    is_admin: bool | None = None
+    status: UserStatus | None = None
+
+
+class Token(SQLModel):
+    """JWT token response."""
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 class ServerProfileBase(SQLModel):

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,11 @@ class Settings(BaseSettings):
     """Application settings."""
 
     model_config = SettingsConfigDict(env_prefix="MLX_MANAGER_")
+
+    # JWT Authentication
+    jwt_secret: str = Field(default="CHANGE_ME_IN_PRODUCTION")
+    jwt_algorithm: str = "HS256"
+    jwt_expire_days: int = 7
 
     # Database
     database_path: Path = Path.home() / ".mlx-manager" / "mlx-manager.db"
