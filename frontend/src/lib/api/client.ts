@@ -17,6 +17,7 @@ import type {
   User,
   Token,
   UserUpdate,
+  ModelCharacteristics,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -295,6 +296,16 @@ export const models = {
     const res = await fetch(`${API_BASE}/models/available-parsers`, {
       headers: getAuthHeaders(),
     });
+    return handleResponse(res);
+  },
+
+  getConfig: async (modelId: string): Promise<ModelCharacteristics> => {
+    const res = await fetch(
+      `${API_BASE}/models/config/${encodeURIComponent(modelId)}`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
     return handleResponse(res);
   },
 };

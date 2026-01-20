@@ -102,11 +102,28 @@ export interface ModelSearchResult {
   last_modified: string | null;
 }
 
+export interface ModelCharacteristics {
+  model_type?: string;
+  architecture_family?: string;
+  max_position_embeddings?: number;
+  num_hidden_layers?: number;
+  hidden_size?: number;
+  vocab_size?: number;
+  num_attention_heads?: number;
+  num_key_value_heads?: number;
+  quantization_bits?: number;
+  quantization_group_size?: number;
+  is_multimodal?: boolean;
+  multimodal_type?: string;
+  use_cache?: boolean;
+}
+
 export interface LocalModel {
   model_id: string;
   local_path: string;
   size_bytes: number;
   size_gb: number;
+  characteristics?: ModelCharacteristics;
 }
 
 export interface SystemMemory {
