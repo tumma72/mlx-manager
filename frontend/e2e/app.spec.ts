@@ -6,6 +6,14 @@ import { test, expect, type Page, type Route } from "@playwright/test";
  */
 
 // Mock data matching our API types
+const mockUser = {
+  id: 1,
+  email: "test@example.com",
+  is_admin: true,
+  status: "approved",
+  created_at: "2024-01-15T10:00:00Z",
+};
+
 const mockProfiles = [
   {
     id: 1,
@@ -59,11 +67,53 @@ const mockModelsSearch = {
 };
 
 /**
+ * Setup authentication by setting localStorage with mock token/user.
+ */
+async function setupAuth(page: Page) {
+  await page.addInitScript(() => {
+    // Set mock auth data in localStorage before the app loads
+    // Keys must match auth.svelte.ts: TOKEN_KEY = "mlx_auth_token", USER_KEY = "mlx_auth_user"
+    localStorage.setItem("mlx_auth_token", "mock-jwt-token");
+    localStorage.setItem("mlx_auth_user", JSON.stringify({
+      id: 1,
+      email: "test@example.com",
+      is_admin: true,
+      status: "approved",
+      created_at: "2024-01-15T10:00:00Z",
+    }));
+  });
+}
+
+/**
  * Setup API mocks for all routes.
  */
 async function setupApiMocks(page: Page) {
-  await page.route("**/api/**", async (route: Route) => {
+  // Only intercept actual API calls to localhost/api
+  await page.route(/\/api\//, async (route: Route) => {
     const url = route.request().url();
+
+    // Extra safety: skip if URL doesn't have /api/ path
+    const urlObj = new URL(url);
+    if (!urlObj.pathname.startsWith("/api/")) {
+      return route.continue();
+    }
+
+    // Auth endpoints - return mock user for authenticated requests
+    if (url.includes("/api/auth/me")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mockUser),
+      });
+    }
+
+    if (url.includes("/api/auth/users/pending/count")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ count: 0 }),
+      });
+    }
 
     if (url.includes("/api/servers")) {
       return route.fulfill({
@@ -152,6 +202,7 @@ async function setupApiMocks(page: Page) {
 
 test.describe("Page Loading", () => {
   test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
     await setupApiMocks(page);
   });
 
@@ -187,6 +238,7 @@ test.describe("Page Loading", () => {
 
 test.describe("Navigation", () => {
   test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
     await setupApiMocks(page);
   });
 
@@ -208,6 +260,7 @@ test.describe("Navigation", () => {
 
 test.describe("API Integration", () => {
   test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
     await setupApiMocks(page);
   });
 
@@ -238,6 +291,10 @@ test.describe("API Integration", () => {
 });
 
 test.describe("Error Handling", () => {
+  test.beforeEach(async ({ page }) => {
+    await setupAuth(page);
+  });
+
   test("handles 500 errors gracefully", async ({ page }) => {
     await page.route("**/api/**", async (route) => {
       await route.fulfill({
