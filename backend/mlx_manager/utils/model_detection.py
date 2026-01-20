@@ -13,8 +13,41 @@ from pathlib import Path
 from typing import Any
 
 from mlx_manager.config import settings
+from mlx_manager.types import ModelCharacteristics
 
 logger = logging.getLogger(__name__)
+
+# Mapping from model_type patterns to normalized architecture family names
+ARCHITECTURE_FAMILIES: dict[str, str] = {
+    "llama": "Llama",
+    "mllama": "Llama",  # Multi-modal Llama
+    "qwen": "Qwen",
+    "qwen2": "Qwen",
+    "qwen3": "Qwen",
+    "mistral": "Mistral",
+    "mixtral": "Mixtral",
+    "gemma": "Gemma",
+    "gemma2": "Gemma",
+    "phi": "Phi",
+    "phi3": "Phi",
+    "starcoder": "StarCoder",
+    "starcoder2": "StarCoder",
+    "deepseek": "DeepSeek",
+    "deepseek_v3": "DeepSeek",
+    "glm": "GLM",
+    "chatglm": "GLM",
+    "minimax": "MiniMax",
+    "falcon": "Falcon",
+    "yi": "Yi",
+    "internlm": "InternLM",
+    "internlm2": "InternLM",
+    "baichuan": "Baichuan",
+    "cohere": "Cohere",
+    "command": "Cohere",
+    "olmo": "OLMo",
+    "nemotron": "Nemotron",
+    "granite": "Granite",
+}
 
 # Minimum mlx-lm version requirements for model families
 # MiniMax support was added in mlx-lm v0.28.4
@@ -305,3 +338,155 @@ def get_model_detection_info(model_id: str) -> dict:
         "is_downloaded": is_downloaded,
         "version_support": version_support,
     }
+
+
+def detect_multimodal(config: dict[str, Any]) -> tuple[bool, str | None]:
+    """
+    Detect if a model is multimodal and its type.
+
+    Checks for common multimodal indicators in config.json:
+    - vision_config key (most reliable)
+    - image_token_id or video_token_id keys
+    - "vl", "vision", or "multimodal" in model_type or architectures
+
+    Args:
+        config: Parsed config.json dictionary
+
+    Returns:
+        Tuple of (is_multimodal, multimodal_type) where multimodal_type
+        is "vision" for vision-language models, None otherwise.
+    """
+    # Check for vision_config key (most common for VL models)
+    if "vision_config" in config:
+        return (True, "vision")
+
+    # Check for image/video token IDs
+    if "image_token_id" in config or "video_token_id" in config:
+        return (True, "vision")
+
+    # Check model_type for multimodal indicators
+    model_type = config.get("model_type", "").lower()
+    if any(indicator in model_type for indicator in ("vl", "vision", "multimodal")):
+        return (True, "vision")
+
+    # Check architectures list
+    architectures = config.get("architectures", [])
+    for arch in architectures:
+        arch_lower = arch.lower()
+        if any(indicator in arch_lower for indicator in ("vl", "vision", "multimodal")):
+            return (True, "vision")
+
+    return (False, None)
+
+
+def normalize_architecture(config: dict[str, Any]) -> str:
+    """
+    Normalize model architecture to a family name.
+
+    Extracts model_type from config and maps to a standardized family name
+    using ARCHITECTURE_FAMILIES. Falls back to architectures[0] or "Unknown".
+
+    Args:
+        config: Parsed config.json dictionary
+
+    Returns:
+        Normalized architecture family name (e.g., "Llama", "Qwen", "Mistral")
+    """
+    model_type = config.get("model_type", "").lower()
+
+    # Try exact match first
+    if model_type in ARCHITECTURE_FAMILIES:
+        return ARCHITECTURE_FAMILIES[model_type]
+
+    # Try partial match (for variants like "qwen2_vl")
+    for key, family in ARCHITECTURE_FAMILIES.items():
+        if key in model_type:
+            return family
+
+    # Fall back to architectures field
+    architectures = config.get("architectures", [])
+    if architectures:
+        arch = architectures[0].lower()
+        # Try to match from architecture class name (e.g., "Qwen2ForCausalLM")
+        for key, family in ARCHITECTURE_FAMILIES.items():
+            if key in arch:
+                return family
+
+    return "Unknown"
+
+
+def extract_characteristics(config: dict[str, Any]) -> ModelCharacteristics:
+    """
+    Extract model characteristics from config.json.
+
+    Builds a ModelCharacteristics TypedDict from the config dictionary,
+    handling missing fields gracefully with defaults.
+
+    Args:
+        config: Parsed config.json dictionary
+
+    Returns:
+        ModelCharacteristics with all available fields populated
+    """
+    is_multimodal, multimodal_type = detect_multimodal(config)
+
+    # Extract quantization info (MLX models often have this)
+    quantization = config.get("quantization", {})
+    quantization_bits = quantization.get("bits") if isinstance(quantization, dict) else None
+    quantization_group_size = (
+        quantization.get("group_size") if isinstance(quantization, dict) else None
+    )
+
+    characteristics: ModelCharacteristics = {
+        "model_type": config.get("model_type", ""),
+        "architecture_family": normalize_architecture(config),
+        "is_multimodal": is_multimodal,
+        "multimodal_type": multimodal_type,
+        "use_cache": config.get("use_cache", True),
+    }
+
+    # Add optional numeric fields if present
+    if "max_position_embeddings" in config:
+        characteristics["max_position_embeddings"] = config["max_position_embeddings"]
+
+    if "num_hidden_layers" in config:
+        characteristics["num_hidden_layers"] = config["num_hidden_layers"]
+
+    if "hidden_size" in config:
+        characteristics["hidden_size"] = config["hidden_size"]
+
+    if "vocab_size" in config:
+        characteristics["vocab_size"] = config["vocab_size"]
+
+    if "num_attention_heads" in config:
+        characteristics["num_attention_heads"] = config["num_attention_heads"]
+
+    if "num_key_value_heads" in config:
+        characteristics["num_key_value_heads"] = config["num_key_value_heads"]
+
+    if quantization_bits is not None:
+        characteristics["quantization_bits"] = quantization_bits
+
+    if quantization_group_size is not None:
+        characteristics["quantization_group_size"] = quantization_group_size
+
+    return characteristics
+
+
+def extract_characteristics_from_model(model_id: str) -> ModelCharacteristics | None:
+    """
+    Extract characteristics from a locally downloaded model.
+
+    Reads config.json from the HuggingFace cache and extracts characteristics.
+    Returns None if the model is not downloaded or config.json is not available.
+
+    Args:
+        model_id: HuggingFace model ID (e.g., "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+
+    Returns:
+        ModelCharacteristics or None if model not available
+    """
+    config = read_model_config(model_id)
+    if config is None:
+        return None
+    return extract_characteristics(config)

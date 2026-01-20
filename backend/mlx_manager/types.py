@@ -79,3 +79,21 @@ class LaunchdStatus(TypedDict, total=False):
     label: str
     plist_path: str
     pid: int | None
+
+
+class ModelCharacteristics(TypedDict, total=False):
+    """Model characteristics extracted from config.json."""
+
+    model_type: str  # Raw model_type from config
+    architecture_family: str  # Normalized: "Llama", "Qwen", "Mistral", etc.
+    max_position_embeddings: int  # Context window size
+    num_hidden_layers: int
+    hidden_size: int
+    vocab_size: int
+    num_attention_heads: int
+    num_key_value_heads: int | None  # GQA heads (if different from attention heads)
+    quantization_bits: int | None  # 2, 3, 4, 8, or None for fp16/bf16
+    quantization_group_size: int | None
+    is_multimodal: bool
+    multimodal_type: str | None  # "vision" or None
+    use_cache: bool  # KV cache enabled (default True)
