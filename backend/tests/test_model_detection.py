@@ -4,13 +4,18 @@ import json
 from unittest.mock import patch
 
 from mlx_manager.utils.model_detection import (
+    ARCHITECTURE_FAMILIES,
     MODEL_FAMILY_MIN_VERSIONS,
     check_mlx_lm_support,
     detect_model_family,
+    detect_multimodal,
+    extract_characteristics,
+    extract_characteristics_from_model,
     get_local_model_path,
     get_mlx_lm_version,
     get_model_detection_info,
     get_parser_options,
+    normalize_architecture,
     parse_version,
     read_model_config,
 )
@@ -530,3 +535,309 @@ class TestDetectModelFamilyVariants:
             mock_settings.hf_cache_path = tmp_path
             result = detect_model_family("mlx-community/SolarModel")
             assert result == "solar"
+
+
+# ============================================================================
+# Tests for ModelCharacteristics extraction (Phase 4)
+# ============================================================================
+
+
+class TestExtractCharacteristics:
+    """Tests for extract_characteristics function."""
+
+    def test_extracts_all_fields_from_complete_config(self):
+        """Test extracting all fields from a complete config."""
+        config = {
+            "model_type": "qwen2",
+            "architectures": ["Qwen2ForCausalLM"],
+            "max_position_embeddings": 32768,
+            "num_hidden_layers": 28,
+            "hidden_size": 3584,
+            "vocab_size": 152064,
+            "num_attention_heads": 28,
+            "num_key_value_heads": 4,
+            "use_cache": True,
+            "quantization": {"bits": 4, "group_size": 64},
+        }
+        chars = extract_characteristics(config)
+
+        assert chars["model_type"] == "qwen2"
+        assert chars["architecture_family"] == "Qwen"
+        assert chars["max_position_embeddings"] == 32768
+        assert chars["num_hidden_layers"] == 28
+        assert chars["hidden_size"] == 3584
+        assert chars["vocab_size"] == 152064
+        assert chars["num_attention_heads"] == 28
+        assert chars["num_key_value_heads"] == 4
+        assert chars["quantization_bits"] == 4
+        assert chars["quantization_group_size"] == 64
+        assert chars["is_multimodal"] is False
+        assert chars["multimodal_type"] is None
+        assert chars["use_cache"] is True
+
+    def test_extracts_minimal_config(self):
+        """Test extracting from minimal config with only model_type."""
+        config = {"model_type": "llama"}
+        chars = extract_characteristics(config)
+
+        assert chars["model_type"] == "llama"
+        assert chars["architecture_family"] == "Llama"
+        assert chars["is_multimodal"] is False
+        assert "max_position_embeddings" not in chars
+        assert "quantization_bits" not in chars
+
+    def test_handles_missing_fields_gracefully(self):
+        """Test handles missing fields with defaults."""
+        config = {}
+        chars = extract_characteristics(config)
+
+        assert chars["model_type"] == ""
+        assert chars["architecture_family"] == "Unknown"
+        assert chars["is_multimodal"] is False
+        assert chars["use_cache"] is True
+
+    def test_handles_quantization_without_bits(self):
+        """Test handles quantization config without bits field."""
+        config = {
+            "model_type": "llama",
+            "quantization": {"group_size": 64},
+        }
+        chars = extract_characteristics(config)
+
+        assert "quantization_bits" not in chars
+        assert chars["quantization_group_size"] == 64
+
+    def test_handles_non_dict_quantization(self):
+        """Test handles quantization as non-dict value."""
+        config = {
+            "model_type": "llama",
+            "quantization": "4bit",  # String instead of dict
+        }
+        chars = extract_characteristics(config)
+
+        assert "quantization_bits" not in chars
+        assert "quantization_group_size" not in chars
+
+
+class TestDetectMultimodal:
+    """Tests for detect_multimodal function."""
+
+    def test_detects_vision_config_as_multimodal(self):
+        """Test vision_config key indicates multimodal."""
+        config = {"model_type": "qwen2_vl", "vision_config": {"image_size": 224}}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_image_token_id_as_multimodal(self):
+        """Test image_token_id key indicates multimodal."""
+        config = {"model_type": "llava", "image_token_id": 32000}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_video_token_id_as_multimodal(self):
+        """Test video_token_id key indicates multimodal."""
+        config = {"model_type": "video_llm", "video_token_id": 32001}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_vl_in_model_type(self):
+        """Test 'vl' in model_type indicates multimodal."""
+        config = {"model_type": "qwen2_vl"}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_vision_in_model_type(self):
+        """Test 'vision' in model_type indicates multimodal."""
+        config = {"model_type": "llama_vision"}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_multimodal_in_architectures(self):
+        """Test 'multimodal' in architectures indicates multimodal."""
+        config = {"architectures": ["MultimodalLlamaForCausalLM"]}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_detects_vision_in_architectures(self):
+        """Test 'vision' in architectures indicates multimodal."""
+        config = {"architectures": ["VisionLlamaForCausalLM"]}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
+    def test_text_only_model(self):
+        """Test text-only model returns False."""
+        config = {"model_type": "llama", "architectures": ["LlamaForCausalLM"]}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is False
+        assert mm_type is None
+
+    def test_empty_config(self):
+        """Test empty config returns False."""
+        config = {}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is False
+        assert mm_type is None
+
+
+class TestNormalizeArchitecture:
+    """Tests for normalize_architecture function."""
+
+    def test_normalizes_qwen2_to_qwen(self):
+        """Test qwen2 normalizes to Qwen."""
+        config = {"model_type": "qwen2"}
+        assert normalize_architecture(config) == "Qwen"
+
+    def test_normalizes_llama_to_llama(self):
+        """Test llama normalizes to Llama."""
+        config = {"model_type": "llama"}
+        assert normalize_architecture(config) == "Llama"
+
+    def test_normalizes_mistral_to_mistral(self):
+        """Test mistral normalizes to Mistral."""
+        config = {"model_type": "mistral"}
+        assert normalize_architecture(config) == "Mistral"
+
+    def test_normalizes_gemma2_to_gemma(self):
+        """Test gemma2 normalizes to Gemma."""
+        config = {"model_type": "gemma2"}
+        assert normalize_architecture(config) == "Gemma"
+
+    def test_normalizes_phi3_to_phi(self):
+        """Test phi3 normalizes to Phi."""
+        config = {"model_type": "phi3"}
+        assert normalize_architecture(config) == "Phi"
+
+    def test_partial_match_qwen2_vl(self):
+        """Test partial match for qwen2_vl."""
+        config = {"model_type": "qwen2_vl"}
+        assert normalize_architecture(config) == "Qwen"
+
+    def test_fallback_to_architectures(self):
+        """Test falls back to architectures field."""
+        config = {"architectures": ["DeepseekV3ForCausalLM"]}
+        assert normalize_architecture(config) == "DeepSeek"
+
+    def test_returns_unknown_for_unrecognized(self):
+        """Test returns Unknown for unrecognized model."""
+        config = {"model_type": "totally_new_model"}
+        assert normalize_architecture(config) == "Unknown"
+
+    def test_returns_unknown_for_empty_config(self):
+        """Test returns Unknown for empty config."""
+        config = {}
+        assert normalize_architecture(config) == "Unknown"
+
+
+class TestExtractCharacteristicsFromModel:
+    """Tests for extract_characteristics_from_model function."""
+
+    def test_returns_characteristics_for_downloaded_model(self, tmp_path):
+        """Test returns characteristics when model is downloaded."""
+        model_dir = tmp_path / "models--mlx-community--test-model" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        config = {
+            "model_type": "qwen2",
+            "max_position_embeddings": 32768,
+            "num_hidden_layers": 28,
+            "quantization": {"bits": 4},
+        }
+        (model_dir / "config.json").write_text(json.dumps(config))
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = extract_characteristics_from_model("mlx-community/test-model")
+
+        assert result is not None
+        assert result["architecture_family"] == "Qwen"
+        assert result["max_position_embeddings"] == 32768
+        assert result["quantization_bits"] == 4
+
+    def test_returns_none_when_model_not_downloaded(self, tmp_path):
+        """Test returns None when model is not downloaded."""
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = extract_characteristics_from_model("mlx-community/nonexistent")
+
+        assert result is None
+
+    def test_returns_none_when_config_missing(self, tmp_path):
+        """Test returns None when config.json is missing."""
+        model_dir = tmp_path / "models--mlx-community--no-config" / "snapshots" / "abc"
+        model_dir.mkdir(parents=True)
+        # No config.json file
+
+        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            result = extract_characteristics_from_model("mlx-community/no-config")
+
+        assert result is None
+
+
+class TestArchitectureFamiliesMapping:
+    """Tests for ARCHITECTURE_FAMILIES constant."""
+
+    def test_has_major_architectures(self):
+        """Test includes all major model architectures."""
+        expected = [
+            "llama",
+            "qwen",
+            "mistral",
+            "gemma",
+            "phi",
+            "deepseek",
+            "glm",
+            "minimax",
+            "falcon",
+        ]
+        for arch in expected:
+            assert arch in ARCHITECTURE_FAMILIES, f"Missing architecture: {arch}"
+
+    def test_maps_to_display_names(self):
+        """Test maps to proper display names."""
+        assert ARCHITECTURE_FAMILIES["llama"] == "Llama"
+        assert ARCHITECTURE_FAMILIES["qwen2"] == "Qwen"
+        assert ARCHITECTURE_FAMILIES["mistral"] == "Mistral"
+        assert ARCHITECTURE_FAMILIES["deepseek_v3"] == "DeepSeek"
+        assert ARCHITECTURE_FAMILIES["minimax"] == "MiniMax"
+
+
+class TestQuantizationExtraction:
+    """Tests for quantization info extraction."""
+
+    def test_extracts_4bit_quantization(self):
+        """Test extracts 4-bit quantization."""
+        config = {"quantization": {"bits": 4, "group_size": 64}}
+        chars = extract_characteristics(config)
+        assert chars["quantization_bits"] == 4
+        assert chars["quantization_group_size"] == 64
+
+    def test_extracts_8bit_quantization(self):
+        """Test extracts 8-bit quantization."""
+        config = {"quantization": {"bits": 8}}
+        chars = extract_characteristics(config)
+        assert chars["quantization_bits"] == 8
+
+    def test_extracts_3bit_quantization(self):
+        """Test extracts 3-bit quantization."""
+        config = {"quantization": {"bits": 3, "group_size": 128}}
+        chars = extract_characteristics(config)
+        assert chars["quantization_bits"] == 3
+
+    def test_no_quantization_returns_none(self):
+        """Test no quantization config returns None for bits."""
+        config = {"model_type": "llama"}
+        chars = extract_characteristics(config)
+        assert "quantization_bits" not in chars
+
+    def test_empty_quantization_returns_none(self):
+        """Test empty quantization dict returns None for bits."""
+        config = {"quantization": {}}
+        chars = extract_characteristics(config)
+        assert "quantization_bits" not in chars
