@@ -21,12 +21,12 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: User registration with email + password (first user becomes admin)
-- [ ] **AUTH-02**: Subsequent users request accounts, admin must approve before active
-- [ ] **AUTH-03**: JWT-based authentication with 7-day session duration
-- [ ] **AUTH-04**: Unauthenticated requests redirect to /login page
-- [ ] **AUTH-05**: Admin user management page (approve, delete, reset passwords)
-- [ ] **AUTH-06**: Pending approval badge count in nav (admin only)
+- [x] **AUTH-01**: User registration with email + password (first user becomes admin)
+- [x] **AUTH-02**: Subsequent users request accounts, admin must approve before active
+- [x] **AUTH-03**: JWT-based authentication with 7-day session duration
+- [x] **AUTH-04**: Unauthenticated requests redirect to /login page
+- [x] **AUTH-05**: Admin user management page (approve, delete, reset passwords)
+- [x] **AUTH-06**: Pending approval badge count in nav (admin only)
 
 ### Model Discovery
 
@@ -83,12 +83,12 @@ Which phases cover which requirements. Updated by create-roadmap.
 | SERVER-01 | Phase 2 | Complete |
 | SERVER-02 | Phase 2 | Complete |
 | SERVER-03 | Phase 2 | Complete |
-| AUTH-01 | Phase 3 | Pending |
-| AUTH-02 | Phase 3 | Pending |
-| AUTH-03 | Phase 3 | Pending |
-| AUTH-04 | Phase 3 | Pending |
-| AUTH-05 | Phase 3 | Pending |
-| AUTH-06 | Phase 3 | Pending |
+| AUTH-01 | Phase 3 | Complete |
+| AUTH-02 | Phase 3 | Complete |
+| AUTH-03 | Phase 3 | Complete |
+| AUTH-04 | Phase 3 | Complete |
+| AUTH-05 | Phase 3 | Complete |
+| AUTH-06 | Phase 3 | Complete |
 | DISC-01 | Phase 4 | Pending |
 | DISC-02 | Phase 4 | Pending |
 | DISC-03 | Phase 4 | Pending |
