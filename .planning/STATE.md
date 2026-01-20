@@ -68,7 +68,6 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 1. **Restore test coverage to 95%+** — Backend at 88%, 33 skipped tests need audit
-2. **Create 03-04-SUMMARY.md** — Plan was executed but summary missing
 
 ### Known Gaps
 
