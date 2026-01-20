@@ -17,8 +17,10 @@
 Running local LLMs typically requires juggling multiple tools, config files, and terminal commands. MLX Manager gives you:
 
 - **One-click model downloads** from HuggingFace MLX models (mlx-community, lmstudio-community, and more)
+- **Smart model discovery** - filter by architecture (Llama, Qwen, Mistral), quantization (4-bit, 8-bit), and capabilities (multimodal, tool use)
 - **Visual server management** - start, stop, and monitor models with real-time CPU/memory metrics
 - **Built-in chat interface** - test your models directly in the browser
+- **User authentication** - secure multi-user access with admin controls
 - **OpenAI-compatible API** - use your local models with any OpenAI client
 - **Background service** - models auto-start on login via macOS launchd
 - **Menubar app** - quick access from your Mac's status bar
@@ -44,10 +46,36 @@ mlx-manager serve
 
 Open http://localhost:8080 and you're ready to:
 
-1. **Browse** - Search HuggingFace for MLX-optimized models
-2. **Download** - One-click download with progress tracking
-3. **Configure** - Create a server profile with custom settings
-4. **Run** - Start serving and chat with your model
+1. **Register** - Create your account (first user becomes admin)
+2. **Browse** - Search HuggingFace for MLX-optimized models
+3. **Filter** - Find models by architecture, quantization, or capabilities
+4. **Download** - One-click download with progress tracking
+5. **Configure** - Create a server profile with custom settings
+6. **Run** - Start serving and chat with your model
+
+## Features
+
+### Model Discovery
+
+Browse and filter models with rich metadata:
+- **Architecture badges** - Llama, Qwen, Mistral, Gemma, Phi, and more
+- **Quantization info** - 4-bit, 8-bit quantization levels
+- **Capability detection** - Multimodal (vision), tool use support
+- **Toggle view** - Switch between your downloaded models and HuggingFace search
+
+### User Management
+
+Secure multi-user support:
+- **JWT authentication** - Secure token-based auth
+- **Admin controls** - Approve/disable users, manage permissions
+- **First-user admin** - Initial user automatically becomes administrator
+
+### Server Monitoring
+
+Real-time server metrics:
+- Memory usage and CPU/GPU utilization
+- Server uptime tracking
+- One-click start/stop/restart controls
 
 ## System Requirements
 
@@ -72,6 +100,7 @@ Environment variables (all optional):
 |----------|---------|-------------|
 | `MLX_MANAGER_DATABASE_PATH` | `~/.mlx-manager/mlx-manager.db` | Database location |
 | `MLX_MANAGER_DEFAULT_PORT_START` | `10240` | Starting port for servers |
+| `MLX_MANAGER_JWT_SECRET` | Auto-generated | JWT signing secret |
 
 ## Development
 
@@ -80,7 +109,7 @@ git clone https://github.com/tumma72/mlx-manager.git
 cd mlx-manager
 make install-dev  # Install dependencies
 make dev          # Start dev servers
-make test         # Run tests
+make test         # Run tests (1000+ tests)
 ```
 
 ## License
