@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_get_memory(client):
+async def test_get_memory(auth_client):
     """Test getting system memory information."""
     gib = 1024**3  # Binary gibibyte (1,073,741,824 bytes)
 
@@ -22,7 +22,7 @@ async def test_get_memory(client):
         mock_mem.available = 64 * gib  # 64 GiB
         mock_psutil.virtual_memory.return_value = mock_mem
 
-        response = await client.get("/api/system/memory")
+        response = await auth_client.get("/api/system/memory")
         assert response.status_code == 200
 
         data = response.json()
@@ -35,9 +35,9 @@ async def test_get_memory(client):
 
 
 @pytest.mark.asyncio
-async def test_get_system_info(client):
+async def test_get_system_info(auth_client):
     """Test getting system information."""
-    response = await client.get("/api/system/info")
+    response = await auth_client.get("/api/system/info")
     assert response.status_code == 200
 
     data = response.json()
@@ -51,14 +51,14 @@ async def test_get_system_info(client):
 
 
 @pytest.mark.asyncio
-async def test_install_launchd_service(client, sample_profile_data, mock_launchd_manager):
+async def test_install_launchd_service(auth_client, sample_profile_data, mock_launchd_manager):
     """Test installing a launchd service."""
     # Create a profile
-    create_response = await client.post("/api/profiles", json=sample_profile_data)
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
     # Install launchd service
-    response = await client.post(f"/api/system/launchd/install/{profile_id}")
+    response = await auth_client.post(f"/api/system/launchd/install/{profile_id}")
     assert response.status_code == 200
 
     data = response.json()
@@ -67,43 +67,43 @@ async def test_install_launchd_service(client, sample_profile_data, mock_launchd
 
 
 @pytest.mark.asyncio
-async def test_install_launchd_service_profile_not_found(client, mock_launchd_manager):
+async def test_install_launchd_service_profile_not_found(auth_client, mock_launchd_manager):
     """Test installing launchd service for non-existent profile."""
-    response = await client.post("/api/system/launchd/install/999")
+    response = await auth_client.post("/api/system/launchd/install/999")
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_uninstall_launchd_service(client, sample_profile_data, mock_launchd_manager):
+async def test_uninstall_launchd_service(auth_client, sample_profile_data, mock_launchd_manager):
     """Test uninstalling a launchd service."""
     # Create a profile
-    create_response = await client.post("/api/profiles", json=sample_profile_data)
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
     # First install
-    await client.post(f"/api/system/launchd/install/{profile_id}")
+    await auth_client.post(f"/api/system/launchd/install/{profile_id}")
 
     # Then uninstall
-    response = await client.post(f"/api/system/launchd/uninstall/{profile_id}")
+    response = await auth_client.post(f"/api/system/launchd/uninstall/{profile_id}")
     assert response.status_code == 204
 
 
 @pytest.mark.asyncio
-async def test_uninstall_launchd_service_profile_not_found(client, mock_launchd_manager):
+async def test_uninstall_launchd_service_profile_not_found(auth_client, mock_launchd_manager):
     """Test uninstalling launchd service for non-existent profile."""
-    response = await client.post("/api/system/launchd/uninstall/999")
+    response = await auth_client.post("/api/system/launchd/uninstall/999")
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_launchd_status(client, sample_profile_data, mock_launchd_manager):
+async def test_get_launchd_status(auth_client, sample_profile_data, mock_launchd_manager):
     """Test getting launchd service status."""
     # Create a profile
-    create_response = await client.post("/api/profiles", json=sample_profile_data)
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
     # Get status
-    response = await client.get(f"/api/system/launchd/status/{profile_id}")
+    response = await auth_client.get(f"/api/system/launchd/status/{profile_id}")
     assert response.status_code == 200
 
     data = response.json()
@@ -113,9 +113,9 @@ async def test_get_launchd_status(client, sample_profile_data, mock_launchd_mana
 
 
 @pytest.mark.asyncio
-async def test_get_launchd_status_profile_not_found(client, mock_launchd_manager):
+async def test_get_launchd_status_profile_not_found(auth_client, mock_launchd_manager):
     """Test getting launchd status for non-existent profile."""
-    response = await client.get("/api/system/launchd/status/999")
+    response = await auth_client.get("/api/system/launchd/status/999")
     assert response.status_code == 404
 
 
@@ -179,7 +179,7 @@ class TestGetSystemInfoExceptions:
     """Tests for exception handling in get_system_info endpoint."""
 
     @pytest.mark.asyncio
-    async def test_chip_info_exception_returns_unknown(self, client):
+    async def test_chip_info_exception_returns_unknown(self, auth_client):
         """Test chip info returns Unknown when sysctl fails."""
         with (
             patch("mlx_manager.routers.system.subprocess.run") as mock_run,
@@ -188,14 +188,14 @@ class TestGetSystemInfoExceptions:
             mock_run.side_effect = OSError("sysctl not available")
             mock_mem.return_value = 64 * (1024**3)
 
-            response = await client.get("/api/system/info")
+            response = await auth_client.get("/api/system/info")
 
         assert response.status_code == 200
         data = response.json()
         assert data["chip"] == "Unknown"
 
     @pytest.mark.asyncio
-    async def test_mlx_version_import_error_returns_none(self, client):
+    async def test_mlx_version_import_error_returns_none(self, auth_client):
         """Test mlx_version is None when mlx import fails."""
         with (
             patch("mlx_manager.routers.system.get_physical_memory_bytes") as mock_mem,
@@ -212,15 +212,15 @@ class TestGetSystemInfoExceptions:
                 return original_import(name, *args, **kwargs)
 
             with patch("builtins.__import__", side_effect=mock_import):
-                response = await client.get("/api/system/info")
+                response = await auth_client.get("/api/system/info")
 
         # Even if mlx import fails, endpoint should succeed
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_mlx_openai_server_version_import_error(self, client):
+    async def test_mlx_openai_server_version_import_error(self, auth_client):
         """Test mlx_openai_server_version is None when import fails."""
-        response = await client.get("/api/system/info")
+        response = await auth_client.get("/api/system/info")
         assert response.status_code == 200
         # mlx_openai_server not installed in test env, should be None
         data = response.json()
@@ -234,9 +234,9 @@ class TestGetSystemInfoExceptions:
 
 
 @pytest.mark.asyncio
-async def test_get_parser_options_endpoint(client):
+async def test_get_parser_options_endpoint(auth_client):
     """Test the parser options endpoint returns valid data."""
-    response = await client.get("/api/system/parser-options")
+    response = await auth_client.get("/api/system/parser-options")
     assert response.status_code == 200
 
     data = response.json()
@@ -253,18 +253,18 @@ async def test_get_parser_options_endpoint(client):
 
 
 @pytest.mark.asyncio
-async def test_install_launchd_service_exception(client, sample_profile_data):
+async def test_install_launchd_service_exception(auth_client, sample_profile_data):
     """Test launchd install returns 500 when exception occurs."""
     with patch("mlx_manager.routers.system.launchd_manager") as mock_launchd:
         mock_launchd.install.side_effect = Exception("Failed to write plist")
         mock_launchd.get_label.return_value = "com.mlx-manager.test"
 
         # Create a profile
-        create_response = await client.post("/api/profiles", json=sample_profile_data)
+        create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
         profile_id = create_response.json()["id"]
 
         # Try to install (should fail)
-        response = await client.post(f"/api/system/launchd/install/{profile_id}")
+        response = await auth_client.post(f"/api/system/launchd/install/{profile_id}")
 
     assert response.status_code == 500
     assert "Failed to write plist" in response.json()["detail"]
@@ -276,7 +276,7 @@ async def test_install_launchd_service_exception(client, sample_profile_data):
 
 
 @pytest.mark.asyncio
-async def test_get_system_info_with_mlx_openai_server_installed(client):
+async def test_get_system_info_with_mlx_openai_server_installed(auth_client):
     """Test system info returns mlx_openai_server version when installed."""
     import sys
     from types import ModuleType
@@ -291,7 +291,7 @@ async def test_get_system_info_with_mlx_openai_server_installed(client):
     ):
         mock_mem.return_value = 64 * (1024**3)
 
-        response = await client.get("/api/system/info")
+        response = await auth_client.get("/api/system/info")
 
     assert response.status_code == 200
     data = response.json()
@@ -299,7 +299,7 @@ async def test_get_system_info_with_mlx_openai_server_installed(client):
 
 
 @pytest.mark.asyncio
-async def test_get_system_info_mlx_openai_server_without_version(client):
+async def test_get_system_info_mlx_openai_server_without_version(auth_client):
     """Test system info uses 'installed' when module lacks __version__."""
     import sys
     from types import ModuleType
@@ -314,7 +314,7 @@ async def test_get_system_info_mlx_openai_server_without_version(client):
     ):
         mock_mem.return_value = 64 * (1024**3)
 
-        response = await client.get("/api/system/info")
+        response = await auth_client.get("/api/system/info")
 
     assert response.status_code == 200
     data = response.json()

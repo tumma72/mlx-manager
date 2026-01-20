@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from mlx_manager.models import ServerProfile, ServerProfileCreate, ServerProfileUpdate
+from mlx_manager.models import ServerProfile, ServerProfileCreate, ServerProfileUpdate, User, UserStatus
 from mlx_manager.routers.profiles import (
     create_profile,
     duplicate_profile,
@@ -19,12 +19,26 @@ from mlx_manager.routers.profiles import (
 )
 
 
+# Helper to create a mock user for auth
+def create_mock_user():
+    """Create a mock user for testing."""
+    return User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+        status=UserStatus.APPROVED,
+    )
+
+
 class TestListProfilesDirect:
     """Direct tests for list_profiles function."""
 
     @pytest.mark.asyncio
     async def test_list_profiles_returns_all(self):
         """Test list_profiles returns all profiles from database."""
+        mock_user = create_mock_user()
+
         # Create mock profiles
         mock_profiles = [
             MagicMock(spec=ServerProfile, id=1, name="Profile 1"),
@@ -38,7 +52,7 @@ class TestListProfilesDirect:
         mock_session.execute.return_value = mock_result
 
         # Call function directly
-        result = await list_profiles(session=mock_session)
+        result = await list_profiles(current_user=mock_user, session=mock_session)
 
         assert result == mock_profiles
         mock_session.execute.assert_called_once()
@@ -50,6 +64,8 @@ class TestGetNextPortDirect:
     @pytest.mark.asyncio
     async def test_get_next_port_with_existing_ports(self):
         """Test get_next_port calculates next port correctly."""
+        mock_user = create_mock_user()
+
         # Setup mock session with existing ports
         mock_session = AsyncMock()
         mock_result = MagicMock()
@@ -59,7 +75,7 @@ class TestGetNextPortDirect:
         with patch("mlx_manager.routers.profiles.settings") as mock_settings:
             mock_settings.default_port_start = 10240
 
-            result = await get_next_port(session=mock_session)
+            result = await get_next_port(current_user=mock_user, session=mock_session)
 
         # Should return 10244 (after 10243)
         assert result == {"port": 10244}
@@ -67,6 +83,8 @@ class TestGetNextPortDirect:
     @pytest.mark.asyncio
     async def test_get_next_port_empty_db(self):
         """Test get_next_port returns default when no profiles exist."""
+        mock_user = create_mock_user()
+
         mock_session = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
@@ -75,7 +93,7 @@ class TestGetNextPortDirect:
         with patch("mlx_manager.routers.profiles.settings") as mock_settings:
             mock_settings.default_port_start = 10240
 
-            result = await get_next_port(session=mock_session)
+            result = await get_next_port(current_user=mock_user, session=mock_session)
 
         assert result == {"port": 10240}
 
@@ -86,6 +104,8 @@ class TestCreateProfileDirect:
     @pytest.mark.asyncio
     async def test_create_profile_success(self):
         """Test create_profile creates and returns new profile."""
+        mock_user = create_mock_user()
+
         profile_data = ServerProfileCreate(
             name="Test Profile",
             model_path="mlx-community/test-model",
@@ -104,7 +124,7 @@ class TestCreateProfileDirect:
         mock_result2.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
-        result = await create_profile(profile_data=profile_data, session=mock_session)
+        result = await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
 
         assert result.name == "Test Profile"
         mock_session.add.assert_called_once()
@@ -114,6 +134,8 @@ class TestCreateProfileDirect:
     @pytest.mark.asyncio
     async def test_create_profile_name_conflict(self):
         """Test create_profile raises 409 on name conflict."""
+        mock_user = create_mock_user()
+
         profile_data = ServerProfileCreate(
             name="Existing",
             model_path="mlx-community/test-model",
@@ -127,7 +149,7 @@ class TestCreateProfileDirect:
         mock_session.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
-            await create_profile(profile_data=profile_data, session=mock_session)
+            await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
 
         assert exc_info.value.status_code == 409
         assert "name already exists" in exc_info.value.detail
@@ -135,6 +157,8 @@ class TestCreateProfileDirect:
     @pytest.mark.asyncio
     async def test_create_profile_port_conflict(self):
         """Test create_profile raises 409 on port conflict."""
+        mock_user = create_mock_user()
+
         profile_data = ServerProfileCreate(
             name="New Profile",
             model_path="mlx-community/test-model",
@@ -152,7 +176,7 @@ class TestCreateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await create_profile(profile_data=profile_data, session=mock_session)
+            await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
 
         assert exc_info.value.status_code == 409
         assert "Port already in use" in exc_info.value.detail
@@ -164,6 +188,8 @@ class TestUpdateProfileDirect:
     @pytest.mark.asyncio
     async def test_update_profile_success(self):
         """Test update_profile updates and returns profile."""
+        mock_user = create_mock_user()
+
         existing_profile = ServerProfile(
             id=1,
             name="Old Name",
@@ -185,7 +211,7 @@ class TestUpdateProfileDirect:
         mock_result2.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
-        result = await update_profile(profile_id=1, profile_data=profile_data, session=mock_session)
+        result = await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
 
         assert result.name == "New Name"
         mock_session.commit.assert_called_once()
@@ -193,6 +219,8 @@ class TestUpdateProfileDirect:
     @pytest.mark.asyncio
     async def test_update_profile_not_found(self):
         """Test update_profile raises 404 when profile not found."""
+        mock_user = create_mock_user()
+
         profile_data = ServerProfileUpdate(name="New Name")
 
         mock_session = AsyncMock()
@@ -201,13 +229,15 @@ class TestUpdateProfileDirect:
         mock_session.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(profile_id=999, profile_data=profile_data, session=mock_session)
+            await update_profile(current_user=mock_user, profile_id=999, profile_data=profile_data, session=mock_session)
 
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_update_profile_name_conflict(self):
         """Test update_profile raises 409 on name conflict."""
+        mock_user = create_mock_user()
+
         existing_profile = ServerProfile(
             id=1,
             name="Old Name",
@@ -228,7 +258,7 @@ class TestUpdateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(profile_id=1, profile_data=profile_data, session=mock_session)
+            await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
 
         assert exc_info.value.status_code == 409
         assert "name already exists" in exc_info.value.detail
@@ -236,6 +266,8 @@ class TestUpdateProfileDirect:
     @pytest.mark.asyncio
     async def test_update_profile_port_conflict(self):
         """Test update_profile raises 409 on port conflict."""
+        mock_user = create_mock_user()
+
         existing_profile = ServerProfile(
             id=1,
             name="Profile",
@@ -256,7 +288,7 @@ class TestUpdateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(profile_id=1, profile_data=profile_data, session=mock_session)
+            await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
 
         assert exc_info.value.status_code == 409
         assert "Port already in use" in exc_info.value.detail
@@ -268,6 +300,8 @@ class TestDuplicateProfileDirect:
     @pytest.mark.asyncio
     async def test_duplicate_profile_success(self):
         """Test duplicate_profile creates copy with new name."""
+        mock_user = create_mock_user()
+
         existing_profile = ServerProfile(
             id=1,
             name="Original",
@@ -293,7 +327,7 @@ class TestDuplicateProfileDirect:
             mock_settings.default_port_start = 10240
 
             result = await duplicate_profile(
-                new_name="Copy", profile=existing_profile, session=mock_session
+                current_user=mock_user, new_name="Copy", profile=existing_profile, session=mock_session
             )
 
         assert result.name == "Copy"
@@ -305,6 +339,8 @@ class TestDuplicateProfileDirect:
     @pytest.mark.asyncio
     async def test_duplicate_profile_name_conflict(self):
         """Test duplicate_profile raises 409 on name conflict."""
+        mock_user = create_mock_user()
+
         existing_profile = ServerProfile(
             id=1,
             name="Original",
@@ -320,7 +356,7 @@ class TestDuplicateProfileDirect:
 
         with pytest.raises(HTTPException) as exc_info:
             await duplicate_profile(
-                new_name="Existing", profile=existing_profile, session=mock_session
+                current_user=mock_user, new_name="Existing", profile=existing_profile, session=mock_session
             )
 
         assert exc_info.value.status_code == 409

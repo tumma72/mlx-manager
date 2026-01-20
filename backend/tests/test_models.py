@@ -6,9 +6,9 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_search_models(client, mock_hf_client):
+async def test_search_models(auth_client, mock_hf_client):
     """Test searching for models."""
-    response = await client.get("/api/models/search?query=test")
+    response = await auth_client.get("/api/models/search?query=test")
     assert response.status_code == 200
 
     models = response.json()
@@ -20,9 +20,9 @@ async def test_search_models(client, mock_hf_client):
 
 
 @pytest.mark.asyncio
-async def test_search_models_with_size_filter(client, mock_hf_client):
+async def test_search_models_with_size_filter(auth_client, mock_hf_client):
     """Test searching for models with size filter."""
-    response = await client.get("/api/models/search?query=test&max_size_gb=50")
+    response = await auth_client.get("/api/models/search?query=test&max_size_gb=50")
     assert response.status_code == 200
 
     mock_hf_client.search_mlx_models.assert_called_once_with(
@@ -31,9 +31,9 @@ async def test_search_models_with_size_filter(client, mock_hf_client):
 
 
 @pytest.mark.asyncio
-async def test_search_models_with_limit(client, mock_hf_client):
+async def test_search_models_with_limit(auth_client, mock_hf_client):
     """Test searching for models with custom limit."""
-    response = await client.get("/api/models/search?query=test&limit=10")
+    response = await auth_client.get("/api/models/search?query=test&limit=10")
     assert response.status_code == 200
 
     mock_hf_client.search_mlx_models.assert_called_once_with(
@@ -42,26 +42,26 @@ async def test_search_models_with_limit(client, mock_hf_client):
 
 
 @pytest.mark.asyncio
-async def test_search_models_empty_query(client, mock_hf_client):
+async def test_search_models_empty_query(auth_client, mock_hf_client):
     """Test that empty query returns validation error."""
-    response = await client.get("/api/models/search?query=")
+    response = await auth_client.get("/api/models/search?query=")
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_search_models_error(client):
+async def test_search_models_error(auth_client):
     """Test search error handling."""
     with patch("mlx_manager.routers.models.hf_client") as mock:
         mock.search_mlx_models = AsyncMock(side_effect=Exception("Search failed"))
-        response = await client.get("/api/models/search?query=test")
+        response = await auth_client.get("/api/models/search?query=test")
         assert response.status_code == 500
         assert "Search failed" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_list_local_models(client, mock_hf_client):
+async def test_list_local_models(auth_client, mock_hf_client):
     """Test listing local models."""
-    response = await client.get("/api/models/local")
+    response = await auth_client.get("/api/models/local")
     assert response.status_code == 200
 
     models = response.json()
@@ -71,9 +71,9 @@ async def test_list_local_models(client, mock_hf_client):
 
 
 @pytest.mark.asyncio
-async def test_start_download(client):
+async def test_start_download(auth_client):
     """Test starting a model download."""
-    response = await client.post(
+    response = await auth_client.post(
         "/api/models/download",
         json={"model_id": "mlx-community/test-model"},
     )
@@ -85,7 +85,7 @@ async def test_start_download(client):
 
 
 @pytest.mark.asyncio
-async def test_start_download_existing_returns_same_task(client):
+async def test_start_download_existing_returns_same_task(auth_client):
     """Test that starting a download for model with active download returns existing task."""
 
     from mlx_manager.routers import models
@@ -93,7 +93,7 @@ async def test_start_download_existing_returns_same_task(client):
     model_id = "mlx-community/duplicate-download-test"
 
     # First, start a download to create the DB record
-    response1 = await client.post(
+    response1 = await auth_client.post(
         "/api/models/download",
         json={"model_id": model_id},
     )
@@ -106,7 +106,7 @@ async def test_start_download_existing_returns_same_task(client):
 
     try:
         # Try to start a new download for the same model
-        response2 = await client.post(
+        response2 = await auth_client.post(
             "/api/models/download",
             json={"model_id": model_id},
         )
@@ -122,36 +122,36 @@ async def test_start_download_existing_returns_same_task(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_model(client, mock_hf_client):
+async def test_delete_model(auth_client, mock_hf_client):
     """Test deleting a local model."""
-    response = await client.delete("/api/models/mlx-community/test-model")
+    response = await auth_client.delete("/api/models/mlx-community/test-model")
     assert response.status_code == 200
     assert response.json()["deleted"] is True
     mock_hf_client.delete_model.assert_called_once_with("mlx-community/test-model")
 
 
 @pytest.mark.asyncio
-async def test_delete_model_not_found(client):
+async def test_delete_model_not_found(auth_client):
     """Test deleting a non-existent model."""
     with patch("mlx_manager.routers.models.hf_client") as mock:
         mock.delete_model = AsyncMock(return_value=False)
-        response = await client.delete("/api/models/mlx-community/nonexistent")
+        response = await auth_client.delete("/api/models/mlx-community/nonexistent")
         assert response.status_code == 404
         assert "Model not found" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_get_download_progress_task_not_found(client):
+async def test_get_download_progress_task_not_found(auth_client):
     """Test getting download progress for non-existent task."""
     with patch("mlx_manager.routers.models.download_tasks", {}):
-        response = await client.get("/api/models/download/nonexistent-task/progress")
+        response = await auth_client.get("/api/models/download/nonexistent-task/progress")
         assert response.status_code == 200
         # SSE response
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
 
 @pytest.mark.asyncio
-async def test_get_download_progress_with_valid_task(client):
+async def test_get_download_progress_with_valid_task(auth_client):
     """Test getting download progress for valid task."""
     from mlx_manager.routers import models
 
@@ -173,7 +173,7 @@ async def test_get_download_progress_with_valid_task(client):
     ):
         mock.download_model = mock_download_model
 
-        response = await client.get(f"/api/models/download/{task_id}/progress")
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
@@ -182,7 +182,7 @@ async def test_get_download_progress_with_valid_task(client):
 
 
 @pytest.mark.asyncio
-async def test_get_download_progress_with_error(client):
+async def test_get_download_progress_with_error(auth_client):
     """Test download progress when download fails."""
     from mlx_manager.routers import models
 
@@ -204,7 +204,7 @@ async def test_get_download_progress_with_error(client):
     ):
         mock.download_model = mock_download_model
 
-        response = await client.get(f"/api/models/download/{task_id}/progress")
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
         assert response.status_code == 200
         # SSE should contain error
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
@@ -214,13 +214,13 @@ async def test_get_download_progress_with_error(client):
 
 
 @pytest.mark.asyncio
-async def test_start_download_creates_task(client):
+async def test_start_download_creates_task(auth_client):
     """Test that start_download creates a task entry."""
     from mlx_manager.routers import models
 
     len(models.download_tasks)
 
-    response = await client.post(
+    response = await auth_client.post(
         "/api/models/download",
         json={"model_id": "mlx-community/new-model"},
     )
@@ -240,35 +240,35 @@ async def test_start_download_creates_task(client):
 
 
 @pytest.mark.asyncio
-async def test_list_local_models_empty(client):
+async def test_list_local_models_empty(auth_client):
     """Test listing local models when none exist."""
     with patch("mlx_manager.routers.models.hf_client") as mock:
         mock.list_local_models = MagicMock(return_value=[])
-        response = await client.get("/api/models/local")
+        response = await auth_client.get("/api/models/local")
         assert response.status_code == 200
         assert response.json() == []
 
 
 @pytest.mark.asyncio
-async def test_search_models_with_all_params(client):
+async def test_search_models_with_all_params(auth_client):
     """Test searching models with all parameters."""
     with patch("mlx_manager.routers.models.hf_client") as mock:
         mock.search_mlx_models = AsyncMock(return_value=[])
-        response = await client.get("/api/models/search?query=llama&max_size_gb=10&limit=5")
+        response = await auth_client.get("/api/models/search?query=llama&max_size_gb=10&limit=5")
         assert response.status_code == 200
         mock.search_mlx_models.assert_called_once_with(query="llama", max_size_gb=10.0, limit=5)
 
 
 @pytest.mark.asyncio
-async def test_delete_model_with_path_separator(client, mock_hf_client):
+async def test_delete_model_with_path_separator(auth_client, mock_hf_client):
     """Test deleting a model with path separator in ID."""
-    response = await client.delete("/api/models/mlx-community/some/nested/model")
+    response = await auth_client.delete("/api/models/mlx-community/some/nested/model")
     assert response.status_code == 200
     mock_hf_client.delete_model.assert_called_once_with("mlx-community/some/nested/model")
 
 
 @pytest.mark.asyncio
-async def test_detect_model_options_minimax(client, tmp_path):
+async def test_detect_model_options_minimax(auth_client, tmp_path):
     """Test detecting parser options for MiniMax model."""
     with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
         mock_detect.return_value = {
@@ -282,7 +282,7 @@ async def test_detect_model_options_minimax(client, tmp_path):
             "available_parsers": ["minimax_m2", "qwen3", "glm4"],
         }
 
-        response = await client.get("/api/models/detect-options/mlx-community/MiniMax-M2")
+        response = await auth_client.get("/api/models/detect-options/mlx-community/MiniMax-M2")
         assert response.status_code == 200
 
         data = response.json()
@@ -294,7 +294,7 @@ async def test_detect_model_options_minimax(client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_detect_model_options_unknown(client, tmp_path):
+async def test_detect_model_options_unknown(auth_client, tmp_path):
     """Test detecting parser options for unknown model."""
     with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
         mock_detect.return_value = {
@@ -304,7 +304,7 @@ async def test_detect_model_options_unknown(client, tmp_path):
             "available_parsers": ["minimax_m2", "qwen3", "glm4"],
         }
 
-        response = await client.get("/api/models/detect-options/mlx-community/Unknown-Model")
+        response = await auth_client.get("/api/models/detect-options/mlx-community/Unknown-Model")
         assert response.status_code == 200
 
         data = response.json()
@@ -315,7 +315,7 @@ async def test_detect_model_options_unknown(client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_detect_model_options_with_nested_path(client, tmp_path):
+async def test_detect_model_options_with_nested_path(auth_client, tmp_path):
     """Test detecting parser options for model with nested path."""
     with patch("mlx_manager.routers.models.get_model_detection_info") as mock_detect:
         mock_detect.return_value = {
@@ -329,7 +329,7 @@ async def test_detect_model_options_with_nested_path(client, tmp_path):
             "available_parsers": ["minimax_m2", "qwen3", "glm4"],
         }
 
-        response = await client.get(
+        response = await auth_client.get(
             "/api/models/detect-options/mlx-community/Qwen/Qwen2.5-72B-4bit"
         )
         assert response.status_code == 200
@@ -517,7 +517,7 @@ async def test_update_download_record_partial_update():
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_in_memory_tasks(client):
+async def test_get_active_downloads_in_memory_tasks(auth_client):
     """Test get_active_downloads returns in-memory active tasks."""
     from mlx_manager.routers import models
 
@@ -532,7 +532,7 @@ async def test_get_active_downloads_in_memory_tasks(client):
     }
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -551,7 +551,7 @@ async def test_get_active_downloads_in_memory_tasks(client):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_pending_status(client):
+async def test_get_active_downloads_pending_status(auth_client):
     """Test get_active_downloads includes pending tasks."""
     from mlx_manager.routers import models
 
@@ -563,7 +563,7 @@ async def test_get_active_downloads_pending_status(client):
     }
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -575,7 +575,7 @@ async def test_get_active_downloads_pending_status(client):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_starting_status(client):
+async def test_get_active_downloads_starting_status(auth_client):
     """Test get_active_downloads includes starting tasks."""
     from mlx_manager.routers import models
 
@@ -587,7 +587,7 @@ async def test_get_active_downloads_starting_status(client):
     }
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -599,7 +599,7 @@ async def test_get_active_downloads_starting_status(client):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_excludes_completed(client):
+async def test_get_active_downloads_excludes_completed(auth_client):
     """Test get_active_downloads excludes completed tasks."""
     from mlx_manager.routers import models
 
@@ -611,7 +611,7 @@ async def test_get_active_downloads_excludes_completed(client):
     }
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -623,7 +623,7 @@ async def test_get_active_downloads_excludes_completed(client):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_db_backed_needs_resume(client, test_engine):
+async def test_get_active_downloads_db_backed_needs_resume(auth_client, test_engine):
     """Test get_active_downloads returns DB-backed downloads that need resume."""
     from datetime import UTC, datetime
 
@@ -659,7 +659,7 @@ async def test_get_active_downloads_db_backed_needs_resume(client, test_engine):
         download_id = download.id
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -682,7 +682,7 @@ async def test_get_active_downloads_db_backed_needs_resume(client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_db_progress_calculation_no_total(client, test_engine):
+async def test_get_active_downloads_db_progress_calculation_no_total(auth_client, test_engine):
     """Test progress calculation when total_bytes is 0 or None."""
     from datetime import UTC, datetime
 
@@ -715,7 +715,7 @@ async def test_get_active_downloads_db_progress_calculation_no_total(client, tes
         await session.commit()
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -732,7 +732,7 @@ async def test_get_active_downloads_db_progress_calculation_no_total(client, tes
 
 
 @pytest.mark.asyncio
-async def test_get_active_downloads_in_memory_takes_precedence(client, test_engine):
+async def test_get_active_downloads_in_memory_takes_precedence(auth_client, test_engine):
     """Test that in-memory tasks take precedence over DB records for same model."""
     from datetime import UTC, datetime
 
@@ -774,7 +774,7 @@ async def test_get_active_downloads_in_memory_takes_precedence(client, test_engi
         await session.commit()
 
     try:
-        response = await client.get("/api/models/downloads/active")
+        response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
 
         data = response.json()
@@ -795,7 +795,7 @@ async def test_get_active_downloads_in_memory_takes_precedence(client, test_engi
 
 
 @pytest.mark.asyncio
-async def test_get_available_parsers_returns_sorted_list(client):
+async def test_get_available_parsers_returns_sorted_list(auth_client):
     """Test get_available_parsers returns a sorted combined list of all parsers."""
     with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
         mock_get_options.return_value = {
@@ -804,7 +804,7 @@ async def test_get_available_parsers_returns_sorted_list(client):
             "message_converters": ["minimax", "qwen3_coder"],
         }
 
-        response = await client.get("/api/models/available-parsers")
+        response = await auth_client.get("/api/models/available-parsers")
         assert response.status_code == 200
 
         data = response.json()
@@ -826,7 +826,7 @@ async def test_get_available_parsers_returns_sorted_list(client):
 
 
 @pytest.mark.asyncio
-async def test_get_available_parsers_handles_empty_lists(client):
+async def test_get_available_parsers_handles_empty_lists(auth_client):
     """Test get_available_parsers handles empty parser lists."""
     with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
         mock_get_options.return_value = {
@@ -835,7 +835,7 @@ async def test_get_available_parsers_handles_empty_lists(client):
             "message_converters": [],
         }
 
-        response = await client.get("/api/models/available-parsers")
+        response = await auth_client.get("/api/models/available-parsers")
         assert response.status_code == 200
 
         data = response.json()
@@ -843,7 +843,7 @@ async def test_get_available_parsers_handles_empty_lists(client):
 
 
 @pytest.mark.asyncio
-async def test_get_available_parsers_deduplicates(client):
+async def test_get_available_parsers_deduplicates(auth_client):
     """Test get_available_parsers properly deduplicates parsers across lists."""
     with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
         # Same parser appearing in all three lists
@@ -853,7 +853,7 @@ async def test_get_available_parsers_deduplicates(client):
             "message_converters": ["qwen3"],
         }
 
-        response = await client.get("/api/models/available-parsers")
+        response = await auth_client.get("/api/models/available-parsers")
         assert response.status_code == 200
 
         data = response.json()
@@ -867,7 +867,7 @@ async def test_get_available_parsers_deduplicates(client):
 
 
 @pytest.mark.asyncio
-async def test_download_progress_sse_updates_db_periodically(client):
+async def test_download_progress_sse_updates_db_periodically(auth_client):
     """Test SSE progress updates the database periodically."""
     from mlx_manager.routers import models
 
@@ -909,7 +909,7 @@ async def test_download_progress_sse_updates_db_periodically(client):
     ):
         mock_hf.download_model = mock_download_model
 
-        response = await client.get(f"/api/models/download/{task_id}/progress")
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
         assert response.status_code == 200
 
     # Should have called _update_download_record at least once for the completed status
@@ -926,7 +926,7 @@ async def test_download_progress_sse_updates_db_periodically(client):
 
 
 @pytest.mark.asyncio
-async def test_download_progress_sse_error_updates_db(client):
+async def test_download_progress_sse_error_updates_db(auth_client):
     """Test SSE error path updates database with failure status."""
     from mlx_manager.routers import models
 
@@ -957,7 +957,7 @@ async def test_download_progress_sse_error_updates_db(client):
     ):
         mock_hf.download_model = mock_download_model_error
 
-        response = await client.get(f"/api/models/download/{task_id}/progress")
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
         assert response.status_code == 200
         # SSE content should contain error
         assert b"failed" in response.content or b"error" in response.content
@@ -971,7 +971,7 @@ async def test_download_progress_sse_error_updates_db(client):
 
 
 @pytest.mark.asyncio
-async def test_download_progress_sse_without_download_id(client):
+async def test_download_progress_sse_without_download_id(auth_client):
     """Test SSE progress works even without download_id (no DB updates)."""
     from mlx_manager.routers import models
 
@@ -993,7 +993,7 @@ async def test_download_progress_sse_without_download_id(client):
     ):
         mock_hf.download_model = mock_download_model
 
-        response = await client.get(f"/api/models/download/{task_id}/progress")
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
         assert response.status_code == 200
 
         # _update_download_record should NOT be called when there's no download_id
@@ -1014,6 +1014,7 @@ async def test_start_download_function_no_existing(test_engine):
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
 
+    from mlx_manager.models import User, UserStatus
     from mlx_manager.routers import models
     from mlx_manager.routers.models import DownloadRequest, start_download
 
@@ -1028,10 +1029,19 @@ async def test_start_download_function_no_existing(test_engine):
         expire_on_commit=False,
     )
 
+    # Create a mock user for the dependency
+    mock_user = User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+        status=UserStatus.APPROVED,
+    )
+
     try:
         async with async_session() as session:
             request = DownloadRequest(model_id="mlx-community/direct-test-model")
-            result = await start_download(request, session)
+            result = await start_download(mock_user, request, session)
             await session.commit()
 
             assert "task_id" in result
@@ -1054,7 +1064,7 @@ async def test_start_download_function_existing_download(test_engine):
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
 
-    from mlx_manager.models import Download
+    from mlx_manager.models import Download, User, UserStatus
     from mlx_manager.routers import models
     from mlx_manager.routers.models import DownloadRequest, start_download
 
@@ -1067,6 +1077,15 @@ async def test_start_download_function_existing_download(test_engine):
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
+    )
+
+    # Create a mock user for the dependency
+    mock_user = User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+        status=UserStatus.APPROVED,
     )
 
     try:
@@ -1095,7 +1114,7 @@ async def test_start_download_function_existing_download(test_engine):
         # Try to start a new download for same model
         async with async_session() as session:
             request = DownloadRequest(model_id=model_id)
-            result = await start_download(request, session)
+            result = await start_download(mock_user, request, session)
 
             # Should return existing task_id
             assert result["task_id"] == existing_task_id
@@ -1113,7 +1132,7 @@ async def test_get_active_downloads_function_with_db_records(test_engine):
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
 
-    from mlx_manager.models import Download
+    from mlx_manager.models import Download, User, UserStatus
     from mlx_manager.routers import models
     from mlx_manager.routers.models import get_active_downloads
 
@@ -1124,6 +1143,15 @@ async def test_get_active_downloads_function_with_db_records(test_engine):
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
+    )
+
+    # Create a mock user for the dependency
+    mock_user = User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+        status=UserStatus.APPROVED,
     )
 
     try:
@@ -1143,7 +1171,7 @@ async def test_get_active_downloads_function_with_db_records(test_engine):
 
         # Call function directly
         async with async_session() as session:
-            result = await get_active_downloads(session)
+            result = await get_active_downloads(mock_user, session)
 
             # Find our download
             found = next(
@@ -1167,7 +1195,7 @@ async def test_get_active_downloads_function_no_total_bytes(test_engine):
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
 
-    from mlx_manager.models import Download
+    from mlx_manager.models import Download, User, UserStatus
     from mlx_manager.routers import models
     from mlx_manager.routers.models import get_active_downloads
 
@@ -1178,6 +1206,15 @@ async def test_get_active_downloads_function_no_total_bytes(test_engine):
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
+    )
+
+    # Create a mock user for the dependency
+    mock_user = User(
+        id=1,
+        email="test@example.com",
+        hashed_password="hashed",
+        is_admin=False,
+        status=UserStatus.APPROVED,
     )
 
     try:
@@ -1196,7 +1233,7 @@ async def test_get_active_downloads_function_no_total_bytes(test_engine):
 
         # Call function directly
         async with async_session() as session:
-            result = await get_active_downloads(session)
+            result = await get_active_downloads(mock_user, session)
 
             found = next(
                 (d for d in result if d["model_id"] == "mlx-community/no-total-bytes"),
@@ -1211,7 +1248,7 @@ async def test_get_active_downloads_function_no_total_bytes(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_start_download_no_existing_creates_db_record(client, test_engine):
+async def test_start_download_no_existing_creates_db_record(auth_client, test_engine):
     """Test start_download creates DB record and task when no existing download."""
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.orm import sessionmaker
@@ -1225,7 +1262,7 @@ async def test_start_download_no_existing_creates_db_record(client, test_engine)
 
     try:
         # Start a download
-        response = await client.post(
+        response = await auth_client.post(
             "/api/models/download",
             json={"model_id": "mlx-community/new-test-model-db"},
         )
@@ -1267,7 +1304,7 @@ async def test_start_download_no_existing_creates_db_record(client, test_engine)
 
 
 @pytest.mark.asyncio
-async def test_start_download_existing_download_in_db(client, test_engine):
+async def test_start_download_existing_download_in_db(auth_client, test_engine):
     """Test start_download returns existing task when download exists in DB."""
     from datetime import UTC, datetime
 
@@ -1310,7 +1347,7 @@ async def test_start_download_existing_download_in_db(client, test_engine):
     }
 
     try:
-        response = await client.post(
+        response = await auth_client.post(
             "/api/models/download",
             json={"model_id": model_id},
         )

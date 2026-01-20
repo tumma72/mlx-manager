@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { profiles, models, servers, system, ApiError } from "./client";
+import { auth, profiles, models, servers, system, ApiError } from "./client";
 
 // Mock fetch
 const mockFetch = vi.fn();
@@ -28,6 +28,170 @@ function mockErrorResponse(detail: string, status = 400) {
 
 beforeEach(() => {
   mockFetch.mockReset();
+});
+
+describe("auth API", () => {
+  describe("register", () => {
+    it("registers a new user", async () => {
+      const mockUser = { id: 1, email: "test@example.com", is_admin: false, status: "pending" };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockUser, 201));
+
+      const result = await auth.register({ email: "test@example.com", password: "password123" });
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "test@example.com", password: "password123" }),
+      });
+      expect(result).toEqual(mockUser);
+    });
+
+    it("throws ApiError on duplicate email", async () => {
+      mockFetch.mockResolvedValueOnce(mockErrorResponse("Email already registered", 409));
+
+      await expect(auth.register({ email: "test@example.com", password: "password123" }))
+        .rejects.toThrow(ApiError);
+    });
+  });
+
+  describe("login", () => {
+    it("logs in with email and password", async () => {
+      const mockToken = { access_token: "jwt-token", token_type: "bearer" };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockToken));
+
+      const result = await auth.login("test@example.com", "password123");
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: expect.any(URLSearchParams),
+      });
+      expect(result).toEqual(mockToken);
+    });
+
+    it("sends form data with username field", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ access_token: "token", token_type: "bearer" }));
+
+      await auth.login("test@example.com", "password123");
+
+      const [, options] = mockFetch.mock.calls[0];
+      const body = options.body as URLSearchParams;
+      expect(body.get("username")).toBe("test@example.com");
+      expect(body.get("password")).toBe("password123");
+    });
+
+    it("throws ApiError on invalid credentials", async () => {
+      mockFetch.mockResolvedValueOnce(mockErrorResponse("Incorrect email or password", 401));
+
+      await expect(auth.login("test@example.com", "wrong"))
+        .rejects.toThrow(ApiError);
+    });
+  });
+
+  describe("me", () => {
+    it("fetches current user info", async () => {
+      const mockUser = { id: 1, email: "test@example.com", is_admin: true, status: "approved" };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockUser));
+
+      const result = await auth.me();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/auth/me",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockUser);
+    });
+  });
+
+  describe("listUsers", () => {
+    it("lists all users (admin only)", async () => {
+      const mockUsers = [
+        { id: 1, email: "admin@example.com", is_admin: true, status: "approved" },
+        { id: 2, email: "user@example.com", is_admin: false, status: "pending" },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockUsers));
+
+      const result = await auth.listUsers();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/auth/users",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockUsers);
+    });
+  });
+
+  describe("getPendingCount", () => {
+    it("gets count of pending users", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ count: 5 }));
+
+      const result = await auth.getPendingCount();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/auth/users/pending/count",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual({ count: 5 });
+    });
+  });
+
+  describe("updateUser", () => {
+    it("updates user status", async () => {
+      const updatedUser = { id: 2, email: "user@example.com", is_admin: false, status: "approved" };
+      mockFetch.mockResolvedValueOnce(mockResponse(updatedUser));
+
+      const result = await auth.updateUser(2, { status: "approved" });
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/users/2", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "approved" }),
+      });
+      expect(result).toEqual(updatedUser);
+    });
+
+    it("updates user admin status", async () => {
+      const updatedUser = { id: 2, email: "user@example.com", is_admin: true, status: "approved" };
+      mockFetch.mockResolvedValueOnce(mockResponse(updatedUser));
+
+      const result = await auth.updateUser(2, { is_admin: true });
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/users/2", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_admin: true }),
+      });
+      expect(result).toEqual(updatedUser);
+    });
+  });
+
+  describe("deleteUser", () => {
+    it("deletes a user", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await auth.deleteUser(2);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/users/2", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  describe("resetPassword", () => {
+    it("resets user password", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ message: "Password reset successfully" }));
+
+      const result = await auth.resetPassword(2, "newpassword123");
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/auth/users/2/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "newpassword123" }),
+      });
+      expect(result).toEqual({ message: "Password reset successfully" });
+    });
+  });
 });
 
 describe("profiles API", () => {
@@ -630,5 +794,37 @@ describe("ApiError", () => {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).toBe(rawText);
     }
+  });
+
+  it("clears auth and throws on 401 response", async () => {
+    // Mock window.location
+    const originalLocation = window.location;
+    delete (window as { location?: Location }).location;
+    window.location = { href: "" } as Location;
+
+    // Mock authStore
+    const { authStore } = await import("$lib/stores");
+    const clearAuthSpy = vi.spyOn(authStore, "clearAuth");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({ detail: "Not authenticated" }),
+      text: () => Promise.resolve(JSON.stringify({ detail: "Not authenticated" })),
+    });
+
+    try {
+      await profiles.list();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(401);
+      expect((error as ApiError).message).toBe("Session expired");
+      expect(clearAuthSpy).toHaveBeenCalled();
+      expect(window.location.href).toBe("/login");
+    }
+
+    // Restore
+    window.location = originalLocation;
+    clearAuthSpy.mockRestore();
   });
 });
