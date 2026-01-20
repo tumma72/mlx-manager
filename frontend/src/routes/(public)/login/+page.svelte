@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { auth } from '$lib/api/client';
 	import { authStore } from '$lib/stores';
 	import { Cpu, Loader2 } from 'lucide-svelte';
@@ -39,7 +40,7 @@
 					// Auto-approved (first user) - login immediately
 					const token = await auth.login(email, password);
 					authStore.setAuth(token.access_token, user);
-					await goto('/');
+					await goto(resolve('/'));
 				} else {
 					// Pending approval
 					success =
@@ -60,7 +61,7 @@
 				}
 
 				authStore.setAuth(token.access_token, user);
-				await goto('/');
+				await goto(resolve('/'));
 			}
 		} catch (err) {
 			if (err instanceof Error) {

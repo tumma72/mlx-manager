@@ -36,6 +36,12 @@ class AuthStore {
     }
 
     try {
+      // Check localStorage is available and functional
+      if (typeof localStorage === "undefined" || !localStorage.getItem) {
+        this.loading = false;
+        return;
+      }
+
       const storedToken = localStorage.getItem(TOKEN_KEY);
       const storedUser = localStorage.getItem(USER_KEY);
 
@@ -44,8 +50,9 @@ class AuthStore {
         this.user = JSON.parse(storedUser);
       }
     } catch {
-      // Invalid stored data, clear it
-      this.clearAuth();
+      // Invalid stored data or localStorage not available - reset state
+      this.token = null;
+      this.user = null;
     } finally {
       this.loading = false;
     }
@@ -72,8 +79,12 @@ class AuthStore {
     this.user = null;
 
     if (typeof window !== "undefined") {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      try {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+      } catch {
+        // localStorage may not be available in some test environments
+      }
     }
   }
 
