@@ -128,7 +128,9 @@ async def test_create_profile_duplicate_name(auth_client, sample_profile_data):
 
 
 @pytest.mark.asyncio
-async def test_create_profile_duplicate_port(auth_client, sample_profile_data, sample_profile_data_alt):
+async def test_create_profile_duplicate_port(
+    auth_client, sample_profile_data, sample_profile_data_alt
+):
     """Test that creating a profile with duplicate port fails."""
     # Create first profile
     await auth_client.post("/api/profiles", json=sample_profile_data)
@@ -141,7 +143,9 @@ async def test_create_profile_duplicate_port(auth_client, sample_profile_data, s
 
 
 @pytest.mark.asyncio
-async def test_update_profile_duplicate_name(auth_client, sample_profile_data, sample_profile_data_alt):
+async def test_update_profile_duplicate_name(
+    auth_client, sample_profile_data, sample_profile_data_alt
+):
     """Test that updating a profile to a duplicate name fails."""
     # Create two profiles
     await auth_client.post("/api/profiles", json=sample_profile_data)
@@ -157,7 +161,9 @@ async def test_update_profile_duplicate_name(auth_client, sample_profile_data, s
 
 
 @pytest.mark.asyncio
-async def test_update_profile_duplicate_port(auth_client, sample_profile_data, sample_profile_data_alt):
+async def test_update_profile_duplicate_port(
+    auth_client, sample_profile_data, sample_profile_data_alt
+):
     """Test that updating a profile to a duplicate port fails."""
     # Create two profiles
     await auth_client.post("/api/profiles", json=sample_profile_data)

@@ -15,7 +15,6 @@ os.environ["MLX_MANAGER_DATABASE_PATH"] = ":memory:"
 os.environ["MLX_MANAGER_DEBUG"] = "false"
 
 from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_current_user
 from mlx_manager.main import app
 from mlx_manager.models import User, UserStatus
 from mlx_manager.services.auth_service import create_access_token, hash_password

@@ -123,7 +123,9 @@ class TestStartServerDirect:
         with patch("mlx_manager.routers.servers.server_manager") as mock_sm:
             mock_sm.start_server = AsyncMock(return_value=12345)
 
-            result = await start_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+            result = await start_server(
+                current_user=mock_user, profile=mock_profile, session=mock_session
+            )
 
         assert result == {"pid": 12345, "port": 10240}
         mock_session.add.assert_called_once()
@@ -151,7 +153,9 @@ class TestStartServerDirect:
             mock_sm.is_running.return_value = False  # Process not running
             mock_sm.start_server = AsyncMock(return_value=12345)
 
-            result = await start_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+            result = await start_server(
+                current_user=mock_user, profile=mock_profile, session=mock_session
+            )
 
         assert result == {"pid": 12345, "port": 10240}
         mock_session.delete.assert_called_with(stale_instance)
@@ -173,7 +177,9 @@ class TestStartServerDirect:
             mock_sm.start_server = AsyncMock(side_effect=RuntimeError("Already running"))
 
             with pytest.raises(HTTPException) as exc_info:
-                await start_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+                await start_server(
+                    current_user=mock_user, profile=mock_profile, session=mock_session
+                )
 
         assert exc_info.value.status_code == 409
 
@@ -194,7 +200,9 @@ class TestStartServerDirect:
             mock_sm.start_server = AsyncMock(side_effect=Exception("Unknown error"))
 
             with pytest.raises(HTTPException) as exc_info:
-                await start_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+                await start_server(
+                    current_user=mock_user, profile=mock_profile, session=mock_session
+                )
 
         assert exc_info.value.status_code == 500
 
@@ -282,7 +290,9 @@ class TestRestartServerDirect:
             mock_sm.start_server = AsyncMock(return_value=54321)
 
             with patch("mlx_manager.routers.servers.asyncio.sleep", new_callable=AsyncMock):
-                result = await restart_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+                result = await restart_server(
+                    current_user=mock_user, profile=mock_profile, session=mock_session
+                )
 
         assert result == {"pid": 54321}
         assert mock_instance.pid == 54321
@@ -309,7 +319,9 @@ class TestRestartServerDirect:
             mock_sm.start_server = AsyncMock(return_value=54321)
 
             with patch("mlx_manager.routers.servers.asyncio.sleep", new_callable=AsyncMock):
-                result = await restart_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+                result = await restart_server(
+                    current_user=mock_user, profile=mock_profile, session=mock_session
+                )
 
         assert result == {"pid": 54321}
         mock_session.add.assert_called_once()
@@ -330,6 +342,8 @@ class TestRestartServerDirect:
 
             with patch("mlx_manager.routers.servers.asyncio.sleep", new_callable=AsyncMock):
                 with pytest.raises(HTTPException) as exc_info:
-                    await restart_server(current_user=mock_user, profile=mock_profile, session=mock_session)
+                    await restart_server(
+                        current_user=mock_user, profile=mock_profile, session=mock_session
+                    )
 
         assert exc_info.value.status_code == 500

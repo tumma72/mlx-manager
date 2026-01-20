@@ -4,7 +4,6 @@ These tests call router functions directly with mock sessions to ensure
 coverage is properly tracked (avoiding ASGI transport coverage issues).
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

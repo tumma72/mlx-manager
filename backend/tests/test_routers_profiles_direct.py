@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from mlx_manager.models import ServerProfile, ServerProfileCreate, ServerProfileUpdate, User, UserStatus
+from mlx_manager.models import (
+    ServerProfile,
+    ServerProfileCreate,
+    ServerProfileUpdate,
+    User,
+    UserStatus,
+)
 from mlx_manager.routers.profiles import (
     create_profile,
     duplicate_profile,
@@ -124,7 +130,9 @@ class TestCreateProfileDirect:
         mock_result2.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
-        result = await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
+        result = await create_profile(
+            current_user=mock_user, profile_data=profile_data, session=mock_session
+        )
 
         assert result.name == "Test Profile"
         mock_session.add.assert_called_once()
@@ -149,7 +157,9 @@ class TestCreateProfileDirect:
         mock_session.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
-            await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
+            await create_profile(
+                current_user=mock_user, profile_data=profile_data, session=mock_session
+            )
 
         assert exc_info.value.status_code == 409
         assert "name already exists" in exc_info.value.detail
@@ -176,7 +186,9 @@ class TestCreateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await create_profile(current_user=mock_user, profile_data=profile_data, session=mock_session)
+            await create_profile(
+                current_user=mock_user, profile_data=profile_data, session=mock_session
+            )
 
         assert exc_info.value.status_code == 409
         assert "Port already in use" in exc_info.value.detail
@@ -211,7 +223,9 @@ class TestUpdateProfileDirect:
         mock_result2.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
-        result = await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
+        result = await update_profile(
+            current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session
+        )
 
         assert result.name == "New Name"
         mock_session.commit.assert_called_once()
@@ -229,7 +243,12 @@ class TestUpdateProfileDirect:
         mock_session.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(current_user=mock_user, profile_id=999, profile_data=profile_data, session=mock_session)
+            await update_profile(
+                current_user=mock_user,
+                profile_id=999,
+                profile_data=profile_data,
+                session=mock_session,
+            )
 
         assert exc_info.value.status_code == 404
 
@@ -258,7 +277,12 @@ class TestUpdateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
+            await update_profile(
+                current_user=mock_user,
+                profile_id=1,
+                profile_data=profile_data,
+                session=mock_session,
+            )
 
         assert exc_info.value.status_code == 409
         assert "name already exists" in exc_info.value.detail
@@ -288,7 +312,12 @@ class TestUpdateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         with pytest.raises(HTTPException) as exc_info:
-            await update_profile(current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session)
+            await update_profile(
+                current_user=mock_user,
+                profile_id=1,
+                profile_data=profile_data,
+                session=mock_session,
+            )
 
         assert exc_info.value.status_code == 409
         assert "Port already in use" in exc_info.value.detail
@@ -327,7 +356,10 @@ class TestDuplicateProfileDirect:
             mock_settings.default_port_start = 10240
 
             result = await duplicate_profile(
-                current_user=mock_user, new_name="Copy", profile=existing_profile, session=mock_session
+                current_user=mock_user,
+                new_name="Copy",
+                profile=existing_profile,
+                session=mock_session,
             )
 
         assert result.name == "Copy"
@@ -356,7 +388,10 @@ class TestDuplicateProfileDirect:
 
         with pytest.raises(HTTPException) as exc_info:
             await duplicate_profile(
-                current_user=mock_user, new_name="Existing", profile=existing_profile, session=mock_session
+                current_user=mock_user,
+                new_name="Existing",
+                profile=existing_profile,
+                session=mock_session,
             )
 
         assert exc_info.value.status_code == 409

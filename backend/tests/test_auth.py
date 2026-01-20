@@ -1,7 +1,6 @@
 """Tests for authentication API endpoints."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from mlx_manager.models import User, UserStatus
 from mlx_manager.services.auth_service import hash_password
