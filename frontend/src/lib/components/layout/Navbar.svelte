@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
-	import { systemStore } from '$stores';
-	import { Server, Package, Settings, MessageSquare, Cpu } from 'lucide-svelte';
+	import { systemStore, authStore } from '$stores';
+	import { auth } from '$lib/api/client';
+	import { Server, Package, Settings, MessageSquare, Cpu, Users, LogOut } from 'lucide-svelte';
 
 	const navigation = [
 		{ href: '/servers' as const, label: 'Servers', icon: Server },
@@ -11,6 +13,9 @@
 		{ href: '/profiles' as const, label: 'Profiles', icon: Settings }
 	];
 
+	// Pending users count for admin badge
+	let pendingCount = $state(0);
+
 	// Memory polling is handled globally by +layout.svelte
 	// Just trigger initial load if not already loaded
 	$effect(() => {
@@ -18,6 +23,29 @@
 			systemStore.refreshMemory();
 		}
 	});
+
+	onMount(() => {
+		if (authStore.isAdmin) {
+			loadPendingCount();
+			// Poll every 30 seconds
+			const interval = setInterval(loadPendingCount, 30000);
+			return () => clearInterval(interval);
+		}
+	});
+
+	async function loadPendingCount() {
+		try {
+			const result = await auth.getPendingCount();
+			pendingCount = result.count;
+		} catch {
+			// Ignore errors - badge is not critical
+		}
+	}
+
+	function handleLogout() {
+		authStore.clearAuth();
+		window.location.href = '/login';
+	}
 </script>
 
 <nav class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
@@ -43,6 +71,28 @@
 							{item.label}
 						</a>
 					{/each}
+
+					<!-- Admin-only Users link -->
+					{#if authStore.isAdmin}
+						{@const isActive = $page.url.pathname === '/users'}
+						<a
+							href={resolve('/users')}
+							class="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors
+								{isActive
+								? 'bg-mlx-100 text-mlx-700 dark:bg-mlx-900 dark:text-mlx-100'
+								: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}"
+						>
+							<Users class="w-4 h-4" />
+							Users
+							{#if pendingCount > 0}
+								<span
+									class="ml-1 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full"
+								>
+									{pendingCount}
+								</span>
+							{/if}
+						</a>
+					{/if}
 				</div>
 			</div>
 
@@ -59,6 +109,25 @@
 								style="width: {systemStore.memory.percent_used}%"
 							></div>
 						</div>
+					</div>
+				{/if}
+
+				<!-- User info and logout -->
+				{#if authStore.isAuthenticated}
+					<div class="flex items-center gap-3">
+						{#if authStore.user}
+							<span class="hidden lg:inline text-sm text-muted-foreground">
+								{authStore.user.email}
+							</span>
+						{/if}
+						<button
+							onclick={handleLogout}
+							class="flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+							title="Logout"
+						>
+							<LogOut class="w-4 h-4" />
+							<span class="hidden sm:inline">Logout</span>
+						</button>
 					</div>
 				{/if}
 			</div>
