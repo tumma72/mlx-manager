@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 4 In Progress — Model Discovery & Badges
+**Current focus:** Phase 4 Complete — Model Discovery & Badges
 
 ## Current Position
 
-Phase: 4 of 6 (Model Discovery & Badges) - IN PROGRESS
-Plan: 1 of 3 complete
-Status: In progress
-Last activity: 2026-01-20 — Completed 04-01-PLAN.md (Backend Characteristics API)
+Phase: 4 of 6 (Model Discovery & Badges) - COMPLETE
+Plan: 3 of 3 complete
+Status: Phase complete
+Last activity: 2026-01-20 — Completed 04-03-PLAN.md (Filter Toggle & Modal UI)
 
-Progress: ████░░░░░░ 53% (3 phases + 1 plan complete)
+Progress: ██████░░░░ 60% (4 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 14
 - Average duration: ~4 min
-- Total execution time: ~57 min
+- Total execution time: ~69 min
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: ████░░░░░░ 53% (3 phases + 1 plan complete)
 | 1 | 1/1 | — | — |
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
-| 4 | 1/3 | ~8 min | ~8 min |
+| 4 | 3/3 | ~12 min | ~4 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03, 03-04, 03-05, 04-01
+- Last 5 plans: 03-04, 03-05, 04-01, 04-02, 04-03
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -69,6 +69,10 @@ Recent decisions affecting current work:
 - Architecture family normalized to display names (qwen2 -> Qwen)
 - Multimodal detection via vision_config, token IDs, or type keywords
 - Local cache read first, HF API fallback for remote config
+- Pill-shaped toggle button for My Models / HuggingFace mode selection
+- Filter modal with Architecture, Capabilities, Quantization sections
+- Local filter copy until Apply button clicked (standard modal pattern)
+- Models without characteristics pass all filters (show until loaded)
 
 ### Pending Todos
 
@@ -85,6 +89,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-20
-Stopped at: Completed 04-01-PLAN.md (Backend Characteristics API)
+Stopped at: Completed 04-03-PLAN.md (Filter Toggle & Modal UI)
 Resume file: None
-Next plan: 04-02-PLAN.md (Frontend Badge Components)
+Next plan: Phase 5 (TBD)
