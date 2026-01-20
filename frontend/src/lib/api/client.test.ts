@@ -5,6 +5,9 @@ import { profiles, models, servers, system, ApiError } from "./client";
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+// Default headers that are always sent
+const defaultHeaders = { headers: { "Content-Type": "application/json" } };
+
 function mockResponse(data: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -38,7 +41,10 @@ describe("profiles API", () => {
 
       const result = await profiles.list();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/profiles");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/profiles",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(mockProfiles);
     });
   });
@@ -50,7 +56,10 @@ describe("profiles API", () => {
 
       const result = await profiles.get(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/profiles/1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/profiles/1",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(mockProfile);
     });
 
@@ -107,9 +116,13 @@ describe("profiles API", () => {
 
       await profiles.delete(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/profiles/1", {
-        method: "DELETE",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/profiles/1",
+        expect.objectContaining({
+          method: "DELETE",
+          ...defaultHeaders,
+        }),
+      );
     });
   });
 
@@ -119,7 +132,10 @@ describe("profiles API", () => {
 
       const result = await profiles.getNextPort();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/profiles/next-port");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/profiles/next-port",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual({ port: 10242 });
     });
   });
@@ -133,7 +149,10 @@ describe("profiles API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/profiles/1/duplicate?new_name=Copy%20of%20Profile",
-        { method: "POST" },
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
       );
       expect(result).toEqual(duplicatedProfile);
     });
@@ -150,6 +169,7 @@ describe("models API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/models/search?query=test&limit=20",
+        expect.objectContaining(defaultHeaders),
       );
       expect(result).toEqual(mockModels);
     });
@@ -161,6 +181,7 @@ describe("models API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/models/search?query=test&limit=10&max_size_gb=50",
+        expect.objectContaining(defaultHeaders),
       );
     });
   });
@@ -174,7 +195,10 @@ describe("models API", () => {
 
       const result = await models.listLocal();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/models/local");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/local",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(mockModels);
     });
   });
@@ -197,13 +221,21 @@ describe("models API", () => {
   describe("getActiveDownloads", () => {
     it("gets active downloads", async () => {
       const activeDownloads = [
-        { task_id: "abc123", model_id: "mlx-community/test", status: "downloading", progress: 50 },
+        {
+          task_id: "abc123",
+          model_id: "mlx-community/test",
+          status: "downloading",
+          progress: 50,
+        },
       ];
       mockFetch.mockResolvedValueOnce(mockResponse(activeDownloads));
 
       const result = await models.getActiveDownloads();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/models/downloads/active");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/downloads/active",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(activeDownloads);
     });
   });
@@ -216,7 +248,10 @@ describe("models API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/models/mlx-community%2Ftest-model",
-        { method: "DELETE" },
+        expect.objectContaining({
+          method: "DELETE",
+          ...defaultHeaders,
+        }),
       );
     });
   });
@@ -230,6 +265,7 @@ describe("models API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/models/detect-options/mlx-community%2Ftest-model",
+        expect.objectContaining(defaultHeaders),
       );
       expect(result).toEqual(detectionInfo);
     });
@@ -242,7 +278,10 @@ describe("models API", () => {
 
       const result = await models.getAvailableParsers();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/models/available-parsers");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/available-parsers",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(parsers);
     });
   });
@@ -258,7 +297,10 @@ describe("servers API", () => {
 
       const result = await servers.list();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(mockServers);
     });
   });
@@ -271,9 +313,13 @@ describe("servers API", () => {
 
       const result = await servers.start(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/start", {
-        method: "POST",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/start",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
       expect(result).toEqual({ pid: 12345, port: 10240 });
     });
   });
@@ -284,9 +330,13 @@ describe("servers API", () => {
 
       const result = await servers.stop(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/stop", {
-        method: "POST",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/stop",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
       expect(result).toEqual({ stopped: true });
     });
 
@@ -295,9 +345,13 @@ describe("servers API", () => {
 
       await servers.stop(1, true);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/stop?force=true", {
-        method: "POST",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/stop?force=true",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
     });
   });
 
@@ -307,9 +361,13 @@ describe("servers API", () => {
 
       const result = await servers.restart(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/restart", {
-        method: "POST",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/restart",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
       expect(result).toEqual({ pid: 12346 });
     });
   });
@@ -321,7 +379,10 @@ describe("servers API", () => {
 
       const result = await servers.health(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/health");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/health",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(healthStatus);
     });
   });
@@ -333,7 +394,10 @@ describe("servers API", () => {
 
       const result = await servers.status(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/servers/1/status");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/servers/1/status",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(serverStatus);
     });
   });
@@ -347,7 +411,10 @@ describe("system API", () => {
 
       const result = await system.memory();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/system/memory");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/memory",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(memoryInfo);
     });
   });
@@ -359,7 +426,10 @@ describe("system API", () => {
 
       const result = await system.info();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/system/info");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/info",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(sysInfo);
     });
   });
@@ -371,7 +441,10 @@ describe("system API", () => {
 
       const result = await system.parserOptions();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/system/parser-options");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/parser-options",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(parserOpts);
     });
   });
@@ -386,9 +459,13 @@ describe("system API", () => {
 
       const result = await system.launchd.install(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/system/launchd/install/1", {
-        method: "POST",
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/launchd/install/1",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
       expect(result).toEqual(installResult);
     });
 
@@ -399,9 +476,10 @@ describe("system API", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/system/launchd/uninstall/1",
-        {
+        expect.objectContaining({
           method: "POST",
-        },
+          ...defaultHeaders,
+        }),
       );
     });
 
@@ -415,7 +493,10 @@ describe("system API", () => {
 
       const result = await system.launchd.status(1);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/system/launchd/status/1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/launchd/status/1",
+        expect.objectContaining(defaultHeaders),
+      );
       expect(result).toEqual(status);
     });
   });
