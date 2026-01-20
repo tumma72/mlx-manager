@@ -17,13 +17,22 @@
 
 	let { open = $bindable(), filters = $bindable(), onApply }: Props = $props();
 
+	// Helper to clone filters (Svelte 5 proxies can't be structuredClone'd directly)
+	function cloneFilters(f: FilterState): FilterState {
+		return {
+			architectures: [...f.architectures],
+			multimodal: f.multimodal,
+			quantization: [...f.quantization]
+		};
+	}
+
 	// Local copy for editing until Apply
-	let localFilters = $state<FilterState>(structuredClone(filters));
+	let localFilters = $state<FilterState>(cloneFilters(filters));
 
 	// Reset local filters when modal opens
 	$effect(() => {
 		if (open) {
-			localFilters = structuredClone(filters);
+			localFilters = cloneFilters(filters);
 		}
 	});
 
@@ -54,7 +63,7 @@
 	}
 
 	function applyFilters() {
-		filters = structuredClone(localFilters);
+		filters = cloneFilters(localFilters);
 		onApply?.(filters);
 		open = false;
 	}
