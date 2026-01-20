@@ -90,3 +90,8 @@ class AuthStore {
 }
 
 export const authStore = new AuthStore();
+
+// Auto-initialize on client-side
+if (typeof window !== "undefined") {
+  authStore.initialize();
+}
