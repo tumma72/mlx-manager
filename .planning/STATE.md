@@ -67,10 +67,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-1. **Fix auth tests and restore coverage** — Phase 3 broke tests, coverage below threshold (run `make test`)
-2. **Restore test coverage to 95%+** — Backend at 88%, 33 skipped tests need audit
-3. **Local models don't show characteristics** — Model list only shows metadata for HuggingFace search results, not locally downloaded models
-4. **Standardize profile/server tile buttons** — Use smaller button style from ServerTile across both ProfileTile and ServerTile
+1. **Local models don't show characteristics** — Model list only shows metadata for HuggingFace search results, not locally downloaded models (Phase 4 scope)
+2. **Standardize profile/server tile buttons** — Use smaller button style from ServerTile across both ProfileTile and ServerTile (UI polish)
 
 ### Known Gaps
 
