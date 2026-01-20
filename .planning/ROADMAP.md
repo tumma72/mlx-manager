@@ -12,7 +12,7 @@ Polish the UX for models and server panels, add optional API key authentication 
 
 - [x] **Phase 1: Models Panel UX** - Anchored search, consolidated downloads
 - [x] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
-- [ ] **Phase 3: API Key Authentication** - Optional bearer token auth
+- [ ] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [ ] **Phase 4: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
 ## Phase Details
@@ -51,21 +51,26 @@ Plans:
 - [x] 02-04: Scroll preservation during polling
 - [x] 02-05: Gap closure - restart tile disappearing fix
 
-### Phase 3: API Key Authentication
-**Goal**: Optional bearer token authentication for network security
+### Phase 3: User-Based Authentication
+**Goal**: User registration/login with email+password, JWT sessions, admin approval flow
 **Depends on**: Phase 2
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
 **Success Criteria** (what must be TRUE):
-  1. When `MLX_MANAGER_API_KEY` is set, unauthenticated requests return 401
-  2. When API key is set, valid Bearer token grants access
-  3. When API key is not set, all endpoints are open (backwards compatible)
-  4. Frontend prompts for API key when auth is enabled and stores in localStorage
-**Research**: Unlikely (FastAPI auth patterns, localStorage)
+  1. First user to register becomes admin automatically
+  2. Subsequent users can request accounts, admin must approve
+  3. Authenticated users access app via JWT (7-day sessions)
+  4. Unauthenticated requests redirect to /login page
+  5. Admin can manage users from dedicated /users page
+  6. Pending approval requests show badge count in nav (admin only)
+**Research**: Likely (FastAPI JWT patterns, password hashing, SQLModel user schema)
 **Plans**: TBD
 
 Plans:
-- [ ] 03-01: Backend auth middleware with env-based toggle
-- [ ] 03-02: Frontend auth prompt and localStorage storage
+- [ ] 03-01: User database schema and password hashing
+- [ ] 03-02: Registration and login API endpoints
+- [ ] 03-03: JWT middleware and auth guards
+- [ ] 03-04: Frontend login/register pages
+- [ ] 03-05: Admin user management page
 
 ### Phase 4: Bug Fixes & Stability
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling
@@ -95,5 +100,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Models Panel UX | 1/1 | ✓ Complete | 2026-01-17 |
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
-| 3. API Key Authentication | 0/2 | Not started | - |
+| 3. User-Based Authentication | 0/5 | Not started | - |
 | 4. Bug Fixes & Stability | 0/4 | Not started | - |
