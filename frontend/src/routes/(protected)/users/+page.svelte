@@ -227,14 +227,28 @@
 													Approve
 												</Button>
 											{:else if user.status === 'approved'}
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() => updateUserStatus(user.id, 'disabled')}
-													title="Disable user"
-												>
-													<UserX class="w-4 h-4" />
-												</Button>
+												{#if !isSelf(user) || !isOnlyAdmin(user)}
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() => updateUserStatus(user.id, 'disabled')}
+														disabled={isSelf(user) && isOnlyAdmin(user)}
+														title={isSelf(user) && isOnlyAdmin(user)
+															? 'Cannot disable last admin'
+															: 'Disable user'}
+													>
+														<UserX class="w-4 h-4" />
+													</Button>
+												{:else}
+													<Button
+														size="sm"
+														variant="ghost"
+														disabled
+														title="Cannot disable last admin"
+													>
+														<UserX class="w-4 h-4 opacity-50" />
+													</Button>
+												{/if}
 											{:else if user.status === 'disabled'}
 												<Button
 													size="sm"
