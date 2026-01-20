@@ -5,7 +5,7 @@
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore } from '$stores';
 	import { formatDuration } from '$lib/utils/format';
-	import { Card, Button, Badge } from '$components/ui';
+	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import {
 		Play,
 		Square,
@@ -39,6 +39,8 @@
 	let pollTimeoutId = $state<ReturnType<typeof setTimeout> | null>(null);
 	// Track if we're actively polling (independent of store state)
 	let isPolling = $state(false);
+	// Delete confirmation dialog state
+	let showDeleteConfirm = $state(false);
 
 	// Derived state from store (store is source of truth for status)
 	const isStarting = $derived(serverStore.isStarting(profile.id));
@@ -303,8 +305,11 @@
 		}
 	}
 
-	async function handleDelete() {
-		if (!confirm('Are you sure you want to delete this profile?')) return;
+	function requestDelete() {
+		showDeleteConfirm = true;
+	}
+
+	async function confirmDelete() {
 		loading = true;
 		serverStore.clearFailure(profile.id);
 		try {
@@ -401,7 +406,7 @@
 			<Button variant="outline" size="sm" onclick={handleDuplicate} disabled={loading} title="Duplicate">
 				<Copy class="h-4 w-4" />
 			</Button>
-			<Button variant="outline" size="sm" onclick={handleDelete} disabled={loading} title="Delete">
+			<Button variant="outline" size="sm" onclick={requestDelete} disabled={loading} title="Delete">
 				<Trash2 class="h-4 w-4" />
 			</Button>
 		</div>
@@ -483,3 +488,14 @@
 		</div>
 	{/if}
 </Card>
+
+<ConfirmDialog
+	bind:open={showDeleteConfirm}
+	title="Delete Profile"
+	description="Are you sure you want to delete '{profile.name}'? This action cannot be undone."
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	variant="destructive"
+	onConfirm={confirmDelete}
+	onCancel={() => {}}
+/>
