@@ -92,21 +92,21 @@ Plans:
 - [x] 04-03-PLAN.md — Search UX refactor with filters (toggle switch, filter modal, filter chips)
 
 ### Phase 5: Chat Multimodal Support
-**Goal**: Support image/video attachments for testing multimodal models
+**Goal**: Support image/video attachments for testing multimodal models with streaming responses
 **Depends on**: Phase 4
-**Requirements**: CHAT-01, CHAT-02
+**Requirements**: CHAT-01, CHAT-02, CHAT-03
 **Success Criteria** (what must be TRUE):
   1. Users can attach images via button and drag-drop
   2. Attached images display in chat and are sent to model
-  3. Video attachments supported (frame extraction or direct if model supports)
-  4. Thinking models show collapsible thinking panel
-**Research**: Likely (MLX multimodal API, image encoding patterns)
-**Plans**: TBD
+  3. Video attachments supported (send directly to model, 2-min limit)
+  4. Thinking models show collapsible thinking panel with "Thought for Xs"
+**Research**: Completed (MLX multimodal API, SSE streaming, thinking tag parsing)
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Image attachment UI and encoding
-- [ ] 05-02: Multimodal message API integration
-- [ ] 05-03: Thinking model display
+- [ ] 05-01-PLAN.md — Media attachment UI (button, drag-drop, thumbnails, validation)
+- [ ] 05-02-PLAN.md — Streaming chat with multimodal API (backend SSE, thinking display)
+- [ ] 05-03-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 
 ### Phase 6: Bug Fixes & Stability
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling
@@ -138,5 +138,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
-| 5. Chat Multimodal Support | 0/3 | Not started | - |
+| 5. Chat Multimodal Support | 0/3 | Ready | - |
 | 6. Bug Fixes & Stability | 0/4 | Not started | - |
