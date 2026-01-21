@@ -101,12 +101,13 @@ Plans:
   3. Video attachments supported (send directly to model, 2-min limit)
   4. Thinking models show collapsible thinking panel with "Thought for Xs"
 **Research**: Completed (MLX multimodal API, SSE streaming, thinking tag parsing)
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 05-01-PLAN.md — Media attachment UI (button, drag-drop, thumbnails, validation)
-- [ ] 05-02-PLAN.md — Streaming chat with multimodal API (backend SSE, thinking display)
-- [ ] 05-03-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
+- [ ] 05-02-PLAN.md — Backend chat streaming endpoint (SSE, thinking tag parsing)
+- [ ] 05-03-PLAN.md — Frontend streaming consumer (ThinkingBubble, multimodal encoding)
+- [ ] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 
 ### Phase 6: Bug Fixes & Stability
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling
@@ -138,5 +139,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
-| 5. Chat Multimodal Support | 0/3 | Ready | - |
+| 5. Chat Multimodal Support | 0/4 | Ready | - |
 | 6. Bug Fixes & Stability | 0/4 | Not started | - |
