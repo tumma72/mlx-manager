@@ -1,37 +1,58 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, Brain } from 'lucide-svelte';
+	import { Collapsible } from 'bits-ui';
+	import { ChevronDown, ChevronRight, Brain, Loader2 } from 'lucide-svelte';
 
 	interface Props {
 		content: string;
+		duration?: number; // seconds
+		streaming?: boolean;
 		defaultExpanded?: boolean;
 	}
 
-	let { content, defaultExpanded = false }: Props = $props();
+	let { content, duration, streaming = false, defaultExpanded = false }: Props = $props();
 
-	// Use a function to capture initial value - this is intentional (one-time initialization)
 	let expanded = $state(getInitialExpanded());
 	function getInitialExpanded() {
-		return defaultExpanded;
+		return defaultExpanded || streaming; // Auto-expand while streaming
 	}
+
+	// Auto-collapse when streaming finishes
+	$effect(() => {
+		if (!streaming && duration !== undefined) {
+			expanded = false;
+		}
+	});
+
+	const label = $derived.by(() => {
+		if (streaming) return 'Thinking...';
+		if (duration !== undefined) return `Thought for ${duration.toFixed(1)}s`;
+		return 'Thinking';
+	});
 </script>
 
-<div class="my-2 border border-muted rounded-lg overflow-hidden">
-	<button
-		type="button"
-		class="w-full flex items-center gap-2 px-3 py-2 bg-muted/50 hover:bg-muted/70 transition-colors text-sm text-muted-foreground"
-		onclick={() => (expanded = !expanded)}
-	>
-		{#if expanded}
-			<ChevronDown class="w-4 h-4" />
-		{:else}
-			<ChevronRight class="w-4 h-4" />
-		{/if}
-		<Brain class="w-4 h-4" />
-		<span>Thinking</span>
-	</button>
-	{#if expanded}
-		<div class="px-3 py-2 text-sm text-muted-foreground bg-muted/20 whitespace-pre-wrap">
-			{content}
-		</div>
-	{/if}
+<div class="my-2">
+	<Collapsible.Root bind:open={expanded}>
+		<Collapsible.Trigger
+			class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+		>
+			{#if expanded}
+				<ChevronDown class="w-4 h-4" />
+			{:else}
+				<ChevronRight class="w-4 h-4" />
+			{/if}
+			{#if streaming}
+				<Loader2 class="w-4 h-4 animate-spin" />
+			{:else}
+				<Brain class="w-4 h-4" />
+			{/if}
+			<span>{label}</span>
+		</Collapsible.Trigger>
+		<Collapsible.Content>
+			<div
+				class="mt-2 pl-6 border-l-2 border-muted text-sm text-muted-foreground italic whitespace-pre-wrap"
+			>
+				{content}
+			</div>
+		</Collapsible.Content>
+	</Collapsible.Root>
 </div>
