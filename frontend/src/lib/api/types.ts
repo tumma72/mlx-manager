@@ -222,3 +222,23 @@ export interface UserUpdate {
   is_admin?: boolean;
   status?: UserStatus;
 }
+
+// Chat message types for multimodal support
+export interface ContentPart {
+  type: "text" | "image_url";
+  text?: string;
+  image_url?: {
+    url: string; // "data:image/png;base64,..." or HTTP URL
+  };
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string | ContentPart[];
+}
+
+export interface Attachment {
+  file: File;
+  preview: string; // Object URL for thumbnail
+  type: "image" | "video";
+}
