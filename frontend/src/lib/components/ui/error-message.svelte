@@ -5,12 +5,11 @@
   interface Props {
     summary: string;
     details?: string;
-    defaultExpanded?: boolean;
   }
 
-  let { summary, details, defaultExpanded = true }: Props = $props();
+  let { summary, details }: Props = $props();
 
-  let expanded = $state(defaultExpanded);
+  let expanded = $state(true);
   let copied = $state(false);
 
   async function copyToClipboard() {

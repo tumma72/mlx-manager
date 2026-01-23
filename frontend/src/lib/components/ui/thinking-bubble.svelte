@@ -6,19 +6,17 @@
 		content: string;
 		duration?: number; // seconds
 		streaming?: boolean;
-		defaultExpanded?: boolean;
 	}
 
-	let { content, duration, streaming = false, defaultExpanded = false }: Props = $props();
+	let { content, duration, streaming = false }: Props = $props();
 
-	let expanded = $state(getInitialExpanded());
-	function getInitialExpanded() {
-		return defaultExpanded || streaming; // Auto-expand while streaming
-	}
+	let expanded = $state(false);
 
-	// Auto-collapse when streaming finishes
+	// Auto-expand when streaming, auto-collapse when done
 	$effect(() => {
-		if (!streaming && duration !== undefined) {
+		if (streaming) {
+			expanded = true;
+		} else if (duration !== undefined) {
 			expanded = false;
 		}
 	});

@@ -15,11 +15,11 @@
 	let input = $state('');
 	let loading = $state(false);
 	let chatError = $state<{ summary: string; details?: string } | null>(null);
-	let errorMessageRef: { collapse: () => void } | undefined;
+	let errorMessageRef = $state<{ collapse: () => void } | undefined>(undefined);
 	let selectedProfileId = $state<number | null>(null);
 	let attachments = $state<Attachment[]>([]);
 	let dragOver = $state(false);
-	let fileInputRef: HTMLInputElement | undefined;
+	let fileInputRef = $state<HTMLInputElement | undefined>(undefined);
 	let streamingThinking = $state('');
 	let streamingResponse = $state('');
 	let thinkingDuration = $state<number | undefined>(undefined);
@@ -466,7 +466,6 @@
 										content={streamingThinking}
 										duration={thinkingDuration}
 										streaming={thinkingDuration === undefined}
-										defaultExpanded={true}
 									/>
 								{/if}
 								{#if streamingResponse}

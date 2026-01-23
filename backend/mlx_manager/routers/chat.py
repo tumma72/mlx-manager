@@ -94,11 +94,17 @@ async def chat_completions(
                             # (when reasoning_parser is configured, server puts
                             # thinking in reasoning_content field)
                             if reasoning:
+                                # Strip thinking tags — server may include them
+                                clean = reasoning.replace("<think>", "").replace("</think>", "")
                                 if not in_thinking:
                                     in_thinking = True
                                     thinking_start = time.time()
-                                thinking_data = {"type": "thinking", "content": reasoning}
-                                yield f"data: {json.dumps(thinking_data)}\n\n"
+                                if clean:
+                                    thinking_data = {
+                                        "type": "thinking",
+                                        "content": clean,
+                                    }
+                                    yield f"data: {json.dumps(thinking_data)}\n\n"
                             elif in_thinking and not reasoning and content:
                                 # Transitioned from reasoning to content — thinking done
                                 in_thinking = False
