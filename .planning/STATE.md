@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 5 of 6 (Chat Multimodal Support) - IN PROGRESS
-Plan: 2 of 4 complete
-Status: Phase in progress, 05-02 complete
-Last activity: 2026-01-23 — Completed 05-02-PLAN.md (Chat Streaming Endpoint)
+Plan: 3 of 4 complete
+Status: Phase in progress, 05-01, 05-02, 05-03 complete
+Last activity: 2026-01-23 — Completed 05-03-PLAN.md (Streaming Chat UI)
 
-Progress: ██████░░░░ 70% (4 phases complete + 2/4 of phase 5)
+Progress: ███████░░░ 72% (4 phases complete + 3/4 of phase 5)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: ~4 min
-- Total execution time: ~75 min
+- Total execution time: ~78 min
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Progress: ██████░░░░ 70% (4 phases complete + 2/4 of phase 5
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
-| 5 | 2/4 | ~6 min | ~3 min |
+| 5 | 3/4 | ~9 min | ~3 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01, 04-02, 04-03, 05-01, 05-02
+- Last 5 plans: 04-02, 04-03, 05-01, 05-02, 05-03
 - Trend: Fast execution, consistently improving velocity
 
 ## Accumulated Context
@@ -80,6 +80,10 @@ Recent decisions affecting current work:
 - Use connection attempt as server check (httpx.ConnectError is appropriate check)
 - Auth required but user object unused (use _user prefix for intentionally unused)
 - Character-level streaming for thinking/response (matches mlx-openai-server granularity)
+- Auto-expand ThinkingBubble during streaming, auto-collapse when done (live process, compact summary)
+- "Thought for Xs" label after thinking completes (shows thinking duration)
+- FileReader.readAsDataURL() for client-side base64 encoding (no backend changes needed)
+- ContentPart[] for multimodal, string for text-only API messages (mlx-openai-server format)
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-23
-Stopped at: Completed 05-02-PLAN.md
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
-Next plan: 05-03 (TBD based on roadmap)
+Next plan: 05-04 (Integration Testing and Documentation)
