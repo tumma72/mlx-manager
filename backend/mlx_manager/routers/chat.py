@@ -55,9 +55,6 @@ async def chat_completions(
     # Build MLX server URL
     server_url = f"http://{profile.host}:{profile.port}/v1/chat/completions"
 
-    # Check if profile has reasoning parser enabled
-    has_reasoning = bool(profile.reasoning_parser)
-
     async def generate() -> AsyncGenerator[str, None]:
         thinking_start: float | None = None
         in_thinking = False
@@ -91,48 +88,89 @@ async def chat_completions(
                             data = json.loads(data_str)
                             delta = data.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content", "")
+                            reasoning = delta.get("reasoning_content", "")
 
-                            if not content:
-                                continue
+                            # Handle server-extracted reasoning content
+                            # (when reasoning_parser is configured, server puts
+                            # thinking in reasoning_content field)
+                            if reasoning:
+                                if not in_thinking:
+                                    in_thinking = True
+                                    thinking_start = time.time()
+                                thinking_data = {"type": "thinking", "content": reasoning}
+                                yield f"data: {json.dumps(thinking_data)}\n\n"
+                            elif in_thinking and not reasoning and content:
+                                # Transitioned from reasoning to content — thinking done
+                                in_thinking = False
+                                duration = time.time() - thinking_start if thinking_start else 0
+                                done_data = {
+                                    "type": "thinking_done",
+                                    "duration": round(duration, 1),
+                                }
+                                yield f"data: {json.dumps(done_data)}\n\n"
 
-                            # Parse thinking tags if reasoning enabled
-                            if has_reasoning:
-                                i = 0
-                                while i < len(content):
-                                    # Check for opening tag
-                                    if content[i : i + 7] == "<think>":
-                                        in_thinking = True
-                                        thinking_start = time.time()
-                                        i += 7
-                                        continue
+                            # Handle content field
+                            if content:
+                                # Parse <think> tags from content (fallback for
+                                # models that output raw tags without server parser)
+                                if "<think>" in content or "</think>" in content:
+                                    i = 0
+                                    while i < len(content):
+                                        if content[i : i + 7] == "<think>":
+                                            in_thinking = True
+                                            thinking_start = time.time()
+                                            i += 7
+                                            continue
 
-                                    # Check for closing tag
-                                    if content[i : i + 8] == "</think>":
-                                        in_thinking = False
-                                        duration = (
-                                            time.time() - thinking_start if thinking_start else 0
-                                        )
-                                        done_data = {
-                                            "type": "thinking_done",
-                                            "duration": round(duration, 1),
+                                        if content[i : i + 8] == "</think>":
+                                            in_thinking = False
+                                            duration = (
+                                                time.time() - thinking_start
+                                                if thinking_start
+                                                else 0
+                                            )
+                                            done_data = {
+                                                "type": "thinking_done",
+                                                "duration": round(duration, 1),
+                                            }
+                                            yield f"data: {json.dumps(done_data)}\n\n"
+                                            i += 8
+                                            continue
+
+                                        char = content[i]
+                                        chunk_type = "thinking" if in_thinking else "response"
+                                        chunk_data = {
+                                            "type": chunk_type,
+                                            "content": char,
                                         }
-                                        yield f"data: {json.dumps(done_data)}\n\n"
-                                        i += 8
-                                        continue
-
-                                    # Emit character
-                                    char = content[i]
-                                    chunk_type = "thinking" if in_thinking else "response"
-                                    chunk_data = {"type": chunk_type, "content": char}
-                                    yield f"data: {json.dumps(chunk_data)}\n\n"
-                                    i += 1
-                            else:
-                                # No reasoning parser, emit all as response
-                                response_data = {"type": "response", "content": content}
-                                yield f"data: {json.dumps(response_data)}\n\n"
+                                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                                        i += 1
+                                elif in_thinking:
+                                    # Still in thinking mode (from tag parsing)
+                                    thinking_data = {
+                                        "type": "thinking",
+                                        "content": content,
+                                    }
+                                    yield f"data: {json.dumps(thinking_data)}\n\n"
+                                else:
+                                    # Regular response content
+                                    response_data = {
+                                        "type": "response",
+                                        "content": content,
+                                    }
+                                    yield f"data: {json.dumps(response_data)}\n\n"
 
                         except json.JSONDecodeError:
                             continue
+
+                    # If still in thinking when stream ends, emit thinking_done
+                    if in_thinking:
+                        duration = time.time() - thinking_start if thinking_start else 0
+                        done_data = {
+                            "type": "thinking_done",
+                            "duration": round(duration, 1),
+                        }
+                        yield f"data: {json.dumps(done_data)}\n\n"
 
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
