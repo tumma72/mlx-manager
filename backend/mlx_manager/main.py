@@ -33,6 +33,7 @@ from mlx_manager.database import get_session, init_db, recover_incomplete_downlo
 from mlx_manager.models import RunningInstance
 from mlx_manager.routers import (
     auth_router,
+    chat_router,
     models_router,
     profiles_router,
     servers_router,
@@ -181,6 +182,7 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(auth_router)
+app.include_router(chat_router)
 app.include_router(profiles_router)
 app.include_router(models_router)
 app.include_router(servers_router)
