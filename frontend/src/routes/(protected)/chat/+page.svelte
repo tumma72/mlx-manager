@@ -39,9 +39,11 @@
 		selectedProfile?.model_type === 'multimodal'
 	);
 
-	// Accept string based on model capabilities
+	// Accept string based on model capabilities - CHANGE 2
 	const acceptedFormats = $derived(
-		isMultimodal ? 'image/*,video/*' : ''
+		isMultimodal
+			? 'image/*,video/*,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml'
+			: '.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml'
 	);
 
 	// Handle URL query parameter reactively (not just on mount)
@@ -88,7 +90,7 @@
 		});
 	}
 
-	// Add attachment with validation
+	// Add attachment with validation - CHANGE 3 & 4
 	async function addAttachment(file: File): Promise<void> {
 		if (attachments.length >= 3) {
 			chatError = { summary: 'Maximum 3 attachments per message' };
@@ -97,11 +99,27 @@
 
 		const isVideo = file.type.startsWith('video/');
 		const isImage = file.type.startsWith('image/');
+		const isText = file.type.startsWith('text/') ||
+			file.type === 'application/json' ||
+			file.type === 'application/xml' ||
+			file.type === 'application/x-yaml' ||
+			file.type === 'application/x-sh' ||
+			file.type === 'application/sql';
 
-		if (!isVideo && !isImage) {
-			chatError = { summary: 'Only images and videos are supported' };
+		// Validate based on model type
+		if (!isText && !isVideo && !isImage) {
+			chatError = { summary: 'Unsupported file type' };
 			return;
 		}
+
+		// Text-only models: reject media files
+		if (!isMultimodal && (isImage || isVideo)) {
+			chatError = { summary: 'This model only supports text file attachments' };
+			return;
+		}
+
+		// Multimodal models: accept everything
+		// Text models: accept only text files
 
 		if (isVideo) {
 			const valid = await validateVideoDuration(file);
@@ -111,18 +129,21 @@
 			}
 		}
 
-		const preview = URL.createObjectURL(file);
+		const preview = isText ? file.name : URL.createObjectURL(file);
 		attachments.push({
 			file,
 			preview,
-			type: isVideo ? 'video' : 'image'
+			type: isText ? 'text' : isVideo ? 'video' : 'image'
 		});
 	}
 
-	// Remove attachment and cleanup object URL
+	// Remove attachment and cleanup object URL - CHANGE 5
 	function removeAttachment(index: number): void {
 		const attachment = attachments[index];
-		URL.revokeObjectURL(attachment.preview);
+		// Only revoke object URLs (not filenames for text files)
+		if (attachment.type !== 'text') {
+			URL.revokeObjectURL(attachment.preview);
+		}
 		attachments.splice(index, 1);
 	}
 
@@ -197,9 +218,11 @@
 		// Build message content (with attachments if any)
 		const content = await buildMessageContent(userMessage, attachments);
 
-		// Clear attachments
+		// Clear attachments - CHANGE 8
 		for (const attachment of attachments) {
-			URL.revokeObjectURL(attachment.preview);
+			if (attachment.type !== 'text') {
+				URL.revokeObjectURL(attachment.preview);
+			}
 		}
 		attachments = [];
 
@@ -326,9 +349,11 @@
 		selectedProfileId = target.value ? parseInt(target.value, 10) : null;
 		messages = [];
 		chatError = null;
-		// Clear attachments when switching profiles
+		// Clear attachments when switching profiles - CHANGE 7
 		for (const attachment of attachments) {
-			URL.revokeObjectURL(attachment.preview);
+			if (attachment.type !== 'text') {
+				URL.revokeObjectURL(attachment.preview);
+			}
 		}
 		attachments = [];
 	}
@@ -506,7 +531,7 @@
 										alt="Attachment"
 										class="w-16 h-16 object-cover rounded-lg border"
 									/>
-								{:else}
+								{:else if attachment.type === 'video'}
 									<video
 										src={attachment.preview}
 										class="w-16 h-16 object-cover rounded-lg border"
@@ -514,6 +539,14 @@
 									>
 										<track kind="captions" />
 									</video>
+								{:else if attachment.type === 'text'}
+									<div class="w-16 h-16 flex flex-col items-center justify-center rounded-lg border bg-muted text-muted-foreground text-xs p-2">
+										<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1">
+											<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+											<polyline points="14 2 14 8 20 8"></polyline>
+										</svg>
+										<span class="truncate w-full text-center">{attachment.preview.split('.').pop()}</span>
+									</div>
 								{/if}
 								<button
 									type="button"
@@ -527,17 +560,15 @@
 					</div>
 				{/if}
 				<div class="flex gap-2">
-					{#if isMultimodal}
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon"
-							onclick={() => fileInputRef?.click()}
-							disabled={loading || attachments.length >= 3}
-						>
-							<Paperclip class="w-4 h-4" />
-						</Button>
-					{/if}
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						onclick={() => fileInputRef?.click()}
+						disabled={loading || attachments.length >= 3}
+					>
+						<Paperclip class="w-4 h-4" />
+					</Button>
 					<Input
 						bind:value={input}
 						placeholder="Type a message..."
