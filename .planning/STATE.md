@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 5 of 6 (Chat Multimodal Support) - IN PROGRESS
-Plan: 1 of 4 complete
-Status: Phase in progress, 05-01 complete
-Last activity: 2026-01-23 — Completed 05-01-PLAN.md (Media Attachment UI)
+Plan: 2 of 4 complete
+Status: Phase in progress, 05-02 complete
+Last activity: 2026-01-23 — Completed 05-02-PLAN.md (Chat Streaming Endpoint)
 
-Progress: ██████░░░░ 68% (4 phases complete + 1/4 of phase 5)
+Progress: ██████░░░░ 70% (4 phases complete + 2/4 of phase 5)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: ~4 min
-- Total execution time: ~72 min
+- Total execution time: ~75 min
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Progress: ██████░░░░ 68% (4 phases complete + 1/4 of phase 5
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
-| 5 | 1/4 | ~3 min | ~3 min |
+| 5 | 2/4 | ~6 min | ~3 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-05, 04-01, 04-02, 04-03, 05-01
+- Last 5 plans: 04-01, 04-02, 04-03, 05-01, 05-02
 - Trend: Fast execution, consistently improving velocity
 
 ## Accumulated Context
@@ -77,6 +77,9 @@ Recent decisions affecting current work:
 - OpenAI ContentPart format for multimodal messages (mlx-openai-server compatible)
 - Max 3 attachments per chat message (memory and UI considerations)
 - Video duration limit of 2 minutes for attachments
+- Use connection attempt as server check (httpx.ConnectError is appropriate check)
+- Auth required but user object unused (use _user prefix for intentionally unused)
+- Character-level streaming for thinking/response (matches mlx-openai-server granularity)
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-23
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
-Next plan: 05-02 (Encode attachments and modify API call)
+Next plan: 05-03 (TBD based on roadmap)
