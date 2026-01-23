@@ -109,7 +109,7 @@ Plans:
 - [x] 05-02-PLAN.md — Backend chat streaming endpoint (SSE, thinking tag parsing)
 - [x] 05-03-PLAN.md — Frontend streaming consumer (ThinkingBubble, multimodal encoding)
 - [x] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
-- [ ] 05-05-PLAN.md — Gap closure: text file support and universal attachment button
+- [x] 05-05-PLAN.md — Gap closure: text file support and universal attachment button
 
 ### Phase 6: Bug Fixes & Stability
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling, and fix runtime bugs
@@ -150,5 +150,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
-| 5. Chat Multimodal & Enhancements | 4/5 | In Progress | - |
+| 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
 | 6. Bug Fixes & Stability | 0/7 | Not started | - |

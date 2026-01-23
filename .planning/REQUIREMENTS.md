@@ -109,9 +109,9 @@ Which phases cover which requirements. Updated by create-roadmap.
 | DISC-04 | Phase 5 | Pending |
 | PRO-01 | Phase 5 | Pending |
 | PRO-02 | Phase 5 | Pending |
-| CHAT-01 | Phase 5 | Pending |
-| CHAT-02 | Phase 5 | Pending |
-| CHAT-03 | Phase 5 | Pending |
+| CHAT-01 | Phase 5 | Complete |
+| CHAT-02 | Phase 5 | Complete |
+| CHAT-03 | Phase 5 | Complete |
 | CHAT-04 | Phase 5 | Pending |
 | BUGFIX-01 | Phase 6 | Pending |
 | BUGFIX-02 | Phase 6 | Pending |
