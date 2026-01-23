@@ -2,7 +2,7 @@
 
 ## Overview
 
-Polish the UX for models and server panels, add optional API key authentication for network security, and fix accumulated technical debt. Four focused phases moving from user-facing improvements to infrastructure hardening.
+Polish the UX for models and server panels, add user authentication, enhance chat with multimodal and tool-use support, and fix accumulated technical debt. Six phases moving from user-facing improvements to infrastructure hardening.
 
 ## Phases
 
@@ -14,7 +14,7 @@ Polish the UX for models and server panels, add optional API key authentication 
 - [x] **Phase 2: Server Panel Redesign** - Dropdown selection, rich server tiles with metrics
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
-- [ ] **Phase 5: Chat Multimodal Support** - Image/video attachments, thinking model display
+- [ ] **Phase 5: Chat Multimodal & Enhancements** - Image/video attachments, thinking models, MCP mock, tool-use badge, profile enhancements
 - [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
 ## Phase Details
@@ -91,34 +91,41 @@ Plans:
 - [x] 04-02-PLAN.md — Model tile badges and specs display (badge components, expandable specs, lazy loading)
 - [x] 04-03-PLAN.md — Search UX refactor with filters (toggle switch, filter modal, filter chips)
 
-### Phase 5: Chat Multimodal Support
-**Goal**: Support image/video attachments for testing multimodal models with streaming responses
+### Phase 5: Chat Multimodal & Enhancements ✓
+**Goal**: Support image/video attachments, thinking models, and streaming chat with error handling
 **Depends on**: Phase 4
 **Requirements**: CHAT-01, CHAT-02, CHAT-03
 **Success Criteria** (what must be TRUE):
-  1. Users can attach images via button and drag-drop
-  2. Attached images display in chat and are sent to model
-  3. Video attachments supported (send directly to model, 2-min limit)
-  4. Thinking models show collapsible thinking panel with "Thought for Xs"
+  1. Users can attach images via button and drag-drop ✓
+  2. Attached images display in chat and are sent to model ✓
+  3. Video attachments supported (send directly to model, 2-min limit) ✓
+  4. Thinking models show collapsible thinking panel with "Thought for Xs" ✓
 **Research**: Completed (MLX multimodal API, SSE streaming, thinking tag parsing)
-**Plans**: 4 plans
+**Completed**: 2026-01-23
+**Note**: CHAT-04 (MCP mock), DISC-04 (tool-use badge), PRO-01/PRO-02 (profile enhancements) deferred to Phase 6
 
 Plans:
-- [ ] 05-01-PLAN.md — Media attachment UI (button, drag-drop, thumbnails, validation)
-- [ ] 05-02-PLAN.md — Backend chat streaming endpoint (SSE, thinking tag parsing)
-- [ ] 05-03-PLAN.md — Frontend streaming consumer (ThinkingBubble, multimodal encoding)
-- [ ] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
+- [x] 05-01-PLAN.md — Media attachment UI (button, drag-drop, thumbnails, validation)
+- [x] 05-02-PLAN.md — Backend chat streaming endpoint (SSE, thinking tag parsing)
+- [x] 05-03-PLAN.md — Frontend streaming consumer (ThinkingBubble, multimodal encoding)
+- [x] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 
 ### Phase 6: Bug Fixes & Stability
-**Goal**: Clean up technical debt: logging, cleanup, validation, polling
+**Goal**: Clean up technical debt: logging, cleanup, validation, polling, and fix runtime bugs
 **Depends on**: Phase 5
-**Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05
+**Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05, BUGFIX-06, BUGFIX-07, CHAT-04, DISC-04, PRO-01, PRO-02
 **Success Criteria** (what must be TRUE):
   1. Silent exceptions are logged (no more `except: pass`)
   2. Server log files are cleaned up on crash/exit
   3. API validation uses HTTPException (no assertions)
   4. Server status polling doesn't cause excessive re-renders
   5. No console.log debug statements in production
+  6. Models marked as started that fail to load are handled correctly in chat
+  7. Server CPU gauge shows actual values; memory gauge reflects real model size
+  8. MCP mock (weather/calculator) integrated to test tool-use capable models
+  9. Tool-use capability detected from model tags and shown as badge
+  10. Profile model description uses textarea instead of input field
+  11. Profile has a default system prompt field used when starting the server
 **Research**: Unlikely (standard fixes)
 **Plans**: TBD
 
@@ -127,6 +134,9 @@ Plans:
 - [ ] 06-02: Server process cleanup and log file management
 - [ ] 06-03: Replace assertions with HTTPException
 - [ ] 06-04: Fix polling re-renders and remove debug logs
+- [ ] 06-05: MCP mock integration for tool-use testing (deferred from Phase 5)
+- [ ] 06-06: Tool-use badge detection (deferred from Phase 5)
+- [ ] 06-07: Profile enhancements — textarea + system prompt (deferred from Phase 5)
 
 ## Progress
 
@@ -139,5 +149,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Server Panel Redesign | 5/5 | ✓ Complete | 2026-01-19 |
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
-| 5. Chat Multimodal Support | 0/4 | Ready | - |
-| 6. Bug Fixes & Stability | 0/4 | Not started | - |
+| 5. Chat Multimodal & Enhancements | 4/4 | ✓ Complete | 2026-01-23 |
+| 6. Bug Fixes & Stability | 0/7 | Not started | - |

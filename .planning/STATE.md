@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 5 In Progress — Chat Multimodal Support
+**Current focus:** Phase 5 Complete — Ready for Phase 6 (Bug Fixes & Stability)
 
 ## Current Position
 
-Phase: 5 of 6 (Chat Multimodal Support) - IN PROGRESS
-Plan: 3 of 4 complete
-Status: Phase in progress, 05-01, 05-02, 05-03 complete
-Last activity: 2026-01-23 — Completed 05-03-PLAN.md (Streaming Chat UI)
+Phase: 5 of 6 (Chat Multimodal & Enhancements) - COMPLETE
+Plan: 4 of 4 complete
+Status: Phase complete, goal verified
+Last activity: 2026-01-23 — Completed Phase 5 (Chat Multimodal & Enhancements)
 
-Progress: ███████░░░ 72% (4 phases complete + 3/4 of phase 5)
+Progress: ████████░░ 83% (5 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: ~4 min
-- Total execution time: ~78 min
+- Total execution time: ~86 min
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: ███████░░░ 72% (4 phases complete + 3/4 of phase 5
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
-| 5 | 3/4 | ~9 min | ~3 min |
+| 5 | 4/4 | ~16 min | ~4 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-02, 04-03, 05-01, 05-02, 05-03
-- Trend: Fast execution, consistently improving velocity
+- Last 5 plans: 04-03, 05-01, 05-02, 05-03, 05-04
+- Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
 
@@ -44,46 +44,20 @@ Progress: ███████░░░ 72% (4 phases complete + 3/4 of phase 5
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Search now finds all MLX models (filter=mlx) instead of only mlx-community
-- Model sizes use usedStorage API for accuracy (not safetensors.total)
-- bits-ui Combobox for searchable profile dropdown (accessible, keyboard-nav)
-- Profile filter searches both name and model_path for flexibility
-- Stabilize ProfileSelector profiles via ID comparison to prevent polling flicker
-- Separate StartingTile component for starting/failed states
-- Use servers list directly for running state detection in chat page
-- Container-scoped scroll over window scroll for reliability
-- Use $effect.pre for pre-update capture, $effect for post-update restore
-- Track restarting state separately from starting state (restartingProfiles SvelteSet)
-- PyJWT over python-jose (abandoned) per FastAPI official recommendation
-- pwdlib[argon2] over passlib for Python 3.13+ compatibility
-- UserStatus enum for approval workflow (PENDING -> APPROVED -> DISABLED)
-- OAuth2PasswordRequestForm for login (username field contains email)
-- First user auto-approved and admin, subsequent users pending
-- Admin endpoint pattern: Depends(get_admin_user) for admin-only routes
-- Prevent last admin from demoting/deleting self
-- All endpoints require get_current_user dependency (no unauthenticated access)
-- Class-based auth store with Svelte 5 runes (consistent with existing stores)
-- Auto-clear auth and redirect to /login on 401 response
-- onMount redirect for admin-only page guards (client-side, consistent pattern)
-- 30-second polling for pending count in navbar (freshness vs load balance)
-- TypedDict with total=False for optional model characteristics
-- Architecture family normalized to display names (qwen2 -> Qwen)
-- Multimodal detection via vision_config, token IDs, or type keywords
-- Local cache read first, HF API fallback for remote config
-- Pill-shaped toggle button for My Models / HuggingFace mode selection
-- Filter modal with Architecture, Capabilities, Quantization sections
-- Local filter copy until Apply button clicked (standard modal pattern)
-- Models without characteristics pass all filters (show until loaded)
 - OpenAI ContentPart format for multimodal messages (mlx-openai-server compatible)
 - Max 3 attachments per chat message (memory and UI considerations)
 - Video duration limit of 2 minutes for attachments
 - Use connection attempt as server check (httpx.ConnectError is appropriate check)
-- Auth required but user object unused (use _user prefix for intentionally unused)
 - Character-level streaming for thinking/response (matches mlx-openai-server granularity)
-- Auto-expand ThinkingBubble during streaming, auto-collapse when done (live process, compact summary)
+- Auto-expand ThinkingBubble during streaming, auto-collapse when done
 - "Thought for Xs" label after thinking completes (shows thinking duration)
 - FileReader.readAsDataURL() for client-side base64 encoding (no backend changes needed)
-- ContentPart[] for multimodal, string for text-only API messages (mlx-openai-server format)
+- ContentPart[] for multimodal, string for text-only API messages
+- Strip <think>/<\/think> tags from reasoning_content (server may include them)
+- Read both reasoning_content and content fields from SSE delta (dual detection)
+- ErrorMessage component with collapsible details and copy-to-clipboard
+- Inline error display in chat messages area (not banner)
+- CHAT-04, DISC-04, PRO-01, PRO-02 deferred to Phase 6
 
 ### Pending Todos
 
@@ -92,6 +66,7 @@ None.
 ### Known Gaps
 
 1. **Throughput metrics not available** — User requested tokens/s and message count per server. Backend API does not expose this data. Would require mlx-openai-server changes to expose /v1/stats or similar.
+2. **mlx-openai-server v1.5.0 regression** — GLM-4.7-Flash and Gemma VLM fail to load in dev (v1.5.0) but work in released v1.0.4. Upstream issue, not our code. Consider pinning `<1.5.0` or waiting for fix.
 
 ### Blockers/Concerns
 
@@ -100,6 +75,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-23
-Stopped at: Completed 05-03-PLAN.md
+Stopped at: Completed Phase 5 (Chat Multimodal & Enhancements)
 Resume file: None
-Next plan: 05-04 (Integration Testing and Documentation)
+Next plan: Phase 6 planning (Bug Fixes & Stability)

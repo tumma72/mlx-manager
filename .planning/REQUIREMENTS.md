@@ -33,12 +33,19 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 - [x] **DISC-01**: Detect model characteristics from config.json or metadata (architecture, context window, multimodal, KV cache)
 - [x] **DISC-02**: Visual badges for capabilities (text-only vs multimodal, architecture type, quantization)
 - [x] **DISC-03**: Filter/search by model characteristics
+- [ ] **DISC-04**: Best effort to determine model "tool-use" capability and add a badge to the model (tip: check in the front matter tags for "tool-use" or similar)
+
+### Profile Enhancements
+
+- [ ] **PRO-01**: The model description in a profile should be a text area not a simple input field
+- [ ] **PRO-02**: The Profile should also have a default *system prompt* field which is used when starting the server to set the system prompt
 
 ### Chat Multimodal
 
-- [ ] **CHAT-01**: Thinking model support (collapsible thinking panel, handle various formats)
-- [ ] **CHAT-02**: Multimodal support — attach images via button and drag-drop
-- [ ] **CHAT-03**: Video attachments (frame extraction or direct if model supports)
+- [x] **CHAT-01**: Thinking model support (collapsible thinking panel, handle various formats)
+- [x] **CHAT-02**: Multimodal support — attach images via button and drag-drop
+- [x] **CHAT-03**: Video attachments (frame extraction or direct if model supports)
+- [ ] **CHAT-04**: Integrate small MCP mock for get_weather or calculator (with aritmetic operations) to test if models use tools correctly
 
 ### Bug Fixes
 
@@ -47,17 +54,24 @@ Requirements for v1.1 release. Each maps to roadmap phases.
 - [ ] **BUGFIX-03**: Assertion-based validation — replace `assert` with proper HTTPException in routers
 - [ ] **BUGFIX-04**: Frontend polling interval — adaptive polling or WebSocket for server status
 - [ ] **BUGFIX-05**: Console.log pollution — remove debug logging from production code
+- [ ] **BUGFIX-06**: Sometimes models are marked as already started in Servers, but they fail to load when starting a chat — needs move investigation
+- [ ] **BUGFIX-07**: The Servers CPU gauge doesn't change it is always showing 0% the memory gauge also doesn't seem to work is showing 387Mb for Qwen3-Coder which is a model of 16Gb size
 
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
 
+### Server Enhancements
+
+- **SERVER-04**: Extend the wrapped mlx-openai-server to support also Anthropic APIs while reusing the rest of the infrastructure
+- **SERVER-05**: Extend mlx-manager to act as proxy and expose a single URL:PORT and internally reroute to model running on mlx-openai-server instances
+
 ### Chat History
 
-- **CHAT-04**: Persist chat history to database
-- **CHAT-05**: Chat history sidebar per server
-- **CHAT-06**: Server-scoped chats (switching server loads relevant history)
-- **CHAT-07**: Create new / delete existing chats
+- **CHAT-05**: Persist chat history to database
+- **CHAT-06**: Chat history sidebar per server
+- **CHAT-07**: Server-scoped chats (switching server loads relevant history)
+- **CHAT-08**: Create new / delete existing chats
 
 ## Out of Scope
 
@@ -92,20 +106,26 @@ Which phases cover which requirements. Updated by create-roadmap.
 | DISC-01 | Phase 4 | Complete |
 | DISC-02 | Phase 4 | Complete |
 | DISC-03 | Phase 4 | Complete |
+| DISC-04 | Phase 5 | Pending |
+| PRO-01 | Phase 5 | Pending |
+| PRO-02 | Phase 5 | Pending |
 | CHAT-01 | Phase 5 | Pending |
 | CHAT-02 | Phase 5 | Pending |
 | CHAT-03 | Phase 5 | Pending |
+| CHAT-04 | Phase 5 | Pending |
 | BUGFIX-01 | Phase 6 | Pending |
 | BUGFIX-02 | Phase 6 | Pending |
 | BUGFIX-03 | Phase 6 | Pending |
 | BUGFIX-04 | Phase 6 | Pending |
 | BUGFIX-05 | Phase 6 | Pending |
+| BUGFIX-06 | Phase 6 | Pending |
+| BUGFIX-07 | Phase 6 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 23 total
-- Mapped to phases: 23 ✓
+- v1.1 requirements: 29 total
+- Mapped to phases: 29 ✓
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-20 — added auth, model discovery, chat multimodal to v1.1*
+*Last updated: 2026-01-23 — added DISC-04, PRO-01/02, CHAT-04, BUGFIX-06/07; renumbered v2 chat IDs*
