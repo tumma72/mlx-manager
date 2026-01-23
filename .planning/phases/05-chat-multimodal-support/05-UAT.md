@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-chat-multimodal-support
 source: [05-01-SUMMARY.md, 05-02-SUMMARY.md, 05-03-SUMMARY.md, 05-04-SUMMARY.md]
 started: 2026-01-23T12:00:00Z
@@ -74,25 +74,38 @@ skipped: 1
   reason: "User reported: Button should always appear. Text models allow text-based formats only. Multimodal models allow images and videos. Max 3 attachments always."
   severity: major
   test: 1
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "Line 530 in chat/+page.svelte wraps paperclip button in {#if isMultimodal} conditional. isMultimodal derived from selectedProfile?.model_type === 'multimodal' (line 38-39)."
+  artifacts:
+    - path: "frontend/src/routes/(protected)/chat/+page.svelte"
+      issue: "Paperclip button gated by isMultimodal conditional at line 530"
+  missing:
+    - "Remove {#if isMultimodal} conditional around paperclip button"
+    - "Always show attachment button regardless of model type"
   debug_session: ""
 - truth: "File picker opens from attachment button with format filtering based on model type"
   status: failed
   reason: "User reported: I can't see any attachment button in the text input of the chat"
   severity: major
   test: 2
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "Same as test 1. Additionally, file accept attribute (line 44) uses 'image/*,video/*' for multimodal and empty string for text-only. Should use text formats for text models."
+  artifacts:
+    - path: "frontend/src/routes/(protected)/chat/+page.svelte"
+      issue: "Accept attribute doesn't include text formats for text-only models"
+  missing:
+    - "For text models: accept='.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts' etc."
+    - "For multimodal: accept='image/*,video/*,.txt,.md,.csv,.json' etc."
   debug_session: ""
 - truth: "Drag-drop supports both images and text files based on model capabilities"
   status: failed
   reason: "User reported: Images can be dropped at all times, but there is still no button for attachment, and text files can't be dropped at all"
   severity: major
   test: 3
-  root_cause: ""
-  artifacts: []
-  missing: []
+  root_cause: "Validation at line 101 rejects any file where !isVideo && !isImage. Text files fail this check. Need to add text file type detection."
+  artifacts:
+    - path: "frontend/src/routes/(protected)/chat/+page.svelte"
+      issue: "File validation only accepts image/* and video/* MIME types"
+  missing:
+    - "Add isText check for text-based MIME types (text/*, application/json, etc.)"
+    - "Allow text files regardless of model type"
+    - "Add text file preview (filename display instead of thumbnail)"
   debug_session: ""
