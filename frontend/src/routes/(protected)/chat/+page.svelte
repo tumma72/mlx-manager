@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { serverStore, profileStore, authStore } from '$stores';
-	import { Card, Button, Input, Select, Markdown, ThinkingBubble } from '$components/ui';
-	import { Send, Loader2, Bot, User, Paperclip, X } from 'lucide-svelte';
+	import { Card, Button, Input, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
+	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle } from 'lucide-svelte';
 	import type { Attachment, ContentPart } from '$lib/api/types';
 
 	interface Message {
@@ -14,7 +14,8 @@
 	let messages = $state<Message[]>([]);
 	let input = $state('');
 	let loading = $state(false);
-	let error = $state<string | null>(null);
+	let chatError = $state<{ summary: string; details?: string } | null>(null);
+	let errorMessageRef: { collapse: () => void } | undefined;
 	let selectedProfileId = $state<number | null>(null);
 	let attachments = $state<Attachment[]>([]);
 	let dragOver = $state(false);
@@ -90,7 +91,7 @@
 	// Add attachment with validation
 	async function addAttachment(file: File): Promise<void> {
 		if (attachments.length >= 3) {
-			error = 'Maximum 3 attachments per message';
+			chatError = { summary: 'Maximum 3 attachments per message' };
 			return;
 		}
 
@@ -98,14 +99,14 @@
 		const isImage = file.type.startsWith('image/');
 
 		if (!isVideo && !isImage) {
-			error = 'Only images and videos are supported';
+			chatError = { summary: 'Only images and videos are supported' };
 			return;
 		}
 
 		if (isVideo) {
 			const valid = await validateVideoDuration(file);
 			if (!valid) {
-				error = 'Video must be 2 minutes or less';
+				chatError = { summary: 'Video must be 2 minutes or less' };
 				return;
 			}
 		}
@@ -186,9 +187,12 @@
 		e.preventDefault();
 		if (!input.trim() || !selectedProfile || loading) return;
 
+		// Collapse previous error
+		errorMessageRef?.collapse();
+		chatError = null;
+
 		const userMessage = input.trim();
 		input = '';
-		error = null;
 
 		// Build message content (with attachments if any)
 		const content = await buildMessageContent(userMessage, attachments);
@@ -263,7 +267,23 @@
 								streamingResponse += data.content;
 								break;
 							case 'error':
-								error = data.content;
+								// Parse connection errors vs server errors
+								if (data.content.includes('Failed to connect')) {
+									chatError = {
+										summary: 'Connection failed',
+										details: data.content
+									};
+								} else if (data.content.includes('timed out')) {
+									chatError = {
+										summary: 'Request timed out',
+										details: data.content
+									};
+								} else {
+									chatError = {
+										summary: 'Server error',
+										details: data.content
+									};
+								}
 								break;
 							case 'done':
 								// Finalize message
@@ -281,7 +301,14 @@
 				}
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to send message';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to send message';
+			// Parse HTTP errors
+			if (errorMsg.includes('HTTP')) {
+				const [summary, ...rest] = errorMsg.split(':');
+				chatError = { summary: summary.trim(), details: rest.join(':').trim() || undefined };
+			} else {
+				chatError = { summary: errorMsg };
+			}
 			// Remove the user message on error
 			messages.pop();
 		} finally {
@@ -291,14 +318,14 @@
 
 	function handleClear() {
 		messages = [];
-		error = null;
+		chatError = null;
 	}
 
 	function handleProfileChange(e: Event) {
 		const target = e.target as HTMLSelectElement;
 		selectedProfileId = target.value ? parseInt(target.value, 10) : null;
 		messages = [];
-		error = null;
+		chatError = null;
 		// Clear attachments when switching profiles
 		for (const attachment of attachments) {
 			URL.revokeObjectURL(attachment.preview);
@@ -450,14 +477,23 @@
 							</div>
 						</div>
 					{/if}
+
+					{#if chatError}
+						<div class="flex gap-3">
+							<div class="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+								<AlertCircle class="w-5 h-5 text-destructive" />
+							</div>
+							<div class="max-w-[80%]">
+								<ErrorMessage
+									bind:this={errorMessageRef}
+									summary={chatError.summary}
+									details={chatError.details}
+								/>
+							</div>
+						</div>
+					{/if}
 				{/if}
 			</div>
-
-			{#if error}
-				<div class="px-4 py-2 bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 text-sm">
-					{error}
-				</div>
-			{/if}
 
 			<!-- Input -->
 			<form onsubmit={handleSubmit} class="p-4 border-t">
