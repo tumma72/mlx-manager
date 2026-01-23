@@ -6,3 +6,4 @@ export { default as Select } from "./select.svelte";
 export { default as Badge } from "./badge.svelte";
 export { default as Markdown } from "./markdown.svelte";
 export { default as ThinkingBubble } from "./thinking-bubble.svelte";
+export { default as ErrorMessage } from "./error-message.svelte";
