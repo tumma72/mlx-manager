@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 5 Complete — Ready for Phase 6 (Bug Fixes & Stability)
+**Current focus:** Phase 5 Complete (Gap Closure) — Ready for Phase 6 (Bug Fixes & Stability)
 
 ## Current Position
 
 Phase: 5 of 6 (Chat Multimodal & Enhancements) - COMPLETE
-Plan: 4 of 4 complete
-Status: Phase complete, goal verified
-Last activity: 2026-01-23 — Completed Phase 5 (Chat Multimodal & Enhancements)
+Plan: 5 of 5 complete (including gap closure plan 05-05)
+Status: Phase complete, all UAT gaps closed
+Last activity: 2026-01-23 — Completed 05-05-PLAN.md (gap closure)
 
 Progress: ████████░░ 83% (5 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
+- Total plans completed: 19
 - Average duration: ~4 min
-- Total execution time: ~86 min
+- Total execution time: ~88 min
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Progress: ████████░░ 83% (5 phases complete)
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
-| 5 | 4/4 | ~16 min | ~4 min |
+| 5 | 5/5 | ~18 min | ~4 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-03, 05-01, 05-02, 05-03, 05-04
+- Last 5 plans: 05-01, 05-02, 05-03, 05-04, 05-05
 - Trend: Fast execution, consistent velocity
 
 ## Accumulated Context
@@ -58,6 +58,9 @@ Recent decisions affecting current work:
 - ErrorMessage component with collapsible details and copy-to-clipboard
 - Inline error display in chat messages area (not banner)
 - CHAT-04, DISC-04, PRO-01, PRO-02 deferred to Phase 6
+- Text file MIME detection: text/*, application/json, application/xml, application/x-yaml, application/x-sh, application/sql
+- Attachment button visible for all model types (not just multimodal)
+- Text-only models accept only text files; multimodal models accept images, videos, and text files
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-23
-Stopped at: Completed Phase 5 (Chat Multimodal & Enhancements)
+Stopped at: Completed 05-05-PLAN.md (gap closure for Phase 5)
 Resume file: None
 Next plan: Phase 6 planning (Bug Fixes & Stability)
