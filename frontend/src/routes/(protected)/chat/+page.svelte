@@ -3,7 +3,8 @@
 	import { page } from '$app/stores';
 	import { serverStore, profileStore } from '$stores';
 	import { Card, Button, Input, Select, Markdown, ThinkingBubble } from '$components/ui';
-	import { Send, Loader2, Bot, User } from 'lucide-svelte';
+	import { Send, Loader2, Bot, User, Paperclip, X } from 'lucide-svelte';
+	import type { Attachment } from '$lib/api/types';
 
 	interface Message {
 		role: 'user' | 'assistant';
@@ -15,6 +16,9 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let selectedProfileId = $state<number | null>(null);
+	let attachments = $state<Attachment[]>([]);
+	let dragOver = $state(false);
+	let fileInputRef: HTMLInputElement | undefined;
 
 	// Get running profiles - use servers directly to determine running state
 	// This avoids issues with serverStore.isRunning() which can return false
@@ -25,6 +29,16 @@
 	});
 
 	const selectedProfile = $derived(runningProfiles.find((p) => p.id === selectedProfileId));
+
+	// Determine if current profile supports multimodal
+	const isMultimodal = $derived(
+		selectedProfile?.model_type === 'multimodal'
+	);
+
+	// Accept string based on model capabilities
+	const acceptedFormats = $derived(
+		isMultimodal ? 'image/*,video/*' : ''
+	);
 
 	// Handle URL query parameter reactively (not just on mount)
 	// This ensures we find the profile even if stores aren't loaded yet
@@ -52,6 +66,91 @@
 			}
 		}
 	});
+
+	// Validate video duration (max 2 minutes)
+	async function validateVideoDuration(file: File): Promise<boolean> {
+		return new Promise((resolve) => {
+			const video = document.createElement('video');
+			video.preload = 'metadata';
+			video.onloadedmetadata = () => {
+				URL.revokeObjectURL(video.src);
+				resolve(video.duration <= 120);
+			};
+			video.onerror = () => {
+				URL.revokeObjectURL(video.src);
+				resolve(false);
+			};
+			video.src = URL.createObjectURL(file);
+		});
+	}
+
+	// Add attachment with validation
+	async function addAttachment(file: File): Promise<void> {
+		if (attachments.length >= 3) {
+			error = 'Maximum 3 attachments per message';
+			return;
+		}
+
+		const isVideo = file.type.startsWith('video/');
+		const isImage = file.type.startsWith('image/');
+
+		if (!isVideo && !isImage) {
+			error = 'Only images and videos are supported';
+			return;
+		}
+
+		if (isVideo) {
+			const valid = await validateVideoDuration(file);
+			if (!valid) {
+				error = 'Video must be 2 minutes or less';
+				return;
+			}
+		}
+
+		const preview = URL.createObjectURL(file);
+		attachments.push({
+			file,
+			preview,
+			type: isVideo ? 'video' : 'image'
+		});
+	}
+
+	// Remove attachment and cleanup object URL
+	function removeAttachment(index: number): void {
+		const attachment = attachments[index];
+		URL.revokeObjectURL(attachment.preview);
+		attachments.splice(index, 1);
+	}
+
+	// Handle file input change
+	async function handleFileSelect(e: Event): Promise<void> {
+		const input = e.target as HTMLInputElement;
+		const files = Array.from(input.files || []);
+		for (const file of files) {
+			await addAttachment(file);
+		}
+		input.value = ''; // Reset for same file re-selection
+	}
+
+	// Handle drag-drop
+	function handleDrop(e: DragEvent): void {
+		e.preventDefault();
+		dragOver = false;
+		const files = Array.from(e.dataTransfer?.files || []);
+		for (const file of files) {
+			addAttachment(file);
+		}
+	}
+
+	function handleDragOver(e: DragEvent): void {
+		e.preventDefault();
+		dragOver = true;
+	}
+
+	function handleDragLeave(e: DragEvent): void {
+		e.preventDefault();
+		dragOver = false;
+	}
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -88,6 +187,12 @@
 			const assistantMessage = data.choices?.[0]?.message?.content || 'No response';
 
 			messages = [...messages, { role: 'assistant', content: assistantMessage }];
+
+			// Clear attachments after send
+			for (const attachment of attachments) {
+				URL.revokeObjectURL(attachment.preview);
+			}
+			attachments = [];
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to send message';
 			// Remove the user message on error
@@ -107,6 +212,11 @@
 		selectedProfileId = target.value ? parseInt(target.value, 10) : null;
 		messages = [];
 		error = null;
+		// Clear attachments when switching profiles
+		for (const attachment of attachments) {
+			URL.revokeObjectURL(attachment.preview);
+		}
+		attachments = [];
 	}
 
 	// Extract model name without owner prefix (e.g., "mlx-community/Qwen3-0.6B-4bit" -> "Qwen3-0.6B-4bit")
@@ -178,7 +288,15 @@
 		</Card>
 	{:else}
 		<!-- Chat Messages -->
-		<Card class="flex-1 overflow-hidden flex flex-col">
+		<div
+			class="flex-1 overflow-hidden"
+			role="region"
+			aria-label="Chat message area with drag-drop file upload"
+			ondragover={handleDragOver}
+			ondragleave={handleDragLeave}
+			ondrop={handleDrop}
+		>
+		<Card class="h-full overflow-hidden flex flex-col {dragOver ? 'ring-2 ring-primary' : ''}">
 			<div class="flex-1 overflow-y-auto p-4 space-y-4">
 				{#if messages.length === 0}
 					<div class="h-full flex items-center justify-center">
@@ -240,7 +358,48 @@
 
 			<!-- Input -->
 			<form onsubmit={handleSubmit} class="p-4 border-t">
+				{#if attachments.length > 0}
+					<div class="px-4 pt-4 flex gap-2 flex-wrap">
+						{#each attachments as attachment, i (attachment.preview)}
+							<div class="relative group">
+								{#if attachment.type === 'image'}
+									<img
+										src={attachment.preview}
+										alt="Attachment"
+										class="w-16 h-16 object-cover rounded-lg border"
+									/>
+								{:else}
+									<video
+										src={attachment.preview}
+										class="w-16 h-16 object-cover rounded-lg border"
+										muted
+									>
+										<track kind="captions" />
+									</video>
+								{/if}
+								<button
+									type="button"
+									onclick={() => removeAttachment(i)}
+									class="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+								>
+									<X class="w-3 h-3" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<div class="flex gap-2">
+					{#if isMultimodal}
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							onclick={() => fileInputRef?.click()}
+							disabled={loading || attachments.length >= 3}
+						>
+							<Paperclip class="w-4 h-4" />
+						</Button>
+					{/if}
 					<Input
 						bind:value={input}
 						placeholder="Type a message..."
@@ -255,7 +414,16 @@
 						{/if}
 					</Button>
 				</div>
+				<input
+					type="file"
+					bind:this={fileInputRef}
+					accept={acceptedFormats}
+					multiple
+					onchange={handleFileSelect}
+					class="hidden"
+				/>
 			</form>
 		</Card>
+		</div>
 	{/if}
 </div>
