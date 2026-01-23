@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { serverStore, profileStore } from '$stores';
+	import { serverStore, profileStore, authStore } from '$stores';
 	import { Card, Button, Input, Select, Markdown, ThinkingBubble } from '$components/ui';
 	import { Send, Loader2, Bot, User, Paperclip, X } from 'lucide-svelte';
-	import type { Attachment } from '$lib/api/types';
+	import type { Attachment, ContentPart } from '$lib/api/types';
 
 	interface Message {
 		role: 'user' | 'assistant';
-		content: string;
+		content: string | ContentPart[];
 	}
 
 	let messages = $state<Message[]>([]);
@@ -19,6 +19,9 @@
 	let attachments = $state<Attachment[]>([]);
 	let dragOver = $state(false);
 	let fileInputRef: HTMLInputElement | undefined;
+	let streamingThinking = $state('');
+	let streamingResponse = $state('');
+	let thinkingDuration = $state<number | undefined>(undefined);
 
 	// Get running profiles - use servers directly to determine running state
 	// This avoids issues with serverStore.isRunning() which can return false
@@ -152,6 +155,33 @@
 		dragOver = false;
 	}
 
+	async function encodeFileAsBase64(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as string);
+			reader.onerror = reject;
+			reader.readAsDataURL(file);
+		});
+	}
+
+	async function buildMessageContent(text: string, currentAttachments: Attachment[]): Promise<string | ContentPart[]> {
+		if (currentAttachments.length === 0) {
+			return text;
+		}
+
+		const parts: ContentPart[] = [{ type: 'text', text }];
+
+		for (const attachment of currentAttachments) {
+			const base64 = await encodeFileAsBase64(attachment.file);
+			parts.push({
+				type: 'image_url',
+				image_url: { url: base64 }
+			});
+		}
+
+		return parts;
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		if (!input.trim() || !selectedProfile || loading) return;
@@ -160,43 +190,100 @@
 		input = '';
 		error = null;
 
-		// Add user message
-		messages = [...messages, { role: 'user', content: userMessage }];
+		// Build message content (with attachments if any)
+		const content = await buildMessageContent(userMessage, attachments);
 
+		// Clear attachments
+		for (const attachment of attachments) {
+			URL.revokeObjectURL(attachment.preview);
+		}
+		attachments = [];
+
+		// Add user message to UI (display text only for user messages)
+		messages.push({ role: 'user', content: userMessage });
+
+		// Reset streaming state
+		streamingThinking = '';
+		streamingResponse = '';
+		thinkingDuration = undefined;
 		loading = true;
+
+		// Build messages array for API (use full content with images)
+		const apiMessages = messages.slice(0, -1).map(m => ({
+			role: m.role,
+			content: m.content
+		}));
+		apiMessages.push({ role: 'user', content });
+
 		try {
-			// Call the OpenAI-compatible API
-			const response = await fetch(`http://${selectedProfile.host}:${selectedProfile.port}/v1/chat/completions`, {
+			const response = await fetch('/api/chat/completions', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${authStore.token}`,
 				},
 				body: JSON.stringify({
-					model: selectedProfile.model_path,
-					messages: messages.map(m => ({ role: m.role, content: m.content })),
-					stream: false,
+					profile_id: selectedProfile.id,
+					messages: apiMessages,
 				}),
 			});
 
 			if (!response.ok) {
-				const errorData = await response.text();
-				throw new Error(`HTTP ${response.status}: ${errorData}`);
+				throw new Error(`HTTP ${response.status}`);
 			}
 
-			const data = await response.json();
-			const assistantMessage = data.choices?.[0]?.message?.content || 'No response';
+			const reader = response.body?.getReader();
+			if (!reader) throw new Error('No response body');
 
-			messages = [...messages, { role: 'assistant', content: assistantMessage }];
+			const decoder = new TextDecoder();
+			let buffer = '';
 
-			// Clear attachments after send
-			for (const attachment of attachments) {
-				URL.revokeObjectURL(attachment.preview);
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+				for (const line of lines) {
+					if (!line.startsWith('data: ')) continue;
+
+					try {
+						const data = JSON.parse(line.slice(6));
+
+						switch (data.type) {
+							case 'thinking':
+								streamingThinking += data.content;
+								break;
+							case 'thinking_done':
+								thinkingDuration = data.duration;
+								break;
+							case 'response':
+								streamingResponse += data.content;
+								break;
+							case 'error':
+								error = data.content;
+								break;
+							case 'done':
+								// Finalize message
+								if (streamingResponse || streamingThinking) {
+									const finalContent = streamingThinking
+										? `<think>${streamingThinking}</think>${streamingResponse}`
+										: streamingResponse;
+									messages.push({ role: 'assistant', content: finalContent });
+								}
+								break;
+						}
+					} catch {
+						// Ignore parse errors
+					}
+				}
 			}
-			attachments = [];
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to send message';
 			// Remove the user message on error
-			messages = messages.slice(0, -1);
+			messages.pop();
 		} finally {
 			loading = false;
 		}
@@ -230,7 +317,11 @@
 	// - <think>...</think> (Qwen3 style)
 	// - <thinking>...</thinking> (alternative format)
 	// - <reasoning>...</reasoning> (reasoning models)
-	function parseThinking(content: string): { thinking: string | null; response: string } {
+	function parseThinking(content: string | ContentPart[]): { thinking: string | null; response: string } {
+		// Content in stored messages is always string (ContentPart[] only used in API calls)
+		if (typeof content !== 'string') {
+			return { thinking: null, response: '' };
+		}
 		// Try each pattern in order of likelihood
 		const patterns = [
 			/<think>([\s\S]*?)<\/think>/,         // Qwen3 style
@@ -326,7 +417,7 @@
 									{/if}
 									<Markdown content={parsed.response} />
 								{:else}
-									<p class="whitespace-pre-wrap">{message.content}</p>
+									<p class="whitespace-pre-wrap">{typeof message.content === 'string' ? message.content : ''}</p>
 								{/if}
 							</div>
 							{#if message.role === 'user'}
@@ -342,8 +433,20 @@
 							<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
 								<Bot class="w-5 h-5 text-primary" />
 							</div>
-							<div class="bg-muted rounded-lg px-4 py-2">
-								<Loader2 class="w-5 h-5 animate-spin" />
+							<div class="max-w-[80%] rounded-lg px-4 py-2 bg-muted">
+								{#if streamingThinking}
+									<ThinkingBubble
+										content={streamingThinking}
+										duration={thinkingDuration}
+										streaming={thinkingDuration === undefined}
+										defaultExpanded={true}
+									/>
+								{/if}
+								{#if streamingResponse}
+									<Markdown content={streamingResponse} />
+								{:else if !streamingThinking}
+									<Loader2 class="w-5 h-5 animate-spin" />
+								{/if}
 							</div>
 						</div>
 					{/if}
