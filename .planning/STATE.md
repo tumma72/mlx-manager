@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 4 Complete — Ready for Phase 5 (Chat Multimodal Support)
+**Current focus:** Phase 5 In Progress — Chat Multimodal Support
 
 ## Current Position
 
-Phase: 4 of 6 (Model Discovery & Badges) - COMPLETE
-Plan: 3 of 3 complete
-Status: Phase complete, goal verified
-Last activity: 2026-01-20 — Completed Phase 4 (Model Discovery & Badges)
+Phase: 5 of 6 (Chat Multimodal Support) - IN PROGRESS
+Plan: 1 of 4 complete
+Status: Phase in progress, 05-01 complete
+Last activity: 2026-01-23 — Completed 05-01-PLAN.md (Media Attachment UI)
 
-Progress: ██████░░░░ 67% (4 phases complete)
+Progress: ██████░░░░ 68% (4 phases complete + 1/4 of phase 5)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: ~4 min
-- Total execution time: ~69 min
+- Total execution time: ~72 min
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: ██████░░░░ 67% (4 phases complete)
 | 2 | 5/5 | ~27 min | ~5 min |
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
+| 5 | 1/4 | ~3 min | ~3 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-04, 03-05, 04-01, 04-02, 04-03
-- Trend: Fast execution, consistent velocity
+- Last 5 plans: 03-05, 04-01, 04-02, 04-03, 05-01
+- Trend: Fast execution, consistently improving velocity
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Recent decisions affecting current work:
 - Filter modal with Architecture, Capabilities, Quantization sections
 - Local filter copy until Apply button clicked (standard modal pattern)
 - Models without characteristics pass all filters (show until loaded)
+- OpenAI ContentPart format for multimodal messages (mlx-openai-server compatible)
+- Max 3 attachments per chat message (memory and UI considerations)
+- Video duration limit of 2 minutes for attachments
 
 ### Pending Todos
 
@@ -88,7 +92,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-20
-Stopped at: Completed Phase 4 (Model Discovery & Badges)
+Last session: 2026-01-23
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
-Next plan: Phase 5 planning (Chat Multimodal Support)
+Next plan: 05-02 (Encode attachments and modify API call)
