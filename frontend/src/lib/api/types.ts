@@ -239,6 +239,6 @@ export interface ChatMessage {
 
 export interface Attachment {
   file: File;
-  preview: string; // Object URL for thumbnail
-  type: "image" | "video";
+  preview: string; // Object URL for thumbnail, or filename for text
+  type: "image" | "video" | "text";
 }
