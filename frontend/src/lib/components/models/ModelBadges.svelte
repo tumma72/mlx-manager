@@ -3,6 +3,7 @@
 	import ArchitectureBadge from './badges/ArchitectureBadge.svelte';
 	import MultimodalBadge from './badges/MultimodalBadge.svelte';
 	import QuantizationBadge from './badges/QuantizationBadge.svelte';
+	import ToolUseBadge from './badges/ToolUseBadge.svelte';
 
 	interface Props {
 		characteristics: ModelCharacteristics | null | undefined;
@@ -31,6 +32,9 @@
 		{/if}
 		{#if characteristics.quantization_bits}
 			<QuantizationBadge bits={characteristics.quantization_bits} />
+		{/if}
+		{#if characteristics.is_tool_use}
+			<ToolUseBadge />
 		{/if}
 	{/if}
 </div>

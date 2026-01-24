@@ -116,6 +116,7 @@ export interface ModelCharacteristics {
   is_multimodal?: boolean;
   multimodal_type?: string;
   use_cache?: boolean;
+  is_tool_use?: boolean;
 }
 
 export interface LocalModel {
