@@ -1,5 +1,6 @@
 """macOS launchd service manager."""
 
+import logging
 import plistlib
 import subprocess
 import sys
@@ -8,6 +9,8 @@ from pathlib import Path
 from mlx_manager.models import ServerProfile
 from mlx_manager.types import LaunchdStatus
 from mlx_manager.utils.command_builder import build_mlx_server_command
+
+logger = logging.getLogger(__name__)
 
 
 class LaunchdManager:
@@ -85,8 +88,8 @@ class LaunchdManager:
             subprocess.run(
                 ["launchctl", "unload", str(plist_path)], check=True, capture_output=True
             )
-        except subprocess.CalledProcessError:
-            pass  # May not be loaded
+        except subprocess.CalledProcessError as e:
+            logger.debug(f"launchctl unload failed (may not be loaded): {e}")
 
         # Remove plist file
         plist_path.unlink(missing_ok=True)

@@ -22,6 +22,8 @@ from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
+logger = logging.getLogger(__name__)
+
 
 class SilentProgress(tqdm):
     """tqdm subclass that suppresses console output."""
@@ -106,8 +108,8 @@ class HuggingFaceClient:
         if snapshots_dir.exists():
             try:
                 return any(snapshots_dir.iterdir())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to check snapshots directory for {model_id}: {e}")
         return False
 
     def get_local_path(self, model_id: str) -> str | None:
@@ -126,8 +128,8 @@ class HuggingFaceClient:
                 )
                 if snapshots:
                     return str(snapshots[0])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to get local path for {model_id}: {e}")
         return None
 
     async def download_model(
@@ -159,8 +161,9 @@ class HuggingFaceClient:
                     ),
                 )
                 total_bytes = sum(f.file_size for f in dry_run_result if f.file_size)
-            except Exception:
+            except Exception as e:
                 # Fall back to estimation if dry_run fails
+                logger.debug(f"Dry run failed for {model_id}, using size estimation: {e}")
                 estimated_gb = estimate_size_from_name(model_id) or 0.0
                 total_bytes = int(estimated_gb * 1024**3)
 
@@ -232,7 +235,8 @@ class HuggingFaceClient:
             return 0
         try:
             return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to calculate directory size for {path}: {e}")
             return 0
 
     def list_local_models(self) -> list[LocalModelInfo]:
@@ -298,8 +302,8 @@ class HuggingFaceClient:
                             characteristics=characteristics,
                         )
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to list local models: {e}")
 
         return models
 

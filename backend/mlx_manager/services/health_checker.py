@@ -1,6 +1,7 @@
 """Background health checker service."""
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 from sqlmodel import select
@@ -8,6 +9,8 @@ from sqlmodel import select
 from mlx_manager.database import get_session
 from mlx_manager.models import RunningInstance, ServerProfile
 from mlx_manager.services.server_manager import server_manager
+
+logger = logging.getLogger(__name__)
 
 
 class HealthChecker:
@@ -39,7 +42,7 @@ class HealthChecker:
             try:
                 await self._check_all_servers()
             except Exception as e:
-                print(f"Health check error: {e}")
+                logger.warning(f"Health check error for servers: {e}")
 
             await asyncio.sleep(self.interval)
 

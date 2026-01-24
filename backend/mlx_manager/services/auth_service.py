@@ -1,5 +1,6 @@
 """Authentication service for password hashing and JWT token management."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -7,6 +8,8 @@ import jwt
 from pwdlib import PasswordHash
 
 from mlx_manager.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Create module-level password hash instance (Argon2 by default)
 password_hash = PasswordHash.recommended()
@@ -55,5 +58,6 @@ def decode_token(token: str) -> dict[str, Any] | None:
             token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
         )
         return payload
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.debug(f"Invalid JWT token: {e}")
         return None

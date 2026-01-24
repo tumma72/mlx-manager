@@ -1,5 +1,6 @@
 """MLX Manager Status Bar App."""
 
+import logging
 import subprocess
 import sys
 import time
@@ -10,6 +11,8 @@ import httpx
 import rumps  # type: ignore[import-untyped,import-not-found]
 
 from mlx_manager import __version__
+
+logger = logging.getLogger(__name__)
 
 
 class MLXManagerApp(rumps.App):
@@ -69,7 +72,8 @@ class MLXManagerApp(rumps.App):
                 timeout=2.0,
             )
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Server status check failed: {e}")
             return False
 
     def _update_status(self, status: str, is_running: bool) -> None:
