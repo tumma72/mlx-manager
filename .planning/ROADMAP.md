@@ -15,7 +15,7 @@ Polish the UX for models and server panels, add user authentication, enhance cha
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
 - [ ] **Phase 5: Chat Multimodal & Enhancements** - Image/video attachments, thinking models, MCP mock, tool-use badge, profile enhancements
-- [x] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
+- [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling, UAT gap fixes
 
 ## Phase Details
 
@@ -111,7 +111,7 @@ Plans:
 - [x] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 - [x] 05-05-PLAN.md — Gap closure: text file support and universal attachment button
 
-### Phase 6: Bug Fixes & Stability ✓
+### Phase 6: Bug Fixes & Stability
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling, and fix runtime bugs
 **Depends on**: Phase 5
 **Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05, BUGFIX-06, BUGFIX-07, CHAT-04, DISC-04, PRO-01, PRO-02
@@ -127,8 +127,15 @@ Plans:
   9. Tool-use capability detected from model tags and shown as badge ✓
   10. Profile model description uses textarea instead of input field ✓
   11. Profile has a default system prompt field used when starting the server ✓
+  12. Memory displays in appropriate units (GB when >= 1024 MB)
+  13. Chat input wraps text and grows vertically
+  14. Tool-use badge appears (tags passed through API chain)
+  15. Text file attachments sent as text content (not base64 image_url)
+  16. MCP tools integrated with chat (toggle, execute, results loop)
+  17. GLM-4 thinking detection robust with diagnostic logging
+  18. Health check polling deferred to reduce console errors
 **Research**: None needed (standard fixes)
-**Completed**: 2026-01-24
+**Plans:** 12 plans
 
 Plans:
 - [x] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
@@ -138,6 +145,11 @@ Plans:
 - [x] 06-05-PLAN.md — Profile enhancements: textarea + system prompt (PRO-01, PRO-02)
 - [x] 06-06-PLAN.md — Chat retry with backoff for model loading (BUGFIX-06)
 - [x] 06-07-PLAN.md — MCP mock integration for tool-use testing (CHAT-04)
+- [ ] 06-08-PLAN.md — Quick fixes: memory units, chat textarea, health check timing (UAT gaps 1, 2, 7)
+- [ ] 06-09-PLAN.md — Tool-use badge fix: pass tags through API chain (UAT gap 3)
+- [ ] 06-10-PLAN.md — Text file attachments sent as text content (UAT gap 6)
+- [ ] 06-11-PLAN.md — MCP tools chat integration: toggle, execute, results loop (UAT gap 4)
+- [ ] 06-12-PLAN.md — GLM-4 thinking: diagnostic logging and robustness (UAT gap 5)
 
 ## Progress
 
@@ -151,4 +163,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
-| 6. Bug Fixes & Stability | 7/7 | ✓ Complete | 2026-01-24 |
+| 6. Bug Fixes & Stability | 7/12 | Gap closure | — |
