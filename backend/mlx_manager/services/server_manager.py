@@ -174,7 +174,11 @@ class ServerManager:
             return HealthCheckResult(status="unhealthy", error=str(e))
 
     def get_server_stats(self, profile_id: int) -> ServerStats | None:
-        """Get memory and CPU stats for a running server."""
+        """Get memory and CPU stats for a running server.
+
+        Includes all child processes (mlx-openai-server spawns children that load models).
+        Uses cpu_percent(interval=0.1) for accurate CPU measurement.
+        """
         if profile_id not in self.processes:
             return None
 
@@ -184,13 +188,36 @@ class ServerManager:
 
         try:
             p = psutil.Process(proc.pid)
-            memory_info = p.memory_info()
+
+            # Get all child processes (model loading happens in children)
+            children = p.children(recursive=True)
+
+            # Sum memory across parent + children
+            total_rss = p.memory_info().rss
+            for child in children:
+                try:
+                    total_rss += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            memory_mb = round(total_rss / 1024 / 1024, 2)
+            memory_percent = (total_rss / psutil.virtual_memory().total) * 100
+
+            # Sum CPU across parent + children
+            # Parent uses interval=0.1 (100ms blocking call for accuracy)
+            # Children use interval=0 (non-blocking, uses delta from last call)
+            total_cpu = p.cpu_percent(interval=0.1)
+            for child in children:
+                try:
+                    total_cpu += child.cpu_percent(interval=0)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
 
             return ServerStats(
                 pid=proc.pid,
-                memory_mb=round(memory_info.rss / 1024 / 1024, 2),
-                memory_percent=p.memory_percent(),
-                cpu_percent=p.cpu_percent(),
+                memory_mb=memory_mb,
+                memory_percent=round(memory_percent, 2),
+                cpu_percent=round(total_cpu, 1),
                 status=p.status(),
                 create_time=p.create_time(),
             )
