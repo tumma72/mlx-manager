@@ -15,7 +15,7 @@ Polish the UX for models and server panels, add user authentication, enhance cha
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
 - [ ] **Phase 5: Chat Multimodal & Enhancements** - Image/video attachments, thinking models, MCP mock, tool-use badge, profile enhancements
-- [x] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling, UAT gap fixes
+- [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling, UAT gap fixes
 
 ## Phase Details
 
@@ -134,9 +134,11 @@ Plans:
   16. MCP tools integrated with chat (toggle, execute, results loop) ✓
   17. GLM-4 thinking detection robust with diagnostic logging ✓
   18. Health check polling deferred to reduce console errors ✓
+  19. No browser console errors during health check polling (backend-mediated) ✓
+  20. Text file attachments work for all text extensions (.log, .md, .yaml, etc.) ✓
+  21. Tool calls displayed in collapsible panel (not inline markdown) ✓
 **Research**: None needed (standard fixes)
-**Completed**: 2026-01-24
-**Plans:** 13 plans
+**Plans:** 16 plans
 
 Plans:
 - [x] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
@@ -152,6 +154,9 @@ Plans:
 - [x] 06-11-PLAN.md — MCP tools backend: tool forwarding + API types (UAT gap 4, wave 1)
 - [x] 06-12-PLAN.md — GLM-4 thinking: diagnostic logging and robustness (UAT gap 5)
 - [x] 06-13-PLAN.md — MCP tools frontend: toggle, execute, results loop (UAT gap 4, wave 2)
+- [ ] 06-14-PLAN.md — Backend-mediated health polling (UAT gap: console errors)
+- [ ] 06-15-PLAN.md — Text file extension validation + tool-use badge verification (UAT gaps: attachments, badge)
+- [ ] 06-16-PLAN.md — ToolCallBubble: collapsible tool call display (UAT gap: tool call UI)
 
 ## Progress
 
@@ -165,4 +170,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
-| 6. Bug Fixes & Stability | 13/13 | ✓ Complete | 2026-01-24 |
+| 6. Bug Fixes & Stability | 13/16 | Gap closure | — |
