@@ -158,7 +158,7 @@ class ModelConfigStore {
     });
 
     try {
-      const characteristics = await modelsApi.getConfig(modelId);
+      const characteristics = await modelsApi.getConfig(modelId, tags.length > 0 ? tags : undefined);
       this.configs = new Map(this.configs).set(modelId, {
         characteristics,
         loading: false,
