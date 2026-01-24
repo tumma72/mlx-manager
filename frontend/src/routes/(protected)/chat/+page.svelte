@@ -3,7 +3,7 @@
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
-	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
+	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage, ToolCallBubble } from '$components/ui';
 	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench } from 'lucide-svelte';
 	import { mcp } from '$lib/api/client';
 	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
@@ -14,9 +14,18 @@
 		'sql', 'conf', 'ini', 'toml'
 	]);
 
+	interface ToolCallData {
+		id: string;
+		name: string;
+		arguments: string;
+		result?: string;
+		error?: string;
+	}
+
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string | ContentPart[];
+		toolCalls?: ToolCallData[];
 	}
 
 	let messages = $state<Message[]>([]);
@@ -31,6 +40,7 @@
 	let streamingThinking = $state('');
 	let streamingResponse = $state('');
 	let thinkingDuration = $state<number | undefined>(undefined);
+	let streamingToolCalls = $state<ToolCallData[]>([]);
 	let retryAttempt = $state(0);
 	let retryMax = 3;
 	let isRetrying = $state(false);
@@ -413,41 +423,41 @@
 			while (currentResult.toolCallsDone && currentResult.toolCalls.length > 0 && toolDepth < MAX_TOOL_DEPTH) {
 				toolDepth++;
 
-				// Display tool calls in assistant message
+				// Execute tool calls and store structured results
 				for (const toolCall of currentResult.toolCalls) {
-					const toolCallText = `\n\n---\n**Tool call:** \`${toolCall.name}(${toolCall.arguments})\`\n`;
-					assistantContent += toolCallText;
-					streamingResponse = assistantContent;
+					const callData: ToolCallData = {
+						id: toolCall.id,
+						name: toolCall.name,
+						arguments: toolCall.arguments,
+					};
 
-					// Execute the tool
 					try {
 						const parsedArgs = JSON.parse(toolCall.arguments);
 						const toolResult = await mcp.executeTool(toolCall.name, parsedArgs);
-						const resultText = `**Result:** \`${JSON.stringify(toolResult)}\`\n---\n\n`;
-						assistantContent += resultText;
-						streamingResponse = assistantContent;
-
-						// Add assistant tool_calls message and tool result to apiMessages
-						apiMessages.push({
-							role: 'assistant',
-							content: '',
-							tool_calls: [{
-								id: toolCall.id,
-								type: 'function',
-								function: { name: toolCall.name, arguments: toolCall.arguments }
-							}]
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						} as any);
-						apiMessages.push({
-							role: 'tool',
-							tool_call_id: toolCall.id,
-							content: JSON.stringify(toolResult)
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						} as any);
+						callData.result = JSON.stringify(toolResult);
 					} catch {
-						assistantContent += `**Error:** Tool execution failed\n---\n\n`;
-						streamingResponse = assistantContent;
+						callData.error = 'Tool execution failed';
 					}
+
+					streamingToolCalls = [...streamingToolCalls, callData];
+
+					// Add assistant tool_calls message and tool result to apiMessages
+					apiMessages.push({
+						role: 'assistant',
+						content: '',
+						tool_calls: [{
+							id: toolCall.id,
+							type: 'function',
+							function: { name: toolCall.name, arguments: toolCall.arguments }
+						}]
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					} as any);
+					apiMessages.push({
+						role: 'tool',
+						tool_call_id: toolCall.id,
+						content: callData.result || callData.error || ''
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					} as any);
 				}
 
 				// Send follow-up request with tool results
@@ -489,11 +499,15 @@
 			}
 
 			// Finalize message
-			if (streamingResponse || streamingThinking) {
+			if (streamingResponse || streamingThinking || streamingToolCalls.length > 0) {
 				const finalContent = streamingThinking
 					? `<think>${streamingThinking}</think>${streamingResponse}`
 					: streamingResponse;
-				messages.push({ role: 'assistant', content: finalContent });
+				messages.push({
+					role: 'assistant',
+					content: finalContent,
+					toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined
+				});
 			}
 
 			// On success, reset retry state
@@ -564,6 +578,7 @@
 		streamingThinking = '';
 		streamingResponse = '';
 		thinkingDuration = undefined;
+		streamingToolCalls = [];
 		loading = true;
 
 		try {
@@ -732,6 +747,9 @@
 									{#if parsed.thinking}
 										<ThinkingBubble content={parsed.thinking} />
 									{/if}
+									{#if message.toolCalls && message.toolCalls.length > 0}
+										<ToolCallBubble calls={message.toolCalls} />
+									{/if}
 									<Markdown content={parsed.response} />
 								{:else}
 									<p class="whitespace-pre-wrap">{typeof message.content === 'string' ? message.content : ''}</p>
@@ -765,9 +783,12 @@
 										streaming={thinkingDuration === undefined}
 									/>
 								{/if}
+								{#if streamingToolCalls.length > 0}
+									<ToolCallBubble calls={streamingToolCalls} />
+								{/if}
 								{#if streamingResponse}
 									<Markdown content={streamingResponse} />
-								{:else if !streamingThinking}
+								{:else if !streamingThinking && streamingToolCalls.length === 0}
 									<Loader2 class="w-5 h-5 animate-spin" />
 								{/if}
 							</div>
