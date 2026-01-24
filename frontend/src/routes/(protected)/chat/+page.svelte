@@ -3,7 +3,7 @@
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
-	import { Card, Button, Input, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
+	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
 	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle } from 'lucide-svelte';
 	import type { Attachment, ContentPart } from '$lib/api/types';
 
@@ -28,6 +28,7 @@
 	let retryMax = 3;
 	let isRetrying = $state(false);
 	let lastFailedMessage = $state<{ content: string | ContentPart[]; attachments: Attachment[] } | null>(null);
+	let textareaRef = $state<HTMLTextAreaElement | null>(null);
 
 	// Get running profiles - use servers directly to determine running state
 	// This avoids issues with serverStore.isRunning() which can return false
@@ -75,6 +76,13 @@
 			if (isRunning) {
 				selectedProfileId = urlProfileId;
 			}
+		}
+	});
+
+	// Reset textarea height when input becomes empty
+	$effect(() => {
+		if (!input && textareaRef) {
+			textareaRef.style.height = 'auto';
 		}
 	});
 
@@ -724,12 +732,23 @@
 					>
 						<Paperclip class="w-4 h-4" />
 					</Button>
-					<Input
+					<textarea
+						bind:this={textareaRef}
 						bind:value={input}
 						placeholder="Type a message..."
 						disabled={loading}
-						class="flex-1"
-					/>
+						class="flex-1 resize-none overflow-hidden rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						rows="1"
+						style="max-height: 150px; overflow-y: {input.split('\n').length > 4 ? 'auto' : 'hidden'}"
+						oninput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 150) + 'px'; }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' && !e.shiftKey) {
+								e.preventDefault();
+								const form = e.currentTarget.closest('form');
+								if (form && input.trim()) form.requestSubmit();
+							}
+						}}
+					></textarea>
 					<Button type="submit" disabled={loading || !input.trim()}>
 						{#if loading}
 							<Loader2 class="w-4 h-4 animate-spin" />
