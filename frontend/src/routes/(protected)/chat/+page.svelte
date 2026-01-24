@@ -24,6 +24,10 @@
 	let streamingThinking = $state('');
 	let streamingResponse = $state('');
 	let thinkingDuration = $state<number | undefined>(undefined);
+	let retryAttempt = $state(0);
+	let retryMax = 3;
+	let isRetrying = $state(false);
+	let lastFailedMessage = $state<{ content: string | ContentPart[]; attachments: Attachment[] } | null>(null);
 
 	// Get running profiles - use servers directly to determine running state
 	// This avoids issues with serverStore.isRunning() which can return false
@@ -205,52 +209,27 @@
 		return parts;
 	}
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		if (!input.trim() || !selectedProfile || loading) return;
+	async function sendWithRetry(userContent: string | ContentPart[], userAttachments: Attachment[], attempt: number = 1): Promise<boolean> {
+		retryAttempt = attempt;
+		isRetrying = attempt > 1;
 
-		// Collapse previous error
-		errorMessageRef?.collapse();
-		chatError = null;
-
-		const userMessage = input.trim();
-		input = '';
-
-		// Build message content (with attachments if any)
-		const content = await buildMessageContent(userMessage, attachments);
-
-		// Clear attachments - CHANGE 8
-		for (const attachment of attachments) {
-			if (attachment.type !== 'text') {
-				URL.revokeObjectURL(attachment.preview);
-			}
-		}
-		attachments = [];
-
-		// Add user message to UI (display text only for user messages)
-		messages.push({ role: 'user', content: userMessage });
-
-		// Reset streaming state
-		streamingThinking = '';
-		streamingResponse = '';
-		thinkingDuration = undefined;
-		loading = true;
+		if (!selectedProfile) return false;
 
 		// Build messages array for API (use full content with images)
 		const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string | ContentPart[] }> = [];
 
 		// Add system prompt as first message if present
-		if (selectedProfile?.system_prompt) {
+		if (selectedProfile.system_prompt) {
 			apiMessages.push({ role: 'system', content: selectedProfile.system_prompt });
 		}
 
-		// Add conversation history
+		// Add conversation history (exclude last user message since we're about to add it)
 		messages.slice(0, -1).forEach(m => {
 			apiMessages.push({ role: m.role, content: m.content });
 		});
 
 		// Add current user message
-		apiMessages.push({ role: 'user', content });
+		apiMessages.push({ role: 'user', content: userContent });
 
 		try {
 			const response = await fetch('/api/chat/completions', {
@@ -266,7 +245,18 @@
 			});
 
 			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`);
+				// Only retry on server errors (5xx) or 502, 503, 504
+				const isServerError = response.status >= 500 && response.status < 600;
+				const isGatewayError = [502, 503, 504].includes(response.status);
+
+				if ((isServerError || isGatewayError) && attempt < retryMax) {
+					// Linear backoff: 2s, 4s, 6s
+					const waitMs = attempt * 2000;
+					await new Promise(resolve => setTimeout(resolve, waitMs));
+					return sendWithRetry(userContent, userAttachments, attempt + 1);
+				}
+
+				throw new Error(`Server error: ${response.status}`);
 			}
 
 			const reader = response.body?.getReader();
@@ -333,17 +323,83 @@
 					}
 				}
 			}
-		} catch (e) {
-			const errorMsg = e instanceof Error ? e.message : 'Failed to send message';
-			// Parse HTTP errors
-			if (errorMsg.includes('HTTP')) {
-				const [summary, ...rest] = errorMsg.split(':');
-				chatError = { summary: summary.trim(), details: rest.join(':').trim() || undefined };
-			} else {
-				chatError = { summary: errorMsg };
+
+			// On success, reset retry state
+			retryAttempt = 0;
+			isRetrying = false;
+			lastFailedMessage = null;
+			return true;
+
+		} catch (error) {
+			// Check for connection/network errors (TypeError for network issues)
+			const isNetworkError = error instanceof TypeError;
+			const errorMsg = error instanceof Error ? error.message : 'Failed to send message';
+			const isConnectionError = errorMsg.toLowerCase().includes('failed to fetch') ||
+									  errorMsg.toLowerCase().includes('network') ||
+									  errorMsg.toLowerCase().includes('connection');
+
+			if ((isNetworkError || isConnectionError) && attempt < retryMax) {
+				// Linear backoff: 2s, 4s, 6s
+				const waitMs = attempt * 2000;
+				await new Promise(resolve => setTimeout(resolve, waitMs));
+				return sendWithRetry(userContent, userAttachments, attempt + 1);
 			}
-			// Remove the user message on error
-			messages.pop();
+
+			// All retries exhausted
+			retryAttempt = 0;
+			isRetrying = false;
+			lastFailedMessage = { content: userContent, attachments: userAttachments };
+
+			// Show error in chat area
+			chatError = {
+				summary: 'Failed to connect to model after 3 attempts',
+				details: `The model may still be loading. Check the Servers page for status.\n\nError: ${errorMsg}`
+			};
+
+			return false;
+		}
+	}
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		if (!input.trim() || !selectedProfile || loading) return;
+
+		// Collapse previous error
+		errorMessageRef?.collapse();
+		chatError = null;
+
+		const userMessage = input.trim();
+		input = '';
+
+		// Build message content (with attachments if any)
+		const content = await buildMessageContent(userMessage, attachments);
+
+		// Store attachments for potential retry
+		const currentAttachments = [...attachments];
+
+		// Clear attachments - CHANGE 8
+		for (const attachment of attachments) {
+			if (attachment.type !== 'text') {
+				URL.revokeObjectURL(attachment.preview);
+			}
+		}
+		attachments = [];
+
+		// Add user message to UI (display text only for user messages)
+		messages.push({ role: 'user', content: userMessage });
+
+		// Reset streaming state
+		streamingThinking = '';
+		streamingResponse = '';
+		thinkingDuration = undefined;
+		loading = true;
+
+		try {
+			const success = await sendWithRetry(content, currentAttachments, 1);
+			if (!success) {
+				// Remove the user message on failure
+				messages.pop();
+			}
 		} finally {
 			loading = false;
 		}
@@ -517,6 +573,13 @@
 						</div>
 					{/each}
 
+					{#if isRetrying}
+						<div class="flex items-center gap-2 text-sm text-muted-foreground animate-pulse px-4 py-2">
+							<Loader2 class="w-4 h-4 animate-spin" />
+							<span>Connecting to model... (attempt {retryAttempt}/{retryMax})</span>
+						</div>
+					{/if}
+
 					{#if loading}
 						<div class="flex gap-3">
 							<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -551,6 +614,42 @@
 									details={chatError.details}
 								/>
 							</div>
+						</div>
+					{/if}
+
+					{#if lastFailedMessage}
+						<div class="flex justify-center py-2">
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={async () => {
+									if (lastFailedMessage && selectedProfile) {
+										errorMessageRef?.collapse();
+										chatError = null;
+										// Re-add user message to UI
+										const displayContent = typeof lastFailedMessage.content === 'string'
+											? lastFailedMessage.content
+											: lastFailedMessage.content.find(p => p.type === 'text')?.text || '';
+										messages.push({ role: 'user', content: displayContent });
+										// Reset streaming state
+										streamingThinking = '';
+										streamingResponse = '';
+										thinkingDuration = undefined;
+										loading = true;
+										try {
+											const success = await sendWithRetry(lastFailedMessage.content, lastFailedMessage.attachments, 1);
+											if (!success) {
+												messages.pop();
+											}
+										} finally {
+											loading = false;
+										}
+									}
+								}}
+								disabled={loading}
+							>
+								Retry
+							</Button>
 						</div>
 					{/if}
 				{/if}
