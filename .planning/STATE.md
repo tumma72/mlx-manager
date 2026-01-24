@@ -67,6 +67,9 @@ Recent decisions affecting current work:
 - Log first chunk delta keys and finish_reason for diagnosing thinking issues (debug level)
 - Dual-mechanism thinking detection: reasoning_content field + <think> tag parsing
 - Acceptable fallback: thinking without tags/parser shown as regular response text
+- formatBytes() used for memory display to show GB for values >= 1024 MB
+- Health check polling delayed 5s after PID confirmation, poll interval 3s
+- Chat textarea auto-grows up to 150px, Enter submits, Shift+Enter inserts newline
 
 ### Pending Todos
 
