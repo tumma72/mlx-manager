@@ -127,17 +127,17 @@ Plans:
   9. Tool-use capability detected from model tags and shown as badge
   10. Profile model description uses textarea instead of input field
   11. Profile has a default system prompt field used when starting the server
-**Research**: Unlikely (standard fixes)
-**Plans**: TBD
+**Research**: None needed (standard fixes)
+**Plans**: 7 plans in 3 waves
 
 Plans:
-- [ ] 06-01: Add logging to silent exception handlers
-- [ ] 06-02: Server process cleanup and log file management
-- [ ] 06-03: Replace assertions with HTTPException
-- [ ] 06-04: Fix polling re-renders and remove debug logs
-- [ ] 06-05: MCP mock integration for tool-use testing (deferred from Phase 5)
-- [ ] 06-06: Tool-use badge detection (deferred from Phase 5)
-- [ ] 06-07: Profile enhancements — textarea + system prompt (deferred from Phase 5)
+- [ ] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
+- [ ] 06-02-PLAN.md — Frontend cleanup: console.logs + polling fix (BUGFIX-04, BUGFIX-05)
+- [ ] 06-03-PLAN.md — Tool-use badge detection from model tags (DISC-04)
+- [ ] 06-04-PLAN.md — Server metrics fix: CPU/memory gauges + log cleanup (BUGFIX-02, BUGFIX-07)
+- [ ] 06-05-PLAN.md — Profile enhancements: textarea + system prompt (PRO-01, PRO-02)
+- [ ] 06-06-PLAN.md — Chat retry with backoff for model loading (BUGFIX-06)
+- [ ] 06-07-PLAN.md — MCP mock integration for tool-use testing (CHAT-04)
 
 ## Progress
 
