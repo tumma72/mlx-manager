@@ -50,6 +50,21 @@ async def chat_completions(
     Note: Connection errors (httpx.ConnectError) indicate the server is not running.
     This is the appropriate check - we don't need to pre-verify server state since
     the connection attempt itself is the verification.
+
+    Thinking Detection:
+    This endpoint supports two thinking extraction mechanisms:
+    1. Server-side reasoning_parser (e.g., reasoning_parser=glm4_moe in profile config)
+       - Server extracts thinking into delta.reasoning_content field
+       - We detect transition when reasoning_content stops and content begins
+    2. Raw <think> tags in delta.content field (fallback for models without parser)
+       - We parse tags character-by-character and emit thinking/thinking_done events
+
+    For GLM-4 models:
+    - If the model's chat template outputs <think> tags, they'll be parsed (method 2)
+    - If reasoning_parser=glm4_moe is configured, thinking goes to reasoning_content
+      (method 1)
+    - If neither mechanism activates, thinking appears as regular response text
+      (acceptable fallback)
     """
     # Get profile
     profile = await db.get(ServerProfile, request.profile_id)
@@ -62,6 +77,7 @@ async def chat_completions(
     async def generate() -> AsyncGenerator[str, None]:
         thinking_start: float | None = None
         in_thinking = False
+        first_chunk_logged = False
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
@@ -98,6 +114,15 @@ async def chat_completions(
                             delta = data.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content", "")
                             reasoning = delta.get("reasoning_content", "")
+
+                            # Diagnostic logging for first chunk (helps debug thinking extraction)
+                            if not first_chunk_logged:
+                                finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                                logger.debug(
+                                    f"First chunk - delta keys: {list(delta.keys())}, "
+                                    f"finish_reason: {finish_reason}"
+                                )
+                                first_chunk_logged = True
 
                             # Handle tool calls from model
                             tool_calls = delta.get("tool_calls")
