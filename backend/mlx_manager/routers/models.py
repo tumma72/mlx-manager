@@ -279,6 +279,7 @@ async def delete_model(
 async def get_model_config(
     current_user: Annotated[User, Depends(get_current_user)],
     model_id: str,
+    tags: str | None = Query(None, description="Comma-separated HuggingFace tags"),
 ):
     """Get model characteristics from config.json.
 
@@ -294,15 +295,18 @@ async def get_model_config(
         extract_characteristics_from_model,
     )
 
+    # Parse tags into list
+    tag_list = tags.split(",") if tags else None
+
     # Try local first
-    chars = extract_characteristics_from_model(model_id)
+    chars = extract_characteristics_from_model(model_id, tags=tag_list)
     if chars:
         return chars
 
     # Fetch remote
     config = await fetch_remote_config(model_id)
     if config:
-        return extract_characteristics(config)
+        return extract_characteristics(config, tags=tag_list)
 
     raise HTTPException(status_code=404, detail="Config not found")
 
