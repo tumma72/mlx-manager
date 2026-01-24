@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 6 (Bug Fixes & Stability) — Server metrics accuracy complete, 6 plans remaining
+**Current focus:** Phase 6 (Bug Fixes & Stability) — Error handling improvements complete, 3 plans remaining
 
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - IN PROGRESS
-Plan: 3 of 7 complete
+Plan: 4 of 7 complete
 Status: Phase in progress
-Last activity: 2026-01-24 — Completed 06-03-PLAN.md (Tool-use badge detection & display)
+Last activity: 2026-01-24 — Completed 06-01-PLAN.md (Error handling & logging improvements)
 
-Progress: █████████░ 85% (22 of 26 plans complete)
+Progress: █████████░ 88% (23 of 26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 22
+- Total plans completed: 23
 - Average duration: ~3.5 min
-- Total execution time: ~98 min
+- Total execution time: ~102 min
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: █████████░ 85% (22 of 26 plans complete)
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 3/7 | ~10 min | ~3 min |
+| 6 | 4/7 | ~14 min | ~3.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 05-05, 06-04, 06-02, 06-03
+- Last 5 plans: 06-04, 06-02, 06-03, 06-01
 - Trend: Excellent velocity, sub-5-min execution
 
 ## Accumulated Context
@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 - Only update error state when value actually changes (prevents triggering reactivity)
 - Dual detection strategy for tool-use capability (tags + config fallback)
 - Amber color scheme for tool-use badge (distinguishes from existing badges)
+- Use debug level for non-critical failures (cache checks, fallbacks, optional deps)
+- Use warning level for health check failures
+- Use error level for database transaction failures
+- Replace assertions with HTTPException(400) for state validation in routers
 
 ### Pending Todos
 
