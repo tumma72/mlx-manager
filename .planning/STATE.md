@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 ## Current Position
 
-Phase: 6 of 6 (Bug Fixes & Stability) - Gap Closure
-Plan: 12 of 13 complete (gap closure wave)
-Status: Executing gap closure plans
-Last activity: 2026-01-24 — Completed 06-12-PLAN.md (GLM-4 thinking robustness)
+Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
+Plan: 13 of 13 complete (all gap closure plans done)
+Status: Phase 6 complete - all phases complete
+Last activity: 2026-01-24 — Completed 06-13-PLAN.md (MCP tools frontend integration)
 
-Progress: ██████████ 100% (6 phases complete, gap closure in progress)
+Progress: ██████████ 100% (all 6 phases complete, all gap closure done)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 29
+- Total plans completed: 30
 - Average duration: ~4 min
-- Total execution time: ~110 min
+- Total execution time: ~113 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: ██████████ 100% (6 phases complete, gap closure in
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 12/13 | ~22 min | ~2 min |
+| 6 | 13/13 | ~25 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-04, 06-05, 06-06, 06-07, 06-10, 06-11, 06-12
-- Trend: Fast execution, all plans successful (gap closure in progress)
+- Last 7 plans: 06-05, 06-06, 06-07, 06-10, 06-11, 06-12, 06-13
+- Trend: Fast execution, all plans successful (ALL PHASES COMPLETE)
 
 ## Accumulated Context
 
@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 - formatBytes() used for memory display to show GB for values >= 1024 MB
 - Health check polling delayed 5s after PID confirmation, poll interval 3s
 - Chat textarea auto-grows up to 150px, Enter submits, Shift+Enter inserts newline
+- processSSEStream extracts SSE reading logic for reuse (initial + follow-up requests)
+- Max 3 tool-call rounds to prevent infinite loops (hard limit with user warning)
+- Tool calls displayed inline as formatted markdown blocks in assistant message
+- Tool results sent as role:tool messages in follow-up requests
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-12-PLAN.md (GLM-4 thinking robustness)
+Stopped at: Completed 06-13-PLAN.md (MCP tools frontend integration)
 Resume file: None
-Next: Continue gap closure (06-13 final plan)
+Next: All phases complete - ready for production release or Phase 7 planning
