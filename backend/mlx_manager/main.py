@@ -34,6 +34,7 @@ from mlx_manager.models import RunningInstance
 from mlx_manager.routers import (
     auth_router,
     chat_router,
+    mcp_router,
     models_router,
     profiles_router,
     servers_router,
@@ -183,6 +184,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(mcp_router)
 app.include_router(profiles_router)
 app.include_router(models_router)
 app.include_router(servers_router)
