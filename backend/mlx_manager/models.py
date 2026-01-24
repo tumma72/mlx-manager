@@ -101,6 +101,7 @@ class ServerProfileBase(SQLModel):
     log_file: str | None = None
     no_log_file: bool = Field(default=False)
     auto_start: bool = Field(default=False)
+    system_prompt: str | None = None
 
 
 class ServerProfile(ServerProfileBase, table=True):
@@ -143,6 +144,7 @@ class ServerProfileUpdate(SQLModel):
     log_file: str | None = None
     no_log_file: bool | None = None
     auto_start: bool | None = None
+    system_prompt: str | None = None
 
 
 class RunningInstance(SQLModel, table=True):

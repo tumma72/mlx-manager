@@ -39,6 +39,7 @@ async def migrate_schema() -> None:
         ("server_profiles", "tool_call_parser", "TEXT", None),
         ("server_profiles", "reasoning_parser", "TEXT", None),
         ("server_profiles", "message_converter", "TEXT", None),
+        ("server_profiles", "system_prompt", "TEXT", None),
     ]
 
     async with engine.begin() as conn:

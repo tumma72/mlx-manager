@@ -195,6 +195,7 @@ async def duplicate_profile(
         log_file=profile.log_file,
         no_log_file=profile.no_log_file,
         auto_start=False,  # Don't copy auto_start
+        system_prompt=profile.system_prompt,
     )
 
     session.add(new_profile)
