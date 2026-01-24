@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
-Plan: 13 of 13 complete (all gap closure plans done)
-Status: Phase 6 verified (18/18 must-haves) — all phases complete
-Last activity: 2026-01-24 — Phase 6 verified, milestone v1.1 complete
+Plan: 15 of 16 gap closure (14, 15 complete; 16 in progress)
+Status: Gap closure in progress — text file attachments and tool-use badges fixed
+Last activity: 2026-01-24 — Completed 06-15-PLAN.md (text file attachment & tool-use badge fixes)
 
-Progress: ██████████ 100% (all 6 phases complete, all gap closure done)
+Progress: ██████████ 100% (all 6 phases complete, gap closure 15/16)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 30
-- Average duration: ~4 min
-- Total execution time: ~113 min
+- Total plans completed: 32
+- Average duration: ~3.6 min
+- Total execution time: ~119 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: ██████████ 100% (all 6 phases complete, all gap cl
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 13/13 | ~25 min | ~2 min |
+| 6 | 15/16 | ~31 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-05, 06-06, 06-07, 06-10, 06-11, 06-12, 06-13
-- Trend: Fast execution, all plans successful (ALL PHASES COMPLETE)
+- Last 7 plans: 06-07, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15
+- Trend: Fast execution, gap closure progressing (15/16 complete)
 
 ## Accumulated Context
 
@@ -74,6 +74,8 @@ Recent decisions affecting current work:
 - Max 3 tool-call rounds to prevent infinite loops (hard limit with user warning)
 - Tool calls displayed inline as formatted markdown blocks in assistant message
 - Tool results sent as role:tool messages in follow-up requests
+- Extension-based text file detection replaces mime-type checking for reliability
+- is_tool_use included in hasAnyCharacteristic fallback validation
 
 ### Pending Todos
 
@@ -91,6 +93,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Phase 6 verified — milestone v1.1 complete
+Stopped at: Completed 06-15-PLAN.md (text file attachment & tool-use badge fixes)
 Resume file: None
-Next: Milestone audit and completion (/gsd:audit-milestone)
+Next: Execute 06-16-PLAN.md (thinking bubble visual improvements)
