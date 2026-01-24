@@ -191,6 +191,15 @@
 		});
 	}
 
+	async function readFileAsText(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as string);
+			reader.onerror = reject;
+			reader.readAsText(file);
+		});
+	}
+
 	async function buildMessageContent(text: string, currentAttachments: Attachment[]): Promise<string | ContentPart[]> {
 		if (currentAttachments.length === 0) {
 			return text;
@@ -199,11 +208,21 @@
 		const parts: ContentPart[] = [{ type: 'text', text }];
 
 		for (const attachment of currentAttachments) {
-			const base64 = await encodeFileAsBase64(attachment.file);
-			parts.push({
-				type: 'image_url',
-				image_url: { url: base64 }
-			});
+			if (attachment.type === 'text') {
+				// Read text files as plain text and include inline
+				const fileContent = await readFileAsText(attachment.file);
+				parts.push({
+					type: 'text',
+					text: `[File: ${attachment.file.name}]\n${fileContent}`
+				});
+			} else {
+				// Images and videos: encode as base64 data URL
+				const base64 = await encodeFileAsBase64(attachment.file);
+				parts.push({
+					type: 'image_url',
+					image_url: { url: base64 }
+				});
+			}
 		}
 
 		return parts;
