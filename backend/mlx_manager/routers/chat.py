@@ -1,6 +1,7 @@
 """Chat completions router with streaming support."""
 
 import json
+import logging
 import time
 from collections.abc import AsyncGenerator
 
@@ -14,6 +15,7 @@ from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import ServerProfile
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
@@ -22,6 +24,8 @@ class ChatRequest(BaseModel):
 
     profile_id: int
     messages: list[dict]  # OpenAI-compatible message format
+    tools: list[dict] | None = None  # OpenAI function definitions array
+    tool_choice: str | None = None  # "auto", "none", or specific function
 
 
 @router.post("/completions")
@@ -61,14 +65,19 @@ async def chat_completions(
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
+                body: dict = {
+                    "model": profile.model_path,
+                    "messages": request.messages,
+                    "stream": True,
+                }
+                if request.tools:
+                    body["tools"] = request.tools
+                    body["tool_choice"] = request.tool_choice or "auto"
+
                 async with client.stream(
                     "POST",
                     server_url,
-                    json={
-                        "model": profile.model_path,
-                        "messages": request.messages,
-                        "stream": True,
-                    },
+                    json=body,
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
@@ -89,6 +98,16 @@ async def chat_completions(
                             delta = data.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content", "")
                             reasoning = delta.get("reasoning_content", "")
+
+                            # Handle tool calls from model
+                            tool_calls = delta.get("tool_calls")
+                            if tool_calls:
+                                for tc in tool_calls:
+                                    tool_data = {
+                                        "type": "tool_call",
+                                        "tool_call": tc,  # {index, id, function: {name, arguments}}
+                                    }
+                                    yield f"data: {json.dumps(tool_data)}\n\n"
 
                             # Handle server-extracted reasoning content
                             # (when reasoning_parser is configured, server puts
@@ -165,6 +184,11 @@ async def chat_completions(
                                         "content": content,
                                     }
                                     yield f"data: {json.dumps(response_data)}\n\n"
+
+                            # Check finish_reason for tool_calls completion
+                            finish_reason = data.get("choices", [{}])[0].get("finish_reason")
+                            if finish_reason == "tool_calls":
+                                yield f"data: {json.dumps({'type': 'tool_calls_done'})}\n\n"
 
                         except json.JSONDecodeError:
                             continue
