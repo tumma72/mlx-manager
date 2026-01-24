@@ -8,7 +8,6 @@
 	// Timeout for model loading (2 minutes)
 	const MODEL_LOAD_TIMEOUT_MS = 120_000;
 	const POLL_INTERVAL_MS = 3_000; // Poll every 3 seconds during startup
-	const INITIAL_HEALTH_DELAY_MS = 5_000; // Wait 5s after PID confirmation before first health check
 
 	interface Props {
 		profile: ServerProfile;
