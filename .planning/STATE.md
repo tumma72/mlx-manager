@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
-Plan: 15 of 16 gap closure (14, 15 complete; 16 in progress)
-Status: Gap closure in progress — text file attachments and tool-use badges fixed
-Last activity: 2026-01-24 — Completed 06-15-PLAN.md (text file attachment & tool-use badge fixes)
+Plan: 14 of 16 gap closure (completed)
+Status: Gap closure in progress — health check console errors eliminated
+Last activity: 2026-01-24 — Completed 06-14-PLAN.md (health check console errors)
 
-Progress: ██████████ 100% (all 6 phases complete, gap closure 15/16)
+Progress: ██████████ 100% (all 6 phases complete, gap closure 14/16)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 32
-- Average duration: ~3.6 min
-- Total execution time: ~119 min
+- Total plans completed: 31
+- Average duration: ~3.7 min
+- Total execution time: ~120 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: ██████████ 100% (all 6 phases complete, gap closur
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 15/16 | ~31 min | ~2 min |
+| 6 | 14/16 | ~30 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-07, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15
-- Trend: Fast execution, gap closure progressing (15/16 complete)
+- Last 7 plans: 06-06, 06-07, 06-10, 06-11, 06-12, 06-13, 06-14
+- Trend: Fast execution, gap closure progressing (14/16 complete)
 
 ## Accumulated Context
 
@@ -68,7 +68,7 @@ Recent decisions affecting current work:
 - Dual-mechanism thinking detection: reasoning_content field + <think> tag parsing
 - Acceptable fallback: thinking without tags/parser shown as regular response text
 - formatBytes() used for memory display to show GB for values >= 1024 MB
-- Health check polling delayed 5s after PID confirmation, poll interval 3s
+- Health check polling uses backend API (servers.health) instead of direct fetch to eliminate console errors
 - Chat textarea auto-grows up to 150px, Enter submits, Shift+Enter inserts newline
 - processSSEStream extracts SSE reading logic for reuse (initial + follow-up requests)
 - Max 3 tool-call rounds to prevent infinite loops (hard limit with user warning)
@@ -93,6 +93,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-15-PLAN.md (text file attachment & tool-use badge fixes)
+Stopped at: Completed 06-14-PLAN.md (health check console errors)
 Resume file: None
-Next: Execute 06-16-PLAN.md (thinking bubble visual improvements)
+Next: Execute 06-15-PLAN.md (text file attachments) or 06-16-PLAN.md (thinking bubble)
