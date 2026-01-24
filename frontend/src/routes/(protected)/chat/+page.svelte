@@ -8,6 +8,12 @@
 	import { mcp } from '$lib/api/client';
 	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
 
+	const TEXT_EXTENSIONS = new Set([
+		'txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml',
+		'log', 'py', 'js', 'ts', 'html', 'css', 'sh',
+		'sql', 'conf', 'ini', 'toml'
+	]);
+
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string | ContentPart[];
@@ -124,16 +130,15 @@
 
 		const isVideo = file.type.startsWith('video/');
 		const isImage = file.type.startsWith('image/');
-		const isText = file.type.startsWith('text/') ||
-			file.type === 'application/json' ||
-			file.type === 'application/xml' ||
-			file.type === 'application/x-yaml' ||
-			file.type === 'application/x-sh' ||
-			file.type === 'application/sql';
+		const ext = file.name.split('.').pop()?.toLowerCase() || '';
+		const isText = TEXT_EXTENSIONS.has(ext);
 
 		// Validate based on model type
 		if (!isText && !isVideo && !isImage) {
-			chatError = { summary: 'Unsupported file type' };
+			const supported = isMultimodal
+				? 'images, videos, and text files (.txt, .md, .py, .js, .json, .csv, .log, etc.)'
+				: 'text files (.txt, .md, .py, .js, .json, .csv, .log, .yaml, .xml, etc.)';
+			chatError = { summary: `Unsupported file type. Accepted: ${supported}` };
 			return;
 		}
 
