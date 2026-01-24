@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 5 Complete & Verified — Ready for Phase 6 (Bug Fixes & Stability)
+**Current focus:** Phase 6 (Bug Fixes & Stability) — Server metrics accuracy complete, 6 plans remaining
 
 ## Current Position
 
-Phase: 5 of 6 (Chat Multimodal & Enhancements) - COMPLETE
-Plan: 5 of 5 complete (including gap closure plan 05-05)
-Status: Phase complete, verified (9/9 must-haves)
-Last activity: 2026-01-23 — Completed 05-05-PLAN.md (gap closure)
+Phase: 6 of 6 (Bug Fixes & Stability) - IN PROGRESS
+Plan: 1 of 7 complete
+Status: Phase in progress
+Last activity: 2026-01-24 — Completed 06-04-PLAN.md (Server metrics accuracy & log cleanup)
 
-Progress: ████████░░ 83% (5 phases complete)
+Progress: ████████░░ 77% (20 of 26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 19
-- Average duration: ~4 min
-- Total execution time: ~88 min
+- Total plans completed: 20
+- Average duration: ~3.6 min
+- Total execution time: ~90 min
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: ████████░░ 83% (5 phases complete)
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
+| 6 | 1/7 | ~2 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 05-01, 05-02, 05-03, 05-04, 05-05
-- Trend: Fast execution, consistent velocity
+- Last 5 plans: 05-03, 05-04, 05-05, 06-04
+- Trend: Excellent velocity, sub-5-min execution
 
 ## Accumulated Context
 
@@ -61,6 +62,9 @@ Recent decisions affecting current work:
 - Text file MIME detection: text/*, application/json, application/xml, application/x-yaml, application/x-sh, application/sql
 - Attachment button visible for all model types (not just multimodal)
 - Text-only models accept only text files; multimodal models accept images, videos, and text files
+- Use 100ms CPU measurement interval for accuracy (acceptable latency for status endpoint)
+- Sum metrics across entire process tree (parent + children) for accurate model resource usage
+- Centralize log file cleanup in helper method to prevent handle leaks
 
 ### Pending Todos
 
@@ -77,7 +81,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-23
-Stopped at: Completed 05-05-PLAN.md (gap closure for Phase 5)
+Last session: 2026-01-24
+Stopped at: Completed 06-04-PLAN.md (Server metrics accuracy & log cleanup)
 Resume file: None
-Next plan: Phase 6 planning (Bug Fixes & Stability)
+Next plan: Continue Phase 6 (6 plans remaining)
