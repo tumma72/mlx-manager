@@ -25,6 +25,7 @@
 	// Also: tool-call-parser, reasoning-parser, message-converter for MiniMax/Qwen/GLM
 	let name = $state('');
 	let description = $state('');
+	let systemPrompt = $state('');
 	let modelPath = $state('');
 	let modelType = $state('lm');
 	let port = $state(10240);
@@ -78,6 +79,7 @@
 	$effect(() => {
 		name = profile?.name ?? '';
 		description = profile?.description ?? '';
+		systemPrompt = profile?.system_prompt ?? '';
 		modelPath = profile?.model_path ?? initialModelPath;
 		// Map unsupported model types to 'lm'
 		const profileModelType = profile?.model_type ?? 'lm';
@@ -154,7 +156,8 @@
 				auto_start: autoStart,
 				tool_call_parser: toolCallParser || undefined,
 				reasoning_parser: reasoningParser || undefined,
-				message_converter: messageConverter || undefined
+				message_converter: messageConverter || undefined,
+				system_prompt: systemPrompt || undefined
 			};
 
 			await onSubmit(data);
@@ -188,7 +191,37 @@
 
 			<div>
 				<label for="description" class="block text-sm font-medium mb-1">Description</label>
-				<Input id="description" bind:value={description} placeholder="Optional description" />
+				<textarea
+					id="description"
+					bind:value={description}
+					placeholder="Optional description"
+					rows="2"
+					class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+				></textarea>
+			</div>
+
+			<div>
+				<label for="systemPrompt" class="block text-sm font-medium mb-1">
+					System Prompt
+					{#if systemPrompt.length > 0}
+						<span class="text-xs text-muted-foreground ml-2">
+							{systemPrompt.length} chars
+							{#if systemPrompt.length > 2000}
+								<span class="text-amber-500">(long prompt may affect performance)</span>
+							{/if}
+						</span>
+					{/if}
+				</label>
+				<textarea
+					id="systemPrompt"
+					bind:value={systemPrompt}
+					placeholder="e.g., You are a helpful coding assistant specializing in Python..."
+					rows="4"
+					class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+				></textarea>
+				<p class="text-xs text-muted-foreground mt-1">
+					Sets the model's behavior context. Appears as first message when chatting.
+				</p>
 			</div>
 
 			<div>

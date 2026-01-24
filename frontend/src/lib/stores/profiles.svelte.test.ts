@@ -47,6 +47,7 @@ function createMockProfile(overrides: Partial<ServerProfile> = {}): ServerProfil
     log_file: null,
     no_log_file: false,
     auto_start: false,
+    system_prompt: null,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00",
     updated_at: "2024-01-01T00:00:00",

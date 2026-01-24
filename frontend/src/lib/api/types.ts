@@ -28,6 +28,7 @@ export interface ServerProfile {
   log_file: string | null;
   no_log_file: boolean;
   auto_start: boolean;
+  system_prompt: string | null;
   launchd_installed: boolean;
   created_at: string;
   updated_at: string;
@@ -54,6 +55,7 @@ export interface ServerProfileCreate {
   log_file?: string;
   no_log_file?: boolean;
   auto_start?: boolean;
+  system_prompt?: string;
 }
 
 export interface ServerProfileUpdate {
@@ -77,6 +79,7 @@ export interface ServerProfileUpdate {
   log_file?: string | null;
   no_log_file?: boolean;
   auto_start?: boolean;
+  system_prompt?: string | null;
 }
 
 export interface RunningServer {
