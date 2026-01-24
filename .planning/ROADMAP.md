@@ -135,7 +135,7 @@ Plans:
   17. GLM-4 thinking detection robust with diagnostic logging
   18. Health check polling deferred to reduce console errors
 **Research**: None needed (standard fixes)
-**Plans:** 12 plans
+**Plans:** 13 plans
 
 Plans:
 - [x] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
@@ -148,8 +148,9 @@ Plans:
 - [ ] 06-08-PLAN.md — Quick fixes: memory units, chat textarea, health check timing (UAT gaps 1, 2, 7)
 - [ ] 06-09-PLAN.md — Tool-use badge fix: pass tags through API chain (UAT gap 3)
 - [ ] 06-10-PLAN.md — Text file attachments sent as text content (UAT gap 6)
-- [ ] 06-11-PLAN.md — MCP tools chat integration: toggle, execute, results loop (UAT gap 4)
+- [ ] 06-11-PLAN.md — MCP tools backend: tool forwarding + API types (UAT gap 4, wave 1)
 - [ ] 06-12-PLAN.md — GLM-4 thinking: diagnostic logging and robustness (UAT gap 5)
+- [ ] 06-13-PLAN.md — MCP tools frontend: toggle, execute, results loop (UAT gap 4, wave 2)
 
 ## Progress
 
@@ -163,4 +164,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
-| 6. Bug Fixes & Stability | 7/12 | Gap closure | — |
+| 6. Bug Fixes & Stability | 7/13 | Gap closure | — |
