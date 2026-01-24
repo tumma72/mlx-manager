@@ -15,7 +15,7 @@ Polish the UX for models and server panels, add user authentication, enhance cha
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
 - [ ] **Phase 5: Chat Multimodal & Enhancements** - Image/video attachments, thinking models, MCP mock, tool-use badge, profile enhancements
-- [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
+- [x] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling
 
 ## Phase Details
 
@@ -111,33 +111,33 @@ Plans:
 - [x] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 - [x] 05-05-PLAN.md — Gap closure: text file support and universal attachment button
 
-### Phase 6: Bug Fixes & Stability
+### Phase 6: Bug Fixes & Stability ✓
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling, and fix runtime bugs
 **Depends on**: Phase 5
 **Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05, BUGFIX-06, BUGFIX-07, CHAT-04, DISC-04, PRO-01, PRO-02
 **Success Criteria** (what must be TRUE):
-  1. Silent exceptions are logged (no more `except: pass`)
-  2. Server log files are cleaned up on crash/exit
-  3. API validation uses HTTPException (no assertions)
-  4. Server status polling doesn't cause excessive re-renders
-  5. No console.log debug statements in production
-  6. Models marked as started that fail to load are handled correctly in chat
-  7. Server CPU gauge shows actual values; memory gauge reflects real model size
-  8. MCP mock (weather/calculator) integrated to test tool-use capable models
-  9. Tool-use capability detected from model tags and shown as badge
-  10. Profile model description uses textarea instead of input field
-  11. Profile has a default system prompt field used when starting the server
+  1. Silent exceptions are logged (no more `except: pass`) ✓
+  2. Server log files are cleaned up on crash/exit ✓
+  3. API validation uses HTTPException (no assertions) ✓
+  4. Server status polling doesn't cause excessive re-renders ✓
+  5. No console.log debug statements in production ✓
+  6. Models marked as started that fail to load are handled correctly in chat ✓
+  7. Server CPU gauge shows actual values; memory gauge reflects real model size ✓
+  8. MCP mock (weather/calculator) integrated to test tool-use capable models ✓
+  9. Tool-use capability detected from model tags and shown as badge ✓
+  10. Profile model description uses textarea instead of input field ✓
+  11. Profile has a default system prompt field used when starting the server ✓
 **Research**: None needed (standard fixes)
-**Plans**: 7 plans in 3 waves
+**Completed**: 2026-01-24
 
 Plans:
-- [ ] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
-- [ ] 06-02-PLAN.md — Frontend cleanup: console.logs + polling fix (BUGFIX-04, BUGFIX-05)
-- [ ] 06-03-PLAN.md — Tool-use badge detection from model tags (DISC-04)
-- [ ] 06-04-PLAN.md — Server metrics fix: CPU/memory gauges + log cleanup (BUGFIX-02, BUGFIX-07)
-- [ ] 06-05-PLAN.md — Profile enhancements: textarea + system prompt (PRO-01, PRO-02)
-- [ ] 06-06-PLAN.md — Chat retry with backoff for model loading (BUGFIX-06)
-- [ ] 06-07-PLAN.md — MCP mock integration for tool-use testing (CHAT-04)
+- [x] 06-01-PLAN.md — Backend logging + assertion fixes (BUGFIX-01, BUGFIX-03)
+- [x] 06-02-PLAN.md — Frontend cleanup: console.logs + polling fix (BUGFIX-04, BUGFIX-05)
+- [x] 06-03-PLAN.md — Tool-use badge detection from model tags (DISC-04)
+- [x] 06-04-PLAN.md — Server metrics fix: CPU/memory gauges + log cleanup (BUGFIX-02, BUGFIX-07)
+- [x] 06-05-PLAN.md — Profile enhancements: textarea + system prompt (PRO-01, PRO-02)
+- [x] 06-06-PLAN.md — Chat retry with backoff for model loading (BUGFIX-06)
+- [x] 06-07-PLAN.md — MCP mock integration for tool-use testing (CHAT-04)
 
 ## Progress
 
@@ -151,4 +151,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
-| 6. Bug Fixes & Stability | 0/7 | Not started | - |
+| 6. Bug Fixes & Stability | 7/7 | ✓ Complete | 2026-01-24 |

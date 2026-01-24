@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 6 (Bug Fixes & Stability) — Error handling improvements complete, 3 plans remaining
+**Current focus:** All phases complete — Milestone v1.1 ready for audit
 
 ## Current Position
 
-Phase: 6 of 6 (Bug Fixes & Stability) - IN PROGRESS
-Plan: 6 of 7 complete
-Status: Phase in progress
-Last activity: 2026-01-24 — Completed 06-06-PLAN.md (Chat retry-with-backoff)
+Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
+Plan: 7 of 7 complete
+Status: Phase complete, verified (11/11 must-haves)
+Last activity: 2026-01-24 — Completed all Phase 6 plans
 
-Progress: █████████░ 96% (25 of 26 plans complete)
+Progress: ██████████ 100% (6 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 25
-- Average duration: ~3.5 min
-- Total execution time: ~113 min
+- Total plans completed: 26
+- Average duration: ~4 min
+- Total execution time: ~104 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: █████████░ 96% (25 of 26 plans complete)
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 6/7 | ~25 min | ~4.2 min |
+| 6 | 7/7 | ~16 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-06, 06-05, 06-07, 06-04, 06-02
-- Trend: Excellent velocity, sub-5-min execution
+- Last 7 plans: 06-01, 06-02, 06-03, 06-04, 06-05, 06-06, 06-07
+- Trend: Fast execution, all plans successful
 
 ## Accumulated Context
 
@@ -45,46 +45,20 @@ Progress: █████████░ 96% (25 of 26 plans complete)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- OpenAI ContentPart format for multimodal messages (mlx-openai-server compatible)
-- Max 3 attachments per chat message (memory and UI considerations)
-- Video duration limit of 2 minutes for attachments
-- Use connection attempt as server check (httpx.ConnectError is appropriate check)
-- Character-level streaming for thinking/response (matches mlx-openai-server granularity)
-- Auto-expand ThinkingBubble during streaming, auto-collapse when done
-- "Thought for Xs" label after thinking completes (shows thinking duration)
-- FileReader.readAsDataURL() for client-side base64 encoding (no backend changes needed)
-- ContentPart[] for multimodal, string for text-only API messages
-- Strip <think>/<\/think> tags from reasoning_content (server may include them)
-- Read both reasoning_content and content fields from SSE delta (dual detection)
-- ErrorMessage component with collapsible details and copy-to-clipboard
-- Inline error display in chat messages area (not banner)
-- CHAT-04, DISC-04, PRO-01, PRO-02 deferred to Phase 6
-- Text file MIME detection: text/*, application/json, application/xml, application/x-yaml, application/x-sh, application/sql
-- Attachment button visible for all model types (not just multimodal)
-- Text-only models accept only text files; multimodal models accept images, videos, and text files
-- Use 100ms CPU measurement interval for accuracy (acceptable latency for status endpoint)
-- Sum metrics across entire process tree (parent + children) for accurate model resource usage
-- Centralize log file cleanup in helper method to prevent handle leaks
-- Remove all console.log debug statements from production code (keep console.error for legitimate errors)
-- Add early-exit logic in state transition methods to prevent unnecessary reactive updates
-- Only update error state when value actually changes (prevents triggering reactivity)
-- Dual detection strategy for tool-use capability (tags + config fallback)
-- Amber color scheme for tool-use badge (distinguishes from existing badges)
-- Use debug level for non-critical failures (cache checks, fallbacks, optional deps)
-- Use warning level for health check failures
-- Use error level for database transaction failures
-- Replace assertions with HTTPException(400) for state validation in routers
-- Use AST parsing for safe calculator (no eval/exec code injection)
-- Deterministic mock weather based on location hash for reproducible tests
-- OpenAI function-calling format for tool definitions (compatible with mlx-openai-server)
-- Tool errors returned as {error: string} not HTTP errors (tool execution succeeded, tool logic failed)
-- System prompt appears as grayed-out italic message (not editable in chat)
-- Dismissible hint when no system prompt is set (links to profile settings)
-- Character counter with 2000-char soft limit warning (not blocking)
-- System prompt sent as first message with role: 'system' in API
-- Linear backoff timing for chat retry: 2s, 4s, 6s (3 attempts total)
-- Only retry on server/network errors, not client errors (prevents auth token exhaustion)
-- Keep chat input functional during retries (user can send new messages)
+- All silent exception handlers logged at appropriate level (debug for non-critical, warning for operational, error for critical)
+- Assertions replaced with HTTPException(400) in routers, ValueError in services
+- JSON.stringify comparison for store deduplication (prevents re-renders on unchanged data)
+- Tool-use detection uses dual strategy: HuggingFace tags (primary) + config.json fields (fallback)
+- Amber color scheme for ToolUseBadge (distinguishes from blue/purple/green)
+- CPU metrics use interval=0.1 for parent, interval=0 for children
+- Memory metrics sum RSS across parent + all child processes (recursive)
+- _cleanup_log_file() helper centralized across all exit paths
+- Profile system_prompt field (nullable TEXT, auto-migrated)
+- System prompt shown as pinned italic message in chat
+- System prompt sent as first message (role: 'system') in API calls
+- Chat retry: 3 attempts, linear backoff (2s, 4s, 6s), only on 5xx/network errors
+- MCP mock uses safe AST-based calculator (no eval/exec)
+- MCP mock weather uses deterministic hash-based values
 
 ### Pending Todos
 
@@ -102,6 +76,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-06-PLAN.md (Chat retry-with-backoff)
+Stopped at: All Phase 6 plans complete — milestone v1.1 ready for audit
 Resume file: None
-Next plan: Continue Phase 6 (1 plan remaining: 06-01)
+Next: Milestone audit and completion
