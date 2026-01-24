@@ -4,8 +4,9 @@
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
 	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
-	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle } from 'lucide-svelte';
-	import type { Attachment, ContentPart } from '$lib/api/types';
+	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench } from 'lucide-svelte';
+	import { mcp } from '$lib/api/client';
+	import type { Attachment, ContentPart, ToolCall, ToolDefinition } from '$lib/api/types';
 
 	interface Message {
 		role: 'user' | 'assistant';
@@ -29,6 +30,9 @@
 	let isRetrying = $state(false);
 	let lastFailedMessage = $state<{ content: string | ContentPart[]; attachments: Attachment[] } | null>(null);
 	let textareaRef = $state<HTMLTextAreaElement | null>(null);
+	let toolsEnabled = $state(false);
+	let availableTools = $state<ToolDefinition[]>([]);
+	let toolsLoaded = $state(false);
 
 	// Get running profiles - use servers directly to determine running state
 	// This avoids issues with serverStore.isRunning() which can return false
@@ -56,7 +60,7 @@
 	// This ensures we find the profile even if stores aren't loaded yet
 	let urlProfileId = $state<number | null>(null);
 
-	onMount(() => {
+	onMount(async () => {
 		// Initial data load - polling is handled globally by +layout.svelte
 		profileStore.refresh();
 		serverStore.refresh();
@@ -65,6 +69,14 @@
 		const profileParam = $page.url.searchParams.get('profile');
 		if (profileParam) {
 			urlProfileId = parseInt(profileParam, 10);
+		}
+
+		// Load available MCP tools
+		try {
+			availableTools = await mcp.listTools();
+			toolsLoaded = true;
+		} catch {
+			// MCP tools not available - toggle won't show
 		}
 	});
 
@@ -723,6 +735,17 @@
 					</div>
 				{/if}
 				<div class="flex gap-2">
+					{#if toolsLoaded}
+						<Button
+							type="button"
+							variant={toolsEnabled ? "default" : "ghost"}
+							size="icon"
+							onclick={() => toolsEnabled = !toolsEnabled}
+							title={toolsEnabled ? `Tools enabled (${availableTools.length})` : "Enable tools"}
+						>
+							<Wrench class="w-4 h-4" />
+						</Button>
+					{/if}
 					<Button
 						type="button"
 						variant="ghost"
