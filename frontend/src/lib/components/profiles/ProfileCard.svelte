@@ -105,7 +105,6 @@
 			// Check if we need to resume polling (component recreated while profile starting)
 			// Use store's polling tracker to prevent duplicate loops across component recreations
 			if (serverStore.isStarting(profile.id) && !serverStore.isProfilePolling(profile.id)) {
-				console.log(`[${profile.name}] Resuming polling on mount (component recreated while starting)`);
 				if (serverStore.startProfilePolling(profile.id)) {
 					isPolling = true;
 					startTime = Date.now();
@@ -128,18 +127,14 @@
 	});
 
 	async function pollServerStatus() {
-		console.log(`[${profile.name}] pollServerStatus - isPolling=${isPolling}, startTime=${startTime}`);
-
 		// Guard: stop if we're no longer supposed to be polling
 		if (!isPolling) {
-			console.log(`[${profile.name}] Polling stopped (isPolling=false)`);
 			serverStore.stopProfilePolling(profile.id);
 			return;
 		}
 
 		// Check for timeout
 		if (startTime && Date.now() - startTime > MODEL_LOAD_TIMEOUT_MS) {
-			console.log(`[${profile.name}] TIMEOUT after 2 minutes`);
 			serverStore.markStartupFailed(profile.id, 'Model loading timed out after 2 minutes. Check server logs for details.');
 			isPolling = false;
 			pollTimeoutId = null;
@@ -149,22 +144,17 @@
 
 		// Check server status from backend
 		try {
-			console.log(`[${profile.name}] Calling serversApi.status...`);
 			const status = await serversApi.status(profile.id);
-			console.log(`[${profile.name}] Status:`, JSON.stringify(status));
 
 			if (!status.running) {
-				console.log(`[${profile.name}] Server NOT running - failed=${status.failed}`);
 				// Server is not running
 				if (status.failed) {
-					console.log(`[${profile.name}] Marking as FAILED`);
 					serverStore.markStartupFailed(
 						profile.id,
 						'Server crashed while loading model',
 						status.error_message || 'Server process exited unexpectedly'
 					);
 				} else {
-					console.log(`[${profile.name}] Marking as SUCCESS (graceful stop)`);
 					// Server stopped gracefully
 					serverStore.markStartupSuccess(profile.id);
 				}
@@ -174,17 +164,13 @@
 				return;
 			}
 
-			console.log(`[${profile.name}] Server IS running, checking model endpoint...`);
 			// Server is running, check if model is loaded
 			try {
 				const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
-				console.log(`[${profile.name}] Model endpoint response: ${response.status}`);
 				if (response.ok) {
 					const data = await response.json();
-					console.log(`[${profile.name}] Model data:`, JSON.stringify(data));
 					if (data.data && data.data.length > 0) {
 						// Model is loaded - server is ready!
-						console.log(`[${profile.name}] Model LOADED - marking success`);
 						serverStore.markStartupSuccess(profile.id);
 						isPolling = false;
 						pollTimeoutId = null;
@@ -192,23 +178,19 @@
 						return;
 					}
 				}
-			} catch (e) {
-				console.log(`[${profile.name}] Model endpoint error (expected during startup):`, e);
+			} catch {
 				// Model endpoint not responding yet, keep polling
 			}
 
 			// Continue polling
-			console.log(`[${profile.name}] Scheduling next poll in ${POLL_INTERVAL_MS}ms`);
 			pollTimeoutId = setTimeout(pollServerStatus, POLL_INTERVAL_MS);
-		} catch (e) {
-			console.log(`[${profile.name}] Status API error:`, e);
+		} catch {
 			// Status check failed, keep polling
 			pollTimeoutId = setTimeout(pollServerStatus, POLL_INTERVAL_MS);
 		}
 	}
 
 	async function handleStart() {
-		console.log(`[${profile.name}] handleStart called`);
 		loading = true;
 		serverStore.clearFailure(profile.id);
 		startTime = Date.now();
@@ -221,7 +203,6 @@
 
 		// Register polling with the store (prevents duplicate loops)
 		if (!serverStore.startProfilePolling(profile.id)) {
-			console.log(`[${profile.name}] Another polling loop already active, not starting a new one`);
 			loading = false;
 			return;
 		}
@@ -229,13 +210,10 @@
 		isPolling = true;
 
 		try {
-			console.log(`[${profile.name}] Calling serverStore.start...`);
 			await serverStore.start(profile.id);
-			console.log(`[${profile.name}] serverStore.start completed, starting polling`);
 			// Start polling for server status
 			pollServerStatus();
 		} catch (e) {
-			console.log(`[${profile.name}] Start failed:`, e);
 			const errorMsg = e instanceof Error ? e.message : 'Failed to start server';
 			serverStore.markStartupFailed(profile.id, errorMsg);
 			startTime = null;
@@ -243,7 +221,6 @@
 			serverStore.stopProfilePolling(profile.id);
 		} finally {
 			loading = false;
-			console.log(`[${profile.name}] handleStart finished`);
 		}
 	}
 
@@ -283,7 +260,6 @@
 		// For restart, we first stop any existing polling then start fresh
 		serverStore.stopProfilePolling(profile.id);
 		if (!serverStore.startProfilePolling(profile.id)) {
-			console.log(`[${profile.name}] Could not start polling for restart`);
 			loading = false;
 			return;
 		}

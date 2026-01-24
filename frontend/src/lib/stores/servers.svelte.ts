@@ -225,19 +225,6 @@ class ServerStore {
     error: string,
     details: string | null = null,
   ) {
-    console.log(
-      `[ServerStore] markStartupFailed called for profile ${profileId}`,
-    );
-    console.log(`[ServerStore] Error: ${error}`);
-    console.log(
-      `[ServerStore] Before - startingProfiles.has(${profileId}):`,
-      this.startingProfiles.has(profileId),
-    );
-    console.log(
-      `[ServerStore] Before - failedProfiles.has(${profileId}):`,
-      this.failedProfiles.has(profileId),
-    );
-
     // Direct mutation on SvelteSet/SvelteMap
     this.startingProfiles.delete(profileId);
     this.restartingProfiles.delete(profileId);
@@ -246,23 +233,6 @@ class ServerStore {
     const existing = this.failedProfiles.get(profileId);
     const detailsOpen = existing?.detailsOpen ?? false;
     this.failedProfiles.set(profileId, { error, details, detailsOpen });
-
-    console.log(
-      `[ServerStore] After - startingProfiles.has(${profileId}):`,
-      this.startingProfiles.has(profileId),
-    );
-    console.log(
-      `[ServerStore] After - failedProfiles.has(${profileId}):`,
-      this.failedProfiles.has(profileId),
-    );
-    console.log(
-      `[ServerStore] failedProfiles size:`,
-      this.failedProfiles.size,
-    );
-    console.log(
-      `[ServerStore] failedProfiles.get(${profileId}):`,
-      this.failedProfiles.get(profileId),
-    );
 
     // Use coordinator for deduped refresh
     this.refresh();
@@ -350,13 +320,9 @@ class ServerStore {
    */
   startProfilePolling(profileId: number): boolean {
     if (this.pollingProfiles.has(profileId)) {
-      console.log(
-        `[ServerStore] Profile ${profileId} already has active polling, skipping`,
-      );
       return false; // Already polling
     }
     this.pollingProfiles.add(profileId);
-    console.log(`[ServerStore] Started polling for profile ${profileId}`);
     return true;
   }
 
@@ -366,7 +332,6 @@ class ServerStore {
    */
   stopProfilePolling(profileId: number) {
     this.pollingProfiles.delete(profileId);
-    console.log(`[ServerStore] Stopped polling for profile ${profileId}`);
   }
 }
 

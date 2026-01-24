@@ -340,6 +340,54 @@ def get_model_detection_info(model_id: str) -> dict:
     }
 
 
+def detect_tool_use(config: dict[str, Any], tags: list[str] | None = None) -> bool:
+    """
+    Detect if a model supports tool-use / function-calling.
+
+    Uses two detection strategies:
+    1. Tag-based (primary): Check HuggingFace tags for tool-use indicators
+    2. Config-based (fallback): Check config.json for tool_call_parser or
+       known tool-capable architectures
+
+    Args:
+        config: Parsed config.json dictionary
+        tags: Optional list of HuggingFace tags for the model
+
+    Returns:
+        True if model supports tool-use, False otherwise
+    """
+    # Tag-based detection (primary)
+    if tags:
+        tags_lower = [tag.lower() for tag in tags]
+        tool_indicators = [
+            "tool-use",
+            "tool_use",
+            "function-calling",
+            "function_calling",
+            "tool-calling",
+            "tools",
+        ]
+        if any(indicator in tag for tag in tags_lower for indicator in tool_indicators):
+            return True
+
+    # Config-based detection (fallback)
+    # Check for tool_call_parser in config (some models have this)
+    if "tool_call_parser" in config:
+        return True
+
+    # Check model_type for known tool-capable architectures
+    model_type = config.get("model_type", "").lower()
+    tool_capable_types = ["qwen", "glm", "minimax"]
+    if any(t in model_type for t in tool_capable_types):
+        # These families often support tools, but check for parser config
+        if "tool_call_parser" in config or any(
+            "tool" in str(v).lower() for v in config.values() if isinstance(v, str)
+        ):
+            return True
+
+    return False
+
+
 def detect_multimodal(config: dict[str, Any]) -> tuple[bool, str | None]:
     """
     Detect if a model is multimodal and its type.
@@ -415,7 +463,9 @@ def normalize_architecture(config: dict[str, Any]) -> str:
     return "Unknown"
 
 
-def extract_characteristics(config: dict[str, Any]) -> ModelCharacteristics:
+def extract_characteristics(
+    config: dict[str, Any], tags: list[str] | None = None
+) -> ModelCharacteristics:
     """
     Extract model characteristics from config.json.
 
@@ -424,11 +474,13 @@ def extract_characteristics(config: dict[str, Any]) -> ModelCharacteristics:
 
     Args:
         config: Parsed config.json dictionary
+        tags: Optional HuggingFace tags for tag-based detection
 
     Returns:
         ModelCharacteristics with all available fields populated
     """
     is_multimodal, multimodal_type = detect_multimodal(config)
+    is_tool_use = detect_tool_use(config, tags)
 
     # Extract quantization info (MLX models often have this)
     quantization = config.get("quantization", {})
@@ -443,6 +495,7 @@ def extract_characteristics(config: dict[str, Any]) -> ModelCharacteristics:
         "is_multimodal": is_multimodal,
         "multimodal_type": multimodal_type,
         "use_cache": config.get("use_cache", True),
+        "is_tool_use": is_tool_use,
     }
 
     # Add optional numeric fields if present
@@ -473,7 +526,9 @@ def extract_characteristics(config: dict[str, Any]) -> ModelCharacteristics:
     return characteristics
 
 
-def extract_characteristics_from_model(model_id: str) -> ModelCharacteristics | None:
+def extract_characteristics_from_model(
+    model_id: str, tags: list[str] | None = None
+) -> ModelCharacteristics | None:
     """
     Extract characteristics from a locally downloaded model.
 
@@ -482,6 +537,7 @@ def extract_characteristics_from_model(model_id: str) -> ModelCharacteristics | 
 
     Args:
         model_id: HuggingFace model ID (e.g., "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+        tags: Optional HuggingFace tags for tag-based detection
 
     Returns:
         ModelCharacteristics or None if model not available
@@ -489,4 +545,4 @@ def extract_characteristics_from_model(model_id: str) -> ModelCharacteristics | 
     config = read_model_config(model_id)
     if config is None:
         return None
-    return extract_characteristics(config)
+    return extract_characteristics(config, tags)

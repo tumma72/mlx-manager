@@ -64,6 +64,7 @@ class ModelCharacteristics(TypedDict, total=False):
     is_multimodal: bool
     multimodal_type: str | None  # "vision" or None
     use_cache: bool  # KV cache enabled (default True)
+    is_tool_use: bool  # Tool-use / function-calling support
 
 
 class LocalModelInfo(TypedDict, total=False):
