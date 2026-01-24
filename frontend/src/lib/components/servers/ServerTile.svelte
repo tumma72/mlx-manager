@@ -3,7 +3,7 @@
 	import { serverStore } from '$stores';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { formatDuration } from '$lib/utils/format';
+	import { formatDuration, formatBytes } from '$lib/utils/format';
 	import { Card, Button, Badge } from '$components/ui';
 	import { MetricGauge } from '$components/servers';
 	import { Square, RotateCw, MessageSquare, Loader2, Clock, Server, Hash } from 'lucide-svelte';
@@ -114,7 +114,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<Server class="h-3.5 w-3.5" />
-				<span>Memory: {server.memory_mb.toFixed(0)} MB</span>
+				<span>Memory: {formatBytes(server.memory_mb * 1024 * 1024)}</span>
 			</div>
 			<div class="flex items-center gap-2">
 				<Hash class="h-3.5 w-3.5" />

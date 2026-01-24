@@ -7,7 +7,8 @@
 
 	// Timeout for model loading (2 minutes)
 	const MODEL_LOAD_TIMEOUT_MS = 120_000;
-	const POLL_INTERVAL_MS = 2_000; // Poll every 2 seconds during startup
+	const POLL_INTERVAL_MS = 3_000; // Poll every 3 seconds during startup
+	const INITIAL_HEALTH_DELAY_MS = 5_000; // Wait 5s after PID confirmed before first health check
 
 	interface Props {
 		profile: ServerProfile;
@@ -19,6 +20,7 @@
 	let startTime = $state<number | null>(null);
 	let pollTimeoutId = $state<ReturnType<typeof setTimeout> | null>(null);
 	let isPolling = $state(false);
+	let healthCheckReady = $state(false);
 
 	// Derived state from store
 	const isFailed = $derived(serverStore.isFailed(profile.id));
@@ -125,21 +127,31 @@
 				return;
 			}
 
+			// Server is running (PID confirmed) - enable health checks after initial delay
+			if (!healthCheckReady) {
+				healthCheckReady = true;
+				// Wait before first health check to reduce console noise
+				pollTimeoutId = setTimeout(pollServerStatus, INITIAL_HEALTH_DELAY_MS);
+				return;
+			}
+
 			// Server is running, check if model is loaded
-			try {
-				const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
-				if (response.ok) {
-					const data = await response.json();
-					if (data.data && data.data.length > 0) {
-						serverStore.markStartupSuccess(profile.id);
-						isPolling = false;
-						pollTimeoutId = null;
-						serverStore.stopProfilePolling(profile.id);
-						return;
+			if (healthCheckReady) {
+				try {
+					const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
+					if (response.ok) {
+						const data = await response.json();
+						if (data.data && data.data.length > 0) {
+							serverStore.markStartupSuccess(profile.id);
+							isPolling = false;
+							pollTimeoutId = null;
+							serverStore.stopProfilePolling(profile.id);
+							return;
+						}
 					}
+				} catch {
+					// Model endpoint not responding yet, keep polling
 				}
-			} catch {
-				// Model endpoint not responding yet, keep polling
 			}
 
 			pollTimeoutId = setTimeout(pollServerStatus, POLL_INTERVAL_MS);

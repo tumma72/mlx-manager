@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ServerProfile, RunningServer } from '$api';
 	import { serverStore } from '$stores';
-	import { formatDuration } from '$lib/utils/format';
+	import { formatDuration, formatBytes } from '$lib/utils/format';
 	import { Card, Button } from '$components/ui';
 	import {
 		Play,
@@ -123,7 +123,7 @@
 			<div class="flex items-center gap-2">
 				<HardDrive class="w-4 h-4 text-muted-foreground" />
 				<span class="text-muted-foreground">Memory:</span>
-				<span>{server.memory_mb.toFixed(1)} MB</span>
+				<span>{formatBytes(server.memory_mb * 1024 * 1024)}</span>
 			</div>
 
 			<div class="flex items-center gap-2">
