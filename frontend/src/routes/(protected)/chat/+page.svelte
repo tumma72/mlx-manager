@@ -6,7 +6,7 @@
 	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage } from '$components/ui';
 	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench } from 'lucide-svelte';
 	import { mcp } from '$lib/api/client';
-	import type { Attachment, ContentPart, ToolCall, ToolDefinition } from '$lib/api/types';
+	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
 
 	interface Message {
 		role: 'user' | 'assistant';
@@ -248,6 +248,93 @@
 		return parts;
 	}
 
+	interface StreamResult {
+		content: string;
+		thinking: string;
+		thinkingDur: number | undefined;
+		toolCalls: Array<{ id: string; name: string; arguments: string }>;
+		toolCallsDone: boolean;
+		error: { summary: string; details?: string } | null;
+	}
+
+	async function processSSEStream(response: Response): Promise<StreamResult> {
+		const result: StreamResult = {
+			content: '',
+			thinking: '',
+			thinkingDur: undefined,
+			toolCalls: [],
+			toolCallsDone: false,
+			error: null,
+		};
+
+		const reader = response.body?.getReader();
+		if (!reader) return result;
+
+		const decoder = new TextDecoder();
+		let buffer = '';
+
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			for (const line of lines) {
+				if (!line.startsWith('data: ')) continue;
+				try {
+					const data = JSON.parse(line.slice(6));
+					switch (data.type) {
+						case 'thinking':
+							result.thinking += data.content;
+							streamingThinking += data.content;
+							break;
+						case 'thinking_done':
+							result.thinkingDur = data.duration;
+							thinkingDuration = data.duration;
+							break;
+						case 'response':
+							result.content += data.content;
+							streamingResponse += data.content;
+							break;
+						case 'tool_call': {
+							const tc = data.tool_call;
+							const existing = result.toolCalls.find(t => t.id === tc.id);
+							if (existing) {
+								existing.arguments += tc.function?.arguments || '';
+							} else if (tc.id) {
+								result.toolCalls.push({
+									id: tc.id,
+									name: tc.function?.name || '',
+									arguments: tc.function?.arguments || '',
+								});
+							}
+							break;
+						}
+						case 'tool_calls_done':
+							result.toolCallsDone = true;
+							break;
+						case 'error':
+							if (data.content.includes('Failed to connect')) {
+								result.error = { summary: 'Connection failed', details: data.content };
+							} else if (data.content.includes('timed out')) {
+								result.error = { summary: 'Request timed out', details: data.content };
+							} else {
+								result.error = { summary: 'Server error', details: data.content };
+							}
+							break;
+						case 'done':
+							break;
+					}
+				} catch {
+					// Ignore parse errors
+				}
+			}
+		}
+		return result;
+	}
+
 	async function sendWithRetry(userContent: string | ContentPart[], userAttachments: Attachment[], attempt: number = 1): Promise<boolean> {
 		retryAttempt = attempt;
 		isRetrying = attempt > 1;
@@ -271,16 +358,22 @@
 		apiMessages.push({ role: 'user', content: userContent });
 
 		try {
+			const requestBody: Record<string, unknown> = {
+				profile_id: selectedProfile.id,
+				messages: apiMessages,
+			};
+			if (toolsEnabled && availableTools.length > 0) {
+				requestBody.tools = availableTools;
+				requestBody.tool_choice = 'auto';
+			}
+
 			const response = await fetch('/api/chat/completions', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					'Authorization': `Bearer ${authStore.token}`,
 				},
-				body: JSON.stringify({
-					profile_id: selectedProfile.id,
-					messages: apiMessages,
-				}),
+				body: JSON.stringify(requestBody),
 			});
 
 			if (!response.ok) {
@@ -298,69 +391,104 @@
 				throw new Error(`Server error: ${response.status}`);
 			}
 
-			const reader = response.body?.getReader();
-			if (!reader) throw new Error('No response body');
+			// Process the SSE stream
+			const streamResult = await processSSEStream(response);
 
-			const decoder = new TextDecoder();
-			let buffer = '';
+			if (streamResult.error) {
+				chatError = streamResult.error;
+				return false;
+			}
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			// Handle tool-use loop (max 3 rounds to prevent infinite loops)
+			const MAX_TOOL_DEPTH = 3;
+			let currentResult = streamResult;
+			let toolDepth = 0;
+			let assistantContent = currentResult.content;
 
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || ''; // Keep incomplete line in buffer
+			while (currentResult.toolCallsDone && currentResult.toolCalls.length > 0 && toolDepth < MAX_TOOL_DEPTH) {
+				toolDepth++;
 
-				for (const line of lines) {
-					if (!line.startsWith('data: ')) continue;
+				// Display tool calls in assistant message
+				for (const toolCall of currentResult.toolCalls) {
+					const toolCallText = `\n\n---\n**Tool call:** \`${toolCall.name}(${toolCall.arguments})\`\n`;
+					assistantContent += toolCallText;
+					streamingResponse = assistantContent;
 
+					// Execute the tool
 					try {
-						const data = JSON.parse(line.slice(6));
+						const parsedArgs = JSON.parse(toolCall.arguments);
+						const toolResult = await mcp.executeTool(toolCall.name, parsedArgs);
+						const resultText = `**Result:** \`${JSON.stringify(toolResult)}\`\n---\n\n`;
+						assistantContent += resultText;
+						streamingResponse = assistantContent;
 
-						switch (data.type) {
-							case 'thinking':
-								streamingThinking += data.content;
-								break;
-							case 'thinking_done':
-								thinkingDuration = data.duration;
-								break;
-							case 'response':
-								streamingResponse += data.content;
-								break;
-							case 'error':
-								// Parse connection errors vs server errors
-								if (data.content.includes('Failed to connect')) {
-									chatError = {
-										summary: 'Connection failed',
-										details: data.content
-									};
-								} else if (data.content.includes('timed out')) {
-									chatError = {
-										summary: 'Request timed out',
-										details: data.content
-									};
-								} else {
-									chatError = {
-										summary: 'Server error',
-										details: data.content
-									};
-								}
-								break;
-							case 'done':
-								// Finalize message
-								if (streamingResponse || streamingThinking) {
-									const finalContent = streamingThinking
-										? `<think>${streamingThinking}</think>${streamingResponse}`
-										: streamingResponse;
-									messages.push({ role: 'assistant', content: finalContent });
-								}
-								break;
-						}
+						// Add assistant tool_calls message and tool result to apiMessages
+						apiMessages.push({
+							role: 'assistant',
+							content: '',
+							tool_calls: [{
+								id: toolCall.id,
+								type: 'function',
+								function: { name: toolCall.name, arguments: toolCall.arguments }
+							}]
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						} as any);
+						apiMessages.push({
+							role: 'tool',
+							tool_call_id: toolCall.id,
+							content: JSON.stringify(toolResult)
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						} as any);
 					} catch {
-						// Ignore parse errors
+						assistantContent += `**Error:** Tool execution failed\n---\n\n`;
+						streamingResponse = assistantContent;
 					}
 				}
+
+				// Send follow-up request with tool results
+				const followUpBody: Record<string, unknown> = {
+					profile_id: selectedProfile!.id,
+					messages: apiMessages,
+				};
+				if (toolsEnabled && availableTools.length > 0) {
+					followUpBody.tools = availableTools;
+					followUpBody.tool_choice = 'auto';
+				}
+
+				const followUpRes = await fetch('/api/chat/completions', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${authStore.token}`,
+					},
+					body: JSON.stringify(followUpBody),
+				});
+
+				if (!followUpRes.ok) break;
+
+				// Process follow-up stream (may contain more tool calls)
+				currentResult = await processSSEStream(followUpRes);
+				assistantContent += currentResult.content;
+				streamingResponse = assistantContent;
+
+				if (currentResult.error) {
+					chatError = currentResult.error;
+					break;
+				}
+			}
+
+			// If we hit max depth and model still wants tools, show warning
+			if (toolDepth >= MAX_TOOL_DEPTH && currentResult.toolCallsDone) {
+				assistantContent += '\n\n*[Tool call limit reached (3 rounds). Stopping automatic execution.]*';
+				streamingResponse = assistantContent;
+			}
+
+			// Finalize message
+			if (streamingResponse || streamingThinking) {
+				const finalContent = streamingThinking
+					? `<think>${streamingThinking}</think>${streamingResponse}`
+					: streamingResponse;
+				messages.push({ role: 'assistant', content: finalContent });
 			}
 
 			// On success, reset retry state
