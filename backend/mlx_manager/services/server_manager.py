@@ -24,6 +24,15 @@ class ServerManager:
         self.processes: dict[int, subprocess.Popen[bytes]] = {}  # profile_id -> process
         self._log_positions: dict[int, int] = {}  # profile_id -> last read position
 
+    def _cleanup_log_file(self, profile_id: int) -> None:
+        """Close and clean up log file handle for a profile."""
+        if hasattr(self, "_log_files") and profile_id in self._log_files:
+            try:
+                self._log_files[profile_id].close()
+            except OSError as e:
+                logger.debug(f"Failed to close log file for profile_id={profile_id}: {e}")
+            del self._log_files[profile_id]
+
     async def start_server(self, profile: ServerProfile) -> int:
         """Start an mlx-openai-server instance for the given profile."""
         # Profile must be persisted to have an ID
@@ -84,11 +93,9 @@ class ServerManager:
             error_msg = ""
             try:
                 log_file.flush()
-                log_file.close()
-                if profile.id in self._log_files:
-                    del self._log_files[profile.id]
             except OSError as e:
-                logger.warning(f"Failed to close log file for {profile.name}: {e}")
+                logger.warning(f"Failed to flush log file for {profile.name}: {e}")
+            self._cleanup_log_file(profile.id)
             if log_path.exists():
                 error_msg = log_path.read_text()[-2000:]  # Last 2000 chars
             exit_code = proc.poll()
@@ -132,13 +139,7 @@ class ServerManager:
 
         del self.processes[profile_id]
         self._log_positions.pop(profile_id, None)
-        # Close log file if open
-        if hasattr(self, "_log_files") and profile_id in self._log_files:
-            try:
-                self._log_files[profile_id].close()
-            except OSError as e:
-                logger.debug(f"Failed to close log file for profile_id={profile_id}: {e}")
-            del self._log_files[profile_id]
+        self._cleanup_log_file(profile_id)
         logger.info(f"Server stopped for profile_id={profile_id}")
         return True
 
@@ -300,15 +301,13 @@ class ServerManager:
         exit_code = proc.poll()
 
         if exit_code is not None:
-            # Process has exited - close log file and read error
+            # Process has exited - flush log file, read error, and clean up
             log_path = get_server_log_path(profile_id)
             if hasattr(self, "_log_files") and profile_id in self._log_files:
                 try:
                     self._log_files[profile_id].flush()
-                    self._log_files[profile_id].close()
                 except OSError as e:
-                    logger.debug(f"Failed to close log file: {e}")
-                del self._log_files[profile_id]
+                    logger.debug(f"Failed to flush log file: {e}")
 
             error_msg: str | None = None
             has_error_in_log = False
@@ -330,6 +329,7 @@ class ServerManager:
             # Clean up the dead process
             del self.processes[profile_id]
             self._log_positions.pop(profile_id, None)
+            self._cleanup_log_file(profile_id)
 
             # Consider it failed if exit code is non-zero OR if log contains error patterns
             is_failed = exit_code != 0 or has_error_in_log
@@ -356,6 +356,8 @@ class ServerManager:
             if proc.poll() is not None:
                 # Process has exited, clean up
                 del self.processes[profile_id]
+                self._log_positions.pop(profile_id, None)
+                self._cleanup_log_file(profile_id)
                 continue
 
             stats = self.get_server_stats(profile_id)
