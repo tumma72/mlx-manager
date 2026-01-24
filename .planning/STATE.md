@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - IN PROGRESS
-Plan: 5 of 7 complete
+Plan: 6 of 7 complete
 Status: Phase in progress
-Last activity: 2026-01-24 — Completed 06-05-PLAN.md (Profile system prompt & textarea)
+Last activity: 2026-01-24 — Completed 06-06-PLAN.md (Chat retry-with-backoff)
 
-Progress: █████████░ 92% (24 of 26 plans complete)
+Progress: █████████░ 96% (25 of 26 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: ~3.5 min
-- Total execution time: ~111 min
+- Total execution time: ~113 min
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: █████████░ 92% (24 of 26 plans complete)
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 5/7 | ~23 min | ~4.6 min |
+| 6 | 6/7 | ~25 min | ~4.2 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-05, 06-07, 06-04, 06-02, 06-03
+- Last 5 plans: 06-06, 06-05, 06-07, 06-04, 06-02
 - Trend: Excellent velocity, sub-5-min execution
 
 ## Accumulated Context
@@ -82,6 +82,9 @@ Recent decisions affecting current work:
 - Dismissible hint when no system prompt is set (links to profile settings)
 - Character counter with 2000-char soft limit warning (not blocking)
 - System prompt sent as first message with role: 'system' in API
+- Linear backoff timing for chat retry: 2s, 4s, 6s (3 attempts total)
+- Only retry on server/network errors, not client errors (prevents auth token exhaustion)
+- Keep chat input functional during retries (user can send new messages)
 
 ### Pending Todos
 
@@ -99,6 +102,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-05-PLAN.md (Profile system prompt & textarea)
+Stopped at: Completed 06-06-PLAN.md (Chat retry-with-backoff)
 Resume file: None
-Next plan: Continue Phase 6 (2 plans remaining)
+Next plan: Continue Phase 6 (1 plan remaining: 06-01)
