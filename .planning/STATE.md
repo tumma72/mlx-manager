@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 Phase: 6 of 6 (Bug Fixes & Stability) - IN PROGRESS
 Plan: 5 of 7 complete
 Status: Phase in progress
-Last activity: 2026-01-24 — Completed 06-07-PLAN.md (MCP mock service)
+Last activity: 2026-01-24 — Completed 06-05-PLAN.md (Profile system prompt & textarea)
 
 Progress: █████████░ 92% (24 of 26 plans complete)
 
@@ -21,7 +21,7 @@ Progress: █████████░ 92% (24 of 26 plans complete)
 **Velocity:**
 - Total plans completed: 24
 - Average duration: ~3.5 min
-- Total execution time: ~105 min
+- Total execution time: ~111 min
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: █████████░ 92% (24 of 26 plans complete)
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 5/7 | ~17 min | ~3.4 min |
+| 6 | 5/7 | ~23 min | ~4.6 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-07, 06-04, 06-02, 06-03, 06-01
+- Last 5 plans: 06-05, 06-07, 06-04, 06-02, 06-03
 - Trend: Excellent velocity, sub-5-min execution
 
 ## Accumulated Context
@@ -78,6 +78,10 @@ Recent decisions affecting current work:
 - Deterministic mock weather based on location hash for reproducible tests
 - OpenAI function-calling format for tool definitions (compatible with mlx-openai-server)
 - Tool errors returned as {error: string} not HTTP errors (tool execution succeeded, tool logic failed)
+- System prompt appears as grayed-out italic message (not editable in chat)
+- Dismissible hint when no system prompt is set (links to profile settings)
+- Character counter with 2000-char soft limit warning (not blocking)
+- System prompt sent as first message with role: 'system' in API
 
 ### Pending Todos
 
@@ -95,6 +99,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-07-PLAN.md (MCP mock service)
+Stopped at: Completed 06-05-PLAN.md (Profile system prompt & textarea)
 Resume file: None
 Next plan: Continue Phase 6 (2 plans remaining)
