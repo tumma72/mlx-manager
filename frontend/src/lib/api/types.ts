@@ -246,3 +246,22 @@ export interface Attachment {
   preview: string; // Object URL for thumbnail, or filename for text
   type: "image" | "video" | "text";
 }
+
+// Tool-use types for MCP integration
+export interface ToolCall {
+  id: string;
+  index?: number;
+  function: {
+    name: string;
+    arguments: string; // JSON-encoded string
+  };
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}

@@ -18,6 +18,7 @@ import type {
   Token,
   UserUpdate,
   ModelCharacteristics,
+  ToolDefinition,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -295,10 +296,14 @@ export const models = {
     return handleResponse(res);
   },
 
-  getConfig: async (modelId: string): Promise<ModelCharacteristics> => {
+  getConfig: async (modelId: string, tags?: string[]): Promise<ModelCharacteristics> => {
     // Note: Don't use encodeURIComponent here - the backend uses {model_id:path}
     // which expects slashes to be literal path segments, not URL-encoded
-    const res = await fetch(`${API_BASE}/models/config/${modelId}`, {
+    let url = `${API_BASE}/models/config/${modelId}`;
+    if (tags && tags.length > 0) {
+      url += `?tags=${encodeURIComponent(tags.join(','))}`;
+    }
+    const res = await fetch(url, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -411,6 +416,28 @@ export const system = {
       });
       return handleResponse(res);
     },
+  },
+};
+
+// MCP Tools API
+export const mcp = {
+  listTools: async (): Promise<ToolDefinition[]> => {
+    const res = await fetch(`${API_BASE}/mcp/tools`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  executeTool: async (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> => {
+    const res = await fetch(`${API_BASE}/mcp/execute`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, arguments: args }),
+    });
+    return handleResponse(res);
   },
 };
 
