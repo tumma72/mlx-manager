@@ -15,7 +15,7 @@ Polish the UX for models and server panels, add user authentication, enhance cha
 - [x] **Phase 3: User-Based Authentication** - Email/password login with JWT, admin approval flow
 - [x] **Phase 4: Model Discovery & Badges** - Detect characteristics, visual badges, filter by capabilities
 - [ ] **Phase 5: Chat Multimodal & Enhancements** - Image/video attachments, thinking models, MCP mock, tool-use badge, profile enhancements
-- [ ] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling, UAT gap fixes
+- [x] **Phase 6: Bug Fixes & Stability** - Logging, cleanup, validation, polling, UAT gap fixes
 
 ## Phase Details
 
@@ -111,7 +111,7 @@ Plans:
 - [x] 05-04-PLAN.md — Error handling and verification (collapsible errors, copy, checkpoint)
 - [x] 05-05-PLAN.md — Gap closure: text file support and universal attachment button
 
-### Phase 6: Bug Fixes & Stability
+### Phase 6: Bug Fixes & Stability ✓
 **Goal**: Clean up technical debt: logging, cleanup, validation, polling, and fix runtime bugs
 **Depends on**: Phase 5
 **Requirements**: BUGFIX-01, BUGFIX-02, BUGFIX-03, BUGFIX-04, BUGFIX-05, BUGFIX-06, BUGFIX-07, CHAT-04, DISC-04, PRO-01, PRO-02
@@ -138,6 +138,7 @@ Plans:
   20. Text file attachments work for all text extensions (.log, .md, .yaml, etc.) ✓
   21. Tool calls displayed in collapsible panel (not inline markdown) ✓
 **Research**: None needed (standard fixes)
+**Completed**: 2026-01-24
 **Plans:** 16 plans
 
 Plans:
@@ -154,9 +155,9 @@ Plans:
 - [x] 06-11-PLAN.md — MCP tools backend: tool forwarding + API types (UAT gap 4, wave 1)
 - [x] 06-12-PLAN.md — GLM-4 thinking: diagnostic logging and robustness (UAT gap 5)
 - [x] 06-13-PLAN.md — MCP tools frontend: toggle, execute, results loop (UAT gap 4, wave 2)
-- [ ] 06-14-PLAN.md — Backend-mediated health polling (UAT gap: console errors)
-- [ ] 06-15-PLAN.md — Text file extension validation + tool-use badge verification (UAT gaps: attachments, badge)
-- [ ] 06-16-PLAN.md — ToolCallBubble: collapsible tool call display (UAT gap: tool call UI)
+- [x] 06-14-PLAN.md — Backend-mediated health polling (UAT gap: console errors)
+- [x] 06-15-PLAN.md — Text file extension validation + tool-use badge verification (UAT gaps: attachments, badge)
+- [x] 06-16-PLAN.md — ToolCallBubble: collapsible tool call display (UAT gap: tool call UI)
 
 ## Progress
 
@@ -170,4 +171,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. User-Based Authentication | 5/5 | ✓ Complete | 2026-01-20 |
 | 4. Model Discovery & Badges | 3/3 | ✓ Complete | 2026-01-20 |
 | 5. Chat Multimodal & Enhancements | 5/5 | ✓ Complete | 2026-01-23 |
-| 6. Bug Fixes & Stability | 13/16 | Gap closure | — |
+| 6. Bug Fixes & Stability | 16/16 | ✓ Complete | 2026-01-24 |
