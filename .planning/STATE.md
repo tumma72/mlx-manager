@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - Gap Closure
-Plan: 10 of 13 complete (gap closure wave)
+Plan: 11 of 13 complete (gap closure wave)
 Status: Executing gap closure plans
-Last activity: 2026-01-24 — Completed 06-10-PLAN.md (text file attachments)
+Last activity: 2026-01-24 — Completed 06-11-PLAN.md (MCP tools backend)
 
 Progress: ██████████ 100% (6 phases complete, gap closure in progress)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 27
+- Total plans completed: 28
 - Average duration: ~4 min
-- Total execution time: ~105 min
+- Total execution time: ~107 min
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: ██████████ 100% (6 phases complete, gap closure in
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 10/13 | ~17 min | ~2 min |
+| 6 | 11/13 | ~19 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-02, 06-03, 06-04, 06-05, 06-06, 06-07, 06-10
+- Last 7 plans: 06-03, 06-04, 06-05, 06-06, 06-07, 06-10, 06-11
 - Trend: Fast execution, all plans successful (gap closure in progress)
 
 ## Accumulated Context
@@ -61,6 +61,9 @@ Recent decisions affecting current work:
 - MCP mock weather uses deterministic hash-based values
 - Text files read as plain text (FileReader.readAsText), images/videos as base64 (readAsDataURL)
 - Text file content prefixed with [File: name] header for model context
+- ChatRequest forwards tools array to mlx-openai-server when present (tool_choice defaults to "auto")
+- Tool call chunks emitted as SSE events (type: tool_call) for streaming UX
+- finish_reason "tool_calls" triggers tool_calls_done SSE event
 
 ### Pending Todos
 
@@ -78,6 +81,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-24
-Stopped at: Completed 06-10-PLAN.md (text file attachments fix)
+Stopped at: Completed 06-11-PLAN.md (MCP tools backend)
 Resume file: None
-Next: Continue gap closure (06-11, 06-12, 06-13)
+Next: Continue gap closure (06-12, 06-13)
