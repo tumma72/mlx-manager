@@ -87,6 +87,16 @@ const MULTIMODAL_PATTERNS = [
 ];
 
 /**
+ * Tool-use detection patterns (from HuggingFace tags).
+ */
+const TOOL_USE_PATTERNS = [
+  /\btool[-_]?use\b/i,
+  /\bfunction[-_]?calling\b/i,
+  /\btool[-_]?calling\b/i,
+  /\btools\b/i,
+];
+
+/**
  * Parse model characteristics from model name and tags.
  * Used as fallback when config.json is unavailable.
  */
@@ -120,6 +130,14 @@ export function parseCharacteristicsFromName(
     if (pattern.test(searchText)) {
       characteristics.is_multimodal = true;
       characteristics.multimodal_type = "vision";
+      break;
+    }
+  }
+
+  // Detect tool-use (check tags)
+  for (const pattern of TOOL_USE_PATTERNS) {
+    if (pattern.test(searchText)) {
+      characteristics.is_tool_use = true;
       break;
     }
   }
@@ -173,7 +191,8 @@ class ModelConfigStore {
       const hasAnyCharacteristic =
         fallbackCharacteristics.architecture_family ||
         fallbackCharacteristics.quantization_bits ||
-        fallbackCharacteristics.is_multimodal;
+        fallbackCharacteristics.is_multimodal ||
+        fallbackCharacteristics.is_tool_use;
 
       this.configs = new Map(this.configs).set(modelId, {
         characteristics: hasAnyCharacteristic ? fallbackCharacteristics : null,
