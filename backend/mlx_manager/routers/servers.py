@@ -83,7 +83,8 @@ async def start_server(
 ):
     """Start a server for a profile."""
     # Profile from DB always has an ID
-    assert profile.id is not None
+    if profile.id is None:
+        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
 
     # Clean up any stale running_instance record for this profile
     result = await session.execute(
@@ -144,7 +145,8 @@ async def restart_server(
 ):
     """Restart a server."""
     # Profile from DB always has an ID
-    assert profile.id is not None
+    if profile.id is None:
+        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
 
     # Stop if running
     await server_manager.stop_server(profile.id, force=False)
@@ -182,7 +184,8 @@ async def check_server_health(
 ):
     """Check server health."""
     # Profile from DB always has an ID
-    assert profile.id is not None
+    if profile.id is None:
+        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
 
     if not server_manager.is_running(profile.id):
         return HealthStatus(status="stopped")
@@ -200,7 +203,8 @@ async def get_server_status(
 
     Returns process status, exit code, and error message from logs if failed.
     """
-    assert profile.id is not None
+    if profile.id is None:
+        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
 
     status = server_manager.get_process_status(profile.id)
 

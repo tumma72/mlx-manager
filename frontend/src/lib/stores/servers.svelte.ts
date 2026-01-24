@@ -139,12 +139,17 @@ class ServerStore {
       // Mark initial load complete on first successful fetch
       this.initialLoadComplete = true;
 
-      // Clear any previous error on successful refresh
-      if (this.error) {
+      // Clear any previous error on successful refresh (only if it exists)
+      // This prevents unnecessary reactive updates when error is already null
+      if (this.error !== null) {
         this.error = null;
       }
     } catch (e) {
-      this.error = e instanceof Error ? e.message : "Failed to fetch servers";
+      const newError = e instanceof Error ? e.message : "Failed to fetch servers";
+      // Only update error if it actually changed
+      if (this.error !== newError) {
+        this.error = newError;
+      }
     } finally {
       if (isInitialLoad) {
         this.loading = false;
@@ -209,11 +214,21 @@ class ServerStore {
    * Mark startup as complete with success.
    */
   markStartupSuccess(profileId: number) {
+    // Check if this is actually a state change
+    const wasStarting = this.startingProfiles.has(profileId);
+    const wasFailed = this.failedProfiles.has(profileId);
+    const wasRestarting = this.restartingProfiles.has(profileId);
+
+    // Early exit if no actual state change
+    if (!wasStarting && !wasFailed && !wasRestarting) {
+      return;
+    }
+
     // Direct mutation
     this.startingProfiles.delete(profileId);
     this.failedProfiles.delete(profileId);
     this.restartingProfiles.delete(profileId);
-    // Use coordinator for deduped refresh
+    // Use coordinator for deduped refresh (only if state actually changed)
     this.refresh();
   }
 
@@ -225,16 +240,26 @@ class ServerStore {
     error: string,
     details: string | null = null,
   ) {
+    // Check if this is actually a state change (not just duplicate call)
+    const existing = this.failedProfiles.get(profileId);
+    const alreadyFailed = existing?.error === error && existing?.details === details;
+    const wasStarting = this.startingProfiles.has(profileId);
+    const wasRestarting = this.restartingProfiles.has(profileId);
+
+    // Early exit if no actual state change
+    if (alreadyFailed && !wasStarting && !wasRestarting) {
+      return;
+    }
+
     // Direct mutation on SvelteSet/SvelteMap
     this.startingProfiles.delete(profileId);
     this.restartingProfiles.delete(profileId);
 
     // Preserve detailsOpen state if already failed
-    const existing = this.failedProfiles.get(profileId);
     const detailsOpen = existing?.detailsOpen ?? false;
     this.failedProfiles.set(profileId, { error, details, detailsOpen });
 
-    // Use coordinator for deduped refresh
+    // Use coordinator for deduped refresh (only if state actually changed)
     this.refresh();
   }
 

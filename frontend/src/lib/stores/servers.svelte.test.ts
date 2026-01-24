@@ -263,12 +263,33 @@ describe("ServerStore", () => {
       expect(serverStore.isFailed(42)).toBe(false);
     });
 
-    it("triggers refresh", async () => {
+    it("triggers refresh when state actually changes", async () => {
+      const { servers: serversApi } = await import("$api");
       const { pollingCoordinator } = await import("$lib/services");
+
+      // Setup: put profile in starting state
+      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      await serverStore.start(42);
+
+      // Clear previous refresh calls
+      vi.mocked(pollingCoordinator.refresh).mockClear();
 
       serverStore.markStartupSuccess(42);
 
       expect(pollingCoordinator.refresh).toHaveBeenCalledWith("servers");
+    });
+
+    it("does not trigger refresh when no state change", async () => {
+      const { pollingCoordinator } = await import("$lib/services");
+
+      // Clear previous calls
+      vi.mocked(pollingCoordinator.refresh).mockClear();
+
+      // Call without profile being in starting/failed/restarting state
+      serverStore.markStartupSuccess(42);
+
+      // Should not trigger refresh (no state change)
+      expect(pollingCoordinator.refresh).not.toHaveBeenCalled();
     });
   });
 
