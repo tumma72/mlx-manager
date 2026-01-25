@@ -97,6 +97,20 @@ const TOOL_USE_PATTERNS = [
 ];
 
 /**
+ * Model families known to support tool-use/function-calling.
+ * Used when HuggingFace tags don't indicate tool support.
+ */
+const TOOL_CAPABLE_FAMILIES = new Set([
+  "Qwen",      // Qwen models have native function calling
+  "GLM",       // GLM-4 family supports tool use
+  "MiniMax",   // MiniMax models support tool use
+  "DeepSeek",  // DeepSeek family supports function calling
+  "Hermes",    // Hermes models fine-tuned for tool use
+  "Command-R", // Cohere Command-R supports tools
+  "Mistral",   // Mistral-Instruct models support function calling
+]);
+
+/**
  * Parse model characteristics from model name and tags.
  * Used as fallback when config.json is unavailable.
  */
@@ -134,11 +148,18 @@ export function parseCharacteristicsFromName(
     }
   }
 
-  // Detect tool-use (check tags)
+  // Detect tool-use (check tags first, then model family)
   for (const pattern of TOOL_USE_PATTERNS) {
     if (pattern.test(searchText)) {
       characteristics.is_tool_use = true;
       break;
+    }
+  }
+
+  // Fall back to model family check for known tool-capable families
+  if (!characteristics.is_tool_use && characteristics.architecture_family) {
+    if (TOOL_CAPABLE_FAMILIES.has(characteristics.architecture_family)) {
+      characteristics.is_tool_use = true;
     }
   }
 
