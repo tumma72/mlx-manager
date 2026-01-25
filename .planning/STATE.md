@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
-Plan: 17 of 18 gap closure (in progress)
-Status: Phase 6 gap closure extended — implementing additional fixes
-Last activity: 2026-01-25 — Completed 06-17-PLAN.md (extensionless text file detection)
+Plan: 18 of 18 gap closure (completed)
+Status: Phase 6 fully complete — all gap closure plans verified
+Last activity: 2026-01-25 — Completed 06-18-PLAN.md (tool-use badge + console errors fix)
 
-Progress: ██████████ 100% (all 6 core phases complete, gap closure 17/18 complete)
+Progress: ██████████ 100% (all 6 phases complete, gap closure 18/18 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33
+- Total plans completed: 34
 - Average duration: ~3.7 min
-- Total execution time: ~126 min
+- Total execution time: ~128 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: ██████████ 100% (all 6 core phases complete, gap c
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 17/18 | ~36 min | ~2 min |
+| 6 | 18/18 | ~38 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-10, 06-11, 06-12, 06-13, 06-14, 06-16, 06-17
-- Trend: Fast execution, gap closure in progress (17/18)
+- Last 7 plans: 06-11, 06-12, 06-13, 06-14, 06-16, 06-17, 06-18
+- Trend: Fast execution, gap closure COMPLETE (18/18)
 
 ## Accumulated Context
 
@@ -82,6 +82,9 @@ Recent decisions affecting current work:
 - KNOWN_TEXT_FILENAMES allowlist for extensionless text files (README, Makefile, Dockerfile, LICENSE)
 - hasExtension flag distinguishes extension-based vs filename-based detection
 - Dotfiles (.gitignore, .env variants) included in extensionless allowlist
+- 204 No Content response for missing model configs (prevents browser console errors)
+- Model family allowlist for tool-use detection (Qwen, GLM, MiniMax, DeepSeek, Hermes, Command-R, Mistral)
+- Three-tier tool-use detection: tags (primary) → family (secondary) → config (fallback)
 
 ### Pending Todos
 
@@ -99,6 +102,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-01-25
-Stopped at: Completed 06-17-PLAN.md (extensionless text file detection)
+Stopped at: Completed 06-18-PLAN.md (tool-use badge + console errors fix)
 Resume file: None
-Next: Continue gap closure (06-18) or verify fixes
+Next: Milestone audit and completion — all phases verified
