@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -288,6 +288,7 @@ async def get_model_config(
 
     Returns:
         ModelCharacteristics with architecture, context window, quantization, etc.
+        204 No Content if config is not available.
     """
     from mlx_manager.services.hf_api import fetch_remote_config
     from mlx_manager.utils.model_detection import (
@@ -308,7 +309,8 @@ async def get_model_config(
     if config:
         return extract_characteristics(config, tags=tag_list)
 
-    raise HTTPException(status_code=404, detail="Config not found")
+    # Return 204 No Content instead of 404 to avoid browser console errors
+    return Response(status_code=204)
 
 
 @router.get("/detect-options/{model_id:path}")
