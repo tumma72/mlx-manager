@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 ## Current Position
 
 Phase: 6 of 6 (Bug Fixes & Stability) - COMPLETE
-Plan: 16 of 16 gap closure (completed)
-Status: Phase 6 fully verified (21/21 must-haves) — all phases complete
-Last activity: 2026-01-24 — Gap closure plans 14-16 verified, milestone ready for audit
+Plan: 17 of 18 gap closure (in progress)
+Status: Phase 6 gap closure extended — implementing additional fixes
+Last activity: 2026-01-25 — Completed 06-17-PLAN.md (extensionless text file detection)
 
-Progress: ██████████ 100% (all 6 phases complete, gap closure 16/16 complete)
+Progress: ██████████ 100% (all 6 core phases complete, gap closure 17/18 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 32
-- Average duration: ~3.8 min
-- Total execution time: ~124 min
+- Total plans completed: 33
+- Average duration: ~3.7 min
+- Total execution time: ~126 min
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: ██████████ 100% (all 6 phases complete, gap closur
 | 3 | 5/5 | ~19 min | ~4 min |
 | 4 | 3/3 | ~12 min | ~4 min |
 | 5 | 5/5 | ~18 min | ~4 min |
-| 6 | 16/16 | ~34 min | ~2 min |
+| 6 | 17/18 | ~36 min | ~2 min |
 
 **Recent Trend:**
-- Last 7 plans: 06-07, 06-10, 06-11, 06-12, 06-13, 06-14, 06-16
-- Trend: Fast execution, gap closure COMPLETE (16/16)
+- Last 7 plans: 06-10, 06-11, 06-12, 06-13, 06-14, 06-16, 06-17
+- Trend: Fast execution, gap closure in progress (17/18)
 
 ## Accumulated Context
 
@@ -79,6 +79,9 @@ Recent decisions affecting current work:
 - Tool results sent as role:tool messages in follow-up requests
 - Extension-based text file detection replaces mime-type checking for reliability
 - is_tool_use included in hasAnyCharacteristic fallback validation
+- KNOWN_TEXT_FILENAMES allowlist for extensionless text files (README, Makefile, Dockerfile, LICENSE)
+- hasExtension flag distinguishes extension-based vs filename-based detection
+- Dotfiles (.gitignore, .env variants) included in extensionless allowlist
 
 ### Pending Todos
 
@@ -95,7 +98,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-01-24
-Stopped at: Phase 6 gap closure verified (21/21) — milestone v1.1 complete
+Last session: 2026-01-25
+Stopped at: Completed 06-17-PLAN.md (extensionless text file detection)
 Resume file: None
-Next: Milestone audit and completion (/gsd:audit-milestone)
+Next: Continue gap closure (06-18) or verify fixes
