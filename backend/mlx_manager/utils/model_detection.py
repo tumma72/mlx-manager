@@ -49,6 +49,23 @@ ARCHITECTURE_FAMILIES: dict[str, str] = {
     "granite": "Granite",
 }
 
+# Model families that support tool-use/function-calling by default
+# These families have native tool-use support regardless of HuggingFace tags
+TOOL_CAPABLE_FAMILIES: set[str] = {
+    "qwen",      # Qwen models have native function calling
+    "qwen2",
+    "qwen3",
+    "glm",       # GLM-4 family supports tool use
+    "chatglm",
+    "minimax",   # MiniMax models support tool use
+    "deepseek",  # DeepSeek family supports function calling
+    "deepseek_v3",
+    "hermes",    # Hermes models fine-tuned for tool use
+    "command",   # Cohere Command-R supports tools
+    "cohere",
+    "mistral",   # Mistral-Instruct models support function calling
+}
+
 # Minimum mlx-lm version requirements for model families
 # MiniMax support was added in mlx-lm v0.28.4
 MODEL_FAMILY_MIN_VERSIONS: dict[str, str] = {
@@ -344,10 +361,10 @@ def detect_tool_use(config: dict[str, Any], tags: list[str] | None = None) -> bo
     """
     Detect if a model supports tool-use / function-calling.
 
-    Uses two detection strategies:
+    Uses three detection strategies:
     1. Tag-based (primary): Check HuggingFace tags for tool-use indicators
-    2. Config-based (fallback): Check config.json for tool_call_parser or
-       known tool-capable architectures
+    2. Family-based (secondary): Check if model_type matches known tool-capable families
+    3. Config-based (fallback): Check config.json for tool_call_parser
 
     Args:
         config: Parsed config.json dictionary
@@ -370,20 +387,19 @@ def detect_tool_use(config: dict[str, Any], tags: list[str] | None = None) -> bo
         if any(indicator in tag for tag in tags_lower for indicator in tool_indicators):
             return True
 
+    # Family-based detection (secondary) - check model_type against known families
+    model_type = config.get("model_type", "").lower()
+    if model_type in TOOL_CAPABLE_FAMILIES:
+        return True
+    # Also check for partial matches (e.g., "qwen2_vl" contains "qwen")
+    for family in TOOL_CAPABLE_FAMILIES:
+        if family in model_type:
+            return True
+
     # Config-based detection (fallback)
     # Check for tool_call_parser in config (some models have this)
     if "tool_call_parser" in config:
         return True
-
-    # Check model_type for known tool-capable architectures
-    model_type = config.get("model_type", "").lower()
-    tool_capable_types = ["qwen", "glm", "minimax"]
-    if any(t in model_type for t in tool_capable_types):
-        # These families often support tools, but check for parser config
-        if "tool_call_parser" in config or any(
-            "tool" in str(v).lower() for v in config.values() if isinstance(v, str)
-        ):
-            return True
 
     return False
 
