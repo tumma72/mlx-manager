@@ -14,6 +14,22 @@
 		'sql', 'conf', 'ini', 'toml'
 	]);
 
+	// Known text filenames without extensions
+	const KNOWN_TEXT_FILENAMES = new Set([
+		// Standard extensionless files
+		'readme', 'makefile', 'dockerfile', 'license', 'procfile',
+		'gemfile', 'brewfile', 'vagrantfile', 'rakefile', 'guardfile',
+		'podfile', 'fastfile', 'dangerfile', 'berksfile', 'thorfile',
+		'capfile', 'puppetfile', 'appraisals', 'codeowners',
+		'changelog', 'contributing', 'authors', 'todo', 'copying',
+		'notice', 'patents', 'version', 'manifest',
+		// Common dotfiles (also extensionless)
+		'.gitignore', '.dockerignore', '.editorconfig', '.env.example',
+		'.npmrc', '.nvmrc', '.prettierrc', '.eslintrc', '.babelrc',
+		'.gitattributes', '.mailmap', '.env', '.env.local', '.env.development',
+		'.env.production', '.env.test'
+	]);
+
 	interface ToolCallData {
 		id: string;
 		name: string;
@@ -140,8 +156,16 @@
 
 		const isVideo = file.type.startsWith('video/');
 		const isImage = file.type.startsWith('image/');
-		const ext = file.name.split('.').pop()?.toLowerCase() || '';
-		const isText = TEXT_EXTENSIONS.has(ext);
+
+		// Determine if file has an extension
+		const nameParts = file.name.split('.');
+		const hasExtension = nameParts.length > 1;
+		const ext = hasExtension ? (nameParts.pop()?.toLowerCase() || '') : '';
+
+		// Check extensionless filename allowlist OR extension-based detection
+		const isText = hasExtension
+			? TEXT_EXTENSIONS.has(ext)
+			: KNOWN_TEXT_FILENAMES.has(file.name.toLowerCase());
 
 		// Validate based on model type
 		if (!isText && !isVideo && !isImage) {
