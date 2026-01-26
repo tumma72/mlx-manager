@@ -19,7 +19,7 @@ Running local LLMs typically requires juggling multiple tools, config files, and
 - **One-click model downloads** from HuggingFace MLX models (mlx-community, lmstudio-community, and more)
 - **Smart model discovery** - filter by architecture (Llama, Qwen, Mistral), quantization (4-bit, 8-bit), and capabilities (multimodal, tool use)
 - **Visual server management** - start, stop, and monitor models with real-time CPU/memory metrics
-- **Built-in chat interface** - test your models directly in the browser
+- **Rich chat interface** - test models with image/video/text attachments, thinking model support, and MCP tool integration
 - **User authentication** - secure multi-user access with admin controls
 - **OpenAI-compatible API** - use your local models with any OpenAI client
 - **Background service** - models auto-start on login via macOS launchd
@@ -76,6 +76,14 @@ Real-time server metrics:
 - Memory usage and CPU/GPU utilization
 - Server uptime tracking
 - One-click start/stop/restart controls
+
+### Chat Interface
+
+Rich conversation experience:
+- **Multimodal support** - Attach images, videos, and text files via drag-drop or button
+- **Thinking models** - Collapsible thinking panel for reasoning models (Qwen3, GLM-4, DeepSeek)
+- **MCP tools** - Built-in calculator and weather tools for testing tool-use models
+- **System prompts** - Configure default context per server profile
 
 ## System Requirements
 

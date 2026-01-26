@@ -77,6 +77,13 @@ class TestEstimateSizeFromName:
         assert size is not None
         assert 3.8 <= size <= 4.5
 
+    def test_2bit_model(self):
+        """2-bit quantized models: ~0.25 bytes per param."""
+        # 8B params at 2-bit = 8 * 0.25 * 1.1 * 1e9 / 1024^3 ≈ 2.0 GiB
+        size = estimate_size_from_name("mlx-community/Qwen3-8B-2bit")
+        assert size is not None
+        assert 1.8 <= size <= 2.3
+
 
 class TestGetModelSizeGb:
     """Tests for get_model_size_gb with ModelInfo."""
@@ -320,3 +327,112 @@ class TestSearchModels:
             assert results[0].likes == 0
             assert results[0].tags == []
             assert results[0].size_bytes is None
+
+
+class TestFetchModelSize:
+    """Tests for _fetch_model_size helper function."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_model_size_exception(self):
+        """Exception during fetch returns None."""
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = Exception("Network error")
+
+        from mlx_manager.services.hf_api import _fetch_model_size
+
+        result = await _fetch_model_size(mock_client, "test/model", 10.0)
+        assert result == ("test/model", None)
+
+    @pytest.mark.asyncio
+    async def test_fetch_model_size_non_200_status(self):
+        """Non-200 status code returns None."""
+        mock_client = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.status_code = 404
+        mock_client.get.return_value = mock_response
+
+        from mlx_manager.services.hf_api import _fetch_model_size
+
+        result = await _fetch_model_size(mock_client, "test/model", 10.0)
+        assert result == ("test/model", None)
+
+
+class TestFetchRemoteConfig:
+    """Tests for fetch_remote_config function."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_config_timeout(self):
+        """Timeout returns None."""
+        from mlx_manager.services.hf_api import fetch_remote_config
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.get.side_effect = httpx.TimeoutException("timeout")
+            mock.return_value = mock_instance
+
+            result = await fetch_remote_config("test/model")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_config_request_error(self):
+        """Request error returns None."""
+        from mlx_manager.services.hf_api import fetch_remote_config
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.get.side_effect = httpx.RequestError("Connection failed")
+            mock.return_value = mock_instance
+
+            result = await fetch_remote_config("test/model")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_config_unexpected_exception(self):
+        """Unexpected exception returns None."""
+        from mlx_manager.services.hf_api import fetch_remote_config
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.get.side_effect = ValueError("Unexpected error")
+            mock.return_value = mock_instance
+
+            result = await fetch_remote_config("test/model")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_config_non_200_status(self):
+        """Non-200 status code returns None."""
+        from mlx_manager.services.hf_api import fetch_remote_config
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_response = AsyncMock()
+            mock_response.status_code = 404
+            mock_instance.get.return_value = mock_response
+            mock.return_value = mock_instance
+
+            result = await fetch_remote_config("test/model")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_remote_config_success(self):
+        """Successful fetch returns config dict."""
+        from mlx_manager.services.hf_api import fetch_remote_config
+
+        mock_config = {"model_type": "gpt2", "vocab_size": 50257}
+
+        with patch("mlx_manager.services.hf_api.httpx.AsyncClient") as mock:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.json = lambda: mock_config
+            mock_instance.get.return_value = mock_response
+            mock.return_value = mock_instance
+
+            result = await fetch_remote_config("test/model")
+            assert result == mock_config

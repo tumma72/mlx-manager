@@ -22,7 +22,7 @@ vi.mock("$app/paths", () => ({
   resolve: vi.fn((path: string) => path),
 }));
 
-// Mock formatDuration utility
+// Mock format utilities
 vi.mock("$lib/utils/format", () => ({
   formatDuration: vi.fn((seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -30,6 +30,14 @@ vi.mock("$lib/utils/format", () => ({
     const minutes = Math.floor((seconds % 3600) / 60);
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
+  }),
+  formatBytes: vi.fn((bytes: number, decimals = 2) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   }),
 }));
 
@@ -90,12 +98,13 @@ describe("ServerTile", () => {
       expect(screen.getByText("PID: 54321")).toBeInTheDocument();
     });
 
-    it("renders memory in MB", () => {
+    it("renders memory with formatBytes", () => {
       render(ServerTile, {
         props: { server: createMockServer({ memory_mb: 1024 }) },
       });
 
-      expect(screen.getByText("Memory: 1024 MB")).toBeInTheDocument();
+      // 1024 MB = 1073741824 bytes = 1 GB
+      expect(screen.getByText("Memory: 1 GB")).toBeInTheDocument();
     });
 
     it("renders uptime", () => {
@@ -329,7 +338,7 @@ describe("ServerTile", () => {
         },
       });
 
-      expect(screen.getByText("Memory: 0 MB")).toBeInTheDocument();
+      expect(screen.getByText("Memory: 0 Bytes")).toBeInTheDocument();
       expect(screen.getByText("0%")).toBeInTheDocument();
     });
 
@@ -354,8 +363,8 @@ describe("ServerTile", () => {
         props: { server: createMockServer({ memory_mb: 512.7 }) },
       });
 
-      // Should be rounded to integer
-      expect(screen.getByText("Memory: 513 MB")).toBeInTheDocument();
+      // 512.7 MB = 537559654.4 bytes ≈ 512.7 MB (formatted)
+      expect(screen.getByText(/Memory: 512\.7 MB/)).toBeInTheDocument();
     });
 
     it("handles long server names", () => {

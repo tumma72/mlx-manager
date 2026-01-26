@@ -149,8 +149,10 @@ describe("ModelConfigStore", () => {
 
       await modelConfigStore.fetchConfig("mlx-community/Mistral-7B-4bit");
 
+      // First argument should be the model ID (second is optional tags)
       expect(modelsApi.getConfig).toHaveBeenCalledWith(
-        "mlx-community/Mistral-7B-4bit"
+        "mlx-community/Mistral-7B-4bit",
+        undefined
       );
     });
   });

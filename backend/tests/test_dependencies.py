@@ -1,6 +1,7 @@
 """Tests for FastAPI dependencies."""
 
 import os
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
@@ -181,3 +182,117 @@ class TestGetProfileOr404:
             await get_profile_or_404(profile_id, test_session)
 
         assert exc_info.value.status_code == 404
+
+
+class TestGetCurrentUser:
+    """Tests for the get_current_user dependency."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_raises_401(self, test_session):
+        """Test that invalid token raises 401."""
+        from mlx_manager.dependencies import get_current_user
+
+        with patch("mlx_manager.dependencies.decode_token", return_value=None):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user("invalid_token", test_session)
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_token_without_email_raises_401(self, test_session):
+        """Test that token without email raises 401."""
+        from mlx_manager.dependencies import get_current_user
+
+        # Token payload without 'sub' field
+        with patch("mlx_manager.dependencies.decode_token", return_value={"other": "data"}):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user("token_without_email", test_session)
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_user_not_found_raises_401(self, test_session):
+        """Test that user not found raises 401."""
+        from mlx_manager.dependencies import get_current_user
+
+        # Valid token but user doesn't exist
+        token_payload = {"sub": "nonexistent@example.com"}
+        with patch("mlx_manager.dependencies.decode_token", return_value=token_payload):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user("valid_token", test_session)
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_pending_user_raises_401(self, test_session):
+        """Test that pending user raises 401."""
+        from mlx_manager.dependencies import get_current_user
+        from mlx_manager.models import User, UserStatus
+        from mlx_manager.services.auth_service import hash_password
+
+        # Create pending user
+        user = User(
+            email="pending@example.com",
+            hashed_password=hash_password("password"),
+            is_admin=False,
+            status=UserStatus.PENDING,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        # Try to authenticate
+        token_payload = {"sub": "pending@example.com"}
+        with patch("mlx_manager.dependencies.decode_token", return_value=token_payload):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user("valid_token", test_session)
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_disabled_user_raises_401(self, test_session):
+        """Test that disabled user raises 401."""
+        from mlx_manager.dependencies import get_current_user
+        from mlx_manager.models import User, UserStatus
+        from mlx_manager.services.auth_service import hash_password
+
+        # Create disabled user
+        user = User(
+            email="disabled@example.com",
+            hashed_password=hash_password("password"),
+            is_admin=False,
+            status=UserStatus.DISABLED,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        # Try to authenticate
+        token_payload = {"sub": "disabled@example.com"}
+        with patch("mlx_manager.dependencies.decode_token", return_value=token_payload):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user("valid_token", test_session)
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_approved_user_succeeds(self, test_session):
+        """Test that approved user succeeds."""
+        from mlx_manager.dependencies import get_current_user
+        from mlx_manager.models import User, UserStatus
+        from mlx_manager.services.auth_service import hash_password
+
+        # Create approved user
+        user = User(
+            email="approved@example.com",
+            hashed_password=hash_password("password"),
+            is_admin=False,
+            status=UserStatus.APPROVED,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        # Authenticate
+        token_payload = {"sub": "approved@example.com"}
+        with patch("mlx_manager.dependencies.decode_token", return_value=token_payload):
+            result = await get_current_user("valid_token", test_session)
+            assert result.email == "approved@example.com"
+            assert result.status == UserStatus.APPROVED

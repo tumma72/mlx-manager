@@ -12,7 +12,7 @@ vi.mock("$stores", () => ({
   },
 }));
 
-// Mock formatDuration utility
+// Mock format utilities
 vi.mock("$lib/utils/format", () => ({
   formatDuration: vi.fn((seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -20,6 +20,14 @@ vi.mock("$lib/utils/format", () => ({
     const minutes = Math.floor((seconds % 3600) / 60);
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
+  }),
+  formatBytes: vi.fn((bytes: number, decimals = 2) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   }),
 }));
 
@@ -246,7 +254,8 @@ describe("ServerCard", () => {
         },
       });
 
-      expect(screen.getByText("1024.0 MB")).toBeInTheDocument();
+      // 1024 MB = 1073741824 bytes = 1 GB
+      expect(screen.getByText("1 GB")).toBeInTheDocument();
     });
 
     it("renders uptime when server is running", () => {
@@ -668,7 +677,7 @@ describe("ServerCard", () => {
         },
       });
 
-      expect(screen.getByText("0.0 MB")).toBeInTheDocument();
+      expect(screen.getByText("0 Bytes")).toBeInTheDocument();
     });
 
     it("handles decimal memory values", () => {
@@ -679,8 +688,8 @@ describe("ServerCard", () => {
         },
       });
 
-      // Should be formatted with one decimal
-      expect(screen.getByText("512.8 MB")).toBeInTheDocument();
+      // 512.75 MB formatted with 2 decimals
+      expect(screen.getByText(/512\.75 MB/)).toBeInTheDocument();
     });
 
     it("handles zero uptime", () => {

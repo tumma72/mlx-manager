@@ -408,3 +408,15 @@ async def admin_client(test_engine, test_admin_user_data):
                 yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def test_profile(test_session, sample_profile_data):
+    """Create a test profile in the database."""
+    from mlx_manager.models import ServerProfile
+
+    profile = ServerProfile(**sample_profile_data)
+    test_session.add(profile)
+    await test_session.commit()
+    await test_session.refresh(profile)
+    return profile
