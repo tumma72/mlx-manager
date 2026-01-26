@@ -80,31 +80,31 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GATE-01 | TBD | Pending |
-| GATE-02 | TBD | Pending |
-| GATE-03 | TBD | Pending |
-| GATE-04 | TBD | Pending |
-| GATE-05 | TBD | Pending |
-| BACK-01 | TBD | Pending |
-| BACK-02 | TBD | Pending |
-| BACK-03 | TBD | Pending |
-| BACK-04 | TBD | Pending |
-| BACK-05 | TBD | Pending |
-| CONF-01 | TBD | Pending |
-| CONF-02 | TBD | Pending |
-| CONF-03 | TBD | Pending |
-| CONF-04 | TBD | Pending |
-| CONF-05 | TBD | Pending |
-| RELI-01 | TBD | Pending |
-| RELI-02 | TBD | Pending |
-| RELI-03 | TBD | Pending |
-| RELI-04 | TBD | Pending |
+| BACK-01 | Phase 7 | Pending |
+| CONF-01 | Phase 7 | Pending |
+| GATE-01 | Phase 8 | Pending |
+| GATE-02 | Phase 8 | Pending |
+| GATE-03 | Phase 8 | Pending |
+| BACK-02 | Phase 8 | Pending |
+| GATE-04 | Phase 8 | Pending |
+| BACK-04 | Phase 9 | Pending |
+| BACK-05 | Phase 9 | Pending |
+| GATE-05 | Phase 9 | Pending |
+| BACK-03 | Phase 10 | Pending |
+| CONF-02 | Phase 11 | Pending |
+| CONF-03 | Phase 11 | Pending |
+| CONF-04 | Phase 11 | Pending |
+| CONF-05 | Phase 11 | Pending |
+| RELI-01 | Phase 12 | Pending |
+| RELI-02 | Phase 12 | Pending |
+| RELI-03 | Phase 12 | Pending |
+| RELI-04 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 19 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 19
+- Mapped to phases: 19/19 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-26*
-*Last updated: 2026-01-26 after initial definition*
+*Last updated: 2026-01-26 after roadmap creation*
