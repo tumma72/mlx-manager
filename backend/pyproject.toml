@@ -1,6 +1,6 @@
 [project]
 name = "mlx-manager"
-version = "1.0.4"
+version = "1.1.0"
 description = "Web-based MLX model manager for Apple Silicon Macs"
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,6 +38,7 @@ dependencies = [
     "alembic>=1.18.1",
     "pyjwt>=2.8.0",
     "pwdlib[argon2]>=0.3.0",
+    "mlx-vlm>=0.3.9",
 ]
 
 [project.optional-dependencies]
