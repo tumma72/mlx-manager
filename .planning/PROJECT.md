@@ -8,99 +8,89 @@ A web application for managing MLX-optimized language models on Apple Silicon Ma
 
 Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
 
-## Requirements
+## Shipped Releases
 
-### Validated
+### v1.1.0 — UX Polish, Auth & Chat Enhancements (2026-01-26)
 
-<!-- Shipped and confirmed valuable. -->
+**Milestone:** 29/29 requirements, 6 phases, 37 plans executed
 
-- ✓ Model browsing/search from HuggingFace mlx-community — existing
-- ✓ Model download with progress tracking and resume capability — existing
-- ✓ Server profile management (create, edit, delete configurations) — existing
-- ✓ Server instance control (start/stop/restart) — existing
-- ✓ Server health monitoring with status indicators — existing
-- ✓ macOS launchd service integration for auto-start — existing
-- ✓ Menubar app for quick access — existing
-- ✓ Basic chat interface for testing models — existing
-- ✓ Dark mode support — v1.0.3
+Key features shipped:
+- **Models Panel UX**: Anchored search, consolidated download tiles
+- **Server Panel Redesign**: Searchable dropdown, rich metric tiles with memory/CPU/uptime
+- **User Authentication**: Email/password login, JWT sessions, admin approval flow
+- **Model Discovery**: Characteristic detection, visual badges, filtering
+- **Chat Multimodal**: Image/video attachments, thinking models, MCP tool integration
+- **Bug Fixes**: 7 stability fixes including exception logging, validation, polling optimization
 
-### Active
+Archive: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQUIREMENTS.md`
 
-<!-- Current scope. Building toward these. -->
+### v1.0.3 — Dark Mode (2026-01-15)
 
-**v1.1 — UX Polish & Stability**
+- Dark mode support across entire UI
+- Initial chat interface for testing models
 
-- [ ] BUG: Fix server page scroll reset (5s polling causes re-render and scroll jump)
-- [ ] Models panel: Anchor search/filter to top, scrollable model list below
-- [ ] Models panel: Consolidate download state — hide original tile when download starts, show only download tile at top
-- [ ] Models panel: Remove progress bar from normal model tiles (simplification)
-- [ ] Server panel: Replace profile list with searchable dropdown + Start button
-- [ ] Server panel: Running servers appear as rich tiles at top with:
-  - Profile name + model name
-  - Memory consumption (graphical)
-  - GPU/CPU usage (graphical)
-  - Uptime
-  - Tokens/second throughput
-  - Total tokens generated
-  - Stop/Restart buttons
+## Current State
 
-**v1.2 — Enhanced Chat & Model Discovery**
+**Status:** Between milestones
+**Last release:** v1.1.0 (2026-01-26)
+**Next milestone:** v1.2 (not yet defined)
 
-- [ ] Chat: Proper thinking model support (collapsible thinking panel, handle various formats)
-- [ ] Chat: Multimodal support — attach images via button and drag-drop
-- [ ] Chat: Persist chat history to database
-- [ ] Chat: Left sidebar showing chat history per server
-- [ ] Chat: Server-scoped chats (switching server loads relevant history)
-- [ ] Chat: Create new / delete existing chats
-- [ ] Models: Detect model characteristics from config.json or metadata
-- [ ] Models: Visual badges for capabilities (multimodal, tool support, MCP, thinking, architecture)
-- [ ] Models: Filter/search by model characteristics
+## v2 Requirements (Deferred)
 
-### Out of Scope
+Tracked for future releases:
 
-<!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
+### Server Enhancements
+- **SERVER-04**: Extend mlx-openai-server to support Anthropic APIs
+- **SERVER-05**: Proxy mode with single URL:PORT routing to multiple instances
 
-- Multi-user authentication — local-only application, binds to 127.0.0.1
-- Cloud deployment — designed for local Apple Silicon use
-- Non-MLX models — focused on mlx-community ecosystem
-- Windows/Linux support — macOS-specific (launchd, menubar)
+### Chat History
+- **CHAT-05**: Persist chat history to database
+- **CHAT-06**: Chat history sidebar per server
+- **CHAT-07**: Server-scoped chats (switching server loads relevant history)
+- **CHAT-08**: Create new / delete existing chats
 
-## Context
+## Out of Scope
 
-**Technical Environment:**
+| Feature | Reason |
+|---------|--------|
+| OAuth2/SSO | User-based auth with email+password covers local network use |
+| Cloud deployment | Designed for local Apple Silicon use |
+| Non-MLX models | Focused on mlx-community ecosystem |
+| Windows/Linux support | macOS-specific (launchd, menubar) |
+| Email-based password recovery | Requires SMTP setup, out of scope for local-first tool |
+
+## Technical Context
+
+**Tech Stack:**
 - Backend: FastAPI + SQLModel + aiosqlite (async SQLite)
 - Frontend: SvelteKit 2 + Svelte 5 (runes) + TailwindCSS + bits-ui
 - Distribution: Python package with embedded static frontend
 - Target: macOS on Apple Silicon (M1/M2/M3/M4)
 
-**Known Issues (from codebase analysis):**
-- 5-second polling interval causes constant re-renders (source of scroll bug)
-- ProfileCard has complex polling state machine (fragile)
-- Silent exception swallowing in multiple services
-- No frontend component tests for critical UI
-
-**Current State:**
-- v1.0.3 released with dark mode support
-- 67% backend test coverage
-- Codebase mapped in `.planning/codebase/`
-
-## Constraints
-
-- **Tech stack**: Must maintain FastAPI/SvelteKit architecture — invested and working
-- **Distribution**: Single Python package with embedded frontend — current packaging approach
-- **Compatibility**: macOS only, Apple Silicon required for MLX
-- **Backend metrics**: Server memory/GPU usage requires new instrumentation — may need `psutil` or similar
+**Quality Metrics (v1.1.0):**
+- Backend: 97% test coverage, 550 tests
+- Frontend: 544 tests, eslint/svelte-check clean
+- Code: Zero silent exception handlers, zero assertions in routes
 
 ## Key Decisions
 
-<!-- Decisions that constrain future work. Add throughout project lifecycle. -->
-
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Fix scroll bug via scroll preservation, not polling refactor | Polling refactor is larger scope; preserve scroll is targeted fix | — Pending |
-| Server panel redesign separates "profiles" (config) from "servers" (running instances) | Current UI conflates configuration and runtime state | — Pending |
-| Chat persistence in SQLite | Consistent with existing data layer; no new dependencies | — Pending |
-| Model characteristics via background enrichment | Don't block search; fetch metadata async and update UI | — Pending |
+| Scroll preservation via JSON.stringify comparison | Prevents re-renders on unchanged data | Shipped v1.1 |
+| JWT + admin approval flow | Simple but secure for local network use | Shipped v1.1 |
+| Model characteristics via background enrichment | Don't block search; fetch metadata async | Shipped v1.1 |
+| MCP mock for tool-use testing | Validate tool-capable models without external deps | Shipped v1.1 |
+| Backend-mediated health polling | Eliminates browser console errors | Shipped v1.1 |
+| Three-tier tool-use detection | Tags → family → config fallback chain | Shipped v1.1 |
+
+## Known Tech Debt
+
+| Item | Severity | Notes |
+|------|----------|-------|
+| Throughput metrics unavailable | Info | Requires mlx-openai-server changes |
+| GPU metrics unavailable | Info | psutil limitation on macOS |
+| Download completion UX | Warning | Doesn't auto-refresh local models list |
 
 ---
-*Last updated: 2026-01-17 after initialization*
+
+*Last updated: 2026-01-26 — v1.1.0 shipped*
