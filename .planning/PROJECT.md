@@ -29,19 +29,29 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQU
 - Dark mode support across entire UI
 - Initial chat interface for testing models
 
+## Current Milestone: v1.2 — Unified API Gateway
+
+**Goal:** Transform mlx-manager into a unified API gateway that routes requests to local or cloud backends based on model name.
+
+**Target features:**
+- Backend abstraction layer (adapter pattern for mlx-openai-server, vLLM-MLX, OpenAI cloud, Anthropic cloud)
+- Unified proxy endpoint exposing both OpenAI and Anthropic compatible APIs
+- Model name → backend routing with UI configuration
+- On-demand local model auto-start when requests arrive
+- Secure in-app API key storage for cloud providers
+
 ## Current State
 
-**Status:** Between milestones
+**Status:** Milestone v1.2 active — defining requirements
 **Last release:** v1.1.0 (2026-01-26)
-**Next milestone:** v1.2 (not yet defined)
 
 ## v2 Requirements (Deferred)
 
 Tracked for future releases:
 
-### Server Enhancements
-- **SERVER-04**: Extend mlx-openai-server to support Anthropic APIs
-- **SERVER-05**: Proxy mode with single URL:PORT routing to multiple instances
+### AI Proxy Agent (v1.3+)
+- LLM-based intelligent routing (orchestrator model routes requests based on natural language rules)
+- Configurable routing criteria per model (e.g., "Thinking Agent" for brainstorming, "Worker Agent" for coding)
 
 ### Chat History
 - **CHAT-05**: Persist chat history to database
@@ -93,4 +103,4 @@ Tracked for future releases:
 
 ---
 
-*Last updated: 2026-01-26 — v1.1.0 shipped*
+*Last updated: 2026-01-26 — Milestone v1.2 started*

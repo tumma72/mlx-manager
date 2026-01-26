@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-26)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Between milestones — v1.1.0 shipped
+**Current focus:** Milestone v1.2 — Unified API Gateway
 
 ## Current Position
 
-Phase: N/A (milestone complete)
-Plan: N/A
-Status: v1.1.0 shipped — milestone archived
-Last activity: 2026-01-26 — Milestone v1.1 completed and archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-01-26 — Milestone v1.2 started
 
-Progress: Milestone v1.1 complete. Ready for next milestone definition.
+Progress: Gathering requirements for unified API gateway (backend abstraction, multi-model proxy, cloud routing).
 
 ## Milestone v1.1 Summary
 
@@ -71,6 +71,6 @@ Progress: Milestone v1.1 complete. Ready for next milestone definition.
 ## Session Continuity
 
 Last session: 2026-01-26
-Stopped at: Milestone v1.1 completed and archived
+Stopped at: Milestone v1.2 questioning complete
 Resume file: None
-Next: Define v1.2 milestone (use /gsd:new-milestone)
+Next: Research phase, then requirements definition
