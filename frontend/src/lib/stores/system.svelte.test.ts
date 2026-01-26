@@ -100,7 +100,7 @@ describe("SystemStore", () => {
         expect.objectContaining({
           interval: 30000,
           minInterval: 5000,
-        })
+        }),
       );
     });
 
@@ -126,7 +126,7 @@ describe("SystemStore", () => {
       await systemStore.refreshMemory();
 
       expect(mockPollingCoordinator.refresh).toHaveBeenCalledWith(
-        "system-memory"
+        "system-memory",
       );
     });
   });
@@ -135,7 +135,9 @@ describe("SystemStore", () => {
     it("starts polling via coordinator", () => {
       systemStore.startMemoryPolling();
 
-      expect(mockPollingCoordinator.start).toHaveBeenCalledWith("system-memory");
+      expect(mockPollingCoordinator.start).toHaveBeenCalledWith(
+        "system-memory",
+      );
     });
   });
 

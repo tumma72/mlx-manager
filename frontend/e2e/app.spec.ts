@@ -74,13 +74,16 @@ async function setupAuth(page: Page) {
     // Set mock auth data in localStorage before the app loads
     // Keys must match auth.svelte.ts: TOKEN_KEY = "mlx_auth_token", USER_KEY = "mlx_auth_user"
     localStorage.setItem("mlx_auth_token", "mock-jwt-token");
-    localStorage.setItem("mlx_auth_user", JSON.stringify({
-      id: 1,
-      email: "test@example.com",
-      is_admin: true,
-      status: "approved",
-      created_at: "2024-01-15T10:00:00Z",
-    }));
+    localStorage.setItem(
+      "mlx_auth_user",
+      JSON.stringify({
+        id: 1,
+        email: "test@example.com",
+        is_admin: true,
+        status: "approved",
+        created_at: "2024-01-15T10:00:00Z",
+      }),
+    );
   });
 }
 

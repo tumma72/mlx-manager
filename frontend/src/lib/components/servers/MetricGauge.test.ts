@@ -219,7 +219,7 @@ describe("MetricGauge", () => {
       const circumference = 2 * Math.PI * 40;
       // At 0%, offset = circumference (no progress shown)
       expect(progressCircle.getAttribute("stroke-dashoffset")).toBe(
-        circumference.toString()
+        circumference.toString(),
       );
     });
 
@@ -291,7 +291,7 @@ describe("MetricGauge", () => {
       const circumference = 2 * Math.PI * 40;
       const progressCircle = container.querySelectorAll("circle")[1];
       expect(progressCircle.getAttribute("stroke-dasharray")).toBe(
-        circumference.toString()
+        circumference.toString(),
       );
     });
 
@@ -304,7 +304,7 @@ describe("MetricGauge", () => {
       const expectedOffset = circumference - (50 / 100) * circumference;
       const progressCircle = container.querySelectorAll("circle")[1];
       expect(progressCircle.getAttribute("stroke-dashoffset")).toBe(
-        expectedOffset.toString()
+        expectedOffset.toString(),
       );
     });
 
@@ -317,7 +317,7 @@ describe("MetricGauge", () => {
       // At 0%, offset = circumference
       const progressCircle = container.querySelectorAll("circle")[1];
       expect(progressCircle.getAttribute("stroke-dashoffset")).toBe(
-        circumference.toString()
+        circumference.toString(),
       );
     });
 
@@ -339,7 +339,7 @@ describe("MetricGauge", () => {
       const backgroundCircle = container.querySelectorAll("circle")[0];
       expect(backgroundCircle.classList.contains("text-gray-200")).toBe(true);
       expect(backgroundCircle.classList.contains("dark:text-gray-700")).toBe(
-        true
+        true,
       );
     });
 

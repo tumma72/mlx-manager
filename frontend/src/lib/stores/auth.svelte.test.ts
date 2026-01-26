@@ -215,7 +215,7 @@ describe("AuthStore", () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         "mlx_auth_token",
-        "persist-token"
+        "persist-token",
       );
     });
 
@@ -225,7 +225,7 @@ describe("AuthStore", () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         "mlx_auth_user",
-        JSON.stringify(mockUser)
+        JSON.stringify(mockUser),
       );
     });
 
@@ -338,7 +338,7 @@ describe("AuthStore", () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         "mlx_auth_user",
-        JSON.stringify(updatedUser)
+        JSON.stringify(updatedUser),
       );
     });
 

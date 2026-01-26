@@ -73,7 +73,9 @@ class DownloadsStore {
     // Close existing connection if any
     this.closeSSE(modelId);
 
-    const eventSource = new EventSource(`/api/models/download/${taskId}/progress`);
+    const eventSource = new EventSource(
+      `/api/models/download/${taskId}/progress`,
+    );
     this.eventSources.set(modelId, eventSource);
 
     eventSource.onmessage = (event) => {
@@ -117,7 +119,10 @@ class DownloadsStore {
   /**
    * Update download state for a model.
    */
-  private updateDownload(modelId: string, update: Partial<DownloadState>): void {
+  private updateDownload(
+    modelId: string,
+    update: Partial<DownloadState>,
+  ): void {
     const current = this.downloads.get(modelId);
     if (current) {
       const newMap = new Map(this.downloads);
@@ -129,7 +134,11 @@ class DownloadsStore {
   /**
    * Reconnect to an existing download (after navigation).
    */
-  reconnect(modelId: string, taskId: string, currentState: Partial<DownloadState>): void {
+  reconnect(
+    modelId: string,
+    taskId: string,
+    currentState: Partial<DownloadState>,
+  ): void {
     // Only reconnect if not already connected
     if (this.eventSources.has(modelId)) {
       return;

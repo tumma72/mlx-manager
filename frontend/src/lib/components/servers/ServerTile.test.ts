@@ -47,7 +47,9 @@ import { serverStore } from "$stores";
 import { goto } from "$app/navigation";
 
 // Helper to create mock running server
-function createMockServer(overrides: Partial<RunningServer> = {}): RunningServer {
+function createMockServer(
+  overrides: Partial<RunningServer> = {},
+): RunningServer {
   return {
     profile_id: 1,
     profile_name: "Test Server",
@@ -206,7 +208,7 @@ describe("ServerTile", () => {
         () =>
           new Promise((resolve) => {
             resolveStop = resolve;
-          })
+          }),
       );
 
       render(ServerTile, { props: { server: createMockServer() } });
@@ -231,7 +233,7 @@ describe("ServerTile", () => {
         () =>
           new Promise((resolve) => {
             resolveStop = resolve;
-          })
+          }),
       );
 
       render(ServerTile, { props: { server: createMockServer() } });
@@ -271,7 +273,7 @@ describe("ServerTile", () => {
         () =>
           new Promise((resolve) => {
             resolveRestart = resolve;
-          })
+          }),
       );
 
       render(ServerTile, { props: { server: createMockServer() } });
@@ -296,7 +298,7 @@ describe("ServerTile", () => {
         () =>
           new Promise((resolve) => {
             resolveRestart = resolve;
-          })
+          }),
       );
 
       render(ServerTile, { props: { server: createMockServer() } });
@@ -377,7 +379,7 @@ describe("ServerTile", () => {
       });
 
       expect(
-        screen.getByText("Very Long Server Name That Should Be Truncated")
+        screen.getByText("Very Long Server Name That Should Be Truncated"),
       ).toBeInTheDocument();
     });
   });

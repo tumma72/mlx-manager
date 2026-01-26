@@ -24,7 +24,9 @@ vi.mock("$lib/services", () => ({
 }));
 
 // Helper to create a mock profile
-function createMockProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
+function createMockProfile(
+  overrides: Partial<ServerProfile> = {},
+): ServerProfile {
   return {
     id: 1,
     name: "Test Profile",
@@ -119,7 +121,7 @@ describe("ProfileStore", () => {
         expect.objectContaining({
           interval: 10000,
           minInterval: 1000,
-        })
+        }),
       );
     });
 
@@ -382,7 +384,9 @@ describe("ProfileStore", () => {
       const originalProfile = profileStore.profiles[0];
 
       // Same data again
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, name: "Test" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, name: "Test" }),
+      ]);
       await refreshFn();
 
       // Should be the same object (reconciled in place)
@@ -390,7 +394,9 @@ describe("ProfileStore", () => {
     });
 
     it("updates profile properties in-place when name changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, name: "Original" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, name: "Original" }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
@@ -399,7 +405,9 @@ describe("ProfileStore", () => {
       const originalProfile = profileStore.profiles[0];
 
       // Name changed
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, name: "Changed" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, name: "Changed" }),
+      ]);
       await refreshFn();
 
       // Object is updated in-place (same reference, updated properties)
@@ -408,70 +416,90 @@ describe("ProfileStore", () => {
     });
 
     it("updates profile when description changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, description: "Original" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, description: "Original" }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
 
       await refreshFn();
 
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, description: "Changed" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, description: "Changed" }),
+      ]);
       await refreshFn();
 
       expect(profileStore.profiles[0].description).toBe("Changed");
     });
 
     it("updates profile when port changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, port: 10240 })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, port: 10240 }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
 
       await refreshFn();
 
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, port: 10241 })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, port: 10241 }),
+      ]);
       await refreshFn();
 
       expect(profileStore.profiles[0].port).toBe(10241);
     });
 
     it("updates profile when model_type changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, model_type: "lm" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, model_type: "lm" }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
 
       await refreshFn();
 
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, model_type: "multimodal" })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, model_type: "multimodal" }),
+      ]);
       await refreshFn();
 
       expect(profileStore.profiles[0].model_type).toBe("multimodal");
     });
 
     it("updates profile when auto_start changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, auto_start: false })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, auto_start: false }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
 
       await refreshFn();
 
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, auto_start: true })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, auto_start: true }),
+      ]);
       await refreshFn();
 
       expect(profileStore.profiles[0].auto_start).toBe(true);
     });
 
     it("updates profile when launchd_installed changes", async () => {
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, launchd_installed: false })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, launchd_installed: false }),
+      ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
       const refreshFn = registerCall[1].refreshFn;
 
       await refreshFn();
 
-      mockProfilesApi.list.mockResolvedValue([createMockProfile({ id: 1, launchd_installed: true })]);
+      mockProfilesApi.list.mockResolvedValue([
+        createMockProfile({ id: 1, launchd_installed: true }),
+      ]);
       await refreshFn();
 
       expect(profileStore.profiles[0].launchd_installed).toBe(true);

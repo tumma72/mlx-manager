@@ -29,7 +29,7 @@ vi.mock("svelte/reactivity", () => ({
 
 // Helper to create mock server
 function createMockServer(
-  overrides: Partial<RunningServer> = {}
+  overrides: Partial<RunningServer> = {},
 ): RunningServer {
   return {
     profile_id: 1,
@@ -47,9 +47,7 @@ function createMockServer(
 
 describe("ServerStore", () => {
   // We need to dynamically import the store for each test to reset state
-  let serverStore: Awaited<
-    typeof import("./servers.svelte")
-  >["serverStore"];
+  let serverStore: Awaited<typeof import("./servers.svelte")>["serverStore"];
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -105,7 +103,7 @@ describe("ServerStore", () => {
         expect.objectContaining({
           interval: 5000,
           minInterval: 1000,
-        })
+        }),
       );
     });
 
@@ -125,7 +123,10 @@ describe("ServerStore", () => {
   describe("start", () => {
     it("adds profile to startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       await serverStore.start(42);
 
@@ -134,7 +135,10 @@ describe("ServerStore", () => {
 
     it("clears any existing failure", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       // Set up a failure first
       serverStore.markStartupFailed(42, "Previous error");
@@ -147,7 +151,10 @@ describe("ServerStore", () => {
 
     it("calls API to start server", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       await serverStore.start(42);
 
@@ -158,7 +165,10 @@ describe("ServerStore", () => {
   describe("stop", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
       vi.mocked(serversApi.stop).mockResolvedValue({ stopped: true });
 
       await serverStore.start(42);
@@ -244,7 +254,10 @@ describe("ServerStore", () => {
   describe("markStartupSuccess", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       await serverStore.start(42);
       expect(serverStore.isStarting(42)).toBe(true);
@@ -268,7 +281,10 @@ describe("ServerStore", () => {
       const { pollingCoordinator } = await import("$lib/services");
 
       // Setup: put profile in starting state
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
       await serverStore.start(42);
 
       // Clear previous refresh calls
@@ -296,7 +312,10 @@ describe("ServerStore", () => {
   describe("markStartupFailed", () => {
     it("removes profile from startingProfiles", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       await serverStore.start(42);
       expect(serverStore.isStarting(42)).toBe(true);
@@ -401,7 +420,10 @@ describe("ServerStore", () => {
 
     it("returns false when server in list but starting", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       // Add server to list
       serverStore.servers.push(createMockServer({ profile_id: 42 }));
@@ -426,7 +448,10 @@ describe("ServerStore", () => {
 
     it("returns true after start called", async () => {
       const { servers: serversApi } = await import("$api");
-      vi.mocked(serversApi.start).mockResolvedValue({ pid: 12345, port: 10240 });
+      vi.mocked(serversApi.start).mockResolvedValue({
+        pid: 12345,
+        port: 10240,
+      });
 
       await serverStore.start(42);
 
@@ -567,7 +592,10 @@ describe("ServerStore", () => {
       // Make restart hang so we can check the intermediate state
       let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
-        () => new Promise((resolve) => { resolveRestart = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveRestart = resolve;
+          }),
       );
 
       // Start the restart but don't await it
@@ -600,7 +628,10 @@ describe("ServerStore", () => {
       const { servers: serversApi } = await import("$api");
       let resolveList: (value: RunningServer[]) => void;
       vi.mocked(serversApi.list).mockImplementation(
-        () => new Promise((resolve) => { resolveList = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveList = resolve;
+          }),
       );
 
       const refreshFn = await getRefreshFn();
@@ -630,7 +661,10 @@ describe("ServerStore", () => {
       // Second refresh (background poll) - should not set loading
       let resolveList: (value: RunningServer[]) => void;
       vi.mocked(serversApi.list).mockImplementation(
-        () => new Promise((resolve) => { resolveList = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveList = resolve;
+          }),
       );
 
       const refreshPromise = refreshFn();
@@ -658,7 +692,9 @@ describe("ServerStore", () => {
       const { servers: serversApi } = await import("$api");
 
       // First, cause an error
-      vi.mocked(serversApi.list).mockRejectedValueOnce(new Error("Network error"));
+      vi.mocked(serversApi.list).mockRejectedValueOnce(
+        new Error("Network error"),
+      );
       const refreshFn = await getRefreshFn();
       await refreshFn();
       expect(serverStore.error).toBe("Network error");
@@ -813,7 +849,10 @@ describe("ServerStore", () => {
     it("reconciles servers using custom equality (different profile_name triggers update)", async () => {
       const { servers: serversApi } = await import("$api");
 
-      const server1 = createMockServer({ profile_id: 1, profile_name: "Server A" });
+      const server1 = createMockServer({
+        profile_id: 1,
+        profile_name: "Server A",
+      });
       vi.mocked(serversApi.list).mockResolvedValue([server1]);
 
       const refreshFn = await getRefreshFn();
@@ -821,7 +860,10 @@ describe("ServerStore", () => {
 
       expect(serverStore.servers[0].profile_name).toBe("Server A");
 
-      const server2 = createMockServer({ profile_id: 1, profile_name: "Server B" });
+      const server2 = createMockServer({
+        profile_id: 1,
+        profile_name: "Server B",
+      });
       vi.mocked(serversApi.list).mockResolvedValue([server2]);
       await refreshFn();
 
@@ -870,7 +912,10 @@ describe("ServerStore", () => {
     it("reconciles servers using custom equality (different health_status triggers update)", async () => {
       const { servers: serversApi } = await import("$api");
 
-      const server1 = createMockServer({ profile_id: 1, health_status: "healthy" });
+      const server1 = createMockServer({
+        profile_id: 1,
+        health_status: "healthy",
+      });
       vi.mocked(serversApi.list).mockResolvedValue([server1]);
 
       const refreshFn = await getRefreshFn();
@@ -878,7 +923,10 @@ describe("ServerStore", () => {
 
       expect(serverStore.servers[0].health_status).toBe("healthy");
 
-      const server2 = createMockServer({ profile_id: 1, health_status: "unhealthy" });
+      const server2 = createMockServer({
+        profile_id: 1,
+        health_status: "unhealthy",
+      });
       vi.mocked(serversApi.list).mockResolvedValue([server2]);
       await refreshFn();
 
@@ -903,7 +951,10 @@ describe("ServerStore", () => {
       const { servers: serversApi } = await import("$api");
       let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
-        () => new Promise((resolve) => { resolveRestart = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveRestart = resolve;
+          }),
       );
 
       const restartPromise = serverStore.restart(42);
@@ -926,7 +977,10 @@ describe("ServerStore", () => {
       const { servers: serversApi } = await import("$api");
       let resolveRestart: (value: { pid: number }) => void;
       vi.mocked(serversApi.restart).mockImplementation(
-        () => new Promise((resolve) => { resolveRestart = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolveRestart = resolve;
+          }),
       );
 
       const restartPromise = serverStore.restart(42);

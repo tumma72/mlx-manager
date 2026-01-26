@@ -2,7 +2,12 @@ export { default as DownloadProgressTile } from "./DownloadProgressTile.svelte";
 export { default as ModelCard } from "./ModelCard.svelte";
 export { default as ModelToggle } from "./ModelToggle.svelte";
 export { default as FilterModal } from "./FilterModal.svelte";
-export { type FilterState, ARCHITECTURE_OPTIONS, QUANTIZATION_OPTIONS, createEmptyFilters } from "./filter-types";
+export {
+  type FilterState,
+  ARCHITECTURE_OPTIONS,
+  QUANTIZATION_OPTIONS,
+  createEmptyFilters,
+} from "./filter-types";
 export { default as FilterChips } from "./FilterChips.svelte";
 export { default as ArchitectureBadge } from "./badges/ArchitectureBadge.svelte";
 export { default as MultimodalBadge } from "./badges/MultimodalBadge.svelte";

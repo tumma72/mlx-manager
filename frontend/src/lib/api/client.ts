@@ -85,7 +85,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 // Auth API
 export const auth = {
-  register: async (data: { email: string; password: string }): Promise<User> => {
+  register: async (data: {
+    email: string;
+    password: string;
+  }): Promise<User> => {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -296,12 +299,15 @@ export const models = {
     return handleResponse(res);
   },
 
-  getConfig: async (modelId: string, tags?: string[]): Promise<ModelCharacteristics> => {
+  getConfig: async (
+    modelId: string,
+    tags?: string[],
+  ): Promise<ModelCharacteristics> => {
     // Note: Don't use encodeURIComponent here - the backend uses {model_id:path}
     // which expects slashes to be literal path segments, not URL-encoded
     let url = `${API_BASE}/models/config/${modelId}`;
     if (tags && tags.length > 0) {
-      url += `?tags=${encodeURIComponent(tags.join(','))}`;
+      url += `?tags=${encodeURIComponent(tags.join(","))}`;
     }
     const res = await fetch(url, {
       headers: getAuthHeaders(),
@@ -411,9 +417,12 @@ export const system = {
     },
 
     status: async (profileId: number): Promise<LaunchdStatus> => {
-      const res = await fetch(`${API_BASE}/system/launchd/status/${profileId}`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await fetch(
+        `${API_BASE}/system/launchd/status/${profileId}`,
+        {
+          headers: getAuthHeaders(),
+        },
+      );
       return handleResponse(res);
     },
   },

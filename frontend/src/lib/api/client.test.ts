@@ -33,24 +33,38 @@ beforeEach(() => {
 describe("auth API", () => {
   describe("register", () => {
     it("registers a new user", async () => {
-      const mockUser = { id: 1, email: "test@example.com", is_admin: false, status: "pending" };
+      const mockUser = {
+        id: 1,
+        email: "test@example.com",
+        is_admin: false,
+        status: "pending",
+      };
       mockFetch.mockResolvedValueOnce(mockResponse(mockUser, 201));
 
-      const result = await auth.register({ email: "test@example.com", password: "password123" });
+      const result = await auth.register({
+        email: "test@example.com",
+        password: "password123",
+      });
 
       expect(mockFetch).toHaveBeenCalledWith("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "test@example.com", password: "password123" }),
+        body: JSON.stringify({
+          email: "test@example.com",
+          password: "password123",
+        }),
       });
       expect(result).toEqual(mockUser);
     });
 
     it("throws ApiError on duplicate email", async () => {
-      mockFetch.mockResolvedValueOnce(mockErrorResponse("Email already registered", 409));
+      mockFetch.mockResolvedValueOnce(
+        mockErrorResponse("Email already registered", 409),
+      );
 
-      await expect(auth.register({ email: "test@example.com", password: "password123" }))
-        .rejects.toThrow(ApiError);
+      await expect(
+        auth.register({ email: "test@example.com", password: "password123" }),
+      ).rejects.toThrow(ApiError);
     });
   });
 
@@ -70,7 +84,9 @@ describe("auth API", () => {
     });
 
     it("sends form data with username field", async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse({ access_token: "token", token_type: "bearer" }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ access_token: "token", token_type: "bearer" }),
+      );
 
       await auth.login("test@example.com", "password123");
 
@@ -81,16 +97,24 @@ describe("auth API", () => {
     });
 
     it("throws ApiError on invalid credentials", async () => {
-      mockFetch.mockResolvedValueOnce(mockErrorResponse("Incorrect email or password", 401));
+      mockFetch.mockResolvedValueOnce(
+        mockErrorResponse("Incorrect email or password", 401),
+      );
 
-      await expect(auth.login("test@example.com", "wrong"))
-        .rejects.toThrow(ApiError);
+      await expect(auth.login("test@example.com", "wrong")).rejects.toThrow(
+        ApiError,
+      );
     });
   });
 
   describe("me", () => {
     it("fetches current user info", async () => {
-      const mockUser = { id: 1, email: "test@example.com", is_admin: true, status: "approved" };
+      const mockUser = {
+        id: 1,
+        email: "test@example.com",
+        is_admin: true,
+        status: "approved",
+      };
       mockFetch.mockResolvedValueOnce(mockResponse(mockUser));
 
       const result = await auth.me();
@@ -106,8 +130,18 @@ describe("auth API", () => {
   describe("listUsers", () => {
     it("lists all users (admin only)", async () => {
       const mockUsers = [
-        { id: 1, email: "admin@example.com", is_admin: true, status: "approved" },
-        { id: 2, email: "user@example.com", is_admin: false, status: "pending" },
+        {
+          id: 1,
+          email: "admin@example.com",
+          is_admin: true,
+          status: "approved",
+        },
+        {
+          id: 2,
+          email: "user@example.com",
+          is_admin: false,
+          status: "pending",
+        },
       ];
       mockFetch.mockResolvedValueOnce(mockResponse(mockUsers));
 
@@ -137,7 +171,12 @@ describe("auth API", () => {
 
   describe("updateUser", () => {
     it("updates user status", async () => {
-      const updatedUser = { id: 2, email: "user@example.com", is_admin: false, status: "approved" };
+      const updatedUser = {
+        id: 2,
+        email: "user@example.com",
+        is_admin: false,
+        status: "approved",
+      };
       mockFetch.mockResolvedValueOnce(mockResponse(updatedUser));
 
       const result = await auth.updateUser(2, { status: "approved" });
@@ -151,7 +190,12 @@ describe("auth API", () => {
     });
 
     it("updates user admin status", async () => {
-      const updatedUser = { id: 2, email: "user@example.com", is_admin: true, status: "approved" };
+      const updatedUser = {
+        id: 2,
+        email: "user@example.com",
+        is_admin: true,
+        status: "approved",
+      };
       mockFetch.mockResolvedValueOnce(mockResponse(updatedUser));
 
       const result = await auth.updateUser(2, { is_admin: true });
@@ -180,15 +224,20 @@ describe("auth API", () => {
 
   describe("resetPassword", () => {
     it("resets user password", async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse({ message: "Password reset successfully" }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ message: "Password reset successfully" }),
+      );
 
       const result = await auth.resetPassword(2, "newpassword123");
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/auth/users/2/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "newpassword123" }),
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/auth/users/2/reset-password",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: "newpassword123" }),
+        },
+      );
       expect(result).toEqual({ message: "Password reset successfully" });
     });
   });
@@ -814,7 +863,8 @@ describe("ApiError", () => {
       ok: false,
       status: 401,
       json: () => Promise.resolve({ detail: "Not authenticated" }),
-      text: () => Promise.resolve(JSON.stringify({ detail: "Not authenticated" })),
+      text: () =>
+        Promise.resolve(JSON.stringify({ detail: "Not authenticated" })),
     });
 
     try {

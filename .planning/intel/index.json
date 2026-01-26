@@ -1,0 +1,1957 @@
+{
+  "version": 1,
+  "updated": 1768993023177,
+  "files": {
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/__init__.py": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/cli.py": {
+      "exports": [
+        "version",
+        "menubar",
+        "main",
+        "uninstall_service",
+        "serve",
+        "status",
+        "install_service"
+      ],
+      "imports": [
+        "rich.table",
+        "threading",
+        "mlx_manager",
+        "typer",
+        "webbrowser",
+        "rich.console"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/config.py": {
+      "exports": [
+        "Settings",
+        "ensure_data_dir"
+      ],
+      "imports": [
+        "pathlib",
+        "pydantic_settings",
+        "pydantic"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/database.py": {
+      "exports": [
+        "get_db",
+        "get_session",
+        "migrate_schema",
+        "init_db",
+        "recover_incomplete_downloads"
+      ],
+      "imports": [
+        "collections.abc",
+        "mlx_manager.config",
+        "contextlib",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "logging",
+        "sqlalchemy"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/dependencies.py": {
+      "exports": [
+        "get_current_user",
+        "get_profile_or_404",
+        "get_admin_user"
+      ],
+      "imports": [
+        "mlx_manager.services.auth_service",
+        "typing",
+        "mlx_manager.models",
+        "mlx_manager.database",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "fastapi",
+        "fastapi.security"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/main.py": {
+      "exports": [
+        "lifespan",
+        "health",
+        "cleanup_stale_instances",
+        "resume_pending_downloads",
+        "STATIC_DIR",
+        "cancel_download_tasks"
+      ],
+      "imports": [
+        "pathlib",
+        "sys",
+        "fastapi.staticfiles",
+        "mlx_manager",
+        "mlx_manager.models",
+        "mlx_manager.routers.models",
+        "contextlib",
+        "mlx_manager.database",
+        "mlx_manager.services.health_checker",
+        "sqlmodel",
+        "mlx_manager.services.hf_client",
+        "mlx_manager.services.server_manager",
+        "fastapi",
+        "logging",
+        "fastapi.middleware.cors",
+        "asyncio",
+        "mlx_manager.routers",
+        "fastapi.responses"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/menubar.py": {
+      "exports": [
+        "MLXManagerApp",
+        "main",
+        "run_menubar"
+      ],
+      "imports": [
+        "sys",
+        "mlx_manager",
+        "typing",
+        "rumps",
+        "subprocess",
+        "webbrowser",
+        "httpx",
+        "time"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/models.py": {
+      "exports": [
+        "UserCreate",
+        "RunningInstance",
+        "Setting",
+        "Token",
+        "UserPublic",
+        "DownloadedModel",
+        "Download",
+        "SystemInfo",
+        "ServerProfile",
+        "UserUpdate",
+        "SystemMemory",
+        "UserStatus",
+        "RunningServerResponse",
+        "User",
+        "ServerProfileResponse",
+        "ServerProfileBase",
+        "HealthStatus",
+        "LaunchdStatus",
+        "ModelSearchResult",
+        "UserLogin",
+        "UserBase",
+        "ServerProfileUpdate",
+        "ServerStatus",
+        "ServerProfileCreate",
+        "LocalModel",
+        "PasswordReset"
+      ],
+      "imports": [
+        "sqlmodel",
+        "datetime",
+        "enum"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/__init__.py": {
+      "exports": [
+        "models_router",
+        "servers_router",
+        "system_router",
+        "auth_router",
+        "profiles_router"
+      ],
+      "imports": [
+        "mlx_manager.routers.auth",
+        "mlx_manager.routers.models",
+        "mlx_manager.routers.servers",
+        "mlx_manager.routers.profiles",
+        "mlx_manager.routers.system"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/auth.py": {
+      "exports": [
+        "delete_user",
+        "login",
+        "get_me",
+        "update_user",
+        "reset_password",
+        "register",
+        "get_pending_count",
+        "list_users"
+      ],
+      "imports": [
+        "mlx_manager.services.auth_service",
+        "typing",
+        "mlx_manager.models",
+        "datetime",
+        "mlx_manager.database",
+        "mlx_manager.dependencies",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "fastapi",
+        "fastapi.security",
+        "sqlalchemy"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/models.py": {
+      "exports": [
+        "get_active_downloads",
+        "detect_model_options",
+        "list_local_models",
+        "get_download_progress",
+        "get_model_config",
+        "DownloadRequest",
+        "search_models",
+        "start_download",
+        "get_available_parsers",
+        "delete_model"
+      ],
+      "imports": [
+        "collections.abc",
+        "json",
+        "mlx_manager.services.parser_options",
+        "typing",
+        "uuid",
+        "mlx_manager.models",
+        "datetime",
+        "mlx_manager.database",
+        "mlx_manager.utils.model_detection",
+        "mlx_manager.dependencies",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "mlx_manager.services.hf_client",
+        "fastapi",
+        "asyncio",
+        "time",
+        "pydantic",
+        "fastapi.responses"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/profiles.py": {
+      "exports": [
+        "delete_profile",
+        "get_profile",
+        "create_profile",
+        "get_next_port",
+        "duplicate_profile",
+        "list_profiles",
+        "update_profile"
+      ],
+      "imports": [
+        "typing",
+        "mlx_manager.config",
+        "mlx_manager.models",
+        "datetime",
+        "mlx_manager.database",
+        "mlx_manager.dependencies",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "fastapi"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/servers.py": {
+      "exports": [
+        "stream_logs",
+        "list_running_servers",
+        "check_server_health",
+        "stop_server",
+        "get_server_status",
+        "start_server",
+        "restart_server"
+      ],
+      "imports": [
+        "collections.abc",
+        "typing",
+        "mlx_manager.models",
+        "datetime",
+        "mlx_manager.database",
+        "mlx_manager.dependencies",
+        "sqlalchemy.ext.asyncio",
+        "sqlmodel",
+        "mlx_manager.services.server_manager",
+        "fastapi",
+        "asyncio",
+        "time",
+        "fastapi.responses"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/routers/system.py": {
+      "exports": [
+        "get_system_info",
+        "get_memory",
+        "get_launchd_status",
+        "get_available_parser_options",
+        "get_physical_memory_bytes",
+        "install_launchd_service",
+        "uninstall_launchd_service"
+      ],
+      "imports": [
+        "platform",
+        "mlx_manager.services.parser_options",
+        "sys",
+        "mlx_manager.config",
+        "typing",
+        "mlx_manager.models",
+        "mlx_manager.database",
+        "subprocess",
+        "mlx_manager.dependencies",
+        "sqlalchemy.ext.asyncio",
+        "fastapi",
+        "logging",
+        "psutil",
+        "mlx_manager.services.launchd"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/__init__.py": {
+      "exports": [
+        "health_checker",
+        "server_manager",
+        "launchd_manager",
+        "hf_client"
+      ],
+      "imports": [
+        "mlx_manager.services.hf_client",
+        "mlx_manager.services.launchd",
+        "mlx_manager.services.health_checker",
+        "mlx_manager.services.server_manager"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/auth_service.py": {
+      "exports": [
+        "verify_password",
+        "decode_token",
+        "hash_password",
+        "create_access_token"
+      ],
+      "imports": [
+        "jwt",
+        "mlx_manager.config",
+        "typing",
+        "datetime",
+        "pwdlib"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/health_checker.py": {
+      "exports": [
+        "HealthChecker"
+      ],
+      "imports": [
+        "mlx_manager.models",
+        "datetime",
+        "mlx_manager.database",
+        "sqlmodel",
+        "mlx_manager.services.server_manager",
+        "asyncio"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/hf_api.py": {
+      "exports": [
+        "HF_API_BASE",
+        "fetch_remote_config",
+        "estimate_size_from_name",
+        "search_models",
+        "get_model_size_gb",
+        "DEFAULT_TIMEOUT",
+        "ModelInfo"
+      ],
+      "imports": [
+        "asyncio",
+        "re",
+        "httpx",
+        "logging",
+        "dataclasses"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/hf_client.py": {
+      "exports": [
+        "SilentProgress",
+        "HuggingFaceClient"
+      ],
+      "imports": [
+        "pathlib",
+        "collections.abc",
+        "warnings",
+        "typing",
+        "mlx_manager.config",
+        "mlx_manager.services.hf_api",
+        "shutil",
+        "tqdm.auto",
+        "logging",
+        "huggingface_hub",
+        "asyncio",
+        "mlx_manager.types"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/launchd.py": {
+      "exports": [
+        "LaunchdManager"
+      ],
+      "imports": [
+        "pathlib",
+        "mlx_manager.utils.command_builder",
+        "sys",
+        "mlx_manager.models",
+        "subprocess",
+        "mlx_manager.types",
+        "plistlib"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/manager_launchd.py": {
+      "exports": [
+        "is_service_running",
+        "uninstall_manager_service",
+        "is_service_installed",
+        "get_plist_path",
+        "install_manager_service",
+        "LABEL"
+      ],
+      "imports": [
+        "pathlib",
+        "sys",
+        "subprocess",
+        "plistlib"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/parser_options.py": {
+      "exports": [
+        "ParserOptions",
+        "FALLBACK_TOOL_PARSERS",
+        "FALLBACK_REASONING_PARSERS",
+        "FALLBACK_MESSAGE_CONVERTERS",
+        "get_parser_options"
+      ],
+      "imports": [
+        "functools",
+        "logging",
+        "typing"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/services/server_manager.py": {
+      "exports": [
+        "ServerManager"
+      ],
+      "imports": [
+        "mlx_manager.utils.command_builder",
+        "typing",
+        "signal",
+        "mlx_manager.models",
+        "mlx_manager.utils.model_detection",
+        "subprocess",
+        "httpx",
+        "logging",
+        "psutil",
+        "asyncio",
+        "mlx_manager.types"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/types.py": {
+      "exports": [
+        "ModelSearchResult",
+        "ServerStats",
+        "DownloadStatus",
+        "LocalModelInfo",
+        "HealthCheckResult",
+        "ModelCharacteristics",
+        "RunningServerInfo",
+        "LaunchdStatus"
+      ],
+      "imports": [
+        "typing"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/utils/__init__.py": {
+      "exports": [
+        "check_mlx_lm_support",
+        "get_model_detection_info",
+        "find_mlx_openai_server",
+        "MODEL_FAMILY_MIN_VERSIONS",
+        "detect_model_family",
+        "get_parser_options",
+        "get_server_log_path",
+        "build_mlx_server_command",
+        "find_parser_options",
+        "get_mlx_lm_version",
+        "validate_model_path"
+      ],
+      "imports": [
+        "mlx_manager.utils.fuzzy_matcher",
+        "mlx_manager.utils.command_builder",
+        "mlx_manager.utils.model_detection",
+        "mlx_manager.utils.security"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/utils/fuzzy_matcher.py": {
+      "exports": [
+        "FuzzyMatcher",
+        "DifflibMatcher",
+        "get_matcher",
+        "find_parser_options",
+        "RapidfuzzMatcher"
+      ],
+      "imports": [
+        "functools",
+        "mlx_manager.services.parser_options",
+        "abc",
+        "typing"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/utils/model_detection.py": {
+      "exports": [
+        "check_mlx_lm_support",
+        "normalize_architecture",
+        "get_model_detection_info",
+        "extract_characteristics_from_model",
+        "MODEL_FAMILY_MIN_VERSIONS",
+        "get_local_model_path",
+        "detect_model_family",
+        "get_parser_options",
+        "parse_version",
+        "ARCHITECTURE_FAMILIES",
+        "detect_multimodal",
+        "get_mlx_lm_version",
+        "read_model_config",
+        "extract_characteristics"
+      ],
+      "imports": [
+        "pathlib",
+        "json",
+        "mlx_manager.config",
+        "typing",
+        "importlib.metadata",
+        "logging",
+        "mlx_manager.types"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/mlx_manager/utils/security.py": {
+      "exports": [
+        "validate_model_path"
+      ],
+      "imports": [
+        "pathlib",
+        "mlx_manager.config"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/__init__.py": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/conftest.py": {
+      "exports": [
+        "auth_client",
+        "client",
+        "test_admin_user",
+        "sample_profile_data_alt",
+        "test_user",
+        "admin_client",
+        "test_session",
+        "sample_profile_data",
+        "test_admin_user_data",
+        "mock_server_manager",
+        "mock_launchd_manager",
+        "mock_hf_client",
+        "mock_find_mlx_openai_server",
+        "auth_headers",
+        "test_engine",
+        "admin_auth_token",
+        "test_user_data",
+        "auth_token",
+        "admin_auth_headers"
+      ],
+      "imports": [
+        "collections.abc",
+        "mlx_manager.main",
+        "mlx_manager.services.auth_service",
+        "mlx_manager.models",
+        "sqlalchemy.orm",
+        "mlx_manager.database",
+        "sqlalchemy.ext.asyncio",
+        "unittest.mock",
+        "sqlmodel",
+        "os",
+        "httpx",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_auth.py": {
+      "exports": [
+        "TestAdminListUsers",
+        "TestAdminPendingCount",
+        "TestAdminUpdateUser",
+        "TestAdminDeleteUser",
+        "TestAdminResetPassword",
+        "TestAuthRegister",
+        "TestAuthLogin",
+        "TestAuthMe"
+      ],
+      "imports": [
+        "mlx_manager.models",
+        "pytest",
+        "mlx_manager.services.auth_service"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_database.py": {
+      "exports": [
+        "TestRecoverIncompleteDownloads",
+        "TestGetDbFunction",
+        "TestMigrateSchema",
+        "TestGetSessionFunction",
+        "TestGetSession",
+        "TestInitDb",
+        "TestInitDbFunction",
+        "TestEnsureDataDir"
+      ],
+      "imports": [
+        "sqlalchemy.ext.asyncio",
+        "unittest.mock",
+        "pytest",
+        "os"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_dependencies.py": {
+      "exports": [
+        "TestGetProfileOr404"
+      ],
+      "imports": [
+        "mlx_manager.models",
+        "mlx_manager.dependencies",
+        "pytest",
+        "os",
+        "fastapi"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_fuzzy_matcher.py": {
+      "exports": [
+        "MESSAGE_CONVERTER_TEST_CASES",
+        "TestFindParserOptions",
+        "REASONING_PARSER_TEST_CASES",
+        "TestMatcherComparison",
+        "TOOL_PARSER_TEST_CASES",
+        "ALL_TEST_CASES",
+        "TestFuzzyMatcherRapidfuzz",
+        "EDGE_CASES"
+      ],
+      "imports": [
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_hf_api.py": {
+      "exports": [
+        "TestGetModelSizeGb",
+        "TestSearchModels",
+        "TestEstimateSizeFromName"
+      ],
+      "imports": [
+        "mlx_manager.services.hf_api",
+        "unittest.mock",
+        "pytest",
+        "httpx"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_main.py": {
+      "exports": [
+        "TestResumePendingDownloads",
+        "TestCORSMiddleware",
+        "TestStaticFileServing",
+        "TestLifespan",
+        "TestDevModeRoot",
+        "TestCancelDownloadTasks",
+        "TestRunDownloadTask",
+        "TestHealthEndpoint",
+        "TestCleanupStaleInstances",
+        "TestLifespanWithPendingDownloads"
+      ],
+      "imports": [
+        "pathlib",
+        "sqlalchemy.orm",
+        "sqlalchemy.ext.asyncio",
+        "unittest.mock",
+        "tempfile",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_model_detection.py": {
+      "exports": [
+        "TestDetectMultimodal",
+        "TestGetLocalModelPath",
+        "TestReadModelConfig",
+        "TestCheckMlxLmSupport",
+        "TestGetMlxLmVersion",
+        "TestExtractCharacteristics",
+        "TestArchitectureFamiliesMapping",
+        "TestNormalizeArchitecture",
+        "TestModelFamilyMinVersions",
+        "TestVersionParsing",
+        "TestGetLocalModelPathExceptions",
+        "TestDetectModelFamilyVariants",
+        "TestQuantizationExtraction",
+        "TestGetParserOptions",
+        "TestGetModelDetectionInfo",
+        "TestExtractCharacteristicsFromModel",
+        "TestFuzzyParserOptions",
+        "TestDetectModelFamily"
+      ],
+      "imports": [
+        "unittest.mock",
+        "json",
+        "mlx_manager.utils.model_detection"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_models.py": {
+      "exports": [
+        "test_start_download_creates_task",
+        "test_detect_model_options_unknown",
+        "test_update_download_record_completed",
+        "test_start_download_no_existing_creates_db_record",
+        "test_get_active_downloads_db_backed_needs_resume",
+        "test_delete_model_with_path_separator",
+        "test_get_download_progress_task_not_found",
+        "test_search_models_with_all_params",
+        "test_delete_model_not_found",
+        "test_search_models_error",
+        "test_start_download_function_no_existing",
+        "test_detect_model_options_minimax",
+        "test_search_models_with_size_filter",
+        "test_update_download_record_not_found",
+        "test_start_download_function_existing_download",
+        "test_download_progress_sse_error_updates_db",
+        "test_get_active_downloads_function_no_total_bytes",
+        "test_search_models_empty_query",
+        "test_get_active_downloads_db_progress_calculation_no_total",
+        "test_search_models",
+        "test_search_models_with_limit",
+        "test_list_local_models_empty",
+        "test_download_progress_sse_updates_db_periodically",
+        "test_get_download_progress_with_valid_task",
+        "test_delete_model",
+        "test_start_download_existing_returns_same_task",
+        "test_detect_model_options_with_nested_path",
+        "test_get_active_downloads_starting_status",
+        "test_get_available_parsers_deduplicates",
+        "test_start_download_existing_download_in_db",
+        "test_get_active_downloads_pending_status",
+        "test_download_progress_sse_without_download_id",
+        "test_get_active_downloads_excludes_completed",
+        "test_get_active_downloads_in_memory_tasks",
+        "test_list_local_models",
+        "test_get_active_downloads_function_with_db_records",
+        "test_update_download_record_partial_update",
+        "test_get_active_downloads_in_memory_takes_precedence",
+        "test_get_available_parsers_returns_sorted_list",
+        "test_get_download_progress_with_error",
+        "test_get_available_parsers_handles_empty_lists",
+        "test_start_download",
+        "test_update_download_record_with_error"
+      ],
+      "imports": [
+        "unittest.mock",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_parser_options.py": {
+      "exports": [
+        "TestGetParserOptionsCache",
+        "TestFallbackValues",
+        "TestGetParserOptionsGeneralException",
+        "TestGetParserOptionsImportError",
+        "TestGetParserOptionsSuccess",
+        "clear_cache"
+      ],
+      "imports": [
+        "unittest.mock",
+        "pytest",
+        "mlx_manager.services.parser_options"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_profiles.py": {
+      "exports": [
+        "test_update_profile_duplicate_port",
+        "test_duplicate_profile",
+        "test_create_profile",
+        "test_update_profile_all_fields",
+        "test_get_profile",
+        "test_delete_profile_not_found",
+        "test_get_next_port_multiple_profiles",
+        "test_duplicate_profile_name_conflict",
+        "test_update_profile_duplicate_name",
+        "test_delete_profile",
+        "test_duplicate_profile_not_found",
+        "test_list_profiles_returns_all",
+        "test_list_profiles_empty",
+        "test_get_next_port_empty",
+        "test_duplicate_profile_copies_all_fields",
+        "test_create_profile_validates_required_fields",
+        "test_update_profile_same_port_allowed",
+        "test_update_profile_same_name_allowed",
+        "test_list_profiles_with_data",
+        "test_update_profile_not_found",
+        "test_update_profile",
+        "test_get_profile_not_found",
+        "test_get_next_port_with_profiles",
+        "test_create_profile_duplicate_name",
+        "test_create_profile_duplicate_port"
+      ],
+      "imports": [
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_routers_auth_direct.py": {
+      "exports": [
+        "TestResetPasswordDirect",
+        "TestGetMeDirect",
+        "TestListUsersDirect",
+        "TestRegisterDirect",
+        "create_mock_user",
+        "TestDeleteUserDirect",
+        "TestGetPendingCountDirect",
+        "TestLoginDirect",
+        "TestUpdateUserDirect"
+      ],
+      "imports": [
+        "mlx_manager.routers.auth",
+        "mlx_manager.models",
+        "unittest.mock",
+        "pytest",
+        "fastapi"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_routers_profiles_direct.py": {
+      "exports": [
+        "create_mock_user",
+        "TestGetNextPortDirect",
+        "TestUpdateProfileDirect",
+        "TestCreateProfileDirect",
+        "TestListProfilesDirect",
+        "TestDuplicateProfileDirect"
+      ],
+      "imports": [
+        "mlx_manager.models",
+        "unittest.mock",
+        "pytest",
+        "fastapi",
+        "mlx_manager.routers.profiles"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_routers_servers_direct.py": {
+      "exports": [
+        "TestStartServerDirect",
+        "create_mock_user",
+        "TestStopServerDirect",
+        "TestListRunningServersDirect",
+        "TestRestartServerDirect"
+      ],
+      "imports": [
+        "mlx_manager.models",
+        "unittest.mock",
+        "pytest",
+        "fastapi",
+        "mlx_manager.routers.servers",
+        "time"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_servers.py": {
+      "exports": [
+        "test_restart_server",
+        "test_stop_server_force",
+        "test_check_server_health_profile_not_found",
+        "test_check_server_health",
+        "test_check_health_returns_health_data",
+        "test_stop_server_not_running",
+        "test_stream_logs",
+        "test_stop_server",
+        "test_start_server_already_running",
+        "test_start_server_generic_error",
+        "test_restart_server_updates_existing_instance",
+        "test_start_server_cleans_stale_instance",
+        "test_restart_server_profile_not_found",
+        "test_restart_server_creates_new_instance",
+        "test_list_running_servers_filters_missing_profiles",
+        "test_check_server_health_stopped",
+        "test_restart_server_error",
+        "test_list_running_servers_empty",
+        "test_start_server_profile_not_found",
+        "test_stop_server_removes_db_record",
+        "test_list_running_servers_with_data",
+        "test_start_server"
+      ],
+      "imports": [
+        "unittest.mock",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_services_health_checker.py": {
+      "exports": [
+        "TestHealthCheckerLoop",
+        "health_checker_instance",
+        "TestHealthCheckerIntegration",
+        "TestHealthCheckerCheckAllServers",
+        "TestHealthCheckerStartStop"
+      ],
+      "imports": [
+        "asyncio",
+        "unittest.mock",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_services_hf_client.py": {
+      "exports": [
+        "TestHuggingFaceClientDeleteModel",
+        "TestHuggingFaceClientIsDownloadedExceptions",
+        "TestHuggingFaceClientSearchModelsEdgeCases",
+        "TestSilentProgress",
+        "TestGetDirectorySize",
+        "TestHuggingFaceClientIsDownloaded",
+        "hf_client_instance",
+        "TestHuggingFaceClientListLocalModelsExceptions",
+        "TestHuggingFaceClientSearchModels",
+        "TestHuggingFaceClientGetLocalPath",
+        "TestHuggingFaceClientDownloadModel",
+        "TestHuggingFaceClientOfflineMode",
+        "TestListLocalModelsNoOrganization",
+        "TestHuggingFaceClientListLocalModels",
+        "TestHuggingFaceClientGetLocalPathExceptions"
+      ],
+      "imports": [
+        "mlx_manager.services.hf_api",
+        "unittest.mock",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_services_launchd.py": {
+      "exports": [
+        "TestLaunchdManagerInstall",
+        "launchd_manager",
+        "TestLaunchdManagerStartStop",
+        "TestLaunchdManagerIsRunning",
+        "TestLaunchdManagerGetStatus",
+        "TestLaunchdManagerGeneratePlist",
+        "TestLaunchdManagerGetLabel",
+        "TestLaunchdManagerIsInstalled",
+        "TestLaunchdManagerGetPlistPath",
+        "sample_profile",
+        "TestLaunchdManagerUninstall"
+      ],
+      "imports": [
+        "unittest.mock",
+        "mlx_manager.services.launchd",
+        "pytest",
+        "mlx_manager.models"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_services_server_manager.py": {
+      "exports": [
+        "TestServerManagerLogFileHandling",
+        "TestServerManagerGetAllRunning",
+        "server_manager_instance",
+        "TestServerManagerStartServer",
+        "TestServerManagerStartServerModelFamilyCheck",
+        "TestServerManagerGetAllRunningWithStats",
+        "TestServerManagerStopServer",
+        "TestServerManagerGetLogLinesEdgeCases",
+        "TestServerManagerGetLogLines",
+        "sample_profile",
+        "TestBuildMlxServerCommand",
+        "TestServerManagerGetProcessStatus",
+        "TestServerManagerStartServerLogFileCleanup",
+        "TestServerManagerGetServerStats",
+        "TestServerManagerCleanup",
+        "TestServerManagerIsRunning",
+        "TestServerManagerGetStatsNoSuchProcess",
+        "TestServerManagerCheckHealth",
+        "TestServerManagerGetProcessStatusEdgeCases",
+        "TestServerManagerStopServerTimeout"
+      ],
+      "imports": [
+        "mlx_manager.utils.command_builder",
+        "mlx_manager.models",
+        "unittest.mock",
+        "pytest",
+        "mlx_manager.services.server_manager"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_system.py": {
+      "exports": [
+        "test_install_launchd_service_exception",
+        "test_get_memory",
+        "test_get_system_info_mlx_openai_server_without_version",
+        "test_install_launchd_service_profile_not_found",
+        "test_install_launchd_service",
+        "test_uninstall_launchd_service",
+        "test_get_launchd_status_profile_not_found",
+        "test_get_parser_options_endpoint",
+        "test_get_system_info_with_mlx_openai_server_installed",
+        "test_get_launchd_status",
+        "test_uninstall_launchd_service_profile_not_found",
+        "test_get_system_info",
+        "TestGetPhysicalMemoryBytes",
+        "TestGetSystemInfoExceptions"
+      ],
+      "imports": [
+        "unittest.mock",
+        "pytest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/backend/tests/test_utils_security.py": {
+      "exports": [
+        "TestValidateModelPath"
+      ],
+      "imports": [
+        "unittest.mock",
+        "mlx_manager.utils.security"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/e2e/app.spec.ts": {
+      "exports": [],
+      "imports": [
+        "@playwright/test"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/eslint.config.js": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "@eslint/js",
+        "svelte-eslint-parser",
+        "typescript-eslint",
+        "globals",
+        "eslint-plugin-svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/playwright.config.ts": {
+      "exports": [
+        "defineConfig"
+      ],
+      "imports": [
+        "@playwright/test"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/postcss.config.js": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/api/client.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "./client"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/api/client.ts": {
+      "exports": [
+        "models",
+        "ActiveDownload",
+        "profiles",
+        "servers",
+        "ApiError",
+        "auth",
+        "system"
+      ],
+      "imports": [
+        "$lib/stores"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/api/index.ts": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/api/types.ts": {
+      "exports": [
+        "UserCreate",
+        "ModelCharacteristics",
+        "Token",
+        "DownloadProgress",
+        "SystemInfo",
+        "ServerProfile",
+        "UserUpdate",
+        "SystemMemory",
+        "UserStatus",
+        "ModelDetectionInfo",
+        "User",
+        "HealthStatus",
+        "LaunchdStatus",
+        "ModelSearchResult",
+        "ServerProfileUpdate",
+        "ParserOptions",
+        "ServerStatus",
+        "ServerProfileCreate",
+        "LocalModel",
+        "PasswordReset",
+        "RunningServer"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/index.ts": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/layout/Navbar.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "lucide-svelte",
+        "svelte",
+        "bits-ui",
+        "$app/paths",
+        "$lib/api/client",
+        "$app/stores"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/layout/index.ts": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/DownloadProgressTile.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui",
+        "$lib/utils/format"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/FilterChips.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/FilterModal.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui",
+        "./filter-types",
+        "bits-ui"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/ModelBadges.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "./badges/ArchitectureBadge.svelte",
+        "./badges/QuantizationBadge.svelte",
+        "./badges/MultimodalBadge.svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/ModelCard.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/stores",
+        "$lib/utils/format",
+        "$api",
+        "lucide-svelte",
+        "$components/ui",
+        "$components/models"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/ModelSpecs.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "svelte/transition"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/ModelToggle.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/badges/ArchitectureBadge.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/badges/MultimodalBadge.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/badges/QuantizationBadge.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/filter-types.ts": {
+      "exports": [
+        "createEmptyFilters",
+        "ARCHITECTURE_OPTIONS",
+        "FilterState",
+        "QUANTIZATION_OPTIONS"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/models/index.ts": {
+      "exports": [
+        "default",
+        "ARCHITECTURE_OPTIONS",
+        "QUANTIZATION_OPTIONS",
+        "FilterState",
+        "type",
+        "createEmptyFilters"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/profiles/ProfileCard.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/utils/format",
+        "$api",
+        "$stores",
+        "lucide-svelte",
+        "$components/ui",
+        "$app/paths",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/profiles/ProfileForm.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$components/ui",
+        "svelte",
+        "$api"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/profiles/index.ts": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/MetricGauge.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/MetricGauge.test.ts": {
+      "exports": [],
+      "imports": [
+        "./MetricGauge.svelte",
+        "vitest",
+        "@testing-library/svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ProfileSelector.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui",
+        "bits-ui"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ProfileSelector.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "@testing-library/svelte",
+        "@testing-library/user-event",
+        "./ProfileSelector.svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ServerCard.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui",
+        "$lib/utils/format",
+        "$stores"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ServerCard.test.ts": {
+      "exports": [],
+      "imports": [
+        "@testing-library/svelte",
+        "$stores",
+        "vitest",
+        "@testing-library/user-event",
+        "./ServerCard.svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ServerTile.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/utils/format",
+        "$stores",
+        "lucide-svelte",
+        "$components/servers",
+        "$components/ui",
+        "$app/paths",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/ServerTile.test.ts": {
+      "exports": [],
+      "imports": [
+        "@testing-library/svelte",
+        "$stores",
+        "vitest",
+        "./ServerTile.svelte",
+        "@testing-library/user-event",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/StartingTile.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte",
+        "$components/ui",
+        "$api",
+        "$stores"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/StartingTile.test.ts": {
+      "exports": [],
+      "imports": [
+        "@testing-library/svelte",
+        "$stores",
+        "vitest",
+        "@testing-library/user-event",
+        "./StartingTile.svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/servers/index.ts": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/badge.svelte": {
+      "exports": [
+        "default",
+        "BadgeVariant"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/button.svelte": {
+      "exports": [
+        "default",
+        "ButtonSize",
+        "ButtonVariant",
+        "buttonVariants",
+        "buttonSizes"
+      ],
+      "imports": [
+        "$lib/utils"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/card.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/utils"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/confirm-dialog.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$components/ui",
+        "bits-ui"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/index.ts": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/input.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/utils"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/markdown.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "marked"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/select.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/utils"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/components/ui/thinking-bubble.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "lucide-svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/index.ts": {
+      "exports": [],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/services/index.ts": {
+      "exports": [
+        "pollingCoordinator",
+        "type",
+        "PollingKey"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/services/polling-coordinator.svelte.ts": {
+      "exports": [
+        "pollingCoordinator",
+        "PollingKey"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/services/polling-coordinator.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/auth.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/auth.svelte.ts": {
+      "exports": [
+        "AuthStore",
+        "authStore"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/downloads.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/downloads.svelte.ts": {
+      "exports": [
+        "DownloadState",
+        "downloadsStore"
+      ],
+      "imports": [
+        "$api"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/index.ts": {
+      "exports": [
+        "systemStore",
+        "downloadsStore",
+        "profileStore",
+        "pollingCoordinator",
+        "authStore",
+        "modelConfigStore",
+        "serverStore"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/models.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "./models.svelte",
+        "svelte",
+        "$api"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/models.svelte.ts": {
+      "exports": [
+        "ConfigState",
+        "modelConfigStore",
+        "parseCharacteristicsFromName"
+      ],
+      "imports": [
+        "$api"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/profiles.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/profiles.svelte.ts": {
+      "exports": [
+        "profileStore"
+      ],
+      "imports": [
+        "$lib/utils/reconcile",
+        "$api",
+        "$lib/services"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/servers.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/servers.svelte.ts": {
+      "exports": [
+        "FailedServer",
+        "serverStore"
+      ],
+      "imports": [
+        "svelte/reactivity",
+        "$lib/utils/reconcile",
+        "$api",
+        "$lib/services"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/system.svelte.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/stores/system.svelte.ts": {
+      "exports": [
+        "systemStore"
+      ],
+      "imports": [
+        "$api",
+        "$lib/services"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/utils/format.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "./format"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/utils/format.ts": {
+      "exports": [
+        "formatNumber",
+        "formatBytes",
+        "formatDuration",
+        "formatRelativeTime",
+        "truncate"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/utils/index.ts": {
+      "exports": [
+        "cn"
+      ],
+      "imports": [
+        "clsx",
+        "tailwind-merge"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/utils/reconcile.test.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "./reconcile"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/lib/utils/reconcile.ts": {
+      "exports": [
+        "reconcileArray",
+        "deepEqual",
+        "reconcileMap",
+        "ReconcileArrayOptions",
+        "reconcileSet",
+        "shallowEqual"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/+layout.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$components/layout",
+        "svelte",
+        "$stores",
+        "../../app.css"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/+layout.ts": {
+      "exports": [
+        "load",
+        "prerender",
+        "ssr"
+      ],
+      "imports": [
+        "$lib/stores",
+        "$lib/api/client",
+        "@sveltejs/kit"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$app/paths",
+        "svelte",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/chat/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "lucide-svelte",
+        "$components/ui",
+        "svelte",
+        "$app/stores"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/models/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$api",
+        "$stores",
+        "lucide-svelte",
+        "$components/ui",
+        "$app/paths",
+        "$app/navigation",
+        "$components/models"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/profiles/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "lucide-svelte",
+        "$components/ui",
+        "svelte",
+        "$components/profiles"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/profiles/[id]/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$api",
+        "$stores",
+        "svelte",
+        "$components/profiles",
+        "$app/paths",
+        "$app/stores",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/profiles/new/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "svelte",
+        "$components/profiles",
+        "$app/paths",
+        "$app/stores",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/servers/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "lucide-svelte",
+        "$components/servers",
+        "$components/ui",
+        "svelte"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(protected)/users/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$stores",
+        "lucide-svelte",
+        "$components/ui",
+        "svelte",
+        "$app/paths",
+        "$lib/api/client",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(public)/+layout.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "../../app.css"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(public)/+layout.ts": {
+      "exports": [
+        "prerender",
+        "ssr"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/(public)/login/+page.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "$lib/stores",
+        "lucide-svelte",
+        "$app/paths",
+        "$lib/api/client",
+        "$app/navigation"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/routes/+layout.svelte": {
+      "exports": [
+        "default"
+      ],
+      "imports": [],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/src/tests/setup.ts": {
+      "exports": [],
+      "imports": [
+        "vitest",
+        "@testing-library/jest-dom/vitest",
+        "@testing-library/svelte/vitest"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/svelte.config.js": {
+      "exports": [
+        "config"
+      ],
+      "imports": [
+        "@sveltejs/vite-plugin-svelte",
+        "@sveltejs/adapter-static"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/tailwind.config.ts": {
+      "exports": [
+        "default"
+      ],
+      "imports": [
+        "@tailwindcss/typography"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/vite.config.ts": {
+      "exports": [
+        "defineConfig"
+      ],
+      "imports": [
+        "@sveltejs/kit/vite",
+        "vite"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/frontend/vitest.config.ts": {
+      "exports": [
+        "defineConfig"
+      ],
+      "imports": [
+        "@sveltejs/kit/vite",
+        "vitest/config"
+      ],
+      "indexed": 1768993023177
+    },
+    "/Users/atomasini/Development/mlx-manager/scripts/update_pyproject_version.py": {
+      "exports": [
+        "update_version_tomlkit"
+      ],
+      "imports": [
+        "pathlib",
+        "sys"
+      ],
+      "indexed": 1768993023177
+    }
+  }
+}

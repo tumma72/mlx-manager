@@ -145,7 +145,8 @@ class ServerStore {
         this.error = null;
       }
     } catch (e) {
-      const newError = e instanceof Error ? e.message : "Failed to fetch servers";
+      const newError =
+        e instanceof Error ? e.message : "Failed to fetch servers";
       // Only update error if it actually changed
       if (this.error !== newError) {
         this.error = newError;
@@ -242,7 +243,8 @@ class ServerStore {
   ) {
     // Check if this is actually a state change (not just duplicate call)
     const existing = this.failedProfiles.get(profileId);
-    const alreadyFailed = existing?.error === error && existing?.details === details;
+    const alreadyFailed =
+      existing?.error === error && existing?.details === details;
     const wasStarting = this.startingProfiles.has(profileId);
     const wasRestarting = this.restartingProfiles.has(profileId);
 

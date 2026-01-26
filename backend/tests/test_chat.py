@@ -748,8 +748,7 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
 
         # Verify both chunks were emitted as thinking
         thinking_contents = [
-            json.loads(e.replace("data: ", ""))["content"]
-            for e in thinking_events
+            json.loads(e.replace("data: ", ""))["content"] for e in thinking_events
         ]
         assert "First thought" in thinking_contents
         assert "with content" in thinking_contents

@@ -106,7 +106,7 @@ describe("DownloadsStore", () => {
       await downloadsStore.startDownload("mlx-community/test-model");
 
       expect(mockModelsApi.startDownload).toHaveBeenCalledWith(
-        "mlx-community/test-model"
+        "mlx-community/test-model",
       );
     });
 
@@ -126,7 +126,7 @@ describe("DownloadsStore", () => {
 
       expect(mockEventSources).toHaveLength(1);
       expect(mockEventSources[0].url).toBe(
-        "/api/models/download/task-456/progress"
+        "/api/models/download/task-456/progress",
       );
     });
 
@@ -143,7 +143,7 @@ describe("DownloadsStore", () => {
 
     it("sets failed state on API error", async () => {
       mockModelsApi.startDownload.mockRejectedValue(
-        new Error("Download failed")
+        new Error("Download failed"),
       );
 
       await downloadsStore.startDownload("mlx-community/test-model");
@@ -266,7 +266,7 @@ describe("DownloadsStore", () => {
       const promise = downloadsStore.startDownload("mlx-community/test-model");
 
       expect(downloadsStore.isDownloading("mlx-community/test-model")).toBe(
-        true
+        true,
       );
 
       await promise;
@@ -280,7 +280,7 @@ describe("DownloadsStore", () => {
       });
 
       expect(downloadsStore.isDownloading("mlx-community/test-model")).toBe(
-        true
+        true,
       );
     });
 
@@ -293,7 +293,7 @@ describe("DownloadsStore", () => {
       });
 
       expect(downloadsStore.isDownloading("mlx-community/test-model")).toBe(
-        true
+        true,
       );
     });
 
@@ -306,7 +306,7 @@ describe("DownloadsStore", () => {
       });
 
       expect(downloadsStore.isDownloading("mlx-community/test-model")).toBe(
-        false
+        false,
       );
     });
 
@@ -319,7 +319,7 @@ describe("DownloadsStore", () => {
       });
 
       expect(downloadsStore.isDownloading("mlx-community/test-model")).toBe(
-        false
+        false,
       );
     });
   });
@@ -327,7 +327,7 @@ describe("DownloadsStore", () => {
   describe("getProgress", () => {
     it("returns undefined for unknown model", () => {
       expect(
-        downloadsStore.getProgress("mlx-community/unknown")
+        downloadsStore.getProgress("mlx-community/unknown"),
       ).toBeUndefined();
     });
 
@@ -359,10 +359,10 @@ describe("DownloadsStore", () => {
       const downloads = downloadsStore.getAllDownloads();
       expect(downloads).toHaveLength(2);
       expect(downloads.map((d) => d.model_id)).toContain(
-        "mlx-community/model-1"
+        "mlx-community/model-1",
       );
       expect(downloads.map((d) => d.model_id)).toContain(
-        "mlx-community/model-2"
+        "mlx-community/model-2",
       );
     });
   });
@@ -373,13 +373,13 @@ describe("DownloadsStore", () => {
       mockEventSources[0].simulateMessage({ status: "completed" });
 
       expect(
-        downloadsStore.getProgress("mlx-community/test-model")
+        downloadsStore.getProgress("mlx-community/test-model"),
       ).toBeDefined();
 
       downloadsStore.clearCompleted();
 
       expect(
-        downloadsStore.getProgress("mlx-community/test-model")
+        downloadsStore.getProgress("mlx-community/test-model"),
       ).toBeUndefined();
     });
 
@@ -388,13 +388,13 @@ describe("DownloadsStore", () => {
       mockEventSources[0].simulateMessage({ status: "failed", error: "Error" });
 
       expect(
-        downloadsStore.getProgress("mlx-community/test-model")
+        downloadsStore.getProgress("mlx-community/test-model"),
       ).toBeDefined();
 
       downloadsStore.clearCompleted();
 
       expect(
-        downloadsStore.getProgress("mlx-community/test-model")
+        downloadsStore.getProgress("mlx-community/test-model"),
       ).toBeUndefined();
     });
 
@@ -405,7 +405,7 @@ describe("DownloadsStore", () => {
       downloadsStore.clearCompleted();
 
       expect(
-        downloadsStore.getProgress("mlx-community/test-model")
+        downloadsStore.getProgress("mlx-community/test-model"),
       ).toBeDefined();
     });
   });
@@ -419,7 +419,7 @@ describe("DownloadsStore", () => {
 
       expect(mockEventSources).toHaveLength(1);
       expect(mockEventSources[0].url).toBe(
-        "/api/models/download/existing-task/progress"
+        "/api/models/download/existing-task/progress",
       );
     });
 
@@ -481,9 +481,7 @@ describe("DownloadsStore", () => {
       await downloadsStore.loadActiveDownloads();
 
       expect(mockEventSources).toHaveLength(1);
-      expect(
-        downloadsStore.getProgress("mlx-community/model-1")
-      ).toBeDefined();
+      expect(downloadsStore.getProgress("mlx-community/model-1")).toBeDefined();
     });
 
     it("reconnects to pending downloads", async () => {
@@ -548,7 +546,7 @@ describe("DownloadsStore", () => {
 
     it("handles API errors gracefully", async () => {
       mockModelsApi.getActiveDownloads.mockRejectedValue(
-        new Error("Network error")
+        new Error("Network error"),
       );
 
       // Should not throw

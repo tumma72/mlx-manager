@@ -52,18 +52,18 @@ ARCHITECTURE_FAMILIES: dict[str, str] = {
 # Model families that support tool-use/function-calling by default
 # These families have native tool-use support regardless of HuggingFace tags
 TOOL_CAPABLE_FAMILIES: set[str] = {
-    "qwen",      # Qwen models have native function calling
+    "qwen",  # Qwen models have native function calling
     "qwen2",
     "qwen3",
-    "glm",       # GLM-4 family supports tool use
+    "glm",  # GLM-4 family supports tool use
     "chatglm",
-    "minimax",   # MiniMax models support tool use
+    "minimax",  # MiniMax models support tool use
     "deepseek",  # DeepSeek family supports function calling
     "deepseek_v3",
-    "hermes",    # Hermes models fine-tuned for tool use
-    "command",   # Cohere Command-R supports tools
+    "hermes",  # Hermes models fine-tuned for tool use
+    "command",  # Cohere Command-R supports tools
     "cohere",
-    "mistral",   # Mistral-Instruct models support function calling
+    "mistral",  # Mistral-Instruct models support function calling
 }
 
 # Minimum mlx-lm version requirements for model families

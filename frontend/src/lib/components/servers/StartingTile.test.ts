@@ -37,7 +37,7 @@ import { serverStore } from "$stores";
 
 // Helper to create mock profile
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {}
+  overrides: Partial<ServerProfile> = {},
 ): ServerProfile {
   return {
     id: 1,
@@ -71,7 +71,7 @@ function createMockProfile(
 
 // Helper to create mock failure
 function createMockFailure(
-  overrides: Partial<FailedServer> = {}
+  overrides: Partial<FailedServer> = {},
 ): FailedServer {
   return {
     error: "Server failed to start",
@@ -130,7 +130,7 @@ describe("StartingTile", () => {
       render(StartingTile, { props: { profile: createMockProfile() } });
 
       expect(
-        screen.getByText("Loading model... this may take a minute")
+        screen.getByText("Loading model... this may take a minute"),
       ).toBeInTheDocument();
     });
 
@@ -156,7 +156,7 @@ describe("StartingTile", () => {
 
     it("renders error message", () => {
       vi.mocked(serverStore.getFailure).mockReturnValue(
-        createMockFailure({ error: "Connection refused" })
+        createMockFailure({ error: "Connection refused" }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -180,7 +180,7 @@ describe("StartingTile", () => {
       render(StartingTile, { props: { profile: createMockProfile() } });
 
       expect(
-        screen.queryByText("Loading model... this may take a minute")
+        screen.queryByText("Loading model... this may take a minute"),
       ).not.toBeInTheDocument();
     });
   });
@@ -196,7 +196,7 @@ describe("StartingTile", () => {
         createMockFailure({
           error: "Server crashed",
           details: "Traceback (most recent call last):\n  Error details here",
-        })
+        }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -206,7 +206,7 @@ describe("StartingTile", () => {
 
     it("does not render details toggle when no details", () => {
       vi.mocked(serverStore.getFailure).mockReturnValue(
-        createMockFailure({ details: null })
+        createMockFailure({ details: null }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -220,7 +220,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error stack trace content",
           detailsOpen: true,
-        })
+        }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -256,7 +256,9 @@ describe("StartingTile", () => {
 
     it("marks failure with error message when stop throws Error (line 165)", async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      vi.mocked(serverStore.stop).mockRejectedValue(new Error("Connection failed"));
+      vi.mocked(serverStore.stop).mockRejectedValue(
+        new Error("Connection failed"),
+      );
 
       render(StartingTile, {
         props: { profile: createMockProfile({ id: 42 }) },
@@ -268,7 +270,7 @@ describe("StartingTile", () => {
       await waitFor(() => {
         expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
           42,
-          "Connection failed"
+          "Connection failed",
         );
       });
     });
@@ -287,7 +289,7 @@ describe("StartingTile", () => {
       await waitFor(() => {
         expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
           42,
-          "Failed to stop server"
+          "Failed to stop server",
         );
       });
     });
@@ -305,7 +307,9 @@ describe("StartingTile", () => {
 
       // Mock fetch to fail so polling schedules next poll (sets pollTimeoutId)
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error("Model not ready"));
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValue(new Error("Model not ready"));
 
       // Enable polling
       vi.mocked(serverStore.isProfilePolling).mockReturnValue(false);
@@ -313,7 +317,11 @@ describe("StartingTile", () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(StartingTile, {
         props: {
-          profile: createMockProfile({ id: 42, host: "127.0.0.1", port: 10240 }),
+          profile: createMockProfile({
+            id: 42,
+            host: "127.0.0.1",
+            port: 10240,
+          }),
         },
       });
 
@@ -381,7 +389,7 @@ describe("StartingTile", () => {
       await waitFor(() => {
         expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
           42,
-          "Start failed"
+          "Start failed",
         );
       });
     });
@@ -400,7 +408,7 @@ describe("StartingTile", () => {
       await waitFor(() => {
         expect(serverStore.markStartupFailed).toHaveBeenCalledWith(
           42,
-          "Failed to start server"
+          "Failed to start server",
         );
       });
     });
@@ -453,7 +461,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Full error details here",
           detailsOpen: true,
-        })
+        }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -468,7 +476,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: null,
           detailsOpen: false,
-        })
+        }),
       );
 
       render(StartingTile, { props: { profile: createMockProfile() } });
@@ -493,7 +501,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Detailed error log content",
           detailsOpen: true,
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {
@@ -508,7 +516,7 @@ describe("StartingTile", () => {
       // Check that the Check icon is displayed (green color indicates success)
       await waitFor(() => {
         const greenIcon = container.querySelector(
-          ".text-green-600, .text-green-400"
+          ".text-green-600, .text-green-400",
         );
         expect(greenIcon).toBeInTheDocument();
       });
@@ -523,8 +531,12 @@ describe("StartingTile", () => {
 
     it("handles clipboard write failure gracefully", async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      const writeTextMock = vi.fn().mockRejectedValue(new Error("Permission denied"));
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const writeTextMock = vi
+        .fn()
+        .mockRejectedValue(new Error("Permission denied"));
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
       // Mock clipboard
       const originalClipboard = navigator.clipboard;
@@ -539,7 +551,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details",
           detailsOpen: true,
-        })
+        }),
       );
 
       render(StartingTile, {
@@ -552,7 +564,7 @@ describe("StartingTile", () => {
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith(
           "Failed to copy to clipboard:",
-          expect.any(Error)
+          expect.any(Error),
         );
       });
 
@@ -582,7 +594,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details to copy",
           detailsOpen: true,
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {
@@ -630,7 +642,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details here",
           detailsOpen: true, // Store says details should be open
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {
@@ -655,7 +667,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details",
           detailsOpen: true,
-        })
+        }),
       );
 
       const { container, rerender } = render(StartingTile, {
@@ -684,7 +696,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details",
           detailsOpen: true,
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {
@@ -701,7 +713,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details",
           detailsOpen: false,
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {
@@ -718,7 +730,7 @@ describe("StartingTile", () => {
           error: "Server crashed",
           details: "Error details",
           detailsOpen: false,
-        })
+        }),
       );
 
       const { container } = render(StartingTile, {

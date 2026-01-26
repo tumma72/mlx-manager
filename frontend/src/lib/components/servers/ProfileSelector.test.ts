@@ -6,7 +6,7 @@ import type { ServerProfile } from "$api";
 
 // Helper to create mock profiles
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {}
+  overrides: Partial<ServerProfile> = {},
 ): ServerProfile {
   return {
     id: 1,
@@ -70,7 +70,7 @@ describe("ProfileSelector", () => {
       });
 
       expect(
-        screen.getByPlaceholderText("Select profile to start...")
+        screen.getByPlaceholderText("Select profile to start..."),
       ).toBeInTheDocument();
     });
 
@@ -79,7 +79,9 @@ describe("ProfileSelector", () => {
         props: { profiles: mockProfiles, onStart: mockOnStart },
       });
 
-      expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /start/i }),
+      ).toBeInTheDocument();
     });
 
     it("renders with disabled state", () => {
@@ -217,7 +219,7 @@ describe("ProfileSelector", () => {
       });
 
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -235,7 +237,7 @@ describe("ProfileSelector", () => {
       });
 
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -252,12 +254,14 @@ describe("ProfileSelector", () => {
       });
 
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
       // Model paths should be visible as secondary text
-      expect(await screen.findByText("mlx-community/llama-2")).toBeInTheDocument();
+      expect(
+        await screen.findByText("mlx-community/llama-2"),
+      ).toBeInTheDocument();
       expect(screen.getByText("mlx-community/mistral")).toBeInTheDocument();
     });
   });
@@ -339,7 +343,7 @@ describe("ProfileSelector", () => {
 
       // Re-open using the trigger button and all profiles should be visible again
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -357,7 +361,7 @@ describe("ProfileSelector", () => {
 
       // Open dropdown using trigger button
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -380,7 +384,7 @@ describe("ProfileSelector", () => {
 
       // Open dropdown using trigger button
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -708,7 +712,7 @@ describe("ProfileSelector", () => {
 
       // Open dropdown using trigger
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 
@@ -785,7 +789,7 @@ describe("ProfileSelector", () => {
 
       // Open dropdown
       const triggerButton = container.querySelector(
-        "[data-combobox-trigger]"
+        "[data-combobox-trigger]",
       ) as HTMLButtonElement;
       await user.click(triggerButton);
 

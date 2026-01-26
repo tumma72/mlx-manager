@@ -101,13 +101,13 @@ const TOOL_USE_PATTERNS = [
  * Used when HuggingFace tags don't indicate tool support.
  */
 const TOOL_CAPABLE_FAMILIES = new Set([
-  "Qwen",      // Qwen models have native function calling
-  "GLM",       // GLM-4 family supports tool use
-  "MiniMax",   // MiniMax models support tool use
-  "DeepSeek",  // DeepSeek family supports function calling
-  "Hermes",    // Hermes models fine-tuned for tool use
+  "Qwen", // Qwen models have native function calling
+  "GLM", // GLM-4 family supports tool use
+  "MiniMax", // MiniMax models support tool use
+  "DeepSeek", // DeepSeek family supports function calling
+  "Hermes", // Hermes models fine-tuned for tool use
   "Command-R", // Cohere Command-R supports tools
-  "Mistral",   // Mistral-Instruct models support function calling
+  "Mistral", // Mistral-Instruct models support function calling
 ]);
 
 /**
@@ -116,7 +116,7 @@ const TOOL_CAPABLE_FAMILIES = new Set([
  */
 export function parseCharacteristicsFromName(
   modelId: string,
-  tags: string[] = []
+  tags: string[] = [],
 ): ModelCharacteristics {
   const modelName = modelId.split("/").pop() || modelId;
   const searchText = `${modelName} ${tags.join(" ")}`;
@@ -197,7 +197,10 @@ class ModelConfigStore {
     });
 
     try {
-      const characteristics = await modelsApi.getConfig(modelId, tags.length > 0 ? tags : undefined);
+      const characteristics = await modelsApi.getConfig(
+        modelId,
+        tags.length > 0 ? tags : undefined,
+      );
       this.configs = new Map(this.configs).set(modelId, {
         characteristics,
         loading: false,
@@ -207,7 +210,7 @@ class ModelConfigStore {
       // API failed - fall back to parsing model name and tags
       const fallbackCharacteristics = parseCharacteristicsFromName(
         modelId,
-        tags
+        tags,
       );
       const hasAnyCharacteristic =
         fallbackCharacteristics.architecture_family ||

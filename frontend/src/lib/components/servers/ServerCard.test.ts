@@ -37,7 +37,7 @@ import { serverStore } from "$stores";
 
 // Helper to create mock profile
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {}
+  overrides: Partial<ServerProfile> = {},
 ): ServerProfile {
   return {
     id: 1,
@@ -70,7 +70,9 @@ function createMockProfile(
 }
 
 // Helper to create mock running server
-function createMockServer(overrides: Partial<RunningServer> = {}): RunningServer {
+function createMockServer(
+  overrides: Partial<RunningServer> = {},
+): RunningServer {
   return {
     profile_id: 1,
     profile_name: "Test Server",
@@ -141,7 +143,9 @@ describe("ServerCard", () => {
         props: { profile: createMockProfile() },
       });
 
-      expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /start/i }),
+      ).toBeInTheDocument();
     });
 
     it("does not render Stop button when server is not running", () => {
@@ -150,7 +154,7 @@ describe("ServerCard", () => {
       });
 
       expect(
-        screen.queryByRole("button", { name: /stop/i })
+        screen.queryByRole("button", { name: /stop/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -160,7 +164,7 @@ describe("ServerCard", () => {
       });
 
       expect(
-        screen.queryByRole("button", { name: /restart/i })
+        screen.queryByRole("button", { name: /restart/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -217,7 +221,7 @@ describe("ServerCard", () => {
       });
 
       expect(
-        screen.getByRole("button", { name: /restart/i })
+        screen.getByRole("button", { name: /restart/i }),
       ).toBeInTheDocument();
     });
 
@@ -231,7 +235,7 @@ describe("ServerCard", () => {
 
       // Use exact match to avoid matching "Restart" which contains "start"
       expect(
-        screen.queryByRole("button", { name: /^Start$/i })
+        screen.queryByRole("button", { name: /^Start$/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -377,7 +381,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveStart = resolve;
-          })
+          }),
       );
 
       render(ServerCard, { props: { profile: createMockProfile() } });
@@ -398,7 +402,7 @@ describe("ServerCard", () => {
     it("displays error message when start fails with Error", async () => {
       const user = userEvent.setup();
       vi.mocked(serverStore.start).mockRejectedValue(
-        new Error("Failed to start: port in use")
+        new Error("Failed to start: port in use"),
       );
 
       render(ServerCard, {
@@ -410,7 +414,7 @@ describe("ServerCard", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText("Failed to start: port in use")
+          screen.getByText("Failed to start: port in use"),
         ).toBeInTheDocument();
       });
     });
@@ -455,7 +459,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveStop = resolve;
-          })
+          }),
       );
 
       render(ServerCard, {
@@ -485,7 +489,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveStop = resolve;
-          })
+          }),
       );
 
       render(ServerCard, {
@@ -512,7 +516,7 @@ describe("ServerCard", () => {
     it("displays error message when stop fails with Error", async () => {
       const user = userEvent.setup();
       vi.mocked(serverStore.stop).mockRejectedValue(
-        new Error("Process not found")
+        new Error("Process not found"),
       );
 
       render(ServerCard, {
@@ -573,7 +577,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveRestart = resolve;
-          })
+          }),
       );
 
       render(ServerCard, {
@@ -603,7 +607,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveRestart = resolve;
-          })
+          }),
       );
 
       render(ServerCard, {
@@ -630,7 +634,7 @@ describe("ServerCard", () => {
     it("displays error message when restart fails with Error", async () => {
       const user = userEvent.setup();
       vi.mocked(serverStore.restart).mockRejectedValue(
-        new Error("Restart timeout")
+        new Error("Restart timeout"),
       );
 
       render(ServerCard, {
@@ -663,7 +667,9 @@ describe("ServerCard", () => {
       await user.click(restartButton);
 
       await waitFor(() => {
-        expect(screen.getByText("Failed to restart server")).toBeInTheDocument();
+        expect(
+          screen.getByText("Failed to restart server"),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -713,7 +719,7 @@ describe("ServerCard", () => {
       });
 
       expect(
-        screen.getByText("Very Long Profile Name That Should Be Displayed")
+        screen.getByText("Very Long Profile Name That Should Be Displayed"),
       ).toBeInTheDocument();
     });
 
@@ -729,8 +735,8 @@ describe("ServerCard", () => {
 
       expect(
         screen.getByText(
-          "mlx-community/very-long-model-name-that-is-really-quite-long"
-        )
+          "mlx-community/very-long-model-name-that-is-really-quite-long",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -757,7 +763,9 @@ describe("ServerCard", () => {
       const user = userEvent.setup();
 
       // First, cause an error
-      vi.mocked(serverStore.start).mockRejectedValueOnce(new Error("First error"));
+      vi.mocked(serverStore.start).mockRejectedValueOnce(
+        new Error("First error"),
+      );
 
       render(ServerCard, {
         props: { profile: createMockProfile({ id: 42 }) },
@@ -791,7 +799,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveStart = resolve;
-          })
+          }),
       );
 
       render(ServerCard, { props: { profile: createMockProfile() } });
@@ -821,7 +829,7 @@ describe("ServerCard", () => {
         () =>
           new Promise((resolve) => {
             resolveStop = resolve;
-          })
+          }),
       );
 
       render(ServerCard, {

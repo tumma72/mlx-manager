@@ -2,7 +2,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { modelConfigStore, parseCharacteristicsFromName } from "./models.svelte";
+import {
+  modelConfigStore,
+  parseCharacteristicsFromName,
+} from "./models.svelte";
 import { flushSync } from "svelte";
 
 // Mock the API client
@@ -52,7 +55,7 @@ describe("ModelConfigStore", () => {
   describe("fetchConfig", () => {
     it("sets loading state before fetch completes", async () => {
       vi.mocked(modelsApi.getConfig).mockImplementation(
-        () => new Promise(() => {}) // Never resolves
+        () => new Promise(() => {}), // Never resolves
       );
 
       // Start fetch but don't await
@@ -93,9 +96,9 @@ describe("ModelConfigStore", () => {
           new Promise((resolve) =>
             setTimeout(
               () => resolve({ architecture_family: "Test" } as never),
-              100
-            )
-          )
+              100,
+            ),
+          ),
       );
 
       // Start first fetch
@@ -113,7 +116,7 @@ describe("ModelConfigStore", () => {
 
     it("handles fetch errors by using name-based fallback", async () => {
       vi.mocked(modelsApi.getConfig).mockRejectedValue(
-        new Error("Network error")
+        new Error("Network error"),
       );
 
       // Model name contains parseable info: "Llama" and "8bit"
@@ -152,7 +155,7 @@ describe("ModelConfigStore", () => {
       // First argument should be the model ID (second is optional tags)
       expect(modelsApi.getConfig).toHaveBeenCalledWith(
         "mlx-community/Mistral-7B-4bit",
-        undefined
+        undefined,
       );
     });
   });
@@ -229,12 +232,16 @@ describe("ModelConfigStore", () => {
 
 describe("parseCharacteristicsFromName", () => {
   it("detects Llama architecture", () => {
-    const result = parseCharacteristicsFromName("mlx-community/Llama-3.1-8B-4bit");
+    const result = parseCharacteristicsFromName(
+      "mlx-community/Llama-3.1-8B-4bit",
+    );
     expect(result.architecture_family).toBe("Llama");
   });
 
   it("detects GLM architecture", () => {
-    const result = parseCharacteristicsFromName("mlx-community/GLM-4.7-Flash-8bit");
+    const result = parseCharacteristicsFromName(
+      "mlx-community/GLM-4.7-Flash-8bit",
+    );
     expect(result.architecture_family).toBe("GLM");
   });
 
@@ -244,34 +251,37 @@ describe("parseCharacteristicsFromName", () => {
   });
 
   it("detects quantization from model name", () => {
-    expect(
-      parseCharacteristicsFromName("Model-4bit").quantization_bits
-    ).toBe(4);
-    expect(
-      parseCharacteristicsFromName("Model-8bit").quantization_bits
-    ).toBe(8);
-    expect(
-      parseCharacteristicsFromName("Model-bf16").quantization_bits
-    ).toBe(16);
+    expect(parseCharacteristicsFromName("Model-4bit").quantization_bits).toBe(
+      4,
+    );
+    expect(parseCharacteristicsFromName("Model-8bit").quantization_bits).toBe(
+      8,
+    );
+    expect(parseCharacteristicsFromName("Model-bf16").quantization_bits).toBe(
+      16,
+    );
   });
 
   it("detects multimodal from name patterns", () => {
-    expect(
-      parseCharacteristicsFromName("Qwen-VL-4bit").is_multimodal
-    ).toBe(true);
-    expect(
-      parseCharacteristicsFromName("LLaVA-1.5-7B").is_multimodal
-    ).toBe(true);
+    expect(parseCharacteristicsFromName("Qwen-VL-4bit").is_multimodal).toBe(
+      true,
+    );
+    expect(parseCharacteristicsFromName("LLaVA-1.5-7B").is_multimodal).toBe(
+      true,
+    );
   });
 
   it("detects multimodal from tags", () => {
-    const result = parseCharacteristicsFromName("some-model", ["vision", "mlx"]);
+    const result = parseCharacteristicsFromName("some-model", [
+      "vision",
+      "mlx",
+    ]);
     expect(result.is_multimodal).toBe(true);
   });
 
   it("combines architecture and quantization", () => {
     const result = parseCharacteristicsFromName(
-      "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
+      "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
     );
     expect(result.architecture_family).toBe("Mistral");
     expect(result.quantization_bits).toBe(4);

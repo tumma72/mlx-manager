@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "updated": 1768993023177,
+  "naming": {
+    "exports": {
+      "dominant": "snake_case",
+      "count": 510,
+      "percentage": 45
+    }
+  },
+  "directories": {
+    "lib": {
+      "purpose": "Library code",
+      "files": 64
+    },
+    "components": {
+      "purpose": "UI components",
+      "files": 38
+    },
+    "tests": {
+      "purpose": "Test files",
+      "files": 23
+    },
+    "routes": {
+      "purpose": "Route definitions",
+      "files": 14
+    },
+    "models": {
+      "purpose": "Data models",
+      "files": 13
+    },
+    "stores": {
+      "purpose": "State stores",
+      "files": 13
+    },
+    "services": {
+      "purpose": "Service layer",
+      "files": 12
+    },
+    "utils": {
+      "purpose": "Utility functions",
+      "files": 9
+    },
+    "routers": {
+      "purpose": "API endpoints",
+      "files": 6
+    },
+    "api": {
+      "purpose": "API layer",
+      "files": 4
+    }
+  },
+  "suffixes": {
+    ".test.": {
+      "purpose": "Test files",
+      "count": 15
+    },
+    ".svelte.": {
+      "purpose": "Svelte state modules",
+      "count": 13
+    },
+    ".config.": {
+      "purpose": "Configuration",
+      "count": 7
+    },
+    ".svelte.test.": {
+      "purpose": "Svelte component tests",
+      "count": 6
+    }
+  }
+}

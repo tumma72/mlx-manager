@@ -134,7 +134,11 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
         except Exception as e:
-            logger.error(f"Database session error, rolling back: {e}")
+            # Only log actual database errors, not HTTP exceptions from endpoints
+            from fastapi import HTTPException
+
+            if not isinstance(e, HTTPException):
+                logger.error(f"Database session error, rolling back: {e}")
             await session.rollback()
             raise
         finally:
@@ -148,6 +152,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception as e:
-            logger.error(f"Database session error, rolling back: {e}")
+            # Only log actual database errors, not HTTP exceptions from endpoints
+            from fastapi import HTTPException
+
+            if not isinstance(e, HTTPException):
+                logger.error(f"Database session error, rolling back: {e}")
             await session.rollback()
             raise
