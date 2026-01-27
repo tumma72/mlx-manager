@@ -107,6 +107,7 @@ Recent decisions affecting current work:
 - **AuthLib**: Use existing auth infrastructure for API key encryption — consolidates JWT, OAuth2-ready
 - **mlx-lm + mlx-vlm + mlx-embeddings**: Foundation libraries — mature, Apple-maintained, proven
 - **Llama 3.x dual stop tokens**: Requires both eos_token_id and <|eot_id|> for proper completion — prevents infinite generation
+- **New MLX memory API**: Use mx.get_* instead of deprecated mx.metal.get_* for future compatibility
 
 See PROJECT.md Key Decisions table for full history.
 
