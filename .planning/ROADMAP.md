@@ -48,7 +48,7 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`
 6. `/v1/models` endpoint lists loaded models
 7. Pydantic LogFire captures request spans (basic setup)
 
-**Plans**: 6 plans in 3 waves
+**Plans**: 7 plans in 3 waves
 
 Plans:
 - [x] 07-01-PLAN.md - Server foundation (package, config, FastAPI app, LogFire)
@@ -57,6 +57,7 @@ Plans:
 - [x] 07-04-PLAN.md - Model adapters (protocol + Llama adapter)
 - [x] 07-05-PLAN.md - /v1/chat/completions with SSE streaming
 - [x] 07-06-PLAN.md - /v1/completions endpoint (legacy API)
+- [ ] 07-07-PLAN.md - Fix MLX Metal thread affinity in inference (gap closure)
 
 #### Phase 8: Multi-Model & Multimodal Support
 
@@ -174,7 +175,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Foundation | v1.2 | 6/6 | Complete | 2026-01-27 |
+| 7. Foundation | v1.2 | 6/7 | Gap closure | - |
 | 8. Multi-Model | v1.2 | 0/TBD | Not started | - |
 | 9. Batching | v1.2 | 0/TBD | Not started | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
