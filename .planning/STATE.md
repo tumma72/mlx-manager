@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 7 of 12 (Foundation - Server Skeleton & Single Model Inference)
-Plan: 5 of 6 complete
-Status: In progress
-Last activity: 2026-01-27 — Completed 07-05-PLAN.md (Chat completions)
+Plan: 6 of 6 complete
+Status: Phase complete
+Last activity: 2026-01-27 — Completed 07-06-PLAN.md (Completions endpoint)
 
-Progress: [████████░░] 83% (5/6 plans complete in Phase 7)
+Progress: [██████████] 100% (6/6 plans complete in Phase 7)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Phase 7 in progress (5/6 plans complete)
+**Status:** Phase 7 complete (6/6 plans complete)
 **Phases:** 6 phases (7-12)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -109,6 +109,8 @@ Recent decisions affecting current work:
 - **Llama 3.x dual stop tokens**: Requires both eos_token_id and <|eot_id|> for proper completion — prevents infinite generation
 - **New MLX memory API**: Use mx.get_* instead of deprecated mx.metal.get_* for future compatibility
 - **Stop token detection in loop**: mlx_lm.stream_generate() doesn't accept stop_tokens param — must check in loop
+- **Completions vs Chat template**: Completions endpoint uses raw prompt, chat uses chat template
+- **Type casting for union returns**: Use cast() for type safety with AsyncGenerator | dict returns
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -141,7 +143,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-27T16:33:41Z
-Stopped at: Completed 07-05-PLAN.md (Chat completions)
+Last session: 2026-01-27T16:34:00Z
+Stopped at: Completed 07-06-PLAN.md (Completions endpoint) - Phase 7 complete
 Resume file: None
-Next: Execute 07-06-PLAN.md (Completions endpoint)
+Next: Execute Phase 8 (Continuous Batching)
