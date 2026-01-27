@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 7 of 12 (Foundation - Server Skeleton & Single Model Inference)
-Plan: 2 of 6 complete
+Plan: 4 of 6 complete
 Status: In progress
-Last activity: 2026-01-27 — Completed 07-02-PLAN.md (OpenAI schemas)
+Last activity: 2026-01-27 — Completed 07-04-PLAN.md (Model adapters)
 
-Progress: [███░░░░░░░] 33% (2/6 plans complete in Phase 7)
+Progress: [██████░░░░] 67% (4/6 plans complete in Phase 7)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Phase 7 in progress (2/6 plans complete)
+**Status:** Phase 7 in progress (4/6 plans complete)
 **Phases:** 6 phases (7-12)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -106,6 +106,7 @@ Recent decisions affecting current work:
 - **Pydantic LogFire**: Replace Prometheus + OpenTelemetry — native FastAPI/HTTPX/LLM instrumentation
 - **AuthLib**: Use existing auth infrastructure for API key encryption — consolidates JWT, OAuth2-ready
 - **mlx-lm + mlx-vlm + mlx-embeddings**: Foundation libraries — mature, Apple-maintained, proven
+- **Llama 3.x dual stop tokens**: Requires both eos_token_id and <|eot_id|> for proper completion — prevents infinite generation
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -138,7 +139,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-27T16:18:01Z
-Stopped at: Completed 07-02-PLAN.md (OpenAI schemas)
+Last session: 2026-01-27T16:26:41Z
+Stopped at: Completed 07-04-PLAN.md (Model adapters)
 Resume file: None
-Next: Execute 07-03-PLAN.md (ModelPool manager)
+Next: Execute 07-05-PLAN.md (Generation engine)
