@@ -48,7 +48,6 @@ async def generate_chat_completion(
     """
     from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
-    from mlx_manager.mlx_server.utils.memory import clear_cache
 
     # Get model from pool
     pool = get_model_pool()
@@ -237,7 +236,10 @@ async def _stream_chat_generate(
             ],
         }
 
-        logger.info(f"Generation complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}")
+        logger.info(
+            f"Chat stream complete: {completion_id}, "
+            f"tokens={completion_tokens}, reason={finish_reason}"
+        )
 
         if LOGFIRE_AVAILABLE:
             logfire.info(
@@ -321,7 +323,9 @@ async def _generate_chat_complete(
 
         completion_tokens = len(tokenizer.encode(response_text))
 
-        logger.info(f"Generation complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}")
+        logger.info(
+            f"Chat complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}"
+        )
 
         if LOGFIRE_AVAILABLE:
             logfire.info(
@@ -390,7 +394,6 @@ async def generate_completion(
     """
     from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
-    from mlx_manager.mlx_server.utils.memory import clear_cache
 
     # Handle list of prompts (use first for now, batch in Phase 9)
     if isinstance(prompt, list):

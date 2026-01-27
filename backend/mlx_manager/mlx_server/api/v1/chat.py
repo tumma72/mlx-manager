@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
@@ -101,7 +101,8 @@ async def _handle_non_streaming(
     )
 
     # Convert to Pydantic response model
-    result_dict = result  # type: ignore[assignment]
+    # Cast to dict since we passed stream=False
+    result_dict = cast(dict[str, Any], result)
     choice = result_dict["choices"][0]
     return ChatCompletionResponse(
         id=result_dict["id"],
