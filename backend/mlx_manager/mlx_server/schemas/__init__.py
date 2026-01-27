@@ -1,10 +1,10 @@
 """OpenAI-compatible request/response schemas."""
 
 from mlx_manager.mlx_server.schemas.openai import (
+    ChatCompletionChoice,
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
     ChatCompletionChunkDelta,
-    ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
