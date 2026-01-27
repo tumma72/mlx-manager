@@ -51,12 +51,12 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans**: 6 plans in 3 waves
 
 Plans:
-- [ ] 07-01-PLAN.md - Server foundation (package, config, FastAPI app, LogFire)
-- [ ] 07-02-PLAN.md - OpenAI schemas & /v1/models endpoint
-- [ ] 07-03-PLAN.md - Model pool manager with memory tracking
-- [ ] 07-04-PLAN.md - Model adapters (protocol + Llama adapter)
-- [ ] 07-05-PLAN.md - /v1/chat/completions with SSE streaming
-- [ ] 07-06-PLAN.md - /v1/completions endpoint (legacy API)
+- [x] 07-01-PLAN.md - Server foundation (package, config, FastAPI app, LogFire)
+- [x] 07-02-PLAN.md - OpenAI schemas & /v1/models endpoint
+- [x] 07-03-PLAN.md - Model pool manager with memory tracking
+- [x] 07-04-PLAN.md - Model adapters (protocol + Llama adapter)
+- [x] 07-05-PLAN.md - /v1/chat/completions with SSE streaming
+- [x] 07-06-PLAN.md - /v1/completions endpoint (legacy API)
 
 #### Phase 8: Multi-Model & Multimodal Support
 
@@ -174,7 +174,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Foundation | v1.2 | 0/6 | Planned | - |
+| 7. Foundation | v1.2 | 6/6 | Complete | 2026-01-27 |
 | 8. Multi-Model | v1.2 | 0/TBD | Not started | - |
 | 9. Batching | v1.2 | 0/TBD | Not started | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
