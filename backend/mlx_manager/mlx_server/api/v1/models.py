@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.schemas.openai import ModelInfo, ModelListResponse
 
 router = APIRouter(prefix="/v1", tags=["models"])
@@ -12,19 +13,22 @@ def get_available_models() -> list[str]:
     """Get list of available model IDs.
 
     Returns both:
-    - Currently loaded models (hot) - from ModelPool (Plan 03)
+    - Currently loaded models (hot) - from ModelPool
     - Configured loadable models - from settings
-
-    For now, returns configured models. Plan 03 will add loaded model detection.
     """
     settings = get_settings()
 
     # Start with configured available models
     model_ids = set(settings.available_models)
 
-    # TODO: Plan 03 will add loaded models from ModelPoolManager
-    # loaded_models = pool.get_loaded_models()
-    # model_ids.update(loaded_models)
+    # Add loaded models from ModelPoolManager
+    try:
+        pool = get_model_pool()
+        loaded_models = pool.get_loaded_models()
+        model_ids.update(loaded_models)
+    except RuntimeError:
+        # Pool not initialized yet (startup)
+        pass
 
     return sorted(model_ids)
 

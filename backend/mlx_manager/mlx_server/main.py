@@ -10,6 +10,9 @@ from fastapi import FastAPI
 from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
 from mlx_manager.mlx_server.config import mlx_server_settings
+from mlx_manager.mlx_server.models import pool
+from mlx_manager.mlx_server.models.pool import ModelPoolManager
+from mlx_manager.mlx_server.utils.memory import get_memory_usage, set_memory_limit
 
 # Configure logging
 logging.basicConfig(
@@ -26,12 +29,25 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     logger.info("MLX Server starting...")
-    # TODO: Initialize model pool (Plan 03)
+
+    # Set memory limit
+    set_memory_limit(mlx_server_settings.max_memory_gb)
+
+    # Initialize model pool
+    pool.model_pool = ModelPoolManager(
+        max_memory_gb=mlx_server_settings.max_memory_gb,
+        max_models=mlx_server_settings.max_models,
+    )
+    logger.info(f"Memory usage at startup: {get_memory_usage()}")
     logger.info("MLX Server ready")
+
     yield
+
     # Shutdown
     logger.info("MLX Server shutting down...")
-    # TODO: Cleanup model pool
+    if pool.model_pool:
+        await pool.model_pool.cleanup()
+    logger.info("MLX Server stopped")
 
 
 app = FastAPI(
