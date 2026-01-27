@@ -6,21 +6,17 @@ check each generated token against the model's terminators to prevent
 Llama 3.x models from generating indefinitely.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
 
 try:
     import logfire
 
     LOGFIRE_AVAILABLE = True
 except ImportError:
-    logfire = None  # type: ignore[assignment]
     LOGFIRE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -28,13 +24,13 @@ logger = logging.getLogger(__name__)
 
 async def generate_chat_completion(
     model_id: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict],
     max_tokens: int = 4096,
     temperature: float = 1.0,
     top_p: float = 1.0,
     stop: list[str] | None = None,
     stream: bool = False,
-) -> AsyncGenerator[dict[str, Any], None] | dict[str, Any]:
+) -> AsyncGenerator[dict, None] | dict:
     """Generate a chat completion.
 
     Args:
@@ -76,13 +72,11 @@ async def generate_chat_completion(
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
 
-    logger.info(
-        f"Starting generation: {completion_id}, model={model_id}, max_tokens={max_tokens}"
-    )
+    logger.info(f"Starting generation: {completion_id}, model={model_id}, max_tokens={max_tokens}")
 
     # LogFire span for observability
-    span_context: Any = None
-    if LOGFIRE_AVAILABLE and logfire is not None:
+    span_context = None
+    if LOGFIRE_AVAILABLE:
         span_context = logfire.span(
             "chat_completion",
             model=model_id,
@@ -94,7 +88,7 @@ async def generate_chat_completion(
 
     try:
         if stream:
-            return _stream_generate(
+            return _stream_chat_generate(
                 model=model,
                 tokenizer=tokenizer,
                 prompt=prompt,
@@ -107,7 +101,7 @@ async def generate_chat_completion(
                 model_id=model_id,
             )
         else:
-            return await _generate_complete(
+            return await _generate_chat_complete(
                 model=model,
                 tokenizer=tokenizer,
                 prompt=prompt,
@@ -124,9 +118,9 @@ async def generate_chat_completion(
             span_context.__exit__(None, None, None)
 
 
-async def _stream_generate(
-    model: Any,
-    tokenizer: Any,
+async def _stream_chat_generate(
+    model,
+    tokenizer,
     prompt: str,
     max_tokens: int,
     temperature: float,
@@ -135,12 +129,14 @@ async def _stream_generate(
     completion_id: str,
     created: int,
     model_id: str,
-) -> AsyncGenerator[dict[str, Any], None]:
-    """Generate tokens with streaming.
+) -> AsyncGenerator[dict, None]:
+    """Generate tokens with streaming for chat completion.
 
     CRITICAL: This function checks each token against stop_token_ids
     to halt generation when a terminator is encountered.
     """
+    from mlx_lm import stream_generate
+
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     completion_tokens = 0
@@ -165,12 +161,8 @@ async def _stream_generate(
 
         # Stream generate and check tokens
         # mlx_lm stream_generate is blocking - run in thread pool
-        def generate_with_stop_detection() -> (
-            AsyncGenerator[tuple[str, int | None, bool], None]
-        ):
+        def generate_with_stop_detection():
             """Generator that yields tokens until stop token or max_tokens."""
-            from mlx_lm import stream_generate
-
             for response in stream_generate(
                 model,
                 tokenizer,
@@ -200,7 +192,7 @@ async def _stream_generate(
         while True:
             try:
                 # Get next token in thread pool
-                result = await loop.run_in_executor(None, next, generator)  # type: ignore[arg-type]
+                result = await loop.run_in_executor(None, next, generator)
                 token_text, token_id, is_stop = result
 
                 completion_tokens += 1
@@ -245,12 +237,9 @@ async def _stream_generate(
             ],
         }
 
-        logger.info(
-            f"Generation complete: {completion_id}, tokens={completion_tokens}, "
-            f"reason={finish_reason}"
-        )
+        logger.info(f"Generation complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}")
 
-        if LOGFIRE_AVAILABLE and logfire is not None:
+        if LOGFIRE_AVAILABLE:
             logfire.info(
                 "stream_completion_finished",
                 completion_id=completion_id,
@@ -263,9 +252,9 @@ async def _stream_generate(
         clear_cache()
 
 
-async def _generate_complete(
-    model: Any,
-    tokenizer: Any,
+async def _generate_chat_complete(
+    model,
+    tokenizer,
     prompt: str,
     max_tokens: int,
     temperature: float,
@@ -274,12 +263,14 @@ async def _generate_complete(
     completion_id: str,
     created: int,
     model_id: str,
-) -> dict[str, Any]:
-    """Generate complete response (non-streaming).
+) -> dict:
+    """Generate complete response (non-streaming) for chat completion.
 
     CRITICAL: Uses streaming internally to implement stop token detection,
     since mlx_lm.generate() doesn't support stop_tokens parameter.
     """
+    from mlx_lm import stream_generate
+
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     prompt_tokens = len(tokenizer.encode(prompt))
@@ -289,12 +280,8 @@ async def _generate_complete(
         response_text = ""
         finish_reason = "length"
 
-        def generate_with_stop_detection() -> (
-            AsyncGenerator[tuple[str, bool], None]
-        ):
+        def generate_with_stop_detection():
             """Generate tokens until stop token or max_tokens."""
-            from mlx_lm import stream_generate
-
             for response in stream_generate(
                 model,
                 tokenizer,
@@ -319,7 +306,7 @@ async def _generate_complete(
 
         while True:
             try:
-                result = await loop.run_in_executor(None, next, generator)  # type: ignore[arg-type]
+                result = await loop.run_in_executor(None, next, generator)
                 token_text, is_stop = result
 
                 if is_stop:
@@ -334,12 +321,9 @@ async def _generate_complete(
 
         completion_tokens = len(tokenizer.encode(response_text))
 
-        logger.info(
-            f"Generation complete: {completion_id}, tokens={completion_tokens}, "
-            f"reason={finish_reason}"
-        )
+        logger.info(f"Generation complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}")
 
-        if LOGFIRE_AVAILABLE and logfire is not None:
+        if LOGFIRE_AVAILABLE:
             logfire.info(
                 "completion_finished",
                 completion_id=completion_id,
@@ -361,6 +345,281 @@ async def _generate_complete(
                         "role": "assistant",
                         "content": response_text,
                     },
+                    "finish_reason": finish_reason,
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+
+    finally:
+        clear_cache()
+
+
+# --- Completion API (legacy) ---
+
+
+async def generate_completion(
+    model_id: str,
+    prompt: str | list[str],
+    max_tokens: int = 16,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
+    stop: list[str] | None = None,
+    stream: bool = False,
+    echo: bool = False,
+) -> AsyncGenerator[dict, None] | dict:
+    """Generate a raw text completion (legacy API).
+
+    Args:
+        model_id: HuggingFace model ID
+        prompt: Text prompt or list of prompts
+        max_tokens: Maximum tokens to generate
+        temperature: Sampling temperature
+        top_p: Nucleus sampling parameter
+        stop: Additional stop strings
+        stream: If True, yield chunks; if False, return complete response
+        echo: If True, include prompt in response
+
+    Yields/Returns:
+        Streaming: yields chunk dicts
+        Non-streaming: returns complete response dict
+    """
+    from mlx_manager.mlx_server.models.adapters import get_adapter
+    from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.utils.memory import clear_cache
+
+    # Handle list of prompts (use first for now, batch in Phase 9)
+    if isinstance(prompt, list):
+        prompt = prompt[0] if prompt else ""
+
+    # Get model from pool
+    pool = get_model_pool()
+    loaded = await pool.get_model(model_id)
+    model = loaded.model
+    tokenizer = loaded.tokenizer
+
+    # Get stop tokens (still use adapter for this)
+    adapter = get_adapter(model_id)
+    stop_tokens = set(adapter.get_stop_tokens(tokenizer))
+
+    # Generate unique ID
+    completion_id = f"cmpl-{uuid.uuid4().hex[:12]}"
+    created = int(time.time())
+
+    logger.info(f"Starting completion: {completion_id}, model={model_id}, max_tokens={max_tokens}")
+
+    if stream:
+        return _stream_completion(
+            model=model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop_tokens=stop_tokens,
+            completion_id=completion_id,
+            created=created,
+            model_id=model_id,
+            echo=echo,
+        )
+    else:
+        return await _generate_raw_completion(
+            model=model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop_tokens=stop_tokens,
+            completion_id=completion_id,
+            created=created,
+            model_id=model_id,
+            echo=echo,
+        )
+
+
+async def _stream_completion(
+    model,
+    tokenizer,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_p: float,
+    stop_tokens: set[int],
+    completion_id: str,
+    created: int,
+    model_id: str,
+    echo: bool,
+) -> AsyncGenerator[dict, None]:
+    """Stream raw completion tokens."""
+    from mlx_lm import stream_generate
+
+    from mlx_manager.mlx_server.utils.memory import clear_cache
+
+    try:
+        # Echo prompt if requested
+        if echo:
+            yield {
+                "id": completion_id,
+                "object": "text_completion",
+                "created": created,
+                "model": model_id,
+                "choices": [
+                    {
+                        "index": 0,
+                        "text": prompt,
+                        "finish_reason": None,
+                    }
+                ],
+            }
+
+        finish_reason = "length"
+
+        # Generate tokens with stop detection
+        def generate_with_stop_detection():
+            for response in stream_generate(
+                model,
+                tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+                temp=temperature,
+                top_p=top_p,
+            ):
+                token_id = getattr(response, "token", None)
+                token_text = getattr(response, "text", str(response))
+
+                if token_id is not None and token_id in stop_tokens:
+                    yield (token_text, token_id, True)
+                    return
+
+                yield (token_text, token_id, False)
+
+        loop = asyncio.get_event_loop()
+        generator = generate_with_stop_detection()
+
+        while True:
+            try:
+                result = await loop.run_in_executor(None, next, generator)
+                token_text, token_id, is_stop = result
+
+                if is_stop:
+                    finish_reason = "stop"
+                    break
+
+                yield {
+                    "id": completion_id,
+                    "object": "text_completion",
+                    "created": created,
+                    "model": model_id,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "text": token_text,
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+
+            except StopIteration:
+                finish_reason = "length"
+                break
+
+        # Final chunk
+        yield {
+            "id": completion_id,
+            "object": "text_completion",
+            "created": created,
+            "model": model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "text": "",
+                    "finish_reason": finish_reason,
+                }
+            ],
+        }
+
+    finally:
+        clear_cache()
+
+
+async def _generate_raw_completion(
+    model,
+    tokenizer,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_p: float,
+    stop_tokens: set[int],
+    completion_id: str,
+    created: int,
+    model_id: str,
+    echo: bool,
+) -> dict:
+    """Generate complete raw completion."""
+    from mlx_lm import stream_generate
+
+    from mlx_manager.mlx_server.utils.memory import clear_cache
+
+    prompt_tokens = len(tokenizer.encode(prompt))
+
+    try:
+        response_text = ""
+        finish_reason = "length"
+
+        def generate_with_stop_detection():
+            for response in stream_generate(
+                model,
+                tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+                temp=temperature,
+                top_p=top_p,
+            ):
+                token_id = getattr(response, "token", None)
+                token_text = getattr(response, "text", str(response))
+
+                if token_id is not None and token_id in stop_tokens:
+                    yield (token_text, True)
+                    return
+
+                yield (token_text, False)
+
+        loop = asyncio.get_event_loop()
+        generator = generate_with_stop_detection()
+
+        while True:
+            try:
+                result = await loop.run_in_executor(None, next, generator)
+                token_text, is_stop = result
+
+                if is_stop:
+                    finish_reason = "stop"
+                    break
+
+                response_text += token_text
+
+            except StopIteration:
+                finish_reason = "length"
+                break
+
+        # Prepend prompt if echo requested
+        text = (prompt + response_text) if echo else response_text
+        completion_tokens = len(tokenizer.encode(response_text))
+
+        return {
+            "id": completion_id,
+            "object": "text_completion",
+            "created": created,
+            "model": model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "text": text,
                     "finish_reason": finish_reason,
                 }
             ],
