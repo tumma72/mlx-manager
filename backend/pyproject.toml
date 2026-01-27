@@ -39,6 +39,9 @@ dependencies = [
     "pyjwt>=2.8.0",
     "pwdlib[argon2]>=0.3.0",
     "mlx-vlm>=0.3.9",
+    # MLX Server dependencies
+    "logfire[fastapi]>=3.0.0",
+    "sse-starlette>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -108,6 +111,8 @@ omit = [
     # plist file creation in ~/Library/LaunchAgents and launchctl commands. Testing
     # would require mocking filesystem and subprocess calls with little added value.
     "mlx_manager/services/manager_launchd.py",
+    # MLX Server module: Will have separate test coverage tracking
+    "mlx_manager/mlx_server/*",
 ]
 
 [tool.coverage.report]
