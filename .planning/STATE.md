@@ -2,30 +2,52 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-01-26)
+See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 7 - Foundation (Core Gateway Infrastructure)
+**Current focus:** Phase 7 - Foundation (Server Skeleton & Single Model Inference)
 
 ## Current Position
 
-Phase: 7 of 12 (Foundation - Core Gateway Infrastructure)
-Plan: Ready to plan
-Status: Roadmap created, ready to plan Phase 7
-Last activity: 2026-01-26 — Roadmap created for v1.2
+Phase: 7 of 12 (Foundation - Server Skeleton & Single Model Inference)
+Plan: 2 of 6 complete
+Status: In progress
+Last activity: 2026-01-27 — Completed 07-02-PLAN.md (OpenAI schemas)
 
-Progress: [░░░░░░░░░░] 0% (0/TBD plans complete)
+Progress: [███░░░░░░░] 33% (2/6 plans complete in Phase 7)
 
 ## Milestone v1.2 Summary
 
-**Goal:** Unified API Gateway
-**Status:** Roadmap complete, ready to plan Phase 7
+**Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
+**Status:** Phase 7 in progress (2/6 plans complete)
 **Phases:** 6 phases (7-12)
-**Requirements:** 19 total
-- Gateway Core: GATE-01 to GATE-05 (5 requirements)
-- Backend Adapters: BACK-01 to BACK-05 (5 requirements)
-- Configuration: CONF-01 to CONF-05 (5 requirements)
-- Reliability: RELI-01 to RELI-04 (4 requirements)
+**Requirements:** 28 total
+- Server Foundation: SRV-01 to SRV-05 (5 requirements)
+- Continuous Batching: BATCH-01 to BATCH-04 (4 requirements)
+- API Layer: API-01 to API-05 (5 requirements)
+- Model Adapters: ADAPT-01 to ADAPT-05 (5 requirements)
+- Cloud Fallback: CLOUD-01 to CLOUD-04 (4 requirements)
+- Configuration: CONF-01 to CONF-04 (4 requirements)
+- Production: PROD-01 to PROD-04 (4 requirements)
+
+## v1.2 Pivot Rationale
+
+**Previous approach:** Build adapters/proxies for mlx-openai-server, vLLM-MLX, and cloud backends.
+
+**New approach:** Build our own high-performance MLX inference server directly on mlx-lm/mlx-vlm/mlx-embeddings.
+
+**Why:**
+1. Research confirmed feasibility — mature foundation libraries (Apple-maintained mlx-lm)
+2. vLLM-MLX proved batching gains: 328→1112 tok/s (3.4x) on M4 Max
+3. Full control over inference stack enables optimizations impossible with external servers
+4. Removes dependency on external server projects (mlx-openai-server stability issues, vLLM-MLX early stage)
+5. Unified codebase — one project to maintain instead of adapter sprawl
+
+**Key technologies:**
+- mlx-lm + mlx-vlm + mlx-embeddings for inference
+- Pydantic v2 (Rust core) for validation
+- Pydantic LogFire for observability
+- Continuous batching + paged KV cache for throughput
 
 ## Milestone v1.1 Summary
 
@@ -77,12 +99,13 @@ Progress: [░░░░░░░░░░] 0% (0/TBD plans complete)
 
 ### Decisions
 
-Recent decisions from v1.2 research affecting current work:
+Recent decisions affecting current work:
 
-- **Phase 7**: Use httpx.AsyncClient for proxy routing (existing dependency, connection pooling built-in)
-- **Phase 7**: Fernet encryption for API keys (cryptography.fernet, AES-128-CBC + HMAC)
-- **Phase 9**: Official Anthropic SDK v0.76.0 for cloud adapter (async support, native streaming)
-- **Phase 10**: vLLM-MLX deferred despite experimental status (user decision, monitor maturity)
+- **v1.2 Pivot**: Build own MLX server instead of adapters/proxies — feasibility research confirmed, better control
+- **Pydantic v2**: Use for all validation (Rust core, 5-50x faster than v1) — already used by FastAPI
+- **Pydantic LogFire**: Replace Prometheus + OpenTelemetry — native FastAPI/HTTPX/LLM instrumentation
+- **AuthLib**: Use existing auth infrastructure for API key encryption — consolidates JWT, OAuth2-ready
+- **mlx-lm + mlx-vlm + mlx-embeddings**: Foundation libraries — mature, Apple-maintained, proven
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -92,21 +115,30 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 2 readiness (On-Demand Loading):**
-- May need experimentation with async lock timing and request queue behavior to avoid deadlocks (flagged by research)
+**Phase 9 readiness (Continuous Batching):**
+- Paged KV cache implementation is complex — may need to study vLLM-MLX source carefully
+- Concurrent request handling with async locks needs careful design to avoid deadlocks
 
-**Phase 5 readiness (Production Hardening):**
-- Cost tracking data source decision deferred: hardcoded pricing table (stale) vs API fetch (complexity)
+**Phase 10 readiness (Cloud Fallback):**
+- Cost tracking data source decision deferred: hardcoded pricing table vs API fetch
+
+## Research Documents
+
+**Feasibility Study:** `.planning/research/MLX-SERVER-FEASIBILITY.md`
+- Confirms feasibility with high confidence
+- Documents vLLM performance techniques (PagedAttention, continuous batching)
+- Proposes architecture and technology stack
+- Includes implementation roadmap aligned with phases
 
 ## Known Tech Debt (Carried Forward)
 
-1. **Throughput metrics not available** — Requires mlx-openai-server changes to expose /v1/stats
-2. **mlx-openai-server v1.5.0 regression** — GLM-4.7-Flash and Gemma VLM fail to load in dev. Upstream issue.
+1. **Throughput metrics not available** — Will be solved by our own server with proper metrics
+2. **mlx-openai-server v1.5.0 regression** — No longer relevant after v1.2 ships our own server
 3. **Download completion UX** — Doesn't auto-refresh local models list after download completes
 
 ## Session Continuity
 
-Last session: 2026-01-26
-Stopped at: Roadmap created for v1.2
+Last session: 2026-01-27T16:18:01Z
+Stopped at: Completed 07-02-PLAN.md (OpenAI schemas)
 Resume file: None
-Next: Plan Phase 7 (Foundation) via `/gsd:plan-phase 7`
+Next: Execute 07-03-PLAN.md (ModelPool manager)
