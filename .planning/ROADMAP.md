@@ -2,17 +2,19 @@
 
 ## Overview
 
-Transform MLX Manager from a local server management tool into a unified API gateway that routes requests to local or cloud backends based on model name. This milestone delivers a production-ready proxy with backend abstraction (mlx-openai-server, vLLM-MLX, OpenAI, Anthropic), on-demand local model auto-start, secure API key storage, and visual configuration UI. The architecture extends existing components (ServerManager, health checker, database) with an adapter pattern for multi-backend routing, streaming support across all providers, and reliability features (error handling, timeouts, failover, audit logging).
+Transform MLX Manager from a management UI for external servers (mlx-openai-server) into a unified inference platform with our own high-performance MLX server. This milestone delivers a production-ready multi-model server built directly on mlx-lm/mlx-vlm/mlx-embeddings with continuous batching for 2-4x throughput improvement, paged KV cache for memory efficiency, and dual OpenAI/Anthropic API support.
+
+**Architecture:** FastAPI + uvloop server with Pydantic v2 validation, Pydantic LogFire observability, model pool manager with LRU eviction, continuous batching scheduler, and paged KV cache—all leveraging Apple Silicon unified memory.
 
 ## Milestones
 
-- ✅ **v1.1 UX & Auth** - Phases 1-6 (shipped 2026-01-26)
-- 🚧 **v1.2 Unified Gateway** - Phases 7-12 (in progress)
+- v1.1 UX & Auth - Phases 1-6 (shipped 2026-01-26)
+- v1.2 MLX Unified Server - Phases 7-12 (in progress)
 
 ## Phases
 
 <details>
-<summary>✅ v1.1 UX & Auth (Phases 1-6) - SHIPPED 2026-01-26</summary>
+<summary>v1.1 UX & Auth (Phases 1-6) - SHIPPED 2026-01-26</summary>
 
 29 requirements delivered across 6 phases:
 - Models Panel UX, Server Panel Redesign
@@ -25,105 +27,119 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.2 Unified Gateway (In Progress)
+### v1.2 MLX Unified Server (In Progress)
 
-**Milestone Goal:** Enable unified API access to local and cloud LLMs with intelligent routing, on-demand model loading, and production-grade reliability.
+**Milestone Goal:** Build our own high-performance MLX inference server with multi-model support, continuous batching, and dual API compatibility.
 
-#### Phase 7: Foundation - Core Gateway Infrastructure
+#### Phase 7: Foundation - Server Skeleton & Single Model Inference
 
-**Goal**: Establish gateway router, adapter pattern, and secure configuration foundation
+**Goal**: FastAPI server skeleton with single model inference, OpenAI-compatible API, and SSE streaming
 
 **Depends on**: Nothing (starts v1.2 milestone)
 
-**Requirements**: BACK-01, CONF-01
+**Requirements**: SRV-01, SRV-02, SRV-03, API-01, API-02, API-04, ADAPT-01, ADAPT-02
 
 **Success Criteria** (what must be TRUE):
-1. Gateway has abstract adapter interface defining uniform backend contract (start, stop, health, chat)
-2. API keys stored encrypted in database using Fernet symmetric encryption
-3. Gateway router resolves model names to backend configurations via database lookup
-4. Local MLX adapter integrates with existing ServerManager for health checks and routing
-5. Backend URLs validated against SSRF attacks (allowlist/blocklist)
+1. FastAPI + uvloop server starts with Pydantic v2 request validation
+2. Model pool manager loads one model via mlx-lm with memory tracking
+3. `/v1/chat/completions` endpoint accepts OpenAI-format requests and returns responses
+4. SSE streaming works for token-by-token response delivery
+5. Llama family adapter handles chat template and stop tokens
+6. `/v1/models` endpoint lists loaded models
+7. Pydantic LogFire captures request spans (basic setup)
 
-**Plans**: TBD
+**Plans**: 6 plans in 3 waves
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md - Server foundation (package, config, FastAPI app, LogFire)
+- [ ] 07-02-PLAN.md - OpenAI schemas & /v1/models endpoint
+- [ ] 07-03-PLAN.md - Model pool manager with memory tracking
+- [ ] 07-04-PLAN.md - Model adapters (protocol + Llama adapter)
+- [ ] 07-05-PLAN.md - /v1/chat/completions with SSE streaming
+- [ ] 07-06-PLAN.md - /v1/completions endpoint (legacy API)
 
-#### Phase 8: Local Gateway - OpenAI-Compatible Routing
+#### Phase 8: Multi-Model & Multimodal Support
 
-**Goal**: Enable OpenAI-compatible chat completions endpoint routing to local mlx-openai-server instances with on-demand auto-start
+**Goal**: Multi-model hot-swap with LRU eviction, vision model support, and additional model family adapters
 
 **Depends on**: Phase 7
 
-**Requirements**: GATE-01, GATE-02, GATE-03, BACK-02, GATE-04
+**Requirements**: SRV-04, SRV-05, API-05, ADAPT-03, ADAPT-04, ADAPT-05
 
 **Success Criteria** (what must be TRUE):
-1. User can send OpenAI-formatted request to `/v1/chat/completions` and receive response from local MLX model
-2. Gateway streams responses via SSE (server-sent events) without buffering entire response
-3. Model name in request determines which MLX server profile handles the request
-4. When request arrives for stopped model, gateway automatically starts the server and queues request until healthy
-5. Concurrent requests to same stopped model queue without triggering duplicate startups (race condition prevention)
+1. Model pool manager supports multiple hot models with configurable memory limit
+2. LRU eviction unloads least-recently-used models when memory pressure detected
+3. Vision models load via mlx-vlm with VisionAddOn pattern (image embeddings -> text generation)
+4. Embedding models load via mlx-embeddings for `/v1/embeddings` endpoint
+5. Qwen, Mistral, and Gemma adapters handle their respective model families
+6. Admin endpoints allow explicit model preload/unload
 
 **Plans**: TBD
 
 Plans:
 - [ ] 08-01: TBD
 - [ ] 08-02: TBD
+- [ ] 08-03: TBD
 
-#### Phase 9: Cloud Backends - OpenAI & Anthropic Integration
+#### Phase 9: Continuous Batching & Paged KV Cache
 
-**Goal**: Route requests to OpenAI and Anthropic cloud APIs with protocol translation and streaming compatibility
+**Goal**: Implement continuous batching scheduler and paged KV cache for 2-4x throughput improvement
 
 **Depends on**: Phase 8
 
-**Requirements**: BACK-04, BACK-05, GATE-05
+**Requirements**: BATCH-01, BATCH-02, BATCH-03, BATCH-04
 
 **Success Criteria** (what must be TRUE):
-1. User can route requests to OpenAI cloud API by configuring model name → OpenAI backend mapping
-2. User can route requests to Anthropic cloud API with automatic OpenAI → Anthropic format translation
-3. Gateway exposes Anthropic-native `/v1/messages` endpoint for clients using Anthropic SDK
-4. Streaming responses work identically across local MLX, OpenAI cloud, and Anthropic cloud backends
-5. Connection pooling prevents exhaustion when routing high-volume traffic to cloud APIs
+1. Continuous batching scheduler processes multiple requests per token generation step
+2. Paged KV cache allocates fixed-size blocks (16-32 tokens) instead of contiguous memory
+3. Block table maps logical -> physical blocks with dynamic allocation
+4. Prefix caching shares KV blocks across requests with identical prefixes
+5. Priority queue allows request prioritization (high/normal/low)
+6. Benchmark shows measurable throughput improvement over single-request baseline
 
 **Plans**: TBD
 
 Plans:
 - [ ] 09-01: TBD
 - [ ] 09-02: TBD
+- [ ] 09-03: TBD
 
-#### Phase 10: vLLM-MLX Integration
+#### Phase 10: Dual Protocol & Cloud Fallback
 
-**Goal**: Support vLLM-MLX as alternative local backend for production workloads
+**Goal**: Anthropic API compatibility and cloud backend fallback for reliability
 
 **Depends on**: Phase 9
 
-**Requirements**: BACK-03
+**Requirements**: API-03, CLOUD-01, CLOUD-02, CLOUD-03, CLOUD-04
 
 **Success Criteria** (what must be TRUE):
-1. User can configure vLLM-MLX server as backend for model routing
-2. vLLM-MLX adapter handles protocol differences from mlx-openai-server transparently
-3. Gateway health checks detect vLLM-MLX availability before routing requests
+1. `/v1/messages` endpoint accepts Anthropic-format requests with protocol translation
+2. Streaming works in Anthropic SSE format (event: content_block_delta, etc.)
+3. OpenAI cloud backend routes requests when configured (httpx.AsyncClient)
+4. Anthropic cloud backend routes with automatic OpenAI -> Anthropic translation
+5. Model -> backend mapping stored in database (local model A, cloud model B)
+6. Automatic failover: local failure triggers cloud fallback if configured
 
 **Plans**: TBD
 
 Plans:
 - [ ] 10-01: TBD
+- [ ] 10-02: TBD
 
-#### Phase 11: Configuration UI - Visual Model Routing
+#### Phase 11: Configuration UI
 
-**Goal**: Provide frontend UI for managing model → backend mappings, API keys, and routing rules
+**Goal**: Visual configuration for model pool, cloud providers, and routing rules
 
 **Depends on**: Phase 10
 
-**Requirements**: CONF-02, CONF-03, CONF-04, CONF-05
+**Requirements**: CONF-01, CONF-02, CONF-03, CONF-04
 
 **Success Criteria** (what must be TRUE):
-1. User can view all model → backend route mappings in table view showing model pattern, backend type, priority
-2. User can add/edit/delete routes via form UI without editing database directly
-3. User can configure cloud provider API keys and base URLs through settings panel (encrypted on save)
-4. Routing rules support exact match ("gpt-4"), prefix match ("gpt-*"), and regex patterns
-5. Model auto-discovery shows available models from running servers to simplify route creation
+1. API keys stored encrypted using existing AuthLib infrastructure
+2. Model pool configuration UI (max memory, eviction policy, preload list)
+3. Provider configuration UI for OpenAI/Anthropic API keys and base URLs
+4. Model routing rules UI supports exact match, prefix, and regex patterns
+5. Configuration changes apply without server restart
 
 **Plans**: TBD
 
@@ -131,20 +147,20 @@ Plans:
 - [ ] 11-01: TBD
 - [ ] 11-02: TBD
 
-#### Phase 12: Production Hardening - Reliability & Observability
+#### Phase 12: Production Hardening
 
-**Goal**: Add error handling, timeouts, failover, and audit logging for production deployment
+**Goal**: Observability, error handling, timeouts, and audit logging for production deployment
 
 **Depends on**: Phase 11
 
-**Requirements**: RELI-01, RELI-02, RELI-03, RELI-04
+**Requirements**: PROD-01, PROD-02, PROD-03, PROD-04
 
 **Success Criteria** (what must be TRUE):
-1. Gateway returns consistent error responses across all backends (unified format, proper HTTP status codes)
-2. Each backend has configurable timeout with safe defaults (local: 15min, cloud: 10min)
-3. When local backend fails or is unavailable, gateway automatically routes to configured cloud fallback
-4. All gateway requests logged to audit table capturing: timestamp, model, backend, duration, status, token count
-5. Admin panel displays request logs with filtering by model, backend, status, and time range
+1. LogFire integration captures full request lifecycle with LLM token metrics
+2. Unified error responses with consistent format and proper HTTP status codes
+3. Per-backend configurable timeouts (local default: 15min, cloud default: 10min)
+4. Request audit log captures: timestamp, model, backend type, duration, status, token count
+5. Admin panel displays request logs with filtering by model, backend, status, time range
 
 **Plans**: TBD
 
@@ -154,17 +170,79 @@ Plans:
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12
+**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Foundation | v1.2 | 0/TBD | Not started | - |
-| 8. Local Gateway | v1.2 | 0/TBD | Not started | - |
-| 9. Cloud Backends | v1.2 | 0/TBD | Not started | - |
-| 10. vLLM-MLX | v1.2 | 0/TBD | Not started | - |
-| 11. Configuration UI | v1.2 | 0/TBD | Not started | - |
+| 7. Foundation | v1.2 | 0/6 | Planned | - |
+| 8. Multi-Model | v1.2 | 0/TBD | Not started | - |
+| 9. Batching | v1.2 | 0/TBD | Not started | - |
+| 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
+| 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
 
+## Technical Architecture
+
+```
++----------------------------------------------------------------------+
+|                      MLX UNIFIED SERVER                              |
++----------------------------------------------------------------------+
+|  API Layer (FastAPI + uvloop + Pydantic v2)                          |
+|  +------------------+  +------------------+  +--------------------+  |
+|  | /v1/chat/        |  | /v1/messages     |  | /v1/embeddings     |  |
+|  | completions      |  | (Anthropic)      |  |                    |  |
+|  | (OpenAI)         |  |                  |  |                    |  |
+|  +---------+--------+  +---------+--------+  +-----------+--------+  |
+|            |                     |                       |           |
+|  +---------v---------------------v-----------------------v--------+  |
+|  |                    Protocol Translator                         |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                 Continuous Batching Scheduler                  |  |
+|  |  Priority Queues | Token-level Batching | Dynamic Replacement   |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Model Pool Manager                          |  |
+|  |  Hot Models (LRU) | Memory Pressure Monitor | On-Demand Load   |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Paged KV Cache Manager                      |  |
+|  |  Block Pool | Block Tables | Prefix Sharing | Copy-on-Write    |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Model Adapters (per family)                 |  |
+|  |  Llama | Qwen | Mistral | Gemma | VisionAddOn                  |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    MLX Libraries                               |  |
+|  |  mlx-lm | mlx-vlm | mlx-embeddings | MLX Core                  |  |
+|  +---------------------------------------------------------------+  |
+|                                                                      |
+|  +---------------------------------------------------------------+  |
+|  |                    Observability (Pydantic LogFire)            |  |
+|  |  Request Tracing | LLM Metrics | SQLite Spans | Alerts         |  |
+|  +---------------------------------------------------------------+  |
++----------------------------------------------------------------------+
+```
+
+## Key Dependencies
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| mlx-lm | latest | Text generation |
+| mlx-vlm | latest | Vision-language models |
+| mlx-embeddings | latest | Text embeddings |
+| FastAPI | 0.115+ | HTTP server |
+| uvloop | 0.19+ | 2-4x async performance |
+| Pydantic | 2.x | Rust-powered validation |
+| logfire | latest | Observability |
+| httpx | 0.27+ | Cloud backend clients |
+
 ---
-*Roadmap created: 2026-01-26*
-*Last updated: 2026-01-26*
+*Roadmap revised: 2026-01-27*
+*Previous version: adapter/proxy approach (deprecated)*
