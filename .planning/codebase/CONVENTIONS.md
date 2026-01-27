@@ -1,325 +1,179 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-01-16
+**Analysis Date:** 2026-01-27
 
 ## Naming Patterns
 
 **Files:**
-- Backend Python: `snake_case.py` (e.g., `server_manager.py`, `hf_client.py`)
-- Frontend TypeScript: `kebab-case.ts` or `camelCase.ts` (e.g., `client.ts`, `polling-coordinator.svelte.ts`)
-- Svelte components: `PascalCase.svelte` (e.g., `ModelCard.svelte`, `ProfileForm.svelte`)
-- Test files: `{source_name}.test.ts` (frontend), `test_{source_name}.py` (backend)
+- Python modules use `snake_case` (e.g., `server_manager.py`, `model_detection.py`)
+- TypeScript/Svelte files use `kebab-case` for most files, `camelCase` for store files (e.g., `models.svelte.ts`, `auth.svelte.ts`)
+- Test files append `.test.ts`, `.spec.ts`, or `.svelte.test.ts` suffix
+- Component files in SvelteKit use directory-based routing (e.g., `src/routes/(protected)/profiles/[id]/+page.svelte`)
 
 **Functions:**
-- Python: `snake_case` (e.g., `start_server`, `get_local_path`, `check_health`)
-- TypeScript/JavaScript: `camelCase` (e.g., `handleDownload`, `formatBytes`, `getNextPort`)
-- Async functions: Named by action, no special prefix (e.g., `async def start_server`, `async function handleDownload`)
+- Python: `snake_case` for all functions and methods (e.g., `list_profiles()`, `create_profile()`, `start_server()`)
+- TypeScript/JavaScript: `camelCase` for functions (e.g., `formatBytes()`, `getAuthHeaders()`, `handleResponse()`)
+- Async functions prefix with `async` keyword in declarations
 
 **Variables:**
-- Python: `snake_case` (e.g., `profile_id`, `model_path`, `download_tasks`)
-- TypeScript: `camelCase` (e.g., `downloadState`, `isDownloaded`, `showDeleteConfirm`)
-- Constants: `UPPER_SNAKE_CASE` in Python (e.g., `STATIC_DIR`), `UPPER_SNAKE_CASE` or `camelCase` in TypeScript (e.g., `API_BASE`)
+- Python: `snake_case` for all variables and constants (e.g., `model_path`, `default_port_start`)
+- TypeScript: `camelCase` for variables (e.g., `mockProfiles`, `authToken`)
+- Constants in both: SCREAMING_SNAKE_CASE (e.g., `ARCHITECTURE_FAMILIES`, `TOOL_CAPABLE_FAMILIES`)
+- Boolean flags use `is_` or `has_` prefixes (e.g., `is_admin`, `is_multimodal`, `has_error`)
 
-**Types/Classes:**
-- Python classes: `PascalCase` (e.g., `ServerManager`, `HuggingFaceClient`, `ServerProfile`)
-- Python SQLModel: `PascalCase` with descriptive suffixes (e.g., `ServerProfileCreate`, `ServerProfileUpdate`, `ServerProfileResponse`)
-- TypeScript interfaces: `PascalCase` (e.g., `ServerProfile`, `ModelSearchResult`, `HealthStatus`)
-- Svelte stores: `camelCase` class instance (e.g., `profileStore`, `serverStore`, `downloadsStore`)
+**Types:**
+- Python: SQLModel classes use `PascalCase` (e.g., `User`, `ServerProfile`, `UserStatus`)
+- TypeScript: Interfaces and types use `PascalCase` (e.g., `ConfigState`, `ModelCharacteristics`)
+- Pydantic request/response models append suffix: `Create`, `Update`, `Response` (e.g., `ServerProfileCreate`, `ServerProfileUpdate`, `ServerProfileResponse`)
 
 ## Code Style
 
 **Formatting:**
-- Backend: Ruff formatter with line length 100
-- Frontend: Prettier with svelte-plugin
-- Both enforced via pre-commit hooks
+- Python: Enforced via `ruff format` with 100-character line length
+- TypeScript/JavaScript: Enforced via `prettier` (auto-formatting on save)
+- Backend targets Python 3.11+ with strict type hints
 
 **Linting:**
-- Backend: Ruff with rules `["E", "F", "I", "N", "W", "UP"]`
-  - E: pycodestyle errors
-  - F: pyflakes
-  - I: isort (import sorting)
-  - N: pep8-naming
-  - W: pycodestyle warnings
-  - UP: pyupgrade
-- Frontend: ESLint with TypeScript and Svelte plugins
-- Type checking: mypy (backend), svelte-check with strict TypeScript (frontend)
+- Python: `ruff` with rules E, F, I, N, W, UP enabled
+  - E402 exception per-file: `mlx_manager/main.py` allows module-level imports after logging setup
+- TypeScript: ESLint with flat config (`eslint.config.js`)
+  - Includes `@eslint/js`, `typescript-eslint`, `svelte/recommended`
+  - Special handling for `.svelte.ts` files with `svelteParser` and TypeScript parser
+  - Svelte navigation rule configured to allow dynamic path resolution in components
 
-**Key Settings:**
-- Python target version: 3.11
-- TypeScript: strict mode enabled
-- Line length: 100 (backend), default Prettier (frontend)
+**Type Checking:**
+- Python: `mypy` with `warn_return_any=true` and `warn_unused_configs=true`
+- TypeScript: `svelte-check` enforces strict TypeScript, `skipLibCheck=false` disabled due to verbosity
 
 ## Import Organization
 
-**Python (enforced by Ruff isort):**
-1. Standard library imports
-2. Third-party imports
-3. Local application imports
+**Order (Python):**
+1. Standard library (datetime, asyncio, logging, json, etc.)
+2. Third-party packages (fastapi, sqlmodel, httpx, psutil, etc.)
+3. Local application imports (mlx_manager modules)
+4. Conditional/late imports within function bodies only when necessary (see `routers/profiles.py` for `sqlalchemy.desc` import)
 
-Example from `backend/mlx_manager/services/server_manager.py`:
-```python
-import asyncio
-import logging
-import signal
-import subprocess
+**Order (TypeScript):**
+1. Type imports with `type` keyword
+2. Named imports from libraries
+3. Destructured imports from relative paths (using aliases like `$api`, `$lib`)
 
-import httpx
-import psutil
+**Path Aliases (TypeScript):**
+- `$lib` → `src/lib/` (utilities, stores, components, API)
+- `$api` → `src/lib/api/` (API client and types)
+- Auto-configured by SvelteKit in `svelte.config.js`
 
-from mlx_manager.models import ServerProfile
-from mlx_manager.types import HealthCheckResult, RunningServerInfo, ServerStats
-from mlx_manager.utils.command_builder import build_mlx_server_command, get_server_log_path
-```
-
-**TypeScript/Svelte:**
-1. Framework imports (svelte, sveltekit)
-2. External library imports
-3. Local imports with path aliases
-
-Path aliases configured:
-- `$lib` -> `src/lib`
-- `$api` -> `src/lib/api` (inferred from usage)
-- `$components` -> `src/lib/components`
-
-Example from `frontend/src/lib/components/models/ModelCard.svelte`:
-```typescript
-import type { ModelSearchResult } from '$api';
-import { models } from '$api';
-import { formatNumber, formatBytes } from '$lib/utils/format';
-import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
-import { Download, Trash2, Check, HardDrive, Heart, ArrowDownToLine } from 'lucide-svelte';
-```
+**Barrel Exports:**
+- `src/lib/stores/index.ts` re-exports all stores for convenience imports
+- `src/lib/components/ui/index.ts` re-exports UI primitives
+- Barrel files excluded from coverage calculations
 
 ## Error Handling
 
-**Backend Patterns:**
-- Use `HTTPException` for API errors with appropriate status codes:
-  ```python
-  raise HTTPException(status_code=404, detail="Profile not found")
-  raise HTTPException(status_code=409, detail="Profile name already exists")
-  ```
-- Use `RuntimeError` for internal service errors that propagate to API:
-  ```python
-  raise RuntimeError(f"Server for profile {profile.name} is already running")
-  ```
-- Return explicit error status in typed dicts for health checks:
-  ```python
-  return HealthCheckResult(status="unhealthy", error=str(e))
-  ```
-- Log errors with context before raising:
-  ```python
-  logger.error(f"Server failed to start for profile '{profile.name}' (exit_code={proc.poll()})")
-  ```
+**Python Patterns:**
+- HTTP errors: Raise `HTTPException` from FastAPI with explicit `status_code` and `detail` message
+  - Example: `raise HTTPException(status_code=404, detail="Profile not found")`
+  - Validation errors: `raise HTTPException(status_code=409, detail="Profile name already exists")`
+  - Server errors: `raise HTTPException(status_code=500, detail=str(e))`
+- Service-level exceptions: Custom exceptions (e.g., `RuntimeError`) raised in services, caught in routers
+- Database errors: Logged with `logger.error()` and session rolled back, converted to HTTP responses
 
-**Frontend Patterns:**
-- Custom `ApiError` class for API failures:
-  ```typescript
-  class ApiError extends Error {
-    constructor(public status: number, message: string) {
-      super(message);
-      this.name = "ApiError";
-    }
-  }
-  ```
-- Centralized response handling in API client:
-  ```typescript
-  async function handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-      // Parse and format error details
-      throw new ApiError(response.status, message);
-    }
-  }
-  ```
-- Component-level error state:
-  ```typescript
-  let error = $state<string | null>(null);
-  // In catch block:
-  error = e instanceof Error ? e.message : 'Operation failed';
-  ```
+**TypeScript Patterns:**
+- Custom `ApiError` class extends `Error` with `status` property (see `src/lib/api/client.ts`)
+- Response handling: Parse error details from FastAPI validation arrays into human-readable messages
+- Auth errors (401): Clear auth state and redirect to login page
+- Non-200 responses: Extract detail from JSON or use text fallback
 
 ## Logging
 
-**Framework:** Python `logging` module (backend), `console` (frontend)
+**Framework:** Python uses `logging` module with `logger.getLogger(__name__)`
 
-**Backend Patterns:**
-- Module-level logger: `logger = logging.getLogger(__name__)`
-- Log levels used appropriately:
-  - `INFO`: Operation started/completed (e.g., "Starting server for profile...")
-  - `DEBUG`: Detailed internal state (e.g., "Log file: {log_path}")
-  - `WARNING`: Non-fatal issues (e.g., "Server already running")
-  - `ERROR`: Failures (e.g., "Server failed to start")
-- Include context in log messages:
-  ```python
-  logger.info(f"Starting server for profile '{profile.name}' (id={profile.id})")
-  logger.error(f"Server log: {error_msg[:500]}")
-  ```
-- Third-party loggers suppressed to WARNING:
-  ```python
-  logging.getLogger("httpx").setLevel(logging.WARNING)
-  logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-  ```
+**Patterns:**
+- INFO level: Application flow (server startup, operations) - `logger.info(f"Starting server for profile '{profile.name}'")`
+- DEBUG level: Detailed diagnostics and internal state - `logger.debug(f"Command: {' '.join(cmd)}")`
+- WARNING level: Recoverable issues - `logger.warning(f"Error reading model snapshots: {e}")`
+- ERROR level: Failures that need attention - `logger.error(f"Database session error: {e}")`
+- Formatted with f-strings, context includes relevant IDs and values
 
-**Frontend Patterns:**
-- Use `console.warn` and `console.error` for debugging
-- Polling coordinator logs errors with context prefix:
-  ```typescript
-  console.error('[PollingCoordinator] Refresh failed for servers:', error);
-  ```
+**No logging in TypeScript:** Frontend uses browser console only in development; production errors are silent to not expose internals
 
 ## Comments
 
 **When to Comment:**
-- Module-level docstrings explaining purpose
-- Class docstrings explaining responsibility
-- Function docstrings for public APIs with parameter descriptions
-- Inline comments for non-obvious logic or workarounds
+- Module docstrings: Required on every Python module (triple-quoted, describe purpose)
+- Function docstrings: Required on public functions with Args, Returns sections in Google style
+- Inline comments: Rare; only for non-obvious logic (e.g., "SQLModel types port as int, but it's a Column at runtime")
+- Disabled linting: Document why (see `eslint-disable` comments in `models.svelte.ts`)
+- TODOs: Tracked in GitHub Issues, not left in code
 
-**Python Docstrings (Google style):**
-```python
-"""Server process manager service."""
-
-class ServerManager:
-    """Manages mlx-openai-server processes."""
-
-    async def start_server(self, profile: ServerProfile) -> int:
-        """Start an mlx-openai-server instance for the given profile."""
-```
-
-**TypeScript JSDoc:**
-```typescript
-/**
- * Profile state management using Svelte 5 runes.
- *
- * Refactored to use:
- * - In-place array reconciliation (prevents unnecessary re-renders)
- * - Polling coordinator for centralized refresh management
- */
-
-/**
- * Custom equality function for ServerProfile.
- * Compares all fields that affect the UI.
- */
-function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
-```
+**JSDoc/TSDoc:**
+- TypeScript: Comments above functions with description (e.g., `/** Get headers with auth token if available. */`)
+- Python: Docstrings in Google format with sections for Args, Returns, Raises
+- Example from `mlx_manager/utils/model_detection.py`: Clear module docstring explaining "OFFLINE-FIRST detection" approach
 
 ## Function Design
 
-**Size:** Keep functions focused on single responsibility. Most are under 30 lines.
+**Size:**
+- Python: Generally 20-50 lines; larger functions (100+ lines) decomposed into smaller helpers
+- TypeScript: Similarly concise; store functions in `*.svelte.ts` average 30-80 lines
 
 **Parameters:**
-- Python: Use type hints for all parameters and return types
-- TypeScript: Use explicit types, prefer interfaces for complex objects
-- Use Optional/nullable types where appropriate: `profile_id: int | None = None`
+- Python: Use `Annotated` for FastAPI dependency injection (see `routers/profiles.py`)
+  - Pattern: `current_user: Annotated[User, Depends(get_current_user)]`
+  - Async session: `session: AsyncSession = Depends(get_db)`
+- TypeScript: Pass typed objects rather than many primitives; destructure when needed
 
 **Return Values:**
-- Backend API endpoints return typed response models or dicts
-- Services return typed results (`HealthCheckResult`, `ServerStats`)
-- Frontend API client returns typed Promises: `Promise<ServerProfile[]>`
-
-**Async Pattern:**
-- Use `async/await` consistently
-- Backend: All database operations and HTTP calls are async
-- Frontend: All API calls are async
+- Python: Explicit types in function signature (e.g., `async def list_profiles(...) -> list[ServerProfileResponse]`)
+- Pydantic models used for all HTTP responses, not raw dicts
+- TypeScript: Declared return types on all functions, generics used for API responses
 
 ## Module Design
 
-**Backend Exports:**
-- Routers exported from `routers/__init__.py`:
-  ```python
-  from mlx_manager.routers.models import router as models_router
-  from mlx_manager.routers.profiles import router as profiles_router
-  ```
-- Services use singleton pattern with module-level instance:
-  ```python
-  # At bottom of server_manager.py
-  server_manager = ServerManager()
-  ```
+**Exports:**
+- Python: No explicit `__all__` used; public functions at module level, private helpers prefixed with `_`
+- TypeScript: Explicit exports from modules; stores exported as default and named exports
 
-**Frontend Exports:**
-- Barrel files for components: `src/lib/components/ui/index.ts`
-- Store instances exported from `src/lib/stores/index.ts`
-- API functions grouped by domain in `src/lib/api/client.ts`
+**Structure - Python Routers:**
+- Located in `mlx_manager/routers/`
+- Each router defined as `APIRouter(prefix="/api/...", tags=[...])`
+- Endpoints marked with `@router.get`, `@router.post`, etc.
+- Response models specified with `response_model=SchemaClass`
+- Status codes explicit: `status_code=201` for POST, `status_code=204` for DELETE
 
-**Barrel Files:**
-- Use `index.ts` files for convenient imports
-- Group related exports:
-  ```typescript
-  export { profileStore } from './profiles.svelte';
-  export { serverStore } from './servers.svelte';
-  export { systemStore } from './system.svelte';
-  ```
+**Structure - TypeScript Stores:**
+- Located in `src/lib/stores/`
+- Svelte 5 runes-based (`$state`, `$derived` for reactivity)
+- Stores are singletons managing component state
+- Fetch/mutation functions are synchronous, async operations handled internally
 
-## SQLModel Patterns
+**Structure - TypeScript API Client:**
+- Single `client.ts` file with namespace-organized API methods
+- Type definitions in `types.ts` (separate, never executed)
+- Auth headers attached to all requests
+- Error handling centralized in `handleResponse<T>()`
 
-**Model Organization:**
-- Base model with shared fields: `ServerProfileBase(SQLModel)`
-- Table model extends base: `ServerProfile(ServerProfileBase, table=True)`
-- Create schema for POST: `ServerProfileCreate(ServerProfileBase)`
-- Update schema with all optional: `ServerProfileUpdate(SQLModel)` with `field: type | None = None`
-- Response model adds computed fields: `ServerProfileResponse(ServerProfileBase)`
+## Database Models
 
-**Field Definitions:**
+**Naming:**
+- Database table models inherit from `SQLModel` (e.g., `class User(UserBase, table=True)`)
+- Separate Pydantic schemas for CRUD operations: `UserCreate`, `UserUpdate`, `UserPublic`
+- Database model attributes typed explicitly with `Field()` annotations
+- Timestamps use `datetime.now(tz=UTC)` for timezone awareness
+
+**Pattern:**
 ```python
-name: str = Field(index=True)
-port: int
-description: str | None = None
-max_concurrency: int = Field(default=1)
-created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+class UserBase(SQLModel):
+    """Base model for users."""
+    email: str = Field(unique=True, index=True)
+
+class User(UserBase, table=True):
+    """User database model."""
+    __tablename__ = "users"
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 ```
-
-## Svelte 5 Patterns
-
-**Runes:**
-- State: `let value = $state<Type>(initial)`
-- Derived: `let computed = $derived(expression)`
-- Effects: `$effect(() => { ... })`
-
-**Component Props:**
-```typescript
-interface Props {
-  model: ModelSearchResult;
-  onUse?: (modelId: string) => void;
-  onDeleted?: () => void;
-}
-
-let { model, onUse, onDeleted }: Props = $props();
-```
-
-**Store Classes:**
-```typescript
-class ProfileStore {
-  profiles = $state<ServerProfile[]>([]);
-  loading = $state(false);
-  error = $state<string | null>(null);
-
-  async refresh() { ... }
-}
-
-export const profileStore = new ProfileStore();
-```
-
-## FastAPI Patterns
-
-**Router Definition:**
-```python
-router = APIRouter(prefix="/api/profiles", tags=["profiles"])
-
-@router.get("", response_model=list[ServerProfileResponse])
-async def list_profiles(session: AsyncSession = Depends(get_db)):
-```
-
-**Dependency Injection:**
-- Database session: `session: AsyncSession = Depends(get_db)`
-- Profile lookup: `profile: ServerProfile = Depends(get_profile_or_404)`
-
-**Response Status Codes:**
-- 200: Success (default)
-- 201: Created (`status_code=201`)
-- 204: No content (delete operations)
-- 404: Not found
-- 409: Conflict (duplicate name/port)
-- 422: Validation error (automatic from Pydantic)
 
 ---
 
-*Convention analysis: 2026-01-16*
+*Convention analysis: 2026-01-27*
