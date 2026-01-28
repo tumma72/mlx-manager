@@ -5,6 +5,7 @@ This module provides the infrastructure for continuous batching:
 - Priority scheduling with aging (PriorityQueueWithAging)
 - Status and priority enums
 - Paged KV cache block management (KVBlock, BlockTable, PagedBlockManager)
+- Prefix caching for KV block sharing (PrefixCache)
 """
 
 from mlx_manager.mlx_server.services.batching.block import (
@@ -13,6 +14,10 @@ from mlx_manager.mlx_server.services.batching.block import (
     KVBlock,
 )
 from mlx_manager.mlx_server.services.batching.block_manager import PagedBlockManager
+from mlx_manager.mlx_server.services.batching.prefix_cache import (
+    PrefixCache,
+    compute_block_hash,
+)
 from mlx_manager.mlx_server.services.batching.priority_queue import (
     PriorityQueueWithAging,
 )
@@ -25,7 +30,9 @@ __all__ = [
     "BlockTable",
     "KVBlock",
     "PagedBlockManager",
+    "PrefixCache",
     "Priority",
     "PriorityQueueWithAging",
     "RequestStatus",
+    "compute_block_hash",
 ]
