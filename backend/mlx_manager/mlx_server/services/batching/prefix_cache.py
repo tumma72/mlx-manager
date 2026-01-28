@@ -228,16 +228,16 @@ class PrefixCache:
 
         # Remove from cache and unmark
         for block_id in blocks_to_evict:
-            block_hash = self._block_to_hash.get(block_id)
-            if block_hash is not None:
+            cached_hash: int | None = self._block_to_hash.get(block_id)
+            if cached_hash is not None:
                 # Remove from hash -> blocks mapping
-                if block_hash in self._hash_to_blocks:
-                    block_list = self._hash_to_blocks[block_hash]
+                if cached_hash in self._hash_to_blocks:
+                    block_list = self._hash_to_blocks[cached_hash]
                     if block_id in block_list:
                         block_list.remove(block_id)
                     # Clean up empty hash entries
                     if not block_list:
-                        del self._hash_to_blocks[block_hash]
+                        del self._hash_to_blocks[cached_hash]
 
                 # Remove reverse mapping
                 del self._block_to_hash[block_id]
