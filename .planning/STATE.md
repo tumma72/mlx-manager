@@ -117,6 +117,7 @@ Recent decisions affecting current work:
 - **Preload protection**: Preloaded models never evicted regardless of last_used time — use for startup models
 - **Config-first model type detection**: Check vision_config, image_token_id, architectures before name patterns for reliable type detection
 - **Processor as tokenizer**: Vision models store processor in tokenizer field to reuse LoadedModel structure
+- **mlx-embeddings L2 normalized**: text_embeds output is already L2-normalized — no post-processing needed for cosine similarity
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -149,7 +150,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T11:52:28Z
-Stopped at: Completed 08-06-PLAN.md (Admin endpoints for model preload/unload)
+Last session: 2026-01-28T11:56:09Z
+Stopped at: Completed 08-05-PLAN.md (Embeddings endpoint)
 Resume file: None
 Next: Phase 8 complete - proceed to Phase 9 (Continuous Batching)
