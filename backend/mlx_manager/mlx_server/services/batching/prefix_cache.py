@@ -113,9 +113,7 @@ class PrefixCache:
 
         for block_idx in range(num_complete_blocks):
             block_start = block_idx * BLOCK_SIZE
-            block_hash = compute_block_hash(
-                prompt_tokens, block_start, BLOCK_SIZE, prev_hash
-            )
+            block_hash = compute_block_hash(prompt_tokens, block_start, BLOCK_SIZE, prev_hash)
 
             if block_hash in self._hash_to_blocks:
                 # Found a match - get the block IDs for this hash
@@ -164,9 +162,7 @@ class PrefixCache:
             if block_end > len(prompt_tokens):
                 break
 
-            block_hash = compute_block_hash(
-                prompt_tokens, block_start, BLOCK_SIZE, prev_hash
-            )
+            block_hash = compute_block_hash(prompt_tokens, block_start, BLOCK_SIZE, prev_hash)
 
             # Store in cache if not already present
             if block_hash not in self._hash_to_blocks:

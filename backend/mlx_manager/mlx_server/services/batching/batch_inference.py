@@ -19,7 +19,7 @@ import asyncio
 import logging
 import threading
 from queue import Empty, Queue
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
@@ -150,14 +150,10 @@ class BatchInferenceEngine:
                     # If no tokens generated (e.g., empty prompt), mark as stop
                     if request.request_id not in results:
                         results[request.request_id] = ("", 0, True)
-                        logger.warning(
-                            f"No token generated for request {request.request_id}"
-                        )
+                        logger.warning(f"No token generated for request {request.request_id}")
 
                 except Exception as e:
-                    logger.error(
-                        f"Generation error for request {request.request_id}: {e}"
-                    )
+                    logger.error(f"Generation error for request {request.request_id}: {e}")
                     # Mark as stop on error
                     results[request.request_id] = ("", 0, True)
 
@@ -207,9 +203,7 @@ class BatchInferenceEngine:
 
         try:
             # Poll queue with timeout to avoid blocking event loop forever
-            result = await loop.run_in_executor(
-                None, lambda: result_queue.get(timeout=60)
-            )
+            result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=60))
         except Empty:
             raise TimeoutError("Batch generation timed out after 60 seconds")
 

@@ -7,9 +7,13 @@ This module provides the infrastructure for continuous batching:
 - Paged KV cache block management (KVBlock, BlockTable, PagedBlockManager)
 - Prefix caching for KV block sharing (PrefixCache)
 - Continuous batching scheduler (ContinuousBatchingScheduler)
+- Batch inference engine (BatchInferenceEngine) for MLX generation
 - Scheduler manager (SchedulerManager) for per-model scheduler instances
 """
 
+from mlx_manager.mlx_server.services.batching.batch_inference import (
+    BatchInferenceEngine,
+)
 from mlx_manager.mlx_server.services.batching.block import (
     BLOCK_SIZE,
     BlockTable,
@@ -37,6 +41,7 @@ from mlx_manager.mlx_server.services.batching.types import Priority, RequestStat
 
 __all__ = [
     "BLOCK_SIZE",
+    "BatchInferenceEngine",
     "BatchRequest",
     "BlockTable",
     "ContinuousBatchingScheduler",

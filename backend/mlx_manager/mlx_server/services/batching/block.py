@@ -94,7 +94,5 @@ class BlockTable:
             return []
         max_idx = max(self.logical_to_physical.keys())
         return [
-            self.logical_to_physical[i]
-            for i in range(max_idx + 1)
-            if i in self.logical_to_physical
+            self.logical_to_physical[i] for i in range(max_idx + 1) if i in self.logical_to_physical
         ]

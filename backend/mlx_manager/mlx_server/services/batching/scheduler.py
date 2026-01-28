@@ -201,9 +201,7 @@ class ContinuousBatchingScheduler:
         for block_id in physical_blocks:
             self.block_manager.release(block_id)
 
-        logger.debug(
-            f"Released {len(physical_blocks)} blocks for request {request.request_id}"
-        )
+        logger.debug(f"Released {len(physical_blocks)} blocks for request {request.request_id}")
 
         # Clear the block table reference
         request.block_table = None
@@ -250,9 +248,7 @@ class ContinuousBatchingScheduler:
         from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
 
         # Create prefix cache for this model
-        self._prefix_cache = PrefixCache(
-            model_id=self.model_id, block_manager=self.block_manager
-        )
+        self._prefix_cache = PrefixCache(model_id=self.model_id, block_manager=self.block_manager)
 
         # Create inference engine with prefix cache
         self._inference_engine = BatchInferenceEngine(
@@ -285,11 +281,13 @@ class ContinuousBatchingScheduler:
                     request.add_token(0)  # Placeholder token
 
                     # Put token in output queue
-                    await request.output_queue.put({
-                        "token_id": 0,
-                        "text": "",
-                        "request_id": request.request_id,
-                    })
+                    await request.output_queue.put(
+                        {
+                            "token_id": 0,
+                            "text": "",
+                            "request_id": request.request_id,
+                        }
+                    )
             return
 
         # Create sampler (TODO: per-request sampling parameters)
@@ -299,9 +297,7 @@ class ContinuousBatchingScheduler:
 
         # Generate tokens for all running requests
         try:
-            results = await self._inference_engine.generate_batch_step(
-                self.running, sampler
-            )
+            results = await self._inference_engine.generate_batch_step(self.running, sampler)
         except Exception as e:
             logger.error(f"Batch generation error: {e}")
             # Mark all requests as completed on error to avoid infinite loop
@@ -318,11 +314,13 @@ class ContinuousBatchingScheduler:
                     # Add token to request's generated list
                     request.generated_tokens.append(token_id)
                     # Push to output queue for streaming
-                    await request.output_queue.put({
-                        "token_id": token_id,
-                        "text": token_text,
-                        "request_id": request.request_id,
-                    })
+                    await request.output_queue.put(
+                        {
+                            "token_id": token_id,
+                            "text": token_text,
+                            "request_id": request.request_id,
+                        }
+                    )
                 else:
                     # Mark for completion (don't yield stop token)
                     request.status = RequestStatus.COMPLETED
@@ -344,10 +342,7 @@ class ContinuousBatchingScheduler:
 
             async with self._step_lock:
                 # Fill batch from waiting queue
-                while (
-                    len(self.running) < self.max_batch_size
-                    and not self.waiting.empty()
-                ):
+                while len(self.running) < self.max_batch_size and not self.waiting.empty():
                     try:
                         request = await self.waiting.get()
                     except IndexError:
@@ -360,9 +355,7 @@ class ContinuousBatchingScheduler:
                         request.block_table = block_table
                     except MemoryError as e:
                         # Not enough blocks - put request back in queue
-                        logger.warning(
-                            f"Not enough blocks for request {request.request_id}: {e}"
-                        )
+                        logger.warning(f"Not enough blocks for request {request.request_id}: {e}")
                         request.status = RequestStatus.WAITING
                         await self.waiting.put(request)
                         # Wait before retrying to avoid busy loop
@@ -430,9 +423,7 @@ class ContinuousBatchingScheduler:
                 await asyncio.sleep(0.1)
 
             if self.running:
-                logger.warning(
-                    f"Timeout waiting for {len(self.running)} running requests"
-                )
+                logger.warning(f"Timeout waiting for {len(self.running)} running requests")
                 # Force complete remaining requests
                 for request in self.running:
                     request.mark_cancelled()

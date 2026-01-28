@@ -65,9 +65,7 @@ class PriorityQueueWithAging:
         current_time = time.time()
         for entry in self._heap:
             wait_time = current_time - entry.entry_time
-            entry.effective_priority = (
-                entry.request.base_priority - (wait_time * self._aging_rate)
-            )
+            entry.effective_priority = entry.request.base_priority - (wait_time * self._aging_rate)
         heapq.heapify(self._heap)
 
     async def put(self, request: BatchRequest) -> None:
