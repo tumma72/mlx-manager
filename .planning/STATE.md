@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 4 of 7 complete
+Plan: 6 of 7 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 09-04-PLAN.md (continuous batching scheduler)
+Last activity: 2026-01-28 — Completed 09-06-PLAN.md (API integration and scheduler management)
 
-Progress: [████████░░] 84% (Phases 7-8 complete, Phase 9 plan 4/7)
+Progress: [█████████░] 87% (Phases 7-8 complete, Phase 9 plan 6/7)
 
 ## Milestone v1.2 Summary
 
@@ -131,6 +131,10 @@ Recent decisions affecting current work:
 - **Adaptive timing defaults**: idle_wait_ms=50.0, load_wait_ms=5.0 — longer wait when idle accumulates requests
 - **Memory error retry delay**: Sleep idle_wait_ms after MemoryError to prevent busy loop
 - **output_queue None signal**: None in output queue signals request completion
+- **Scheduler singleton pattern**: Module-level singleton with init/get/reset functions for testing
+- **Endpoint-based priority**: /v1/batch/* gets LOW priority, others NORMAL — system-determined, not client-requested
+- **Feature flag for batching**: enable_batching=False by default until stable
+- **Graceful fallback**: Fall back to direct inference if scheduler unavailable
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -163,7 +167,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T19:43:06Z
-Stopped at: Completed 09-04-PLAN.md (continuous batching scheduler)
+Last session: 2026-01-28T19:51:26Z
+Stopped at: Completed 09-06-PLAN.md (API integration and scheduler management)
 Resume file: None
-Next: Phase 9 Plan 05 (MLX Integration)
+Next: Phase 9 Plan 07 (end-to-end integration testing)
