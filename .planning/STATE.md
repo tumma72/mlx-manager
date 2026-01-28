@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 1 of 4 complete
+Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 09-01-PLAN.md (foundation types and priority queue)
+Last activity: 2026-01-28 — Completed 09-02-PLAN.md (paged block manager)
 
-Progress: [████████░░] 80% (Phases 7-8 complete, Phase 9 plan 1/4)
+Progress: [████████░░] 82% (Phases 7-8 complete, Phase 9 plan 2/4)
 
 ## Milestone v1.2 Summary
 
@@ -124,6 +124,9 @@ Recent decisions affecting current work:
 - **Priority IntEnum ordering**: HIGH=0, NORMAL=1, LOW=2 — lower numeric value = higher priority for natural heapq ordering
 - **Aging rate 0.1**: LOW priority becomes NORMAL after 10s, HIGH after 20s — prevents starvation without being too aggressive
 - **entry_count tie-breaker**: Guarantees FIFO ordering for same effective priority in priority queue
+- **BLOCK_SIZE=32**: 32 tokens per block for paged KV cache — ~4% internal fragmentation vs 60-80% with pre-allocation
+- **Stack-based free list**: O(1) allocation by popping from end of list
+- **Eviction targets ref_count=0 not in free list**: Primarily prefix cached blocks that stayed allocated
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -156,7 +159,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T19:26:20Z
-Stopped at: Completed 09-01-PLAN.md (foundation types and priority queue)
+Last session: 2026-01-28T19:27:00Z
+Stopped at: Completed 09-02-PLAN.md (paged block manager)
 Resume file: None
-Next: Phase 9 Plan 02 (Paged Block Manager)
+Next: Phase 9 Plan 03 (Prefix Cache)
