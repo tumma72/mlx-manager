@@ -26,6 +26,7 @@ from mlx_manager.mlx_server.services.batching.priority_queue import (
     PriorityQueueWithAging,
 )
 from mlx_manager.mlx_server.services.batching.request import BatchRequest
+from mlx_manager.mlx_server.services.batching.types import RequestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,10 @@ class ContinuousBatchingScheduler:
                         logger.warning(
                             f"Not enough blocks for request {request.request_id}: {e}"
                         )
+                        request.status = RequestStatus.WAITING
                         await self.waiting.put(request)
+                        # Wait before retrying to avoid busy loop
+                        await asyncio.sleep(self.idle_wait_ms / 1000.0)
                         break
 
                     self.running.append(request)

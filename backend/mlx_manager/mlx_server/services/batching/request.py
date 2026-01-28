@@ -9,9 +9,12 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
+
+if TYPE_CHECKING:
+    from mlx_manager.mlx_server.services.batching.block import BlockTable
 
 
 @dataclass
@@ -33,8 +36,8 @@ class BatchRequest:
     status: RequestStatus = RequestStatus.WAITING
     generated_tokens: list[int] = field(default_factory=list)
 
-    # Streaming output
-    output_queue: asyncio.Queue[dict[str, Any]] = field(
+    # Streaming output - None signals completion
+    output_queue: asyncio.Queue[dict[str, Any] | None] = field(
         default_factory=asyncio.Queue,
         repr=False,
     )
@@ -43,8 +46,9 @@ class BatchRequest:
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
 
-    # Block management (for paged KV cache - used in later plans)
-    block_table: list[int] | None = None
+    # Block management (for paged KV cache)
+    # Can be BlockTable (new system) or list[int] (legacy)
+    block_table: BlockTable | list[int] | None = None
 
     @property
     def base_priority(self) -> int:
