@@ -48,12 +48,17 @@ async def create_chat_completion(
 
     has_images = len(all_image_urls) > 0
 
+    # Check model type - vision models must use vision path even for text-only
+    model_type = detect_model_type(request.model)
+    is_vision_model = model_type == ModelType.VISION
+
     try:
-        if has_images:
-            # Multimodal request - need vision model
+        if has_images or is_vision_model:
+            # Vision model or multimodal request - use vision path
+            # Vision models use Processor (not Tokenizer) and require mlx_vlm
             return await _handle_vision_request(request, all_image_urls)
         else:
-            # Text-only request - use existing logic
+            # Text-only request with text model - use mlx_lm path
             return await _handle_text_request(request)
     except HTTPException:
         raise
