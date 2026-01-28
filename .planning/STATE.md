@@ -131,6 +131,7 @@ Recent decisions affecting current work:
 - **Adaptive timing defaults**: idle_wait_ms=50.0, load_wait_ms=5.0 — longer wait when idle accumulates requests
 - **Memory error retry delay**: Sleep idle_wait_ms after MemoryError to prevent busy loop
 - **output_queue None signal**: None in output queue signals request completion
+- **Sequential generation in BatchInferenceEngine**: mlx-lm doesn't support true batched generation (Issue #548) — generate sequentially in dedicated thread
 - **Scheduler singleton pattern**: Module-level singleton with init/get/reset functions for testing
 - **Endpoint-based priority**: /v1/batch/* gets LOW priority, others NORMAL — system-determined, not client-requested
 - **Feature flag for batching**: enable_batching=False by default until stable
