@@ -54,10 +54,7 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
 
         # Build response
         return EmbeddingResponse(
-            data=[
-                EmbeddingData(embedding=emb, index=i)
-                for i, emb in enumerate(embeddings_list)
-            ],
+            data=[EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings_list)],
             model=request.model,
             usage=EmbeddingUsage(
                 prompt_tokens=total_tokens,
