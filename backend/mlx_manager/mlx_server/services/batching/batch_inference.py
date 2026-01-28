@@ -19,7 +19,7 @@ import asyncio
 import logging
 import threading
 from queue import Empty, Queue
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
@@ -94,7 +94,8 @@ class BatchInferenceEngine:
         all_tokens = request.prompt_tokens + request.generated_tokens
 
         # Decode to text
-        return actual_tokenizer.decode(all_tokens, skip_special_tokens=False)
+        result: str = actual_tokenizer.decode(all_tokens, skip_special_tokens=False)
+        return result
 
     def generate_tokens_for_batch(
         self,
@@ -136,11 +137,12 @@ class BatchInferenceEngine:
                         max_tokens=1,  # Only generate 1 token
                         sampler=sampler,
                     ):
-                        token_id = getattr(response, "token", None)
-                        token_text = getattr(response, "text", str(response))
+                        raw_token_id = getattr(response, "token", None)
+                        token_text: str = getattr(response, "text", str(response))
+                        token_id: int = raw_token_id if raw_token_id is not None else 0
 
                         # Check for stop token
-                        is_stop = token_id is not None and token_id in self._stop_token_ids
+                        is_stop = raw_token_id is not None and raw_token_id in self._stop_token_ids
 
                         results[request.request_id] = (token_text, token_id, is_stop)
                         break  # Only take first token
