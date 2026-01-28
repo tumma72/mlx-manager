@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 7 - Foundation (Server Skeleton & Single Model Inference)
+**Current focus:** Phase 8 - Multi-Model & Multimodal Support
 
 ## Current Position
 
-Phase: 7 of 12 (Foundation - Server Skeleton & Single Model Inference)
-Plan: 7 of 7 complete (including gap closure)
-Status: Phase complete + gap closure complete
-Last activity: 2026-01-28 — Completed 07-07-PLAN.md (MLX thread affinity fix)
+Phase: 8 of 12 (Multi-Model & Multimodal Support)
+Plan: 2 of 5 complete
+Status: In progress
+Last activity: 2026-01-28 — Completed 08-02-PLAN.md (Model family adapters)
 
-Progress: [██████████] 100% (7/7 plans complete in Phase 7)
+Progress: [████------] 40% (2/5 plans complete in Phase 8)
 
 ## Milestone v1.2 Summary
 
@@ -145,7 +145,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T09:34:16Z
-Stopped at: Completed 07-07-PLAN.md (MLX thread affinity fix) - Phase 7 gap closure complete
+Last session: 2026-01-28T11:42:00Z
+Stopped at: Completed 08-02-PLAN.md (Model family adapters: Qwen, Mistral, Gemma)
 Resume file: None
-Next: Execute Phase 8 (Continuous Batching)
+Next: Execute 08-03-PLAN.md (Multimodal vision support)
