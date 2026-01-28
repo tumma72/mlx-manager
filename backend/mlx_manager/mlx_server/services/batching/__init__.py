@@ -7,6 +7,7 @@ This module provides the infrastructure for continuous batching:
 - Paged KV cache block management (KVBlock, BlockTable, PagedBlockManager)
 - Prefix caching for KV block sharing (PrefixCache)
 - Continuous batching scheduler (ContinuousBatchingScheduler)
+- Scheduler manager (SchedulerManager) for per-model scheduler instances
 """
 
 from mlx_manager.mlx_server.services.batching.block import (
@@ -26,6 +27,12 @@ from mlx_manager.mlx_server.services.batching.request import BatchRequest
 from mlx_manager.mlx_server.services.batching.scheduler import (
     ContinuousBatchingScheduler,
 )
+from mlx_manager.mlx_server.services.batching.scheduler_manager import (
+    SchedulerManager,
+    get_scheduler_manager,
+    init_scheduler_manager,
+    reset_scheduler_manager,
+)
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
 
 __all__ = [
@@ -39,5 +46,9 @@ __all__ = [
     "Priority",
     "PriorityQueueWithAging",
     "RequestStatus",
+    "SchedulerManager",
     "compute_block_hash",
+    "get_scheduler_manager",
+    "init_scheduler_manager",
+    "reset_scheduler_manager",
 ]
