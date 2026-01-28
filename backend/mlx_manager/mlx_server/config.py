@@ -10,7 +10,7 @@ class MLXServerSettings(BaseSettings):
     """MLX Inference Server settings.
 
     All settings can be configured via environment variables with MLX_SERVER_ prefix.
-    Example: MLX_SERVER_PORT=8000
+    Example: MLX_SERVER_PORT=10242
     """
 
     model_config = SettingsConfigDict(
@@ -21,7 +21,7 @@ class MLXServerSettings(BaseSettings):
 
     # Server binding
     host: str = Field(default="127.0.0.1", description="Host to bind the server to")
-    port: int = Field(default=8000, description="Port to bind the server to")
+    port: int = Field(default=10242, description="Port to bind the server to")
 
     # Available models (loadable via /v1/chat/completions)
     # These are model IDs that the server is configured to serve.
