@@ -70,7 +70,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
 1. Model pool manager supports multiple hot models with configurable memory limit
 2. LRU eviction unloads least-recently-used models when memory pressure detected
-3. Vision models load via mlx-vlm with VisionAddOn pattern (image embeddings -> text generation)
+3. Vision models load via mlx-vlm and generate responses using mlx_vlm.generate()
 4. Embedding models load via mlx-embeddings for `/v1/embeddings` endpoint
 5. Qwen, Mistral, and Gemma adapters handle their respective model families
 6. Admin endpoints allow explicit model preload/unload
