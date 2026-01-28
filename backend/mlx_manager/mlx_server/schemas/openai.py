@@ -4,18 +4,89 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 """
 
 import time
-from typing import Literal
+from typing import Literal, Union
 
 from pydantic import BaseModel, Field
+
+# --- Vision Content Blocks ---
+
+
+class ImageURL(BaseModel):
+    """Image URL reference for vision content."""
+
+    url: str  # Can be data:image/... base64 URI or http(s) URL
+    detail: Literal["auto", "low", "high"] = "auto"
+
+
+class ImageContentBlock(BaseModel):
+    """Image content block in a message."""
+
+    type: Literal["image_url"] = "image_url"
+    image_url: ImageURL
+
+
+class TextContentBlock(BaseModel):
+    """Text content block in a message."""
+
+    type: Literal["text"] = "text"
+    text: str
+
+
+# Union type for content blocks
+ContentBlock = Union[TextContentBlock, ImageContentBlock]
+
+
+def extract_content_parts(
+    content: str | list[ContentBlock],
+) -> tuple[str, list[str]]:
+    """Extract text and image URLs from message content.
+
+    Args:
+        content: Either a string or list of content blocks
+
+    Returns:
+        Tuple of (text_content, list_of_image_urls)
+    """
+    if isinstance(content, str):
+        return content, []
+
+    text_parts: list[str] = []
+    image_urls: list[str] = []
+
+    for block in content:
+        if isinstance(block, dict):
+            # Handle dict form (from JSON parsing)
+            if block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+            elif block.get("type") == "image_url":
+                img_url = block.get("image_url", {})
+                if isinstance(img_url, dict):
+                    image_urls.append(img_url.get("url", ""))
+                elif isinstance(img_url, str):
+                    image_urls.append(img_url)
+        elif hasattr(block, "type"):
+            # Handle Pydantic model form
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "image_url":
+                image_urls.append(block.image_url.url)
+
+    return " ".join(text_parts), image_urls
+
 
 # --- Request Models ---
 
 
 class ChatMessage(BaseModel):
-    """A single message in the conversation."""
+    """A single message in the conversation.
+
+    Content can be:
+    - A simple string (text-only message)
+    - A list of content blocks (for multimodal messages with images)
+    """
 
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str | list[ContentBlock]
 
 
 class ChatCompletionRequest(BaseModel):
