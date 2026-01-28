@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 8 of 12 (Multi-Model & Multimodal Support)
-Plan: 1 of 6 complete
+Plan: 3 of 6 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 08-01-PLAN.md (ModelPoolManager LRU eviction)
+Last activity: 2026-01-28 — Completed 08-03-PLAN.md (Model type detection and vision infrastructure)
 
-Progress: [██--------] 17% (1/6 plans complete in Phase 8)
+Progress: [█████-----] 50% (3/6 plans complete in Phase 8)
 
 ## Milestone v1.2 Summary
 
@@ -115,6 +115,8 @@ Recent decisions affecting current work:
 - **make_sampler API**: mlx_lm.stream_generate() no longer accepts temp/top_p directly — use make_sampler()
 - **Model size estimation heuristic**: Uses param count patterns (3B=2GB, 7B=4GB) for LRU eviction memory planning
 - **Preload protection**: Preloaded models never evicted regardless of last_used time — use for startup models
+- **Config-first model type detection**: Check vision_config, image_token_id, architectures before name patterns for reliable type detection
+- **Processor as tokenizer**: Vision models store processor in tokenizer field to reuse LoadedModel structure
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -147,7 +149,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T11:42:34Z
-Stopped at: Completed 08-01-PLAN.md (ModelPoolManager LRU eviction)
+Last session: 2026-01-28T11:49:00Z
+Stopped at: Completed 08-03-PLAN.md (Model type detection and vision infrastructure)
 Resume file: None
-Next: Execute 08-02-PLAN.md (Model family adapters)
+Next: Execute 08-04-PLAN.md (Vision inference endpoint)
