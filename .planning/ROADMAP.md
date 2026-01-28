@@ -179,7 +179,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
-| 8. Multi-Model | v1.2 | 0/6 | Planned | - |
+| 8. Multi-Model | v1.2 | 6/6 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 0/TBD | Not started | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |

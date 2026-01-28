@@ -21,8 +21,8 @@
 - [x] **SRV-01**: FastAPI + uvloop server skeleton with Pydantic v2 validation and LogFire observability
 - [x] **SRV-02**: Model pool manager loads/unloads models with LRU eviction and memory pressure monitoring
 - [x] **SRV-03**: Single model inference via mlx-lm (text generation) with SSE streaming
-- [ ] **SRV-04**: Vision model support via mlx-vlm (VisionAddOn pattern from LM Studio)
-- [ ] **SRV-05**: Embedding model support via mlx-embeddings for `/v1/embeddings` endpoint
+- [x] **SRV-04**: Vision model support via mlx-vlm (VisionAddOn pattern from LM Studio)
+- [x] **SRV-05**: Embedding model support via mlx-embeddings for `/v1/embeddings` endpoint
 
 ### Continuous Batching (BATCH)
 
@@ -37,15 +37,15 @@
 - [x] **API-02**: OpenAI-compatible `/v1/completions` endpoint for legacy clients
 - [ ] **API-03**: Anthropic-compatible `/v1/messages` endpoint with protocol translation
 - [x] **API-04**: Model listing endpoint `/v1/models` returns all hot + loadable models
-- [ ] **API-05**: Management endpoints for model preload/unload and pool status
+- [x] **API-05**: Management endpoints for model preload/unload and pool status
 
 ### Model Adapters (ADAPT)
 
 - [x] **ADAPT-01**: Abstract ModelAdapter protocol defines per-family handling (chat template, tool parsing, stop tokens)
 - [x] **ADAPT-02**: Llama family adapter (Llama 3.x, CodeLlama)
-- [ ] **ADAPT-03**: Qwen family adapter (Qwen2, Qwen2.5, Qwen-VL, Qwen3)
-- [ ] **ADAPT-04**: Mistral family adapter (Mistral, Mixtral)
-- [ ] **ADAPT-05**: Gemma family adapter (Gemma, Gemma2, Gemma3)
+- [x] **ADAPT-03**: Qwen family adapter (Qwen2, Qwen2.5, Qwen-VL, Qwen3)
+- [x] **ADAPT-04**: Mistral family adapter (Mistral, Mixtral)
+- [x] **ADAPT-05**: Gemma family adapter (Gemma, Gemma2, Gemma3)
 
 ### Cloud Fallback (CLOUD)
 
