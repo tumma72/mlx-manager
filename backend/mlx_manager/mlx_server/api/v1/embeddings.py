@@ -1,0 +1,70 @@
+"""Embeddings API endpoint.
+
+OpenAI-compatible endpoint for generating text embeddings.
+Reference: https://platform.openai.com/docs/api-reference/embeddings
+"""
+
+import logging
+
+from fastapi import APIRouter, HTTPException
+
+from mlx_manager.mlx_server.models.detection import detect_model_type
+from mlx_manager.mlx_server.models.types import ModelType
+from mlx_manager.mlx_server.schemas.openai import (
+    EmbeddingData,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    EmbeddingUsage,
+)
+from mlx_manager.mlx_server.services.embeddings import generate_embeddings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["embeddings"])
+
+
+@router.post("/embeddings", response_model=EmbeddingResponse)
+async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
+    """Create embeddings for the input text(s).
+
+    Accepts a single string or array of strings and returns embeddings
+    in OpenAI-compatible format. Embeddings are L2-normalized.
+    """
+    # Normalize input to list
+    texts = [request.input] if isinstance(request.input, str) else list(request.input)
+
+    if not texts:
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+
+    # Validate model type
+    model_type = detect_model_type(request.model)
+    if model_type != ModelType.EMBEDDINGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' is type '{model_type.value}', not 'embeddings'. "
+            f"Use an embedding model (e.g., all-MiniLM-L6-v2).",
+        )
+
+    try:
+        # Generate embeddings
+        embeddings_list, total_tokens = await generate_embeddings(
+            model_id=request.model,
+            texts=texts,
+        )
+
+        # Build response
+        return EmbeddingResponse(
+            data=[
+                EmbeddingData(embedding=emb, index=i)
+                for i, emb in enumerate(embeddings_list)
+            ],
+            model=request.model,
+            usage=EmbeddingUsage(
+                prompt_tokens=total_tokens,
+                total_tokens=total_tokens,
+            ),
+        )
+
+    except Exception as e:
+        logger.error(f"Embeddings generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
