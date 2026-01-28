@@ -211,3 +211,41 @@ class ModelListResponse(BaseModel):
 
     object: Literal["list"] = "list"
     data: list[ModelInfo]
+
+
+# --- Embeddings API ---
+
+
+class EmbeddingRequest(BaseModel):
+    """OpenAI Embeddings request.
+
+    Reference: https://platform.openai.com/docs/api-reference/embeddings
+    """
+
+    input: str | list[str]  # Single string or batch of strings
+    model: str
+    # encoding_format: Literal["float", "base64"] = "float"  # Only float supported for now
+
+
+class EmbeddingData(BaseModel):
+    """A single embedding in the response."""
+
+    embedding: list[float]
+    index: int
+    object: Literal["embedding"] = "embedding"
+
+
+class EmbeddingUsage(BaseModel):
+    """Token usage for embeddings request."""
+
+    prompt_tokens: int
+    total_tokens: int
+
+
+class EmbeddingResponse(BaseModel):
+    """OpenAI Embeddings response."""
+
+    data: list[EmbeddingData]
+    model: str
+    object: Literal["list"] = "list"
+    usage: EmbeddingUsage
