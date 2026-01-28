@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+import psutil
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +25,8 @@ class LoadedModel:
     loaded_at: float = field(default_factory=time.time)
     last_used: float = field(default_factory=time.time)
     size_gb: float = 0.0  # Estimated size
+    model_type: str = "text-gen"  # Type of model (from ModelType enum values)
+    preloaded: bool = False  # Whether protected from eviction
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -30,25 +36,156 @@ class LoadedModel:
 class ModelPoolManager:
     """Manages loading and caching of MLX models.
 
-    Phase 7 implementation: Single model support.
-    Phase 8 will add: Multi-model with LRU eviction.
+    Supports multi-model hot-swapping with LRU eviction for memory management.
+    Preloaded models are protected from eviction.
     """
 
-    def __init__(self, max_memory_gb: float = 48.0, max_models: int = 1):
+    def __init__(
+        self,
+        max_memory_gb: float = 48.0,
+        max_models: int = 4,
+        memory_limit_pct: float | None = None,
+    ):
         """Initialize the model pool.
 
         Args:
-            max_memory_gb: Maximum memory for model pool
-            max_models: Maximum number of hot models (1 for Phase 7)
+            max_memory_gb: Maximum memory for model pool in GB (default: 48GB)
+            max_models: Maximum number of hot models (default: 4)
+            memory_limit_pct: Alternative to max_memory_gb as percentage of system memory
+                             (e.g., 0.75 = 75%). Takes precedence over max_memory_gb.
         """
         self._models: dict[str, LoadedModel] = {}
         self._loading: dict[str, asyncio.Event] = {}
         self._lock = asyncio.Lock()
         self.max_memory_gb = max_memory_gb
         self.max_models = max_models
+        self._memory_limit_pct = memory_limit_pct
         logger.info(
             f"ModelPoolManager initialized (max_memory={max_memory_gb}GB, max_models={max_models})"
         )
+
+    def _get_effective_memory_limit(self) -> float:
+        """Get the effective memory limit in GB.
+
+        If memory_limit_pct is set, calculates from total system memory.
+        Otherwise returns max_memory_gb.
+
+        Returns:
+            Memory limit in GB
+        """
+        if self._memory_limit_pct is not None:
+            total_memory_gb = psutil.virtual_memory().total / (1024**3)
+            return total_memory_gb * self._memory_limit_pct
+        return self.max_memory_gb
+
+    def _current_memory_gb(self) -> float:
+        """Get the total memory used by loaded models.
+
+        Returns:
+            Sum of all loaded model sizes in GB
+        """
+        return sum(m.size_gb for m in self._models.values())
+
+    def _evictable_models(self) -> list[LoadedModel]:
+        """Get list of models that can be evicted (not preloaded).
+
+        Returns:
+            List of LoadedModel instances where preloaded is False
+        """
+        return [m for m in self._models.values() if not m.preloaded]
+
+    async def _evict_lru(self) -> bool:
+        """Evict the least recently used non-preloaded model.
+
+        Returns:
+            True if a model was evicted, False if no evictable models exist
+        """
+        evictable = self._evictable_models()
+        if not evictable:
+            return False
+
+        # Find LRU model
+        lru_model = min(evictable, key=lambda m: m.last_used)
+
+        # Remove from pool
+        del self._models[lru_model.model_id]
+
+        # Clear cache
+        from mlx_manager.mlx_server.utils.memory import clear_cache
+
+        clear_cache()
+
+        logger.info(
+            f"Evicted LRU model: {lru_model.model_id} "
+            f"(size={lru_model.size_gb:.1f}GB, last_used={lru_model.last_used:.0f})"
+        )
+        return True
+
+    def _estimate_model_size(self, model_id: str) -> float:
+        """Estimate model size based on name patterns.
+
+        Args:
+            model_id: HuggingFace model ID
+
+        Returns:
+            Estimated size in GB
+        """
+        # Look for parameter count patterns like "3B", "7B", "13B", "70B"
+        match = re.search(r"(\d+)[bB]", model_id)
+        if match:
+            param_count = int(match.group(1))
+            # Rough mapping: 3B -> 2GB, 7B -> 4GB, 8B -> 5GB, 13B -> 8GB, 70B -> 40GB
+            size_mapping = {
+                3: 2.0,
+                7: 4.0,
+                8: 5.0,
+                13: 8.0,
+                70: 40.0,
+            }
+            # Return exact match or interpolate
+            if param_count in size_mapping:
+                return size_mapping[param_count]
+            # For other sizes, estimate ~0.6GB per billion parameters (quantized)
+            return param_count * 0.6
+        # Default estimate
+        return 4.0
+
+    async def _ensure_memory_for_load(self, model_id: str) -> None:
+        """Ensure there is enough memory to load a model.
+
+        Evicts LRU models as needed until there is enough memory.
+
+        Args:
+            model_id: Model to load
+
+        Raises:
+            HTTPException: 503 if insufficient memory even after eviction
+        """
+        estimated_size = self._estimate_model_size(model_id)
+        memory_limit = self._get_effective_memory_limit()
+
+        while True:
+            current = self._current_memory_gb()
+            available = memory_limit - current
+
+            if estimated_size <= available:
+                # Enough memory available
+                return
+
+            # Try to evict LRU model
+            evictable = self._evictable_models()
+            if not evictable:
+                # No models to evict
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        f"Insufficient memory: need {estimated_size:.1f}GB, "
+                        f"only {available:.1f}GB available after eviction"
+                    ),
+                )
+
+            # Evict LRU
+            await self._evict_lru()
 
     async def get_model(self, model_id: str) -> LoadedModel:
         """Get a model, loading it if necessary.
@@ -61,6 +198,7 @@ class ModelPoolManager:
 
         Raises:
             RuntimeError: If model loading fails
+            HTTPException: 503 if insufficient memory
         """
         async with self._lock:
             # Return cached model
@@ -78,6 +216,10 @@ class ModelPoolManager:
         if model_id in self._loading:
             await self._loading[model_id].wait()
             return self._models[model_id]
+
+        # Ensure memory before loading
+        async with self._lock:
+            await self._ensure_memory_for_load(model_id)
 
         # Start loading
         return await self._load_model(model_id)
@@ -139,6 +281,20 @@ class ModelPoolManager:
                     del self._loading[model_id]
             logger.error(f"Failed to load model {model_id}: {e}")
             raise RuntimeError(f"Failed to load model: {e}") from e
+
+    async def preload_model(self, model_id: str) -> LoadedModel:
+        """Preload a model and mark it as protected from eviction.
+
+        Args:
+            model_id: HuggingFace model ID
+
+        Returns:
+            LoadedModel with preloaded=True
+        """
+        loaded = await self.get_model(model_id)
+        loaded.preloaded = True
+        logger.info(f"Model preloaded (protected from eviction): {model_id}")
+        return loaded
 
     async def unload_model(self, model_id: str) -> bool:
         """Unload a model from the pool.
