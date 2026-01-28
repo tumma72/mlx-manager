@@ -150,14 +150,18 @@ async def _stream_chat_generate(
 
     def run_generation() -> None:
         """Run MLX generation in dedicated thread (owns Metal context)."""
+        from mlx_lm.sample_utils import make_sampler
+
         try:
+            # Create sampler with temperature and top_p settings
+            sampler = make_sampler(temp=temperature, top_p=top_p)
+
             for response in stream_generate(
                 model,
                 tokenizer,
                 prompt,
                 max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
+                sampler=sampler,
             ):
                 # Get token ID from response
                 # Note: stream_generate response has .token attribute (int)
@@ -205,9 +209,7 @@ async def _stream_chat_generate(
         while True:
             # Poll queue without blocking event loop (use run_in_executor for queue.get)
             try:
-                result = await loop.run_in_executor(
-                    None, lambda: token_queue.get(timeout=0.1)
-                )
+                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
             except Empty:
                 continue
 
@@ -308,17 +310,21 @@ async def _generate_chat_complete(
 
     def run_generation() -> None:
         """Run complete generation in dedicated thread (owns Metal context)."""
+        from mlx_lm.sample_utils import make_sampler
+
         try:
             response_text = ""
             finish_reason = "length"
+
+            # Create sampler with temperature and top_p settings
+            sampler = make_sampler(temp=temperature, top_p=top_p)
 
             for response in stream_generate(
                 model,
                 tokenizer,
                 prompt,
                 max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
+                sampler=sampler,
             ):
                 token_id = getattr(response, "token", None)
                 token_text = getattr(response, "text", str(response))
@@ -341,9 +347,7 @@ async def _generate_chat_complete(
 
         # Wait for result (with timeout to not block forever - 5 min max)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: result_queue.get(timeout=300)
-        )
+        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
 
         gen_thread.join(timeout=1.0)
 
@@ -503,14 +507,18 @@ async def _stream_completion(
 
     def run_generation() -> None:
         """Run MLX generation in dedicated thread (owns Metal context)."""
+        from mlx_lm.sample_utils import make_sampler
+
         try:
+            # Create sampler with temperature and top_p settings
+            sampler = make_sampler(temp=temperature, top_p=top_p)
+
             for response in stream_generate(
                 model,
                 tokenizer,
                 prompt,
                 max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
+                sampler=sampler,
             ):
                 token_id = getattr(response, "token", None)
                 token_text = getattr(response, "text", str(response))
@@ -552,9 +560,7 @@ async def _stream_completion(
 
         while True:
             try:
-                result = await loop.run_in_executor(
-                    None, lambda: token_queue.get(timeout=0.1)
-                )
+                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
             except Empty:
                 continue
 
@@ -635,17 +641,21 @@ async def _generate_raw_completion(
 
     def run_generation() -> None:
         """Run complete generation in dedicated thread (owns Metal context)."""
+        from mlx_lm.sample_utils import make_sampler
+
         try:
             response_text = ""
             finish_reason = "length"
+
+            # Create sampler with temperature and top_p settings
+            sampler = make_sampler(temp=temperature, top_p=top_p)
 
             for response in stream_generate(
                 model,
                 tokenizer,
                 prompt,
                 max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
+                sampler=sampler,
             ):
                 token_id = getattr(response, "token", None)
                 token_text = getattr(response, "text", str(response))
@@ -667,9 +677,7 @@ async def _generate_raw_completion(
 
         # Wait for result (with timeout - 5 min max)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: result_queue.get(timeout=300)
-        )
+        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
 
         gen_thread.join(timeout=1.0)
 
