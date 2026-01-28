@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 2 of 4 complete
+Plan: 3 of 7 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 09-02-PLAN.md (paged block manager)
+Last activity: 2026-01-28 — Completed 09-03-PLAN.md (prefix cache)
 
-Progress: [████████░░] 82% (Phases 7-8 complete, Phase 9 plan 2/4)
+Progress: [████████░░] 83% (Phases 7-8 complete, Phase 9 plan 3/7)
 
 ## Milestone v1.2 Summary
 
@@ -127,6 +127,7 @@ Recent decisions affecting current work:
 - **BLOCK_SIZE=32**: 32 tokens per block for paged KV cache — ~4% internal fragmentation vs 60-80% with pre-allocation
 - **Stack-based free list**: O(1) allocation by popping from end of list
 - **Eviction targets ref_count=0 not in free list**: Primarily prefix cached blocks that stayed allocated
+- **Hash chaining for position context**: Same tokens at different positions produce different hashes via prev_hash parameter
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -159,7 +160,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T19:27:00Z
-Stopped at: Completed 09-02-PLAN.md (paged block manager)
+Last session: 2026-01-28T19:33:56Z
+Stopped at: Completed 09-03-PLAN.md (prefix cache)
 Resume file: None
-Next: Phase 9 Plan 03 (Prefix Cache)
+Next: Phase 9 Plan 04 (Continuous Batching Scheduler)
