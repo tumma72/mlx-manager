@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 3 of 7 complete
+Plan: 4 of 7 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 09-03-PLAN.md (prefix cache)
+Last activity: 2026-01-28 — Completed 09-04-PLAN.md (continuous batching scheduler)
 
-Progress: [████████░░] 83% (Phases 7-8 complete, Phase 9 plan 3/7)
+Progress: [████████░░] 84% (Phases 7-8 complete, Phase 9 plan 4/7)
 
 ## Milestone v1.2 Summary
 
@@ -128,6 +128,9 @@ Recent decisions affecting current work:
 - **Stack-based free list**: O(1) allocation by popping from end of list
 - **Eviction targets ref_count=0 not in free list**: Primarily prefix cached blocks that stayed allocated
 - **Hash chaining for position context**: Same tokens at different positions produce different hashes via prev_hash parameter
+- **Adaptive timing defaults**: idle_wait_ms=50.0, load_wait_ms=5.0 — longer wait when idle accumulates requests
+- **Memory error retry delay**: Sleep idle_wait_ms after MemoryError to prevent busy loop
+- **output_queue None signal**: None in output queue signals request completion
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -160,7 +163,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T19:33:56Z
-Stopped at: Completed 09-03-PLAN.md (prefix cache)
+Last session: 2026-01-28T19:43:06Z
+Stopped at: Completed 09-04-PLAN.md (continuous batching scheduler)
 Resume file: None
-Next: Phase 9 Plan 04 (Continuous Batching Scheduler)
+Next: Phase 9 Plan 05 (MLX Integration)
