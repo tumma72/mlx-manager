@@ -58,13 +58,17 @@ class LlamaAdapter:
 
         The model signals end-of-message with <|eot_id|> but continues
         if only eos_token_id is checked.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
-        stop_tokens: list[int] = [tokenizer.eos_token_id]
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        stop_tokens: list[int] = [actual_tokenizer.eos_token_id]
 
         # Add <|eot_id|> for Llama 3.x
         try:
-            eot_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
-            if eot_id is not None and eot_id != tokenizer.unk_token_id:
+            eot_id = actual_tokenizer.convert_tokens_to_ids("<|eot_id|>")
+            if eot_id is not None and eot_id != actual_tokenizer.unk_token_id:
                 stop_tokens.append(eot_id)
                 logger.debug("Llama adapter: added <|eot_id|> (%d) to stop tokens", eot_id)
         except Exception as e:
@@ -72,8 +76,8 @@ class LlamaAdapter:
 
         # Also check for end_of_turn if present (some variants)
         try:
-            end_turn_id = tokenizer.convert_tokens_to_ids("<|end_of_turn|>")
-            if end_turn_id is not None and end_turn_id != tokenizer.unk_token_id:
+            end_turn_id = actual_tokenizer.convert_tokens_to_ids("<|end_of_turn|>")
+            if end_turn_id is not None and end_turn_id != actual_tokenizer.unk_token_id:
                 if end_turn_id not in stop_tokens:
                     stop_tokens.append(end_turn_id)
         except Exception:

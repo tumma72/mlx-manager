@@ -59,5 +59,9 @@ class MistralAdapter:
         """Get Mistral stop tokens.
 
         Mistral uses </s> as the end-of-sequence token.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
-        return [tokenizer.eos_token_id]
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        return [actual_tokenizer.eos_token_id]

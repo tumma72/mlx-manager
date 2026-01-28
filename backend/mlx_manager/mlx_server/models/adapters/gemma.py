@@ -36,13 +36,17 @@ class GemmaAdapter:
 
         Gemma uses <end_of_turn> as the end-of-turn marker.
         Must include both eos_token_id and <end_of_turn> to prevent runaway generation.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
-        stop_tokens = [tokenizer.eos_token_id]
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        stop_tokens = [actual_tokenizer.eos_token_id]
 
         # Add <end_of_turn> token
         try:
-            end_turn_id = tokenizer.convert_tokens_to_ids("<end_of_turn>")
-            if end_turn_id is not None and end_turn_id != tokenizer.unk_token_id:
+            end_turn_id = actual_tokenizer.convert_tokens_to_ids("<end_of_turn>")
+            if end_turn_id is not None and end_turn_id != actual_tokenizer.unk_token_id:
                 stop_tokens.append(end_turn_id)
         except Exception:
             pass

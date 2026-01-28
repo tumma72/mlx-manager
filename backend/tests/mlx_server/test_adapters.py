@@ -53,7 +53,8 @@ class TestQwenAdapter:
     def test_get_stop_tokens_includes_im_end(self):
         """Verify <|im_end|> is included in stop tokens."""
         adapter = QwenAdapter()
-        tokenizer = MagicMock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 200  # <|im_end|>
@@ -67,7 +68,8 @@ class TestQwenAdapter:
     def test_get_stop_tokens_handles_missing_im_end(self):
         """Verify graceful handling when <|im_end|> is not available."""
         adapter = QwenAdapter()
-        tokenizer = MagicMock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.side_effect = Exception("Token not found")
@@ -91,6 +93,24 @@ class TestQwenAdapter:
             add_generation_prompt=True,
             tokenize=False,
         )
+
+    def test_get_stop_tokens_with_processor(self):
+        """Verify Processor objects (vision models) are handled correctly."""
+        adapter = QwenAdapter()
+        # Simulate a Processor that wraps a tokenizer
+        inner_tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
+        inner_tokenizer.eos_token_id = 100
+        inner_tokenizer.unk_token_id = 0
+        inner_tokenizer.convert_tokens_to_ids.return_value = 200  # <|im_end|>
+
+        processor = MagicMock()
+        processor.tokenizer = inner_tokenizer
+
+        stop_tokens = adapter.get_stop_tokens(processor)
+
+        assert 100 in stop_tokens  # eos
+        assert 200 in stop_tokens  # <|im_end|>
+        inner_tokenizer.convert_tokens_to_ids.assert_called_with("<|im_end|>")
 
 
 class TestMistralAdapter:
@@ -142,10 +162,25 @@ class TestMistralAdapter:
     def test_get_stop_tokens(self):
         """Verify only eos_token_id is returned."""
         adapter = MistralAdapter()
-        tokenizer = MagicMock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        tokenizer = MagicMock(spec=["eos_token_id"])
         tokenizer.eos_token_id = 100
 
         stop_tokens = adapter.get_stop_tokens(tokenizer)
+
+        assert stop_tokens == [100]
+
+    def test_get_stop_tokens_with_processor(self):
+        """Verify Processor objects (vision models) are handled correctly."""
+        adapter = MistralAdapter()
+        # Simulate a Processor that wraps a tokenizer
+        inner_tokenizer = MagicMock(spec=["eos_token_id"])
+        inner_tokenizer.eos_token_id = 100
+
+        processor = MagicMock()
+        processor.tokenizer = inner_tokenizer
+
+        stop_tokens = adapter.get_stop_tokens(processor)
 
         assert stop_tokens == [100]
 
@@ -161,7 +196,8 @@ class TestGemmaAdapter:
     def test_get_stop_tokens_includes_end_of_turn(self):
         """Verify <end_of_turn> is included in stop tokens."""
         adapter = GemmaAdapter()
-        tokenizer = MagicMock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 300  # <end_of_turn>
@@ -175,7 +211,8 @@ class TestGemmaAdapter:
     def test_get_stop_tokens_handles_missing_end_of_turn(self):
         """Verify graceful handling when <end_of_turn> is not available."""
         adapter = GemmaAdapter()
-        tokenizer = MagicMock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.side_effect = Exception("Token not found")
@@ -199,3 +236,21 @@ class TestGemmaAdapter:
             add_generation_prompt=True,
             tokenize=False,
         )
+
+    def test_get_stop_tokens_with_processor(self):
+        """Verify Processor objects (vision models) are handled correctly."""
+        adapter = GemmaAdapter()
+        # Simulate a Processor that wraps a tokenizer
+        inner_tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
+        inner_tokenizer.eos_token_id = 100
+        inner_tokenizer.unk_token_id = 0
+        inner_tokenizer.convert_tokens_to_ids.return_value = 300  # <end_of_turn>
+
+        processor = MagicMock()
+        processor.tokenizer = inner_tokenizer
+
+        stop_tokens = adapter.get_stop_tokens(processor)
+
+        assert 100 in stop_tokens  # eos
+        assert 300 in stop_tokens  # <end_of_turn>
+        inner_tokenizer.convert_tokens_to_ids.assert_called_with("<end_of_turn>")

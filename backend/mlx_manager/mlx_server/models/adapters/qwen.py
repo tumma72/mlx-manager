@@ -37,14 +37,18 @@ class QwenAdapter:
 
         Qwen uses ChatML format with <|im_end|> as end-of-turn marker.
         Must include both eos_token_id and <|im_end|> to prevent runaway generation.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
-        stop_tokens = [tokenizer.eos_token_id]
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        stop_tokens = [actual_tokenizer.eos_token_id]
 
         # Add <|im_end|> token (ChatML end of turn)
         try:
-            im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+            im_end_id = actual_tokenizer.convert_tokens_to_ids("<|im_end|>")
             # Check it's a valid token (not None or unk)
-            if im_end_id is not None and im_end_id != tokenizer.unk_token_id:
+            if im_end_id is not None and im_end_id != actual_tokenizer.unk_token_id:
                 stop_tokens.append(im_end_id)
         except Exception:
             pass
