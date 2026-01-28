@@ -24,6 +24,11 @@ MAX_IMAGE_DIMENSION = 2048  # Max width or height in pixels
 URL_FETCH_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
 MAX_URL_RETRIES = 3
 
+# Default headers for image fetching (required by some sites like Wikipedia)
+DEFAULT_HEADERS = {
+    "User-Agent": "MLX-Manager/1.0 (https://github.com/user/mlx-manager; image-fetch)"
+}
+
 
 async def preprocess_image(
     image_input: str,
@@ -105,7 +110,7 @@ async def _fetch_image_from_url(
     """
     should_close = False
     if client is None:
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(headers=DEFAULT_HEADERS)
         should_close = True
 
     try:
@@ -150,7 +155,7 @@ async def preprocess_images(
     """
     should_close = False
     if client is None:
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(headers=DEFAULT_HEADERS)
         should_close = True
 
     try:
