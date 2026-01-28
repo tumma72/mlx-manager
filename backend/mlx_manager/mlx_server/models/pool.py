@@ -12,6 +12,9 @@ from typing import Any
 import psutil
 from fastapi import HTTPException
 
+from mlx_manager.mlx_server.models.detection import detect_model_type
+from mlx_manager.mlx_server.models.types import ModelType
+
 logger = logging.getLogger(__name__)
 
 
@@ -227,6 +230,11 @@ class ModelPoolManager:
     async def _load_model(self, model_id: str) -> LoadedModel:
         """Load a model from HuggingFace.
 
+        Detects model type and uses appropriate loader:
+        - TEXT_GEN: mlx_lm.load()
+        - VISION: mlx_vlm.load()
+        - EMBEDDINGS: mlx_embeddings.utils.load()
+
         Args:
             model_id: Model identifier
 
@@ -245,13 +253,29 @@ class ModelPoolManager:
         start_time = time.time()
 
         try:
-            # Import mlx_lm lazily
-            from mlx_lm import load
+            # Detect model type
+            model_type = detect_model_type(model_id)
+            logger.info(f"Detected model type: {model_type.value} for {model_id}")
 
-            # Load in thread pool (blocking operation)
-            # Note: load() returns (model, tokenizer) when return_config=False (default)
-            result = await asyncio.to_thread(load, model_id)
-            model, tokenizer = result[0], result[1]
+            # Load based on type
+            if model_type == ModelType.VISION:
+                # Vision models use mlx-vlm (returns model, processor)
+                from mlx_vlm import load as load_vlm
+
+                result = await asyncio.to_thread(load_vlm, model_id)
+                model, tokenizer = result[0], result[1]  # processor stored as tokenizer
+            elif model_type == ModelType.EMBEDDINGS:
+                # Embedding models use mlx-embeddings
+                from mlx_embeddings.utils import load as load_embeddings
+
+                result = await asyncio.to_thread(load_embeddings, model_id)
+                model, tokenizer = result[0], result[1]
+            else:
+                # Text-gen models use mlx-lm
+                from mlx_lm import load
+
+                result = await asyncio.to_thread(load, model_id)
+                model, tokenizer = result[0], result[1]
 
             # Get memory after loading
             from mlx_manager.mlx_server.utils.memory import get_memory_usage
@@ -262,6 +286,7 @@ class ModelPoolManager:
                 model_id=model_id,
                 model=model,
                 tokenizer=tokenizer,
+                model_type=model_type.value,
                 size_gb=memory["active_gb"],
             )
 
@@ -271,7 +296,10 @@ class ModelPoolManager:
                 del self._loading[model_id]
 
             elapsed = time.time() - start_time
-            logger.info(f"Model loaded: {model_id} ({elapsed:.1f}s, {loaded.size_gb:.1f}GB)")
+            logger.info(
+                f"Model loaded: {model_id} (type={model_type.value}, "
+                f"{elapsed:.1f}s, {loaded.size_gb:.1f}GB)"
+            )
             return loaded
 
         except Exception as e:
