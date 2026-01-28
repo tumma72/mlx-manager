@@ -6,11 +6,15 @@ This module provides the infrastructure for continuous batching:
 - Status and priority enums
 """
 
+from mlx_manager.mlx_server.services.batching.priority_queue import (
+    PriorityQueueWithAging,
+)
 from mlx_manager.mlx_server.services.batching.request import BatchRequest
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
 
 __all__ = [
     "BatchRequest",
     "Priority",
+    "PriorityQueueWithAging",
     "RequestStatus",
 ]
