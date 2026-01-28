@@ -118,6 +118,7 @@ Recent decisions affecting current work:
 - **Config-first model type detection**: Check vision_config, image_token_id, architectures before name patterns for reliable type detection
 - **Processor as tokenizer**: Vision models store processor in tokenizer field to reuse LoadedModel structure
 - **mlx-embeddings L2 normalized**: text_embeds output is already L2-normalized — no post-processing needed for cosine similarity
+- **Simulated streaming for vision**: mlx-vlm generate() is non-streaming — yield complete response as single chunk then finish chunk
 
 See PROJECT.md Key Decisions table for full history.
 
