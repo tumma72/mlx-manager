@@ -20,7 +20,8 @@ class TestStopTokenDetection:
         from mlx_manager.mlx_server.models.adapters import get_adapter
 
         # Mock tokenizer with Llama 3 stop tokens
-        mock_tokenizer = Mock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        mock_tokenizer = Mock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         mock_tokenizer.eos_token_id = 128009  # <|end_of_text|>
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)  # <|eot_id|>
@@ -37,7 +38,8 @@ class TestStopTokenDetection:
 
         adapter = LlamaAdapter()
 
-        mock_tokenizer = Mock()
+        # Use spec to prevent auto-creation of .tokenizer attribute
+        mock_tokenizer = Mock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         mock_tokenizer.eos_token_id = 128009
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)
