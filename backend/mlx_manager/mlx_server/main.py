@@ -38,6 +38,18 @@ async def lifespan(app: FastAPI):
         max_memory_gb=mlx_server_settings.max_memory_gb,
         max_models=mlx_server_settings.max_models,
     )
+
+    # Initialize scheduler manager if batching enabled
+    scheduler_mgr = None
+    if mlx_server_settings.enable_batching:
+        from mlx_manager.mlx_server.services.batching import init_scheduler_manager
+
+        scheduler_mgr = init_scheduler_manager(
+            block_pool_size=mlx_server_settings.batch_block_pool_size,
+            max_batch_size=mlx_server_settings.batch_max_batch_size,
+        )
+        logger.info("Batching scheduler initialized")
+
     logger.info(f"Memory usage at startup: {get_memory_usage()}")
     logger.info("MLX Server ready")
 
@@ -45,6 +57,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("MLX Server shutting down...")
+
+    # Shutdown scheduler manager if initialized
+    if scheduler_mgr is not None:
+        await scheduler_mgr.shutdown()
+        logger.info("Batching scheduler shutdown complete")
+
     if pool.model_pool:
         await pool.model_pool.cleanup()
     logger.info("MLX Server stopped")

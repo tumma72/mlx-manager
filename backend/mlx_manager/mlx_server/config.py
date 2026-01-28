@@ -74,6 +74,20 @@ class MLXServerSettings(BaseSettings):
         description="LogFire API token (optional, uses LOGFIRE_TOKEN env var if not set)",
     )
 
+    # Continuous batching
+    enable_batching: bool = Field(
+        default=False,
+        description="Enable continuous batching for text requests (experimental)",
+    )
+    batch_block_pool_size: int = Field(
+        default=1000,
+        description="Number of KV cache blocks per model for batching",
+    )
+    batch_max_batch_size: int = Field(
+        default=8,
+        description="Maximum concurrent requests per batch",
+    )
+
 
 @lru_cache
 def get_settings() -> MLXServerSettings:
