@@ -75,15 +75,16 @@ Plans:
 5. Qwen, Mistral, and Gemma adapters handle their respective model families
 6. Admin endpoints allow explicit model preload/unload
 
-**Plans**: 6 plans in 3 waves
+**Plans**: 7 plans in 3 waves
 
 Plans:
-- [ ] 08-01-PLAN.md - Model pool LRU eviction and multi-model support
-- [ ] 08-02-PLAN.md - Qwen, Mistral, Gemma model family adapters
-- [ ] 08-03-PLAN.md - Model type detection and vision infrastructure
-- [ ] 08-04-PLAN.md - Vision model inference with chat API integration
-- [ ] 08-05-PLAN.md - /v1/embeddings endpoint with mlx-embeddings
-- [ ] 08-06-PLAN.md - Admin endpoints for model preload/unload
+- [x] 08-01-PLAN.md - Model pool LRU eviction and multi-model support
+- [x] 08-02-PLAN.md - Qwen, Mistral, Gemma model family adapters
+- [x] 08-03-PLAN.md - Model type detection and vision infrastructure
+- [x] 08-04-PLAN.md - Vision model inference with chat API integration
+- [x] 08-05-PLAN.md - /v1/embeddings endpoint with mlx-embeddings
+- [x] 08-06-PLAN.md - Admin endpoints for model preload/unload
+- [x] 08-07-PLAN.md - Fix vision model adapter compatibility (gap closure)
 
 #### Phase 9: Continuous Batching & Paged KV Cache
 
@@ -179,7 +180,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
-| 8. Multi-Model | v1.2 | 6/6 | Complete | 2026-01-28 |
+| 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 0/TBD | Not started | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
