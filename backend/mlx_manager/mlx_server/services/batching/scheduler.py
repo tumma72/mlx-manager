@@ -8,6 +8,7 @@ Key features:
 - Iteration-level scheduling: requests join/leave at token boundaries
 - Adaptive timing: waits longer when idle, processes immediately under load
 - Memory-aware batching via PagedBlockManager integration
+- BatchInferenceEngine integration for actual MLX generation
 - Graceful shutdown with in-flight request completion
 """
 
@@ -18,7 +19,7 @@ import logging
 import threading
 import time
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mlx_manager.mlx_server.services.batching.block import BLOCK_SIZE, BlockTable
 from mlx_manager.mlx_server.services.batching.block_manager import PagedBlockManager
@@ -27,6 +28,13 @@ from mlx_manager.mlx_server.services.batching.priority_queue import (
 )
 from mlx_manager.mlx_server.services.batching.request import BatchRequest
 from mlx_manager.mlx_server.services.batching.types import RequestStatus
+
+if TYPE_CHECKING:
+    from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
+    from mlx_manager.mlx_server.services.batching.batch_inference import (
+        BatchInferenceEngine,
+    )
+    from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +65,9 @@ class ContinuousBatchingScheduler:
         max_batch_size: int = 8,
         idle_wait_ms: float = 50.0,
         load_wait_ms: float = 5.0,
+        model: Any = None,
+        tokenizer: Any = None,
+        adapter: ModelAdapter | None = None,
     ) -> None:
         """Initialize the continuous batching scheduler.
 
@@ -66,6 +77,9 @@ class ContinuousBatchingScheduler:
             max_batch_size: Maximum concurrent requests in a batch
             idle_wait_ms: Milliseconds to wait when idle (accumulate requests)
             load_wait_ms: Milliseconds between generation steps under load
+            model: Optional MLX model for generation
+            tokenizer: Optional tokenizer for encoding/decoding
+            adapter: Optional model adapter for stop tokens
         """
         self.model_id = model_id
         self.block_manager = block_manager
@@ -84,6 +98,14 @@ class ContinuousBatchingScheduler:
 
         # For MLX Metal thread affinity
         self._generation_thread: threading.Thread | None = None
+
+        # Batch inference engine (created when model is set)
+        self._inference_engine: BatchInferenceEngine | None = None
+        self._prefix_cache: PrefixCache | None = None
+
+        # Set model if provided
+        if model is not None and tokenizer is not None and adapter is not None:
+            self.set_model(model, tokenizer, adapter)
 
         logger.info(
             f"Scheduler initialized: model={model_id}, "
@@ -206,36 +228,104 @@ class ContinuousBatchingScheduler:
         """
         return not self._shutdown
 
+    def set_model(
+        self,
+        model: Any,
+        tokenizer: Any,
+        adapter: ModelAdapter,
+    ) -> None:
+        """Set or switch the model for generation.
+
+        Creates a new BatchInferenceEngine and PrefixCache for the model.
+        This can be called at runtime to switch models.
+
+        Args:
+            model: MLX model instance
+            tokenizer: HuggingFace tokenizer
+            adapter: Model adapter for stop token detection
+        """
+        from mlx_manager.mlx_server.services.batching.batch_inference import (
+            BatchInferenceEngine,
+        )
+        from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
+
+        # Create prefix cache for this model
+        self._prefix_cache = PrefixCache(
+            model_id=self.model_id, block_manager=self.block_manager
+        )
+
+        # Create inference engine with prefix cache
+        self._inference_engine = BatchInferenceEngine(
+            model=model,
+            tokenizer=tokenizer,
+            adapter=adapter,
+            prefix_cache=self._prefix_cache,
+        )
+
+        logger.info(f"Model set for scheduler: {self.model_id}")
+
     async def _batch_step(self) -> None:
         """Execute one token generation step for all running requests.
 
-        This is a placeholder for the actual generation logic.
-        In the full implementation, this will:
-        1. Run prefill for new requests
-        2. Run decode for all requests in parallel
-        3. Put generated tokens into each request's output queue
+        Uses BatchInferenceEngine for actual MLX generation:
+        1. Generates one token for each running request
+        2. Distributes tokens to each request's output queue
+        3. Detects stop tokens and marks requests for completion
 
         CRITICAL: Uses Queue-based threading pattern for MLX Metal
-        thread affinity - generation runs in a dedicated thread.
+        thread affinity - generation runs in a dedicated thread via
+        BatchInferenceEngine.
         """
-        # For now, this is a stub - full implementation will:
-        # 1. Gather all running requests
-        # 2. Run batch generation in MLX (via dedicated thread)
-        # 3. Distribute tokens to each request's output queue
-        # 4. Update request.generated_tokens
+        # If no inference engine, fall back to placeholder behavior
+        if self._inference_engine is None:
+            # Placeholder: just add a dummy token and mark complete if max reached
+            for request in self.running:
+                if not request.is_complete:
+                    # Simulate token generation
+                    request.add_token(0)  # Placeholder token
 
-        # Placeholder: just add a dummy token and mark complete if max reached
+                    # Put token in output queue
+                    await request.output_queue.put({
+                        "token_id": 0,
+                        "text": "",
+                        "request_id": request.request_id,
+                    })
+            return
+
+        # Create sampler (TODO: per-request sampling parameters)
+        from mlx_lm.sample_utils import make_sampler
+
+        sampler = make_sampler(temp=1.0, top_p=1.0)
+
+        # Generate tokens for all running requests
+        try:
+            results = await self._inference_engine.generate_batch_step(
+                self.running, sampler
+            )
+        except Exception as e:
+            logger.error(f"Batch generation error: {e}")
+            # Mark all requests as completed on error to avoid infinite loop
+            for request in self.running:
+                request.status = RequestStatus.COMPLETED
+            return
+
+        # Process results for each request
         for request in self.running:
-            if not request.is_complete:
-                # Simulate token generation
-                request.add_token(0)  # Placeholder token
+            if request.request_id in results:
+                token_text, token_id, is_stop = results[request.request_id]
 
-                # Put token in output queue
-                await request.output_queue.put({
-                    "token_id": 0,
-                    "text": "",
-                    "request_id": request.request_id,
-                })
+                if not is_stop and token_id is not None:
+                    # Add token to request's generated list
+                    request.generated_tokens.append(token_id)
+                    # Push to output queue for streaming
+                    await request.output_queue.put({
+                        "token_id": token_id,
+                        "text": token_text,
+                        "request_id": request.request_id,
+                    })
+                else:
+                    # Mark for completion (don't yield stop token)
+                    request.status = RequestStatus.COMPLETED
 
     async def _scheduling_loop(self) -> None:
         """Main iteration-level scheduling loop.
