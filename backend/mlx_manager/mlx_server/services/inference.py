@@ -8,9 +8,11 @@ Llama 3.x models from generating indefinitely.
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from queue import Empty, Queue
 
 try:
     import logfire
@@ -131,14 +133,50 @@ async def _stream_chat_generate(
 ) -> AsyncGenerator[dict, None]:
     """Generate tokens with streaming for chat completion.
 
-    CRITICAL: This function checks each token against stop_token_ids
-    to halt generation when a terminator is encountered.
+    CRITICAL: This function uses a dedicated thread for MLX generation to
+    respect Metal GPU thread affinity. Tokens are passed via Queue to the
+    async generator. Using run_in_executor with next(generator) does NOT work
+    because MLX Metal operations have thread affinity requirements.
     """
     from mlx_lm import stream_generate
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     completion_tokens = 0
+
+    # Queue for passing tokens from generation thread to async generator
+    # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
+    token_queue: Queue[tuple[str, int | None, bool] | Exception | None] = Queue()
+
+    def run_generation() -> None:
+        """Run MLX generation in dedicated thread (owns Metal context)."""
+        try:
+            for response in stream_generate(
+                model,
+                tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+                temp=temperature,
+                top_p=top_p,
+            ):
+                # Get token ID from response
+                # Note: stream_generate response has .token attribute (int)
+                # and .text attribute (str) for the decoded token
+                token_id = getattr(response, "token", None)
+                token_text = getattr(response, "text", str(response))
+
+                # CRITICAL: Check for stop token
+                is_stop = token_id is not None and token_id in stop_token_ids
+                token_queue.put((token_text, token_id, is_stop))
+
+                if is_stop:
+                    return
+        except Exception as e:
+            # Put exception marker for async side to handle
+            token_queue.put(e)
+        finally:
+            # Signal completion
+            token_queue.put(None)
 
     try:
         # First chunk with role
@@ -158,68 +196,54 @@ async def _stream_chat_generate(
 
         finish_reason = "length"  # Default if we hit max_tokens
 
-        # Stream generate and check tokens
-        # mlx_lm stream_generate is blocking - run in thread pool
-        def generate_with_stop_detection():
-            """Generator that yields tokens until stop token or max_tokens."""
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
-            ):
-                # Get token ID from response
-                # Note: stream_generate response has .token attribute (int)
-                # and .text attribute (str) for the decoded token
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        # Start generation thread (daemon=True so it doesn't block process exit)
+        gen_thread = threading.Thread(target=run_generation, daemon=True)
+        gen_thread.start()
 
-                # CRITICAL: Check for stop token BEFORE yielding
-                if token_id is not None and token_id in stop_token_ids:
-                    # Found stop token - signal completion
-                    yield (token_text, token_id, True)  # is_stop=True
-                    return
-
-                yield (token_text, token_id, False)  # is_stop=False
-
-        # Process tokens from generator
-        loop = asyncio.get_event_loop()
-        generator = generate_with_stop_detection()
+        loop = asyncio.get_running_loop()
 
         while True:
+            # Poll queue without blocking event loop (use run_in_executor for queue.get)
             try:
-                # Get next token in thread pool
-                result = await loop.run_in_executor(None, next, generator)
-                token_text, token_id, is_stop = result
+                result = await loop.run_in_executor(
+                    None, lambda: token_queue.get(timeout=0.1)
+                )
+            except Empty:
+                continue
 
-                completion_tokens += 1
-
-                if is_stop:
-                    # Stop token found - don't yield the stop token text
-                    finish_reason = "stop"
-                    break
-
-                # Yield content chunk
-                yield {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model_id,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"content": token_text},
-                            "finish_reason": None,
-                        }
-                    ],
-                }
-
-            except StopIteration:
-                # Generator exhausted (max_tokens reached)
-                finish_reason = "length"
+            # Check for completion signal
+            if result is None:
                 break
+
+            # Check for exception from generation thread
+            if isinstance(result, Exception):
+                raise result
+
+            token_text, token_id, is_stop = result
+            completion_tokens += 1
+
+            if is_stop:
+                # Stop token found - don't yield the stop token text
+                finish_reason = "stop"
+                break
+
+            # Yield content chunk
+            yield {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model_id,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": token_text},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+
+        # Wait for thread to finish
+        gen_thread.join(timeout=1.0)
 
         # Final chunk with finish_reason
         yield {
@@ -268,8 +292,9 @@ async def _generate_chat_complete(
 ) -> dict:
     """Generate complete response (non-streaming) for chat completion.
 
-    CRITICAL: Uses streaming internally to implement stop token detection,
-    since mlx_lm.generate() doesn't support stop_tokens parameter.
+    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
+    thread affinity. Results are passed via Queue. Using run_in_executor with
+    next(generator) does NOT work because MLX Metal has thread affinity.
     """
     from mlx_lm import stream_generate
 
@@ -277,13 +302,16 @@ async def _generate_chat_complete(
 
     prompt_tokens = len(tokenizer.encode(prompt))
 
-    try:
-        # Collect all generated text with stop token detection
-        response_text = ""
-        finish_reason = "length"
+    # Queue for passing result from generation thread
+    # Format: (response_text, finish_reason) or Exception
+    result_queue: Queue[tuple[str, str] | Exception] = Queue()
 
-        def generate_with_stop_detection():
-            """Generate tokens until stop token or max_tokens."""
+    def run_generation() -> None:
+        """Run complete generation in dedicated thread (owns Metal context)."""
+        try:
+            response_text = ""
+            finish_reason = "length"
+
             for response in stream_generate(
                 model,
                 tokenizer,
@@ -297,30 +325,33 @@ async def _generate_chat_complete(
 
                 # CRITICAL: Check for stop token
                 if token_id is not None and token_id in stop_token_ids:
-                    yield (token_text, True)  # is_stop=True
-                    return
-
-                yield (token_text, False)
-
-        # Run generation in thread pool
-        loop = asyncio.get_event_loop()
-        generator = generate_with_stop_detection()
-
-        while True:
-            try:
-                result = await loop.run_in_executor(None, next, generator)
-                token_text, is_stop = result
-
-                if is_stop:
                     finish_reason = "stop"
                     break
 
                 response_text += token_text
 
-            except StopIteration:
-                finish_reason = "length"
-                break
+            result_queue.put((response_text, finish_reason))
+        except Exception as e:
+            result_queue.put(e)
 
+    try:
+        # Start generation thread
+        gen_thread = threading.Thread(target=run_generation, daemon=True)
+        gen_thread.start()
+
+        # Wait for result (with timeout to not block forever - 5 min max)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: result_queue.get(timeout=300)
+        )
+
+        gen_thread.join(timeout=1.0)
+
+        # Check for exception from generation thread
+        if isinstance(result, Exception):
+            raise result
+
+        response_text, finish_reason = result
         completion_tokens = len(tokenizer.encode(response_text))
 
         logger.info(
@@ -458,10 +489,41 @@ async def _stream_completion(
     model_id: str,
     echo: bool,
 ) -> AsyncGenerator[dict, None]:
-    """Stream raw completion tokens."""
+    """Stream raw completion tokens.
+
+    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
+    thread affinity. Tokens are passed via Queue to the async generator.
+    """
     from mlx_lm import stream_generate
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
+
+    # Queue for passing tokens from generation thread to async generator
+    token_queue: Queue[tuple[str, int | None, bool] | Exception | None] = Queue()
+
+    def run_generation() -> None:
+        """Run MLX generation in dedicated thread (owns Metal context)."""
+        try:
+            for response in stream_generate(
+                model,
+                tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+                temp=temperature,
+                top_p=top_p,
+            ):
+                token_id = getattr(response, "token", None)
+                token_text = getattr(response, "text", str(response))
+
+                is_stop = token_id is not None and token_id in stop_tokens
+                token_queue.put((token_text, token_id, is_stop))
+
+                if is_stop:
+                    return
+        except Exception as e:
+            token_queue.put(e)
+        finally:
+            token_queue.put(None)
 
     try:
         # Echo prompt if requested
@@ -482,54 +544,48 @@ async def _stream_completion(
 
         finish_reason = "length"
 
-        # Generate tokens with stop detection
-        def generate_with_stop_detection():
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
-            ):
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        # Start generation thread
+        gen_thread = threading.Thread(target=run_generation, daemon=True)
+        gen_thread.start()
 
-                if token_id is not None and token_id in stop_tokens:
-                    yield (token_text, token_id, True)
-                    return
-
-                yield (token_text, token_id, False)
-
-        loop = asyncio.get_event_loop()
-        generator = generate_with_stop_detection()
+        loop = asyncio.get_running_loop()
 
         while True:
             try:
-                result = await loop.run_in_executor(None, next, generator)
-                token_text, token_id, is_stop = result
+                result = await loop.run_in_executor(
+                    None, lambda: token_queue.get(timeout=0.1)
+                )
+            except Empty:
+                continue
 
-                if is_stop:
-                    finish_reason = "stop"
-                    break
-
-                yield {
-                    "id": completion_id,
-                    "object": "text_completion",
-                    "created": created,
-                    "model": model_id,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "text": token_text,
-                            "finish_reason": None,
-                        }
-                    ],
-                }
-
-            except StopIteration:
-                finish_reason = "length"
+            if result is None:
                 break
+
+            if isinstance(result, Exception):
+                raise result
+
+            token_text, token_id, is_stop = result
+
+            if is_stop:
+                finish_reason = "stop"
+                break
+
+            yield {
+                "id": completion_id,
+                "object": "text_completion",
+                "created": created,
+                "model": model_id,
+                "choices": [
+                    {
+                        "index": 0,
+                        "text": token_text,
+                        "finish_reason": None,
+                    }
+                ],
+            }
+
+        # Wait for thread to finish
+        gen_thread.join(timeout=1.0)
 
         # Final chunk
         yield {
@@ -563,18 +619,26 @@ async def _generate_raw_completion(
     model_id: str,
     echo: bool,
 ) -> dict:
-    """Generate complete raw completion."""
+    """Generate complete raw completion.
+
+    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
+    thread affinity. Results are passed via Queue.
+    """
     from mlx_lm import stream_generate
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     prompt_tokens = len(tokenizer.encode(prompt))
 
-    try:
-        response_text = ""
-        finish_reason = "length"
+    # Queue for passing result from generation thread
+    result_queue: Queue[tuple[str, str] | Exception] = Queue()
 
-        def generate_with_stop_detection():
+    def run_generation() -> None:
+        """Run complete generation in dedicated thread (owns Metal context)."""
+        try:
+            response_text = ""
+            finish_reason = "length"
+
             for response in stream_generate(
                 model,
                 tokenizer,
@@ -587,28 +651,33 @@ async def _generate_raw_completion(
                 token_text = getattr(response, "text", str(response))
 
                 if token_id is not None and token_id in stop_tokens:
-                    yield (token_text, True)
-                    return
-
-                yield (token_text, False)
-
-        loop = asyncio.get_event_loop()
-        generator = generate_with_stop_detection()
-
-        while True:
-            try:
-                result = await loop.run_in_executor(None, next, generator)
-                token_text, is_stop = result
-
-                if is_stop:
                     finish_reason = "stop"
                     break
 
                 response_text += token_text
 
-            except StopIteration:
-                finish_reason = "length"
-                break
+            result_queue.put((response_text, finish_reason))
+        except Exception as e:
+            result_queue.put(e)
+
+    try:
+        # Start generation thread
+        gen_thread = threading.Thread(target=run_generation, daemon=True)
+        gen_thread.start()
+
+        # Wait for result (with timeout - 5 min max)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: result_queue.get(timeout=300)
+        )
+
+        gen_thread.join(timeout=1.0)
+
+        # Check for exception from generation thread
+        if isinstance(result, Exception):
+            raise result
+
+        response_text, finish_reason = result
 
         # Prepend prompt if echo requested
         text = (prompt + response_text) if echo else response_text
