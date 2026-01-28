@@ -8,8 +8,8 @@ The paged approach allows non-contiguous memory allocation, reducing
 memory waste from 60-80% (traditional pre-allocation) to under 4%.
 """
 
-from dataclasses import dataclass, field
 import time
+from dataclasses import dataclass, field
 
 # Tokens per block - balance between flexibility and efficiency
 # 32 tokens provides ~4% internal fragmentation vs ~60-80% with pre-allocation
