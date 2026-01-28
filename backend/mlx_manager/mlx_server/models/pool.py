@@ -260,13 +260,15 @@ class ModelPoolManager:
             # Load based on type
             if model_type == ModelType.VISION:
                 # Vision models use mlx-vlm (returns model, processor)
-                from mlx_vlm import load as load_vlm
+                from mlx_vlm import load as load_vlm  # type: ignore[import-untyped]
 
                 result = await asyncio.to_thread(load_vlm, model_id)
                 model, tokenizer = result[0], result[1]  # processor stored as tokenizer
             elif model_type == ModelType.EMBEDDINGS:
                 # Embedding models use mlx-embeddings
-                from mlx_embeddings.utils import load as load_embeddings
+                from mlx_embeddings.utils import (
+                    load as load_embeddings,  # type: ignore[import-untyped]
+                )
 
                 result = await asyncio.to_thread(load_embeddings, model_id)
                 model, tokenizer = result[0], result[1]

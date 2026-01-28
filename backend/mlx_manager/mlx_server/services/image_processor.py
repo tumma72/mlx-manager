@@ -11,9 +11,11 @@ import asyncio
 import base64
 import logging
 from io import BytesIO
+from typing import Any
 
 import httpx
 from PIL import Image
+from PIL.Image import Resampling
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ async def preprocess_image(
     image_input: str,
     client: httpx.AsyncClient | None = None,
     max_dimension: int = MAX_IMAGE_DIMENSION,
-) -> Image.Image:
+) -> Any:
     """Fetch, decode, and resize an image.
 
     Args:
@@ -44,6 +46,7 @@ async def preprocess_image(
     Raises:
         ValueError: If image cannot be decoded or fetched
     """
+    img: Any
     if image_input.startswith("data:"):
         # Base64 data URI: "data:image/png;base64,<data>"
         try:
@@ -75,7 +78,7 @@ async def preprocess_image(
         scale = max_dimension / max_dim
         new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
         original_size = img.size
-        img = img.resize(new_size, Image.LANCZOS)
+        img = img.resize(new_size, Resampling.LANCZOS)
         logger.warning(
             f"Image resized from {original_size[0]}x{original_size[1]} to "
             f"{new_size[0]}x{new_size[1]} (max dimension: {max_dimension}px)"
@@ -87,7 +90,7 @@ async def preprocess_image(
 async def _fetch_image_from_url(
     url: str,
     client: httpx.AsyncClient | None = None,
-) -> Image.Image:
+) -> Any:
     """Fetch image from URL with retry and timeout.
 
     Args:
@@ -134,7 +137,7 @@ async def preprocess_images(
     image_inputs: list[str],
     client: httpx.AsyncClient | None = None,
     max_dimension: int = MAX_IMAGE_DIMENSION,
-) -> list[Image.Image]:
+) -> list[Any]:
     """Process multiple images concurrently.
 
     Args:

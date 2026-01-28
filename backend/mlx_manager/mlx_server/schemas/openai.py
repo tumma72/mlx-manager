@@ -4,7 +4,7 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 """
 
 import time
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class TextContentBlock(BaseModel):
 
 
 # Union type for content blocks
-ContentBlock = Union[TextContentBlock, ImageContentBlock]
+ContentBlock = TextContentBlock | ImageContentBlock
 
 
 def extract_content_parts(
