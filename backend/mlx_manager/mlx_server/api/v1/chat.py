@@ -7,14 +7,19 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
+from mlx_manager.mlx_server.models.detection import detect_model_type
+from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
     Usage,
+    extract_content_parts,
 )
+from mlx_manager.mlx_server.services.image_processor import preprocess_images
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
+from mlx_manager.mlx_server.services.vision import generate_vision_completion
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +33,124 @@ async def create_chat_completion(
     """Create a chat completion.
 
     Supports both streaming and non-streaming responses.
+    Supports both text-only and multimodal (vision) requests.
     Compatible with OpenAI Chat Completions API.
     """
     logger.info(f"Chat completion request: model={request.model}, stream={request.stream}")
 
-    # Convert messages to dict format
-    messages: list[dict[str, Any]] = [
-        {"role": m.role, "content": m.content} for m in request.messages
-    ]
+    # Extract text and images from all user messages
+    all_image_urls: list[str] = []
+
+    for message in request.messages:
+        _, images = extract_content_parts(message.content)
+        if message.role == "user":
+            all_image_urls.extend(images)
+
+    has_images = len(all_image_urls) > 0
+
+    try:
+        if has_images:
+            # Multimodal request - need vision model
+            return await _handle_vision_request(request, all_image_urls)
+        else:
+            # Text-only request - use existing logic
+            return await _handle_text_request(request)
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.error(f"Generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def _handle_vision_request(
+    request: ChatCompletionRequest,
+    image_urls: list[str],
+) -> EventSourceResponse | ChatCompletionResponse:
+    """Handle multimodal request with images."""
+    # Check model type before loading
+    model_type = detect_model_type(request.model)
+    if model_type != ModelType.VISION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' is type '{model_type.value}', "
+            f"but request contains images. Use a vision model (e.g., Qwen2-VL).",
+        )
+
+    # Preprocess images
+    images = await preprocess_images(image_urls)
+
+    # Build text prompt from messages
+    # For vision, combine system + user messages into single prompt
+    prompt_parts = []
+    for message in request.messages:
+        text, _ = extract_content_parts(message.content)
+        if message.role == "system":
+            prompt_parts.append(f"System: {text}")
+        elif message.role == "user":
+            prompt_parts.append(f"User: {text}")
+        elif message.role == "assistant":
+            prompt_parts.append(f"Assistant: {text}")
+    text_prompt = "\n".join(prompt_parts)
+
+    # Generate vision completion
+    result = await generate_vision_completion(
+        model_id=request.model,
+        text_prompt=text_prompt,
+        images=images,
+        max_tokens=request.max_tokens or 4096,
+        temperature=request.temperature,
+        stream=request.stream,
+    )
+
+    if request.stream:
+        # result is an async generator
+        async def event_generator() -> Any:
+            async for chunk in result:  # type: ignore[union-attr]
+                yield {"data": json.dumps(chunk)}
+            yield {"data": "[DONE]"}
+
+        return EventSourceResponse(event_generator())
+    else:
+        # result is a dict
+        result_dict = cast(dict[str, Any], result)
+        choice = result_dict["choices"][0]
+        return ChatCompletionResponse(
+            id=result_dict["id"],
+            created=result_dict["created"],
+            model=result_dict["model"],
+            choices=[
+                ChatCompletionChoice(
+                    index=choice["index"],
+                    message=ChatMessage(
+                        role=choice["message"]["role"],
+                        content=choice["message"]["content"],
+                    ),
+                    finish_reason=choice["finish_reason"],
+                )
+            ],
+            usage=Usage(
+                prompt_tokens=result_dict["usage"]["prompt_tokens"],
+                completion_tokens=result_dict["usage"]["completion_tokens"],
+                total_tokens=result_dict["usage"]["total_tokens"],
+            ),
+        )
+
+
+async def _handle_text_request(
+    request: ChatCompletionRequest,
+) -> EventSourceResponse | ChatCompletionResponse:
+    """Handle text-only request."""
+    # Convert messages to dict format, extracting text from content blocks
+    messages: list[dict[str, Any]] = []
+    for m in request.messages:
+        if isinstance(m.content, str):
+            text = m.content
+        else:
+            text, _ = extract_content_parts(m.content)
+        messages.append({"role": m.role, "content": text})
 
     # Handle stop parameter (can be string or list)
     stop: list[str] | None = (
@@ -44,17 +159,10 @@ async def create_chat_completion(
         else ([request.stop] if request.stop else None)
     )
 
-    try:
-        if request.stream:
-            return await _handle_streaming(request, messages, stop)
-        else:
-            return await _handle_non_streaming(request, messages, stop)
-    except RuntimeError as e:
-        logger.error(f"Generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    if request.stream:
+        return await _handle_streaming(request, messages, stop)
+    else:
+        return await _handle_non_streaming(request, messages, stop)
 
 
 async def _handle_streaming(
