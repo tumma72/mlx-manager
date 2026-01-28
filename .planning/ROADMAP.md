@@ -57,7 +57,7 @@ Plans:
 - [x] 07-04-PLAN.md - Model adapters (protocol + Llama adapter)
 - [x] 07-05-PLAN.md - /v1/chat/completions with SSE streaming
 - [x] 07-06-PLAN.md - /v1/completions endpoint (legacy API)
-- [ ] 07-07-PLAN.md - Fix MLX Metal thread affinity in inference (gap closure)
+- [x] 07-07-PLAN.md - Fix MLX Metal thread affinity in inference (gap closure)
 
 #### Phase 8: Multi-Model & Multimodal Support
 
@@ -175,7 +175,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Foundation | v1.2 | 6/7 | Gap closure | - |
+| 7. Foundation | v1.2 | 7/7 | ✓ Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 0/TBD | Not started | - |
 | 9. Batching | v1.2 | 0/TBD | Not started | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
