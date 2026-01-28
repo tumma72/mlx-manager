@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 8 of 12 (Multi-Model & Multimodal Support)
-Plan: 2 of 5 complete
+Plan: 1 of 6 complete
 Status: In progress
-Last activity: 2026-01-28 — Completed 08-02-PLAN.md (Model family adapters)
+Last activity: 2026-01-28 — Completed 08-01-PLAN.md (ModelPoolManager LRU eviction)
 
-Progress: [████------] 40% (2/5 plans complete in Phase 8)
+Progress: [██--------] 17% (1/6 plans complete in Phase 8)
 
 ## Milestone v1.2 Summary
 
@@ -113,6 +113,8 @@ Recent decisions affecting current work:
 - **Type casting for union returns**: Use cast() for type safety with AsyncGenerator | dict returns
 - **Queue-based threading for MLX**: MLX Metal requires thread affinity — use dedicated Thread + Queue instead of run_in_executor
 - **make_sampler API**: mlx_lm.stream_generate() no longer accepts temp/top_p directly — use make_sampler()
+- **Model size estimation heuristic**: Uses param count patterns (3B=2GB, 7B=4GB) for LRU eviction memory planning
+- **Preload protection**: Preloaded models never evicted regardless of last_used time — use for startup models
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -145,7 +147,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T11:42:00Z
-Stopped at: Completed 08-02-PLAN.md (Model family adapters: Qwen, Mistral, Gemma)
+Last session: 2026-01-28T11:42:34Z
+Stopped at: Completed 08-01-PLAN.md (ModelPoolManager LRU eviction)
 Resume file: None
-Next: Execute 08-03-PLAN.md (Multimodal vision support)
+Next: Execute 08-02-PLAN.md (Model family adapters)
