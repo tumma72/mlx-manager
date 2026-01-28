@@ -96,18 +96,22 @@ Plans:
 
 **Success Criteria** (what must be TRUE):
 1. Continuous batching scheduler processes multiple requests per token generation step
-2. Paged KV cache allocates fixed-size blocks (16-32 tokens) instead of contiguous memory
+2. Paged KV cache allocates fixed-size blocks (32 tokens) instead of contiguous memory
 3. Block table maps logical -> physical blocks with dynamic allocation
 4. Prefix caching shares KV blocks across requests with identical prefixes
 5. Priority queue allows request prioritization (high/normal/low)
 6. Benchmark shows measurable throughput improvement over single-request baseline
 
-**Plans**: TBD
+**Plans**: 7 plans in 4 waves
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
-- [ ] 09-03: TBD
+- [ ] 09-01-PLAN.md - Foundation types and priority queue (types, BatchRequest, PriorityQueueWithAging)
+- [ ] 09-02-PLAN.md - Block manager and block table (KVBlock, PagedBlockManager)
+- [ ] 09-03-PLAN.md - Prefix caching with hash-based matching (PrefixCache)
+- [ ] 09-04-PLAN.md - Continuous batching scheduler core (ContinuousBatchingScheduler)
+- [ ] 09-05-PLAN.md - Batch inference engine with MLX integration (BatchInferenceEngine)
+- [ ] 09-06-PLAN.md - API integration and scheduler management (SchedulerManager, chat routing)
+- [ ] 09-07-PLAN.md - Benchmark and documentation (throughput verification)
 
 #### Phase 10: Dual Protocol & Cloud Fallback
 
@@ -181,7 +185,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
-| 9. Batching | v1.2 | 0/TBD | Not started | - |
+| 9. Batching | v1.2 | 0/7 | Planned | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
