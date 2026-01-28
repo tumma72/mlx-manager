@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 7 of 12 (Foundation - Server Skeleton & Single Model Inference)
-Plan: 6 of 6 complete
-Status: Phase complete
-Last activity: 2026-01-27 — Completed 07-06-PLAN.md (Completions endpoint)
+Plan: 7 of 7 complete (including gap closure)
+Status: Phase complete + gap closure complete
+Last activity: 2026-01-28 — Completed 07-07-PLAN.md (MLX thread affinity fix)
 
-Progress: [██████████] 100% (6/6 plans complete in Phase 7)
+Progress: [██████████] 100% (7/7 plans complete in Phase 7)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Phase 7 complete (6/6 plans complete)
+**Status:** Phase 7 complete (7/7 plans including gap closure)
 **Phases:** 6 phases (7-12)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -111,6 +111,8 @@ Recent decisions affecting current work:
 - **Stop token detection in loop**: mlx_lm.stream_generate() doesn't accept stop_tokens param — must check in loop
 - **Completions vs Chat template**: Completions endpoint uses raw prompt, chat uses chat template
 - **Type casting for union returns**: Use cast() for type safety with AsyncGenerator | dict returns
+- **Queue-based threading for MLX**: MLX Metal requires thread affinity — use dedicated Thread + Queue instead of run_in_executor
+- **make_sampler API**: mlx_lm.stream_generate() no longer accepts temp/top_p directly — use make_sampler()
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -143,7 +145,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-27T16:34:00Z
-Stopped at: Completed 07-06-PLAN.md (Completions endpoint) - Phase 7 complete
+Last session: 2026-01-28T09:34:16Z
+Stopped at: Completed 07-07-PLAN.md (MLX thread affinity fix) - Phase 7 gap closure complete
 Resume file: None
 Next: Execute Phase 8 (Continuous Batching)
