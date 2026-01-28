@@ -2,11 +2,14 @@
 
 import json
 import logging
+import time
+import uuid
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
+from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
@@ -16,6 +19,12 @@ from mlx_manager.mlx_server.schemas.openai import (
     ChatMessage,
     Usage,
     extract_content_parts,
+)
+from mlx_manager.mlx_server.services.batching import (
+    BatchRequest,
+    ContinuousBatchingScheduler,
+    Priority,
+    get_scheduler_manager,
 )
 from mlx_manager.mlx_server.services.image_processor import preprocess_images
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
@@ -147,7 +156,37 @@ async def _handle_vision_request(
 async def _handle_text_request(
     request: ChatCompletionRequest,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text-only request."""
+    """Handle text-only request.
+
+    Routes through batching scheduler if enabled, otherwise uses
+    direct inference.
+    """
+    settings = get_settings()
+
+    # Try batching path if enabled
+    if settings.enable_batching:
+        try:
+            mgr = get_scheduler_manager()
+            priority = mgr.get_priority_for_request(
+                api_key=None,  # TODO: Extract from request headers
+                endpoint="/v1/chat/completions",
+            )
+            return await _handle_batched_request(request, priority)
+        except RuntimeError:
+            # Scheduler not initialized - fall through to direct
+            logger.warning("Batching enabled but scheduler not initialized, using direct")
+        except Exception as e:
+            # Other batching error - fall through to direct
+            logger.warning(f"Batching unavailable, falling back to direct: {e}")
+
+    # Direct inference path
+    return await _handle_direct_request(request)
+
+
+async def _handle_direct_request(
+    request: ChatCompletionRequest,
+) -> EventSourceResponse | ChatCompletionResponse:
+    """Handle text request via direct inference (non-batched)."""
     # Convert messages to dict format, extracting text from content blocks
     messages: list[dict[str, Any]] = []
     for m in request.messages:
@@ -235,5 +274,159 @@ async def _handle_non_streaming(
             prompt_tokens=result_dict["usage"]["prompt_tokens"],
             completion_tokens=result_dict["usage"]["completion_tokens"],
             total_tokens=result_dict["usage"]["total_tokens"],
+        ),
+    )
+
+
+# --- Batched Request Handlers ---
+
+
+async def _handle_batched_request(
+    request: ChatCompletionRequest,
+    priority: Priority,
+) -> EventSourceResponse | ChatCompletionResponse:
+    """Route request through batching scheduler.
+
+    Tokenizes the prompt, creates a BatchRequest, and submits to the
+    scheduler for batched processing.
+    """
+    from mlx_manager.mlx_server.models.adapters import get_adapter
+    from mlx_manager.mlx_server.models.pool import get_model_pool
+
+    pool = get_model_pool()
+    loaded = await pool.get_model(request.model)
+    adapter = get_adapter(request.model)
+
+    # Get actual tokenizer (handle Processor wrapper for vision models)
+    actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)
+
+    # Build messages for chat template
+    messages: list[dict[str, str]] = []
+    for m in request.messages:
+        if isinstance(m.content, str):
+            text = m.content
+        else:
+            text, _ = extract_content_parts(m.content)
+        messages.append({"role": m.role, "content": text})
+
+    # Apply chat template to get prompt string
+    prompt = adapter.apply_chat_template(
+        loaded.tokenizer, messages, add_generation_prompt=True
+    )
+
+    # Tokenize prompt
+    prompt_tokens = actual_tokenizer.encode(prompt)
+
+    # Create batch request with unique ID
+    request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    batch_request = BatchRequest(
+        request_id=request_id,
+        model_id=request.model,
+        prompt_tokens=prompt_tokens,
+        max_tokens=request.max_tokens or 4096,
+        priority=priority,
+    )
+
+    # Get scheduler and configure
+    mgr = get_scheduler_manager()
+    scheduler = await mgr.get_scheduler(request.model)
+    await mgr.configure_scheduler(request.model, loaded.model, loaded.tokenizer, adapter)
+
+    # Route based on streaming preference
+    if request.stream:
+        return await _stream_batched_response(batch_request, scheduler, request.model)
+    else:
+        return await _complete_batched_response(batch_request, scheduler, request.model)
+
+
+async def _stream_batched_response(
+    batch_request: BatchRequest,
+    scheduler: ContinuousBatchingScheduler,
+    model: str,
+) -> EventSourceResponse:
+    """Stream tokens from scheduler as SSE events in OpenAI format."""
+    created = int(time.time())
+
+    async def generate_stream() -> Any:
+        # Submit to scheduler - returns async generator of token dicts
+        token_stream = scheduler.submit(batch_request)
+
+        async for token_data in token_stream:
+            # Token data from scheduler contains token_id, text, request_id
+            token_text = token_data.get("text", "")
+
+            # Format as OpenAI ChatCompletionChunk
+            chunk = {
+                "id": batch_request.request_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": token_text},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            yield {"data": json.dumps(chunk)}
+
+        # Send final chunk with finish_reason
+        final_chunk = {
+            "id": batch_request.request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        yield {"data": json.dumps(final_chunk)}
+        yield {"data": "[DONE]"}
+
+    return EventSourceResponse(generate_stream())
+
+
+async def _complete_batched_response(
+    batch_request: BatchRequest,
+    scheduler: ContinuousBatchingScheduler,
+    model: str,
+) -> ChatCompletionResponse:
+    """Collect all tokens and return complete ChatCompletionResponse."""
+    created = int(time.time())
+    collected_tokens: list[str] = []
+
+    # Submit to scheduler and collect all tokens
+    token_stream = scheduler.submit(batch_request)
+    async for token_data in token_stream:
+        token_text = token_data.get("text", "")
+        collected_tokens.append(token_text)
+
+    # Build response text
+    response_text = "".join(collected_tokens)
+
+    # Build usage statistics
+    prompt_tokens = len(batch_request.prompt_tokens)
+    completion_tokens = len(collected_tokens)
+
+    return ChatCompletionResponse(
+        id=batch_request.request_id,
+        created=created,
+        model=model,
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                message=ChatMessage(role="assistant", content=response_text),
+                finish_reason="stop",
+            )
+        ],
+        usage=Usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
         ),
     )
