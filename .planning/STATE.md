@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 ## Current Position
 
-Phase: 8 of 12 (Multi-Model & Multimodal Support) - COMPLETE + GAP CLOSURE
-Plan: 7 of 7 complete (6 original + 1 gap closure)
-Status: Phase verified and complete with gap closure
-Last activity: 2026-01-28 — Completed 08-07-PLAN.md (vision model gap closure)
+Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-01-28 — Completed 09-01-PLAN.md (foundation types and priority queue)
 
-Progress: [██████████] 100% (Phase 8 complete with gap closure, ready for Phase 9)
+Progress: [████████░░] 80% (Phases 7-8 complete, Phase 9 plan 1/4)
 
 ## Milestone v1.2 Summary
 
@@ -121,6 +121,9 @@ Recent decisions affecting current work:
 - **Simulated streaming for vision**: mlx-vlm generate() is non-streaming — yield complete response as single chunk then finish chunk
 - **Processor extraction pattern**: Use getattr(tokenizer, 'tokenizer', tokenizer) to handle both Tokenizer and Processor objects for vision model compatibility
 - **Mock spec pattern**: Use spec=[] parameter in Mock objects to prevent auto-creation of unwanted attributes
+- **Priority IntEnum ordering**: HIGH=0, NORMAL=1, LOW=2 — lower numeric value = higher priority for natural heapq ordering
+- **Aging rate 0.1**: LOW priority becomes NORMAL after 10s, HIGH after 20s — prevents starvation without being too aggressive
+- **entry_count tie-breaker**: Guarantees FIFO ordering for same effective priority in priority queue
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -153,7 +156,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T14:49:00Z
-Stopped at: Completed 08-07-PLAN.md (vision model gap closure)
+Last session: 2026-01-28T19:26:20Z
+Stopped at: Completed 09-01-PLAN.md (foundation types and priority queue)
 Resume file: None
-Next: Phase 9 (Continuous Batching & Paged KV Cache)
+Next: Phase 9 Plan 02 (Paged Block Manager)
