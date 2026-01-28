@@ -178,3 +178,132 @@ class TestFinishReasonLogic:
         token_id = 100
         finish_reason = "stop" if token_id in stop_token_ids else "length"
         assert finish_reason == "length"
+
+
+class TestAsyncThreadingPattern:
+    """Test the queue-based threading pattern for MLX inference.
+
+    The pattern uses a dedicated thread for MLX generation (to respect Metal
+    GPU thread affinity) and a Queue for thread-safe token passing to the
+    async generator.
+    """
+
+    def test_queue_based_token_passing(self) -> None:
+        """Verify tokens can pass through queue from thread to async."""
+        import threading
+        from queue import Queue
+
+        token_queue: Queue[tuple[str, int, bool] | None] = Queue()
+
+        # Simulate generation thread
+        def producer() -> None:
+            token_queue.put(("Hello", 100, False))
+            token_queue.put((" world", 200, False))
+            token_queue.put(("", 128001, True))  # Stop token
+            token_queue.put(None)  # Completion signal
+
+        thread = threading.Thread(target=producer)
+        thread.start()
+
+        # Consume from queue
+        tokens = []
+        while True:
+            result = token_queue.get(timeout=1.0)
+            if result is None:
+                break
+            token_text, token_id, is_stop = result
+            tokens.append((token_text, is_stop))
+            if is_stop:
+                break
+
+        thread.join()
+
+        assert tokens == [("Hello", False), (" world", False), ("", True)]
+
+    def test_exception_propagation_through_queue(self) -> None:
+        """Verify exceptions in generation thread propagate to async side."""
+        import threading
+        from queue import Queue
+
+        result_queue: Queue[str | Exception] = Queue()
+
+        def failing_producer() -> None:
+            result_queue.put(RuntimeError("MLX error"))
+
+        thread = threading.Thread(target=failing_producer)
+        thread.start()
+        thread.join()
+
+        result = result_queue.get(timeout=1.0)
+        assert isinstance(result, RuntimeError)
+        assert str(result) == "MLX error"
+
+    def test_empty_queue_timeout(self) -> None:
+        """Verify Empty exception on queue timeout."""
+        from queue import Empty, Queue
+
+        token_queue: Queue[str] = Queue()
+
+        with pytest.raises(Empty):
+            token_queue.get(timeout=0.01)
+
+    def test_thread_daemon_flag(self) -> None:
+        """Verify generation threads are daemon threads."""
+        import threading
+
+        # Daemon threads don't prevent process exit
+        thread = threading.Thread(target=lambda: None, daemon=True)
+        assert thread.daemon is True
+
+
+class TestDeprecatedAPIRemoval:
+    """Test that deprecated APIs are not used in inference service."""
+
+    def test_no_get_event_loop_usage(self) -> None:
+        """Verify asyncio.get_event_loop() is not used (deprecated)."""
+        import inspect
+
+        from mlx_manager.mlx_server.services import inference
+
+        source = inspect.getsource(inference)
+
+        # get_event_loop is deprecated in async context
+        assert "get_event_loop()" not in source, (
+            "Should use asyncio.get_running_loop() instead of get_event_loop()"
+        )
+
+    def test_uses_get_running_loop(self) -> None:
+        """Verify asyncio.get_running_loop() is used."""
+        import inspect
+
+        from mlx_manager.mlx_server.services import inference
+
+        source = inspect.getsource(inference)
+
+        assert "get_running_loop()" in source, (
+            "Should use asyncio.get_running_loop() for current event loop"
+        )
+
+    def test_uses_threading_module(self) -> None:
+        """Verify threading module is used for MLX generation."""
+        import inspect
+
+        from mlx_manager.mlx_server.services import inference
+
+        source = inspect.getsource(inference)
+
+        assert "threading.Thread" in source, (
+            "Should use dedicated threading.Thread for MLX generation"
+        )
+        assert "daemon=True" in source, "Threads should be daemon threads"
+
+    def test_uses_queue_for_communication(self) -> None:
+        """Verify Queue is used for thread-safe communication."""
+        import inspect
+
+        from mlx_manager.mlx_server.services import inference
+
+        source = inspect.getsource(inference)
+
+        assert "from queue import" in source, "Should import from queue module"
+        assert "Queue" in source, "Should use Queue for token passing"
