@@ -161,7 +161,8 @@ async def _stream_vision_generate(
                 verbose=False,
             )
 
-            result_queue.put(response)
+            # mlx_vlm.generate returns GenerationResult, extract text
+            result_queue.put(response.text)
         except Exception as e:
             result_queue.put(e)
 
@@ -283,7 +284,8 @@ async def _generate_vision_complete(
                 verbose=False,
             )
 
-            result_queue.put(response)
+            # mlx_vlm.generate returns GenerationResult, extract text
+            result_queue.put(response.text)
         except Exception as e:
             result_queue.put(e)
 

@@ -302,7 +302,9 @@ async def _generate_chat_complete(
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
-    prompt_tokens = len(tokenizer.encode(prompt))
+    # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+    actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    prompt_tokens = len(actual_tokenizer.encode(prompt))
 
     # Queue for passing result from generation thread
     # Format: (response_text, finish_reason) or Exception
@@ -634,7 +636,9 @@ async def _generate_raw_completion(
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
-    prompt_tokens = len(tokenizer.encode(prompt))
+    # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+    actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+    prompt_tokens = len(actual_tokenizer.encode(prompt))
 
     # Queue for passing result from generation thread
     result_queue: Queue[tuple[str, str] | Exception] = Queue()
