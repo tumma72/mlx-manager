@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 8 complete - ready for Phase 9
+**Current focus:** Phase 8 gap closure complete - ready for Phase 9
 
 ## Current Position
 
-Phase: 8 of 12 (Multi-Model & Multimodal Support) - COMPLETE
-Plan: 6 of 6 complete
-Status: Phase verified and complete
-Last activity: 2026-01-28 — Phase 8 verified (6/6 must-haves passed)
+Phase: 8 of 12 (Multi-Model & Multimodal Support) - COMPLETE + GAP CLOSURE
+Plan: 7 of 7 complete (6 original + 1 gap closure)
+Status: Phase verified and complete with gap closure
+Last activity: 2026-01-28 — Completed 08-07-PLAN.md (vision model gap closure)
 
-Progress: [██████████] 100% (Phase 8 complete, ready for Phase 9)
+Progress: [██████████] 100% (Phase 8 complete with gap closure, ready for Phase 9)
 
 ## Milestone v1.2 Summary
 
@@ -119,6 +119,8 @@ Recent decisions affecting current work:
 - **Processor as tokenizer**: Vision models store processor in tokenizer field to reuse LoadedModel structure
 - **mlx-embeddings L2 normalized**: text_embeds output is already L2-normalized — no post-processing needed for cosine similarity
 - **Simulated streaming for vision**: mlx-vlm generate() is non-streaming — yield complete response as single chunk then finish chunk
+- **Processor extraction pattern**: Use getattr(tokenizer, 'tokenizer', tokenizer) to handle both Tokenizer and Processor objects for vision model compatibility
+- **Mock spec pattern**: Use spec=[] parameter in Mock objects to prevent auto-creation of unwanted attributes
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -151,7 +153,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T12:30:00Z
-Stopped at: Phase 8 verified and complete
+Last session: 2026-01-28T14:49:00Z
+Stopped at: Completed 08-07-PLAN.md (vision model gap closure)
 Resume file: None
 Next: Phase 9 (Continuous Batching & Paged KV Cache)
