@@ -5,7 +5,7 @@
 	import { systemStore } from '$stores';
 	import type { LocalModel } from '$lib/api/types';
 	import { Card, Button, Select } from '$components/ui';
-	import { Loader2, Save, X, ChevronDown, Check } from 'lucide-svelte';
+	import { Loader2, Save, X, ChevronDown } from 'lucide-svelte';
 
 	// Types for pool configuration (local until 11-02 provides them)
 	type MemoryLimitMode = 'percent' | 'gb';
@@ -21,8 +21,8 @@
 	// API helpers (local until 11-02 provides settings client)
 	const API_BASE = '/api';
 
-	function getAuthHeaders(): HeadersInit {
-		const headers: HeadersInit = { 'Content-Type': 'application/json' };
+	function getAuthHeaders(): Record<string, string> {
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 		const token = localStorage.getItem('mlx_manager_token');
 		if (token) {
 			headers['Authorization'] = `Bearer ${token}`;
