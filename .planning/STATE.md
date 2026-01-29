@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 10 complete - ready for Phase 11
+**Current focus:** Phase 11 - Configuration UI (Backend API complete)
 
 ## Current Position
 
-Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
-Plan: 9 of 9 complete
-Status: Phase complete
-Last activity: 2026-01-29 — Completed 10-09-PLAN.md (Chat routing integration)
+Phase: 11 of 12 (Configuration UI)
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-01-29 — Completed 11-01-PLAN.md (Backend Encryption & Settings API)
 
-Progress: [██████████] 100% (Phase 10 complete)
+Progress: [██████████░░] 83% (Phase 11 started)
 
 ## Milestone v1.2 Summary
 
@@ -154,6 +154,10 @@ Recent decisions affecting current work:
 - **SSE event type from data.type**: Event type in Anthropic streaming comes from JSON data.type, not event: line
 - **Routing before batching**: Cloud routing check happens before batching check — cloud routing has higher priority when both enabled
 - **Automatic routing fallback**: Any routing exception falls through to local inference path
+- **PBKDF2HMAC with 1.2M iterations**: Industry standard for key derivation from jwt_secret for Fernet encryption
+- **Salt persistence**: Encryption salt stored in ~/.mlx-manager/.encryption_salt alongside database
+- **Static routes before dynamic**: /rules/priorities and /rules/test must come before /rules/{rule_id}
+- **ServerConfig singleton**: Use id=1 for global pool settings, created on first access
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -163,15 +167,17 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 10 complete:**
-- All 9 plans executed (schemas, DB models, protocol translator, cloud client, messages endpoint, OpenAI/Anthropic backends, router, chat integration)
-- ~180 new tests across cloud backends and routing
-- Verification passed: 6/6 must-haves verified
-- Ready for Phase 11 (Configuration UI)
+**Phase 11 Plan 01 complete:**
+- Encryption service implemented with Fernet + PBKDF2
+- Settings router with 12 endpoints for providers, rules, pool config
+- 66 new tests (17 encryption + 49 settings router)
+- API keys now encrypted at rest, never returned in responses
+- Ready for Phase 11 Plan 02: Frontend settings UI
 
-**Phase 11 readiness (Configuration UI):**
-- API keys currently stored unencrypted (placeholder for AuthLib encryption)
-- Cost tracking data source decision deferred: hardcoded pricing table vs API fetch
+**Phase 11 remaining:**
+- Plan 02: Settings store and API client (frontend)
+- Plan 03: Provider and pool config components
+- Plan 04: Routing rules UI with drag-drop
 
 ## Research Documents
 
@@ -189,7 +195,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T15:26:11Z
-Stopped at: Completed 10-09-PLAN.md (Chat routing integration)
+Last session: 2026-01-29T17:33:00Z
+Stopped at: Completed 11-01-PLAN.md (Backend Encryption & Settings API)
 Resume file: None
-Next: Phase 11 (Configuration & API Keys)
+Next: Phase 11 Plan 02 (Settings store and API client)
