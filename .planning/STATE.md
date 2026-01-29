@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
-Plan: 4 of 8 complete
+Plan: 5 of 8 complete
 Status: In progress
-Last activity: 2026-01-29 — Completed 10-04-PLAN.md (Cloud client dependencies)
+Last activity: 2026-01-29 — Completed 10-03-PLAN.md (Protocol translator)
 
-Progress: [█████░░░░░] 50% (Phase 10 plan 4/8 complete)
+Progress: [██████░░░░] 62% (Phase 10 plan 5/8 complete)
 
 ## Milestone v1.2 Summary
 
@@ -147,6 +147,8 @@ Recent decisions affecting current work:
 - **Custom AsyncCircuitBreaker instead of pybreaker**: pybreaker's async support requires Tornado; our implementation is async-native and simpler
 - **Circuit breaker per-client instance**: Each CloudBackendClient has independent circuit state
 - **Half-open state for gradual recovery**: Allows one test request after reset_timeout to check if backend recovered
+- **typing.Any for content extraction**: Handles mixed Pydantic models and dict representations in protocol translator
+- **InternalRequest dataclass**: Unified internal format for inference service consumption
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -182,7 +184,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T15:07:22Z
-Stopped at: Completed 10-04-PLAN.md (Cloud client dependencies)
+Last session: 2026-01-29T15:12:28Z
+Stopped at: Completed 10-03-PLAN.md (Protocol translator)
 Resume file: None
-Next: 10-05-PLAN.md (OpenAI Backend Client)
+Next: Continue with remaining Wave 2 plans (10-05, 10-06)
