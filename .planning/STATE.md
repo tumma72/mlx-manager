@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 11 of 12 (Configuration UI)
-Plan: 3 of 4 complete
-Status: In progress
-Last activity: 2026-01-29 — Completed 11-03-PLAN.md (Model Pool Settings UI)
+Plan: 4 of 4 complete
+Status: Phase 11 complete
+Last activity: 2026-01-29 — Completed 11-04-PLAN.md (Routing Rules UI)
 
-Progress: [███████████░] 92% (Phase 11 plan 3 complete)
+Progress: [████████████] 100% (Phase 11 complete)
 
 ## Milestone v1.2 Summary
 
@@ -160,6 +160,9 @@ Recent decisions affecting current work:
 - **ServerConfig singleton**: Use id=1 for global pool settings, created on first access
 - **Local API helpers in components**: When shared API client not available (parallel execution), define local fetch wrappers in component — refactor later
 - **Memory mode conversion**: When toggling between % and GB, convert value to equivalent in new mode with proper clamping
+- **svelte-sortable-list for drag-drop**: @rodrigodagostino/svelte-sortable-list v2 for Svelte 5 compatible drag-drop with accessibility
+- **Optimistic reorder with rollback**: Update local state immediately on drag-drop, rollback from server on error
+- **$derived.by() for type narrowing**: Use $derived.by() instead of $derived() for complex derivations requiring TypeScript type narrowing
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -169,14 +172,13 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 11 Plan 03 complete:**
-- ModelPoolSettings component with memory slider (% and GB modes)
-- Eviction policy dropdown (LRU/LFU/TTL) under Advanced Options
-- Preload model selector with searchable dropdown and tags
-- Integrated into settings page at /settings
+**Phase 11 complete:**
+- Plan 01: Backend encryption service and settings API (17 encryption + 49 router tests)
+- Plan 02: Frontend settings store and API client
+- Plan 03: Provider and model pool UI components
+- Plan 04: Routing rules UI with drag-drop reordering
 
-**Phase 11 remaining:**
-- Plan 04: Routing rules UI with drag-drop
+All Phase 11 Configuration UI requirements met. Ready for Phase 12 (Production Readiness).
 
 ## Research Documents
 
@@ -194,7 +196,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T17:39:02Z
-Stopped at: Completed 11-03-PLAN.md (Model Pool Settings UI)
+Last session: 2026-01-29T17:41:33Z
+Stopped at: Completed 11-04-PLAN.md (Routing Rules UI)
 Resume file: None
-Next: Phase 11 Plan 04 (Routing rules UI with drag-drop)
+Next: Phase 12 (Production Readiness)
