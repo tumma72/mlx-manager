@@ -102,16 +102,17 @@ Plans:
 5. Priority queue allows request prioritization (high/normal/low)
 6. Benchmark shows measurable throughput improvement over single-request baseline
 
-**Plans**: 7 plans in 4 waves
+**Plans**: 8 plans in 5 waves
 
 Plans:
-- [ ] 09-01-PLAN.md - Foundation types and priority queue (types, BatchRequest, PriorityQueueWithAging)
-- [ ] 09-02-PLAN.md - Block manager and block table (KVBlock, PagedBlockManager)
-- [ ] 09-03-PLAN.md - Prefix caching with hash-based matching (PrefixCache)
-- [ ] 09-04-PLAN.md - Continuous batching scheduler core (ContinuousBatchingScheduler)
-- [ ] 09-05-PLAN.md - Batch inference engine with MLX integration (BatchInferenceEngine)
-- [ ] 09-06-PLAN.md - API integration and scheduler management (SchedulerManager, chat routing)
-- [ ] 09-07-PLAN.md - Benchmark and documentation (throughput verification)
+- [x] 09-01-PLAN.md - Foundation types and priority queue (types, BatchRequest, PriorityQueueWithAging)
+- [x] 09-02-PLAN.md - Block manager and block table (KVBlock, PagedBlockManager)
+- [x] 09-03-PLAN.md - Prefix caching with hash-based matching (PrefixCache)
+- [x] 09-04-PLAN.md - Continuous batching scheduler core (ContinuousBatchingScheduler)
+- [x] 09-05-PLAN.md - Batch inference engine with MLX integration (BatchInferenceEngine)
+- [x] 09-06-PLAN.md - API integration and scheduler management (SchedulerManager, chat routing)
+- [x] 09-07-PLAN.md - Benchmark and documentation (throughput verification)
+- [ ] 09-08-PLAN.md - Wire BatchInferenceEngine in configure_scheduler (gap closure)
 
 #### Phase 10: Dual Protocol & Cloud Fallback
 
@@ -185,7 +186,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
-| 9. Batching | v1.2 | 0/7 | Planned | - |
+| 9. Batching | v1.2 | 7/8 | Gap closure | - |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
@@ -253,5 +254,5 @@ Plans:
 | httpx | 0.27+ | Cloud backend clients |
 
 ---
-*Roadmap revised: 2026-01-28*
+*Roadmap revised: 2026-01-29*
 *Previous version: adapter/proxy approach (deprecated)*
