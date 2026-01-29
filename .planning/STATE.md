@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 11 of 12 (Configuration UI)
-Plan: 1 of 4 complete
+Plan: 3 of 4 complete
 Status: In progress
-Last activity: 2026-01-29 — Completed 11-01-PLAN.md (Backend Encryption & Settings API)
+Last activity: 2026-01-29 — Completed 11-03-PLAN.md (Model Pool Settings UI)
 
-Progress: [██████████░░] 83% (Phase 11 started)
+Progress: [███████████░] 92% (Phase 11 plan 3 complete)
 
 ## Milestone v1.2 Summary
 
@@ -158,6 +158,8 @@ Recent decisions affecting current work:
 - **Salt persistence**: Encryption salt stored in ~/.mlx-manager/.encryption_salt alongside database
 - **Static routes before dynamic**: /rules/priorities and /rules/test must come before /rules/{rule_id}
 - **ServerConfig singleton**: Use id=1 for global pool settings, created on first access
+- **Local API helpers in components**: When shared API client not available (parallel execution), define local fetch wrappers in component — refactor later
+- **Memory mode conversion**: When toggling between % and GB, convert value to equivalent in new mode with proper clamping
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -167,16 +169,13 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 11 Plan 01 complete:**
-- Encryption service implemented with Fernet + PBKDF2
-- Settings router with 12 endpoints for providers, rules, pool config
-- 66 new tests (17 encryption + 49 settings router)
-- API keys now encrypted at rest, never returned in responses
-- Ready for Phase 11 Plan 02: Frontend settings UI
+**Phase 11 Plan 03 complete:**
+- ModelPoolSettings component with memory slider (% and GB modes)
+- Eviction policy dropdown (LRU/LFU/TTL) under Advanced Options
+- Preload model selector with searchable dropdown and tags
+- Integrated into settings page at /settings
 
 **Phase 11 remaining:**
-- Plan 02: Settings store and API client (frontend)
-- Plan 03: Provider and pool config components
 - Plan 04: Routing rules UI with drag-drop
 
 ## Research Documents
@@ -195,7 +194,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T17:33:00Z
-Stopped at: Completed 11-01-PLAN.md (Backend Encryption & Settings API)
+Last session: 2026-01-29T17:39:02Z
+Stopped at: Completed 11-03-PLAN.md (Model Pool Settings UI)
 Resume file: None
-Next: Phase 11 Plan 02 (Settings store and API client)
+Next: Phase 11 Plan 04 (Routing rules UI with drag-drop)
