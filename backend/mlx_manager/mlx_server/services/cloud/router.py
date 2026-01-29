@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from sqlalchemy import select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.database import get_db
 from mlx_manager.models import BackendMapping, BackendType, CloudCredential
@@ -133,15 +133,15 @@ class BackendRouter:
         # Get all enabled mappings ordered by priority (higher first)
         result = await db.execute(
             select(BackendMapping)
-            .where(BackendMapping.enabled == True)  # noqa: E712
-            .order_by(BackendMapping.priority.desc())
+            .where(BackendMapping.enabled == True)  # type: ignore[arg-type]  # noqa: E712
+            .order_by(BackendMapping.priority.desc())  # type: ignore[arg-type, attr-defined]
         )
         mappings = result.scalars().all()
 
         # Find first matching pattern
         for mapping in mappings:
             if self._pattern_matches(mapping.model_pattern, model):
-                return mapping
+                return mapping  # type: ignore[return-value]
 
         return None
 
@@ -215,7 +215,9 @@ class BackendRouter:
 
         # Load credentials from database
         result = await db.execute(
-            select(CloudCredential).where(CloudCredential.backend_type == backend_type)
+            select(CloudCredential).where(
+                CloudCredential.backend_type == backend_type  # type: ignore[arg-type]
+            )
         )
         credential = result.scalar_one_or_none()
 

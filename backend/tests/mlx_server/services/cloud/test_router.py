@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.models import BackendMapping, BackendType, CloudCredential
 from mlx_manager.mlx_server.services.cloud.router import (
