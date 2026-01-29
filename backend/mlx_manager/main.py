@@ -38,6 +38,7 @@ from mlx_manager.routers import (
     models_router,
     profiles_router,
     servers_router,
+    settings_router,
     system_router,
 )
 from mlx_manager.routers.models import download_tasks
@@ -188,6 +189,7 @@ app.include_router(mcp_router)
 app.include_router(profiles_router)
 app.include_router(models_router)
 app.include_router(servers_router)
+app.include_router(settings_router)
 app.include_router(system_router)
 
 
