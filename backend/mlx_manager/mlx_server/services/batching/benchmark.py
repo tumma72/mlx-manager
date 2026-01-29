@@ -332,7 +332,7 @@ def print_comparison_results(results: dict[str, Any]) -> None:
     print("=" * 60)
 
     print(f"\nPrompts: {results['prompts_count']}")
-    print(f"Target improvement: 2-4x (vLLM-MLX achieved 3.4x)")
+    print("Target improvement: 2-4x (vLLM-MLX achieved 3.4x)")
 
     print("\n--- Single Request (Sequential) ---")
     print(single)

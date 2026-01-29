@@ -15,6 +15,10 @@ This module provides the infrastructure for continuous batching:
 from mlx_manager.mlx_server.services.batching.batch_inference import (
     BatchInferenceEngine,
 )
+from mlx_manager.mlx_server.services.batching.benchmark import (
+    BenchmarkResult,
+    run_benchmark,
+)
 from mlx_manager.mlx_server.services.batching.block import (
     BLOCK_SIZE,
     BlockTable,
@@ -39,10 +43,6 @@ from mlx_manager.mlx_server.services.batching.scheduler_manager import (
     reset_scheduler_manager,
 )
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
-from mlx_manager.mlx_server.services.batching.benchmark import (
-    BenchmarkResult,
-    run_benchmark,
-)
 
 __all__ = [
     "BLOCK_SIZE",
