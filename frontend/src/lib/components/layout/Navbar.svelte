@@ -14,14 +14,16 @@
 		Users,
 		LogOut,
 		User,
-		ChevronDown
+		ChevronDown,
+		Sliders
 	} from 'lucide-svelte';
 
 	const navigation = [
 		{ href: '/servers' as const, label: 'Servers', icon: Server },
 		{ href: '/chat' as const, label: 'Chat', icon: MessageSquare },
 		{ href: '/models' as const, label: 'Models', icon: Package },
-		{ href: '/profiles' as const, label: 'Profiles', icon: Settings }
+		{ href: '/profiles' as const, label: 'Profiles', icon: Settings },
+		{ href: '/settings' as const, label: 'Settings', icon: Sliders }
 	];
 
 	// Pending users count for admin badge
