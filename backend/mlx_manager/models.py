@@ -315,6 +315,7 @@ class BackendMapping(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     model_pattern: str = Field(index=True)  # e.g., "gpt-*" or exact model name
+    pattern_type: str = Field(default="exact")  # "exact", "prefix", or "regex"
     backend_type: BackendType
     backend_model: str | None = None  # Override model name for cloud
     fallback_backend: BackendType | None = None  # Optional fallback on failure
@@ -341,10 +342,23 @@ class BackendMappingCreate(SQLModel):
     """Schema for creating a backend mapping."""
 
     model_pattern: str
+    pattern_type: str = "exact"  # "exact", "prefix", or "regex"
     backend_type: BackendType
     backend_model: str | None = None
     fallback_backend: BackendType | None = None
     priority: int = 0
+
+
+class BackendMappingUpdate(SQLModel):
+    """Schema for updating a backend mapping."""
+
+    model_pattern: str | None = None
+    pattern_type: str | None = None
+    backend_type: BackendType | None = None
+    backend_model: str | None = None
+    fallback_backend: BackendType | None = None
+    priority: int | None = None
+    enabled: bool | None = None
 
 
 class BackendMappingResponse(SQLModel):
@@ -352,6 +366,7 @@ class BackendMappingResponse(SQLModel):
 
     id: int
     model_pattern: str
+    pattern_type: str
     backend_type: BackendType
     backend_model: str | None
     fallback_backend: BackendType | None
@@ -374,3 +389,60 @@ class CloudCredentialResponse(SQLModel):
     backend_type: BackendType
     base_url: str | None
     created_at: datetime
+
+
+# ============================================================================
+# Model Pool Configuration Models (Phase 11 - Configuration UI)
+# ============================================================================
+
+
+class ServerConfig(SQLModel, table=True):
+    """Global server configuration (singleton - only id=1 used)."""
+
+    __tablename__ = "server_config"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Model pool settings
+    memory_limit_mode: str = Field(default="percent")  # "percent" or "gb"
+    memory_limit_value: int = Field(default=80)  # % or GB depending on mode
+    eviction_policy: str = Field(default="lru")  # "lru", "lfu", "ttl"
+    preload_models: str = Field(default="[]")  # JSON array of model paths
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+class ServerConfigUpdate(SQLModel):
+    """Schema for updating server configuration."""
+
+    memory_limit_mode: str | None = None
+    memory_limit_value: int | None = None
+    eviction_policy: str | None = None
+    preload_models: list[str] | None = None
+
+
+class ServerConfigResponse(SQLModel):
+    """Response model for server configuration."""
+
+    memory_limit_mode: str
+    memory_limit_value: int
+    eviction_policy: str
+    preload_models: list[str]  # Parsed from JSON
+
+
+# ============================================================================
+# Settings Router Helper Models (Phase 11 - Configuration UI)
+# ============================================================================
+
+
+class RulePriorityUpdate(SQLModel):
+    """Schema for batch updating rule priorities."""
+
+    id: int
+    priority: int
+
+
+class RuleMatchResult(SQLModel):
+    """Result of testing which rule matches a model name."""
+
+    matched_rule_id: int | None
+    backend_type: BackendType | None
+    pattern_matched: str | None = None
