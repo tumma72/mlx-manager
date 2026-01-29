@@ -2,9 +2,9 @@
 
 import json
 import logging
-import time
 import uuid
-from typing import Any
+from collections.abc import AsyncGenerator
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
@@ -17,6 +17,9 @@ from mlx_manager.mlx_server.schemas.anthropic import (
 )
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
 from mlx_manager.mlx_server.services.protocol import get_translator
+
+# Type alias for Anthropic stop reasons
+AnthropicStopReason = Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"]
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +65,18 @@ async def _handle_non_streaming(
     """Handle non-streaming request."""
     translator = get_translator()
 
-    # Generate completion
-    result = await generate_chat_completion(
-        model_id=internal.model,
-        messages=internal.messages,
-        max_tokens=internal.max_tokens,
-        temperature=internal.temperature,
-        top_p=internal.top_p or 1.0,
-        stop=internal.stop,
-        stream=False,
+    # Generate completion (non-streaming returns dict, not generator)
+    result = cast(
+        dict[str, Any],
+        await generate_chat_completion(
+            model_id=internal.model,
+            messages=internal.messages,
+            max_tokens=internal.max_tokens,
+            temperature=internal.temperature,
+            top_p=internal.top_p or 1.0,
+            stop=internal.stop,
+            stream=False,
+        ),
     )
 
     # Extract from result dict
@@ -79,7 +85,9 @@ async def _handle_non_streaming(
 
     # Translate stop reason
     openai_stop = choice.get("finish_reason", "stop")
-    anthropic_stop = translator.openai_stop_to_anthropic(openai_stop)
+    anthropic_stop = cast(
+        AnthropicStopReason, translator.openai_stop_to_anthropic(openai_stop)
+    )
 
     return AnthropicMessagesResponse(
         id=result["id"].replace("chatcmpl-", "msg_"),
@@ -157,14 +165,17 @@ async def _handle_streaming(
         # generate_chat_completion returns OpenAI-format chunks:
         # {"choices": [{"delta": {"content": "token"}, "finish_reason": null}]}
         finish_reason = "end_turn"
-        gen = await generate_chat_completion(
-            model_id=internal.model,
-            messages=internal.messages,
-            max_tokens=internal.max_tokens,
-            temperature=internal.temperature,
-            top_p=internal.top_p or 1.0,
-            stop=internal.stop,
-            stream=True,
+        gen = cast(
+            AsyncGenerator[dict[str, Any], None],
+            await generate_chat_completion(
+                model_id=internal.model,
+                messages=internal.messages,
+                max_tokens=internal.max_tokens,
+                temperature=internal.temperature,
+                top_p=internal.top_p or 1.0,
+                stop=internal.stop,
+                stream=True,
+            ),
         )
 
         async for chunk in gen:
