@@ -197,13 +197,23 @@ class TestSchedulerManagerConfigure:
     @pytest.mark.asyncio
     async def test_configure_creates_scheduler_if_needed(self):
         """configure_scheduler creates scheduler if not exists."""
+        from unittest.mock import MagicMock
+
         mgr = init_scheduler_manager()
 
         # Scheduler doesn't exist yet
         assert "test-model" not in mgr._schedulers
 
-        # Configure (with stub resources)
-        await mgr.configure_scheduler("test-model", None, None, None)
+        # Create mock resources (required for set_model to succeed)
+        mock_model = MagicMock(name="model")
+        mock_tokenizer = MagicMock(name="tokenizer")
+        mock_adapter = MagicMock(name="adapter")
+        mock_adapter.get_stop_tokens.return_value = [128001]
+
+        # Configure (creates scheduler and wires engine)
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
 
         # Scheduler now exists
         assert "test-model" in mgr._schedulers
@@ -214,16 +224,114 @@ class TestSchedulerManagerConfigure:
     @pytest.mark.asyncio
     async def test_configure_idempotent(self):
         """configure_scheduler can be called multiple times."""
+        from unittest.mock import MagicMock
+
         mgr = init_scheduler_manager()
 
-        await mgr.configure_scheduler("test-model", None, None, None)
+        # Create mock resources
+        mock_model = MagicMock(name="model")
+        mock_tokenizer = MagicMock(name="tokenizer")
+        mock_adapter = MagicMock(name="adapter")
+        mock_adapter.get_stop_tokens.return_value = [128001]
+
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
         scheduler1 = await mgr.get_scheduler("test-model")
 
-        await mgr.configure_scheduler("test-model", None, None, None)
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
         scheduler2 = await mgr.get_scheduler("test-model")
 
         # Same scheduler instance
         assert scheduler1 is scheduler2
+
+        # Cleanup
+        await mgr.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_configure_calls_set_model_on_scheduler(self):
+        """configure_scheduler calls scheduler.set_model with provided resources."""
+        from unittest.mock import MagicMock
+
+        mgr = init_scheduler_manager()
+
+        # Create mock resources
+        mock_model = MagicMock(name="model")
+        mock_tokenizer = MagicMock(name="tokenizer")
+        mock_adapter = MagicMock(name="adapter")
+
+        # Get scheduler first to patch set_model
+        scheduler = await mgr.get_scheduler("test-model")
+        original_set_model = scheduler.set_model
+        scheduler.set_model = MagicMock()
+
+        # Configure with mock resources
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
+
+        # Verify set_model was called with correct arguments
+        scheduler.set_model.assert_called_once_with(
+            mock_model, mock_tokenizer, mock_adapter
+        )
+
+        # Restore and cleanup
+        scheduler.set_model = original_set_model
+        await mgr.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_configure_wires_inference_engine(self):
+        """configure_scheduler wires BatchInferenceEngine to scheduler."""
+        from unittest.mock import MagicMock
+
+        mgr = init_scheduler_manager()
+
+        # Create mock resources with required methods
+        mock_model = MagicMock(name="model")
+        mock_tokenizer = MagicMock(name="tokenizer")
+        mock_adapter = MagicMock(name="adapter")
+        mock_adapter.get_stop_tokens.return_value = [128001]
+
+        # Configure the scheduler
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
+
+        # Get the scheduler and verify inference engine was set
+        scheduler = await mgr.get_scheduler("test-model")
+        assert scheduler._inference_engine is not None
+
+        # Cleanup
+        await mgr.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_configure_inference_engine_has_correct_model(self):
+        """configure_scheduler wires inference engine with correct model resources."""
+        from unittest.mock import MagicMock
+
+        mgr = init_scheduler_manager()
+
+        # Create mock resources with required methods
+        mock_model = MagicMock(name="model")
+        mock_tokenizer = MagicMock(name="tokenizer")
+        mock_adapter = MagicMock(name="adapter")
+        mock_adapter.get_stop_tokens.return_value = [128001, 128009]
+
+        # Configure the scheduler
+        await mgr.configure_scheduler(
+            "test-model", mock_model, mock_tokenizer, mock_adapter
+        )
+
+        # Get the scheduler and verify inference engine has correct references
+        scheduler = await mgr.get_scheduler("test-model")
+        engine = scheduler._inference_engine
+
+        assert engine.model is mock_model
+        assert engine.tokenizer is mock_tokenizer
+        assert engine.adapter is mock_adapter
+        assert engine._stop_token_ids == {128001, 128009}
 
         # Cleanup
         await mgr.shutdown()
