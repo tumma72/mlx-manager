@@ -550,10 +550,10 @@ export const settings = {
   },
 
   testRule: async (modelName: string): Promise<RuleTestResult> => {
-    const res = await fetch(`${API_BASE}/settings/rules/test`, {
+    const params = new URLSearchParams({ model_name: modelName });
+    const res = await fetch(`${API_BASE}/settings/rules/test?${params}`, {
       method: "POST",
       headers: getAuthHeaders(),
-      body: JSON.stringify({ model_name: modelName }),
     });
     return handleResponse(res);
   },
