@@ -3,7 +3,7 @@
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 
 from mlx_manager.mlx_server.services.cloud.client import CloudBackendClient
 
@@ -84,13 +84,13 @@ class OpenAICloudBackend(CloudBackendClient):
     async def _complete_chat_completion(
         self,
         request_data: dict[str, Any],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Non-streaming chat completion."""
         response = await self._post_with_circuit_breaker(
             "/v1/chat/completions",
             request_data,
         )
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     async def _stream_chat_completion(
         self,
