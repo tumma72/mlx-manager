@@ -161,11 +161,11 @@ Plans:
 **Plans**: 5 plans in 3 waves
 
 Plans:
-- [ ] 11-01-PLAN.md — Backend encryption service and settings API
-- [ ] 11-02-PLAN.md — Settings page and provider configuration UI
-- [ ] 11-03-PLAN.md — Model pool settings UI
-- [ ] 11-04-PLAN.md — Routing rules UI with drag-drop
-- [ ] 11-05-PLAN.md — Integration and navbar link
+- [x] 11-01-PLAN.md — Backend encryption service and settings API
+- [x] 11-02-PLAN.md — Settings page and provider configuration UI
+- [x] 11-03-PLAN.md — Model pool settings UI
+- [x] 11-04-PLAN.md — Routing rules UI with drag-drop
+- [x] 11-05-PLAN.md — Integration and navbar link
 
 #### Phase 12: Production Hardening
 
@@ -198,7 +198,7 @@ Plans:
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
 | 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
-| 11. Configuration | v1.2 | 0/5 | Planned | - |
+| 11. Configuration | v1.2 | 5/5 | Complete | 2026-01-29 |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
 
 ## Technical Architecture

@@ -56,10 +56,10 @@
 
 ### Configuration & UI (CONF)
 
-- [ ] **CONF-01**: API keys stored encrypted using AuthLib (existing auth infrastructure)
-- [ ] **CONF-02**: Visual model pool configuration (max memory, eviction policy)
-- [ ] **CONF-03**: Provider configuration UI for cloud API keys and base URLs
-- [ ] **CONF-04**: Model routing rules UI (exact, prefix, regex patterns)
+- [x] **CONF-01**: API keys stored encrypted using AuthLib (existing auth infrastructure)
+- [x] **CONF-02**: Visual model pool configuration (max memory, eviction policy)
+- [x] **CONF-03**: Provider configuration UI for cloud API keys and base URLs
+- [x] **CONF-04**: Model routing rules UI (exact, prefix, regex patterns)
 
 ### Production Hardening (PROD)
 
@@ -107,30 +107,30 @@
 | SRV-01 | Phase 7 | Complete |
 | SRV-02 | Phase 7 | Complete |
 | SRV-03 | Phase 7 | Complete |
-| SRV-04 | Phase 8 | Pending |
-| SRV-05 | Phase 8 | Pending |
-| BATCH-01 | Phase 9 | Pending |
-| BATCH-02 | Phase 9 | Pending |
-| BATCH-03 | Phase 9 | Pending |
-| BATCH-04 | Phase 9 | Pending |
+| SRV-04 | Phase 8 | Complete |
+| SRV-05 | Phase 8 | Complete |
+| BATCH-01 | Phase 9 | Complete |
+| BATCH-02 | Phase 9 | Complete |
+| BATCH-03 | Phase 9 | Complete |
+| BATCH-04 | Phase 9 | Complete |
 | API-01 | Phase 7 | Complete |
 | API-02 | Phase 7 | Complete |
 | API-03 | Phase 10 | Complete |
 | API-04 | Phase 7 | Complete |
-| API-05 | Phase 8 | Pending |
+| API-05 | Phase 8 | Complete |
 | ADAPT-01 | Phase 7 | Complete |
 | ADAPT-02 | Phase 7 | Complete |
-| ADAPT-03 | Phase 8 | Pending |
-| ADAPT-04 | Phase 8 | Pending |
-| ADAPT-05 | Phase 8 | Pending |
+| ADAPT-03 | Phase 8 | Complete |
+| ADAPT-04 | Phase 8 | Complete |
+| ADAPT-05 | Phase 8 | Complete |
 | CLOUD-01 | Phase 10 | Complete |
 | CLOUD-02 | Phase 10 | Complete |
 | CLOUD-03 | Phase 10 | Complete |
 | CLOUD-04 | Phase 10 | Complete |
-| CONF-01 | Phase 11 | Pending |
-| CONF-02 | Phase 11 | Pending |
-| CONF-03 | Phase 11 | Pending |
-| CONF-04 | Phase 11 | Pending |
+| CONF-01 | Phase 11 | Complete |
+| CONF-02 | Phase 11 | Complete |
+| CONF-03 | Phase 11 | Complete |
+| CONF-04 | Phase 11 | Complete |
 | PROD-01 | Phase 12 | Pending |
 | PROD-02 | Phase 12 | Pending |
 | PROD-03 | Phase 12 | Pending |
