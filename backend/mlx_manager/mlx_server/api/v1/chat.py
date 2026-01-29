@@ -26,6 +26,7 @@ from mlx_manager.mlx_server.services.batching import (
     Priority,
     get_scheduler_manager,
 )
+from mlx_manager.mlx_server.services.cloud.router import get_router
 from mlx_manager.mlx_server.services.image_processor import preprocess_images
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
 from mlx_manager.mlx_server.services.vision import generate_vision_completion
@@ -158,10 +159,18 @@ async def _handle_text_request(
 ) -> EventSourceResponse | ChatCompletionResponse:
     """Handle text-only request.
 
-    Routes through batching scheduler if enabled, otherwise uses
-    direct inference.
+    Routes through cloud router if enabled, batching scheduler if enabled,
+    otherwise uses direct inference.
     """
     settings = get_settings()
+
+    # Try cloud routing path if enabled (checks mappings and handles failover)
+    if settings.enable_cloud_routing:
+        try:
+            return await _handle_routed_request(request)
+        except Exception as e:
+            logger.warning(f"Cloud routing failed, falling back to local: {e}")
+            # Fall through to direct/batched path
 
     # Try batching path if enabled
     if settings.enable_batching:
@@ -181,6 +190,68 @@ async def _handle_text_request(
 
     # Direct inference path
     return await _handle_direct_request(request)
+
+
+async def _handle_routed_request(
+    request: ChatCompletionRequest,
+) -> EventSourceResponse | ChatCompletionResponse:
+    """Handle text request via backend router.
+
+    Uses BackendRouter to lookup model-to-backend mapping and route
+    appropriately. Handles cloud failover when local inference fails.
+    """
+    # Convert messages to dict format
+    messages: list[dict[str, Any]] = []
+    for m in request.messages:
+        if isinstance(m.content, str):
+            text = m.content
+        else:
+            text, _ = extract_content_parts(m.content)
+        messages.append({"role": m.role, "content": text})
+
+    # Get router singleton and route request
+    backend_router = get_router()
+    result = await backend_router.route_request(
+        model=request.model,
+        messages=messages,
+        max_tokens=request.max_tokens or 4096,
+        temperature=request.temperature,
+        stream=request.stream,
+        top_p=request.top_p,
+    )
+
+    if request.stream:
+        # result is an async generator
+        async def event_generator() -> Any:
+            async for chunk in result:  # type: ignore[union-attr]
+                yield {"data": json.dumps(chunk)}
+            yield {"data": "[DONE]"}
+
+        return EventSourceResponse(event_generator())
+    else:
+        # result is a dict - convert to Pydantic response model
+        result_dict = cast(dict[str, Any], result)
+        choice = result_dict["choices"][0]
+        return ChatCompletionResponse(
+            id=result_dict["id"],
+            created=result_dict["created"],
+            model=result_dict["model"],
+            choices=[
+                ChatCompletionChoice(
+                    index=choice["index"],
+                    message=ChatMessage(
+                        role=choice["message"]["role"],
+                        content=choice["message"]["content"],
+                    ),
+                    finish_reason=choice["finish_reason"],
+                )
+            ],
+            usage=Usage(
+                prompt_tokens=result_dict["usage"]["prompt_tokens"],
+                completion_tokens=result_dict["usage"]["completion_tokens"],
+                total_tokens=result_dict["usage"]["total_tokens"],
+            ),
+        )
 
 
 async def _handle_direct_request(
