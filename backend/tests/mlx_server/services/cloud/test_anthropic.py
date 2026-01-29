@@ -313,6 +313,16 @@ class TestTranslateResponse:
 class TestStreamWithTranslation:
     """Tests for _stream_with_translation method."""
 
+    # Common SSE test data strings (avoid line length issues)
+    DELTA_HELLO = (
+        'data: {"type": "content_block_delta", '
+        '"delta": {"type": "text_delta", "text": "Hello"}}'
+    )
+    DELTA_NOT_SHOWN = (
+        'data: {"type": "content_block_delta", '
+        '"delta": {"type": "text_delta", "text": "Should not appear"}}'
+    )
+
     @pytest.fixture
     def client(self) -> AnthropicCloudBackend:
         """Create a test client."""
@@ -322,9 +332,10 @@ class TestStreamWithTranslation:
         self, client: AnthropicCloudBackend
     ) -> None:
         """content_block_delta events yield OpenAI format chunks."""
+        delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
@@ -365,11 +376,13 @@ class TestStreamWithTranslation:
         self, client: AnthropicCloudBackend
     ) -> None:
         """message_stop ends stream."""
+        delta_hello = self.DELTA_HELLO
+        delta_not_shown = self.DELTA_NOT_SHOWN
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
             yield 'data: {"type": "message_stop"}'
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Should not appear"}}'
+            yield delta_not_shown
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
@@ -386,11 +399,12 @@ class TestStreamWithTranslation:
 
     async def test_empty_lines_ignored(self, client: AnthropicCloudBackend) -> None:
         """Empty lines are ignored."""
+        delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield ""
             yield "   "
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
@@ -405,10 +419,11 @@ class TestStreamWithTranslation:
 
     async def test_malformed_json_ignored(self, client: AnthropicCloudBackend) -> None:
         """Malformed JSON is ignored."""
+        delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield "data: not valid json"
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
@@ -424,11 +439,12 @@ class TestStreamWithTranslation:
 
     async def test_event_lines_ignored(self, client: AnthropicCloudBackend) -> None:
         """Lines starting with 'event:' are ignored."""
+        delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield "event: message_start"
             yield "event: content_block_start"
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
@@ -445,9 +461,10 @@ class TestStreamWithTranslation:
         self, client: AnthropicCloudBackend
     ) -> None:
         """Model from request included in chunks."""
+        delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
-            yield 'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
+            yield delta_hello
 
         with patch.object(
             client, "_stream_with_circuit_breaker", return_value=mock_stream()
