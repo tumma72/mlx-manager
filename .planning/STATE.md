@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
-Plan: 7 of 8 complete
-Status: In progress
-Last activity: 2026-01-29 — Completed 10-07-PLAN.md (Anthropic cloud backend)
+Plan: 9 of 9 complete
+Status: Phase complete
+Last activity: 2026-01-29 — Completed 10-09-PLAN.md (Chat routing integration)
 
-Progress: [████████░░] 87% (Phase 10 plan 7/8 complete)
+Progress: [██████████] 100% (Phase 10 complete)
 
 ## Milestone v1.2 Summary
 
@@ -152,6 +152,8 @@ Recent decisions affecting current work:
 - **cast() for httpx response.json()**: Type annotation fix for response.json() returning Any
 - **Anthropic system message extraction**: System message extracted to separate 'system' field per Anthropic API spec
 - **SSE event type from data.type**: Event type in Anthropic streaming comes from JSON data.type, not event: line
+- **Routing before batching**: Cloud routing check happens before batching check — cloud routing has higher priority when both enabled
+- **Automatic routing fallback**: Any routing exception falls through to local inference path
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -187,7 +189,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T15:20:30Z
-Stopped at: Completed 10-07-PLAN.md (Anthropic cloud backend)
+Last session: 2026-01-29T15:26:11Z
+Stopped at: Completed 10-09-PLAN.md (Chat routing integration)
 Resume file: None
-Next: Wave 4 (10-08 intelligent routing)
+Next: Phase 11 (Configuration & API Keys)
