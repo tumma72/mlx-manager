@@ -130,11 +130,18 @@ Plans:
 5. Model -> backend mapping stored in database (local model A, cloud model B)
 6. Automatic failover: local failure triggers cloud fallback if configured
 
-**Plans**: TBD
+**Plans**: 9 plans in 4 waves
 
 Plans:
-- [ ] 10-01: TBD
-- [ ] 10-02: TBD
+- [ ] 10-01-PLAN.md — Anthropic Messages API schemas
+- [ ] 10-02-PLAN.md — Database models for backend routing
+- [ ] 10-03-PLAN.md — Protocol translator service
+- [ ] 10-04-PLAN.md — Cloud backend client with retries
+- [ ] 10-05-PLAN.md — /v1/messages endpoint with Anthropic SSE
+- [ ] 10-06-PLAN.md — OpenAI cloud backend
+- [ ] 10-07-PLAN.md — Anthropic cloud backend with translation
+- [ ] 10-08-PLAN.md — Backend router with failover
+- [ ] 10-09-PLAN.md — Wire router into chat endpoint
 
 #### Phase 11: Configuration UI
 
@@ -187,7 +194,7 @@ Plans:
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
-| 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
+| 10. Dual Protocol | v1.2 | 0/9 | Planned | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
 
@@ -252,6 +259,8 @@ Plans:
 | Pydantic | 2.x | Rust-powered validation |
 | logfire | latest | Observability |
 | httpx | 0.27+ | Cloud backend clients |
+| httpx-retries | 0.4+ | Retry transport for cloud backends |
+| pybreaker | 1.0+ | Circuit breaker pattern |
 
 ---
 *Roadmap revised: 2026-01-29*
