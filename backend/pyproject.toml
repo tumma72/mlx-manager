@@ -42,6 +42,9 @@ dependencies = [
     # MLX Server dependencies
     "logfire[fastapi]>=3.0.0",
     "sse-starlette>=2.0.0",
+    # Cloud backend resilience
+    "httpx-retries>=0.4",
+    "pybreaker>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -90,6 +93,13 @@ per-file-ignores = { "mlx_manager/main.py" = ["E402"] }
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # MLX Metal bindings use SWIG which lacks __module__ attributes
+    "ignore:builtin type Swig.*has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+    # LogFire not configured warning is expected in tests (no external observability service)
+    "ignore::logfire._internal.config.LogfireNotConfiguredWarning",
+]
 
 [tool.mypy]
 python_version = "3.11"
