@@ -293,3 +293,84 @@ class ServerStatus(SQLModel):
     exit_code: int | None = None
     failed: bool = False
     error_message: str | None = None
+
+
+# ============================================================================
+# Backend Routing Models (Phase 10 - Cloud Fallback)
+# ============================================================================
+
+
+class BackendType(str, Enum):
+    """Backend types for routing."""
+
+    LOCAL = "local"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+
+class BackendMapping(SQLModel, table=True):
+    """Maps model patterns to backends with fallback configuration."""
+
+    __tablename__ = "backend_mappings"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    model_pattern: str = Field(index=True)  # e.g., "gpt-*" or exact model name
+    backend_type: BackendType
+    backend_model: str | None = None  # Override model name for cloud
+    fallback_backend: BackendType | None = None  # Optional fallback on failure
+    priority: int = Field(default=0)  # Higher = checked first for pattern matching
+    enabled: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+class CloudCredential(SQLModel, table=True):
+    """Encrypted cloud API credentials."""
+
+    __tablename__ = "cloud_credentials"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    backend_type: BackendType = Field(unique=True)  # One credential per backend type
+    encrypted_api_key: str  # Encrypted with AuthLib (Phase 11 will add encryption)
+    base_url: str | None = None  # Override default API URL (Azure OpenAI, proxies)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+class BackendMappingCreate(SQLModel):
+    """Schema for creating a backend mapping."""
+
+    model_pattern: str
+    backend_type: BackendType
+    backend_model: str | None = None
+    fallback_backend: BackendType | None = None
+    priority: int = 0
+
+
+class BackendMappingResponse(SQLModel):
+    """Response model for backend mapping."""
+
+    id: int
+    model_pattern: str
+    backend_type: BackendType
+    backend_model: str | None
+    fallback_backend: BackendType | None
+    priority: int
+    enabled: bool
+
+
+class CloudCredentialCreate(SQLModel):
+    """Schema for creating cloud credentials."""
+
+    backend_type: BackendType
+    api_key: str  # Plain text - will be encrypted before storage
+    base_url: str | None = None
+
+
+class CloudCredentialResponse(SQLModel):
+    """Response model (no API key exposed)."""
+
+    id: int
+    backend_type: BackendType
+    base_url: str | None
+    created_at: datetime
