@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
-Plan: 6 of 8 complete
+Plan: 7 of 8 complete
 Status: In progress
-Last activity: 2026-01-29 — Completed 10-06-PLAN.md (OpenAI cloud backend)
+Last activity: 2026-01-29 — Completed 10-07-PLAN.md (Anthropic cloud backend)
 
-Progress: [███████░░░] 75% (Phase 10 plan 6/8 complete)
+Progress: [████████░░] 87% (Phase 10 plan 7/8 complete)
 
 ## Milestone v1.2 Summary
 
@@ -150,6 +150,8 @@ Recent decisions affecting current work:
 - **typing.Any for content extraction**: Handles mixed Pydantic models and dict representations in protocol translator
 - **InternalRequest dataclass**: Unified internal format for inference service consumption
 - **cast() for httpx response.json()**: Type annotation fix for response.json() returning Any
+- **Anthropic system message extraction**: System message extracted to separate 'system' field per Anthropic API spec
+- **SSE event type from data.type**: Event type in Anthropic streaming comes from JSON data.type, not event: line
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -185,7 +187,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T15:19:28Z
-Stopped at: Completed 10-05-PLAN.md (Anthropic messages endpoint) and 10-06-PLAN.md (OpenAI cloud backend)
+Last session: 2026-01-29T15:20:30Z
+Stopped at: Completed 10-07-PLAN.md (Anthropic cloud backend)
 Resume file: None
-Next: Continue with remaining Wave 3 plan (10-07 Anthropic backend), then Wave 4 (10-08 intelligent router)
+Next: Wave 4 (10-08 intelligent routing)
