@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 9 complete - ready for Phase 10
+**Current focus:** Phase 10 - Cloud Fallback (Dual Protocol)
 
 ## Current Position
 
-Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 8 of 8 complete (including gap closure)
-Status: Phase complete
-Last activity: 2026-01-29 — Completed 09-08-PLAN.md (Gap closure - inference engine wiring)
+Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
+Plan: 2 of 5 complete
+Status: In progress
+Last activity: 2026-01-29 — Completed 10-02-PLAN.md (Database models for backend routing)
 
-Progress: [██████████] 100% (Phase 9 complete - continuous batching ready with gap closed)
+Progress: [████░░░░░░] 40% (Phase 10 plan 2/5 complete)
 
 ## Milestone v1.2 Summary
 
@@ -138,6 +138,9 @@ Recent decisions affecting current work:
 - **Graceful fallback**: Fall back to direct inference if scheduler unavailable
 - **Callback-based benchmarking**: Benchmark accepts generate/submit callbacks — agnostic of implementation
 - **Linear percentile interpolation**: calculate_percentile uses linear interpolation for smooth values
+- **BackendType string enum**: Enables direct JSON serialization for LOCAL, OPENAI, ANTHROPIC values
+- **Priority-based pattern matching**: Higher priority patterns checked first for model routing
+- **One credential per backend type**: Unique constraint prevents configuration confusion
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -173,7 +176,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T10:05:51Z
-Stopped at: Completed 09-08-PLAN.md (Gap closure - inference engine wiring) - Phase 9 complete
+Last session: 2026-01-29T15:03:19Z
+Stopped at: Completed 10-02-PLAN.md (Database models for backend routing)
 Resume file: None
-Next: Phase 10 (Cloud Fallback)
+Next: 10-03-PLAN.md (Backend Router Service)
