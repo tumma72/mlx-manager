@@ -26,10 +26,10 @@
 
 ### Continuous Batching (BATCH)
 
-- [ ] **BATCH-01**: Continuous batching scheduler processes multiple requests per token generation step
-- [ ] **BATCH-02**: Paged KV cache manager allocates fixed-size blocks with copy-on-write
-- [ ] **BATCH-03**: Prefix caching shares KV blocks across requests with common prefixes
-- [ ] **BATCH-04**: Priority queue supports request prioritization (high/normal/low)
+- [x] **BATCH-01**: Continuous batching scheduler processes multiple requests per token generation step
+- [x] **BATCH-02**: Paged KV cache manager allocates fixed-size blocks with copy-on-write
+- [x] **BATCH-03**: Prefix caching shares KV blocks across requests with common prefixes
+- [x] **BATCH-04**: Priority queue supports request prioritization (high/normal/low)
 
 ### API Layer (API)
 

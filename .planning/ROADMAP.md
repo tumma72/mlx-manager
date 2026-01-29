@@ -112,7 +112,7 @@ Plans:
 - [x] 09-05-PLAN.md - Batch inference engine with MLX integration (BatchInferenceEngine)
 - [x] 09-06-PLAN.md - API integration and scheduler management (SchedulerManager, chat routing)
 - [x] 09-07-PLAN.md - Benchmark and documentation (throughput verification)
-- [ ] 09-08-PLAN.md - Wire BatchInferenceEngine in configure_scheduler (gap closure)
+- [x] 09-08-PLAN.md - Wire BatchInferenceEngine in configure_scheduler (gap closure)
 
 #### Phase 10: Dual Protocol & Cloud Fallback
 
@@ -186,7 +186,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
-| 9. Batching | v1.2 | 7/8 | Gap closure | - |
+| 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
 | 10. Dual Protocol | v1.2 | 0/TBD | Not started | - |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
