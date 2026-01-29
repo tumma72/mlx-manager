@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ProviderSection, ModelPoolSettings } from '$lib/components/settings';
+	import { ProviderSection, ModelPoolSettings, RoutingRulesSection } from '$lib/components/settings';
 </script>
 
 <svelte:head>
@@ -18,6 +18,8 @@
 		<ProviderSection />
 	</section>
 
+	<hr class="border-gray-200 dark:border-gray-700" />
+
 	<!-- Model Pool -->
 	<section>
 		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Pool</h2>
@@ -27,11 +29,14 @@
 		<ModelPoolSettings />
 	</section>
 
-	<!-- Routing Rules (placeholder for Plan 04) -->
+	<hr class="border-gray-200 dark:border-gray-700" />
+
+	<!-- Routing Rules -->
 	<section>
 		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Routing Rules</h2>
-		<p class="text-sm text-muted-foreground">
-			Configure model-to-backend routing rules with pattern matching. Coming in the next update.
+		<p class="text-sm text-muted-foreground mb-4">
+			Configure model-to-backend routing rules with pattern matching. Rules are evaluated by priority (lower number = higher priority).
 		</p>
+		<RoutingRulesSection />
 	</section>
 </div>
