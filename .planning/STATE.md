@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 8 gap closure complete - ready for Phase 9
+**Current focus:** Phase 9 complete - ready for Phase 10
 
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 6 of 7 complete
-Status: In progress
-Last activity: 2026-01-28 — Completed 09-06-PLAN.md (API integration and scheduler management)
+Plan: 7 of 7 complete
+Status: Phase complete
+Last activity: 2026-01-29 — Completed 09-07-PLAN.md (Benchmark and documentation)
 
-Progress: [█████████░] 87% (Phases 7-8 complete, Phase 9 plan 6/7)
+Progress: [██████████] 100% (Phase 9 complete - continuous batching ready)
 
 ## Milestone v1.2 Summary
 
@@ -136,6 +136,8 @@ Recent decisions affecting current work:
 - **Endpoint-based priority**: /v1/batch/* gets LOW priority, others NORMAL — system-determined, not client-requested
 - **Feature flag for batching**: enable_batching=False by default until stable
 - **Graceful fallback**: Fall back to direct inference if scheduler unavailable
+- **Callback-based benchmarking**: Benchmark accepts generate/submit callbacks — agnostic of implementation
+- **Linear percentile interpolation**: calculate_percentile uses linear interpolation for smooth values
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -145,9 +147,11 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 9 readiness (Continuous Batching):**
-- Paged KV cache implementation is complex — may need to study vLLM-MLX source carefully
-- Concurrent request handling with async locks needs careful design to avoid deadlocks
+**Phase 9 complete:**
+- All 7 plans executed (types, priority queue, block manager, prefix cache, batch inference, scheduler manager, benchmark)
+- 171 batching tests passing
+- Documentation complete (docs/BATCHING.md)
+- Ready for manual throughput testing
 
 **Phase 10 readiness (Cloud Fallback):**
 - Cost tracking data source decision deferred: hardcoded pricing table vs API fetch
@@ -168,7 +172,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-28T19:51:26Z
-Stopped at: Completed 09-06-PLAN.md (API integration and scheduler management)
+Last session: 2026-01-29T08:42:44Z
+Stopped at: Completed 09-07-PLAN.md (Benchmark and documentation) - Phase 9 complete
 Resume file: None
-Next: Phase 9 Plan 07 (end-to-end integration testing)
+Next: Phase 10 (Cloud Fallback)
