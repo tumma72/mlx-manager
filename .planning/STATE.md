@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 10 of 12 (Dual Protocol & Cloud Fallback)
-Plan: 2 of 5 complete
+Plan: 4 of 8 complete
 Status: In progress
-Last activity: 2026-01-29 — Completed 10-02-PLAN.md (Database models for backend routing)
+Last activity: 2026-01-29 — Completed 10-04-PLAN.md (Cloud client dependencies)
 
-Progress: [████░░░░░░] 40% (Phase 10 plan 2/5 complete)
+Progress: [█████░░░░░] 50% (Phase 10 plan 4/8 complete)
 
 ## Milestone v1.2 Summary
 
@@ -144,6 +144,9 @@ Recent decisions affecting current work:
 - **Anthropic max_tokens required**: Unlike OpenAI's optional, Anthropic requires max_tokens with Field(ge=1) and no default
 - **System message separate field**: Anthropic stores system in dedicated field, not in messages array
 - **Anthropic temperature 0.0-1.0**: Stricter bounds than OpenAI's 0.0-2.0
+- **Custom AsyncCircuitBreaker instead of pybreaker**: pybreaker's async support requires Tornado; our implementation is async-native and simpler
+- **Circuit breaker per-client instance**: Each CloudBackendClient has independent circuit state
+- **Half-open state for gradual recovery**: Allows one test request after reset_timeout to check if backend recovered
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -179,7 +182,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T15:03:19Z
-Stopped at: Completed 10-02-PLAN.md (Database models for backend routing)
+Last session: 2026-01-29T15:07:22Z
+Stopped at: Completed 10-04-PLAN.md (Cloud client dependencies)
 Resume file: None
-Next: 10-03-PLAN.md (Backend Router Service)
+Next: 10-05-PLAN.md (OpenAI Backend Client)
