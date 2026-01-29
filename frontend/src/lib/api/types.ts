@@ -265,3 +265,77 @@ export interface ToolDefinition {
     parameters: Record<string, unknown>;
   };
 }
+
+// Settings API Types
+
+// Backend types for routing and providers
+export type BackendType = "local" | "openai" | "anthropic";
+export type PatternType = "exact" | "prefix" | "regex";
+export type EvictionPolicy = "lru" | "lfu" | "ttl";
+export type MemoryLimitMode = "percent" | "gb";
+
+// Cloud provider credentials
+export interface CloudCredential {
+  id: number;
+  backend_type: BackendType;
+  base_url: string | null;
+  created_at: string;
+}
+
+export interface CloudCredentialCreate {
+  backend_type: BackendType;
+  api_key: string;
+  base_url?: string;
+}
+
+// Backend routing rules
+export interface BackendMapping {
+  id: number;
+  model_pattern: string;
+  pattern_type: PatternType;
+  backend_type: BackendType;
+  backend_model: string | null;
+  fallback_backend: BackendType | null;
+  priority: number;
+  enabled: boolean;
+}
+
+export interface BackendMappingCreate {
+  model_pattern: string;
+  pattern_type?: PatternType;
+  backend_type: BackendType;
+  backend_model?: string;
+  fallback_backend?: BackendType;
+  priority?: number;
+}
+
+export interface BackendMappingUpdate {
+  model_pattern?: string;
+  pattern_type?: PatternType;
+  backend_type?: BackendType;
+  backend_model?: string | null;
+  fallback_backend?: BackendType | null;
+  priority?: number;
+  enabled?: boolean;
+}
+
+// Server pool configuration
+export interface ServerPoolConfig {
+  memory_limit_mode: MemoryLimitMode;
+  memory_limit_value: number;
+  eviction_policy: EvictionPolicy;
+  preload_models: string[];
+}
+
+export interface ServerPoolConfigUpdate {
+  memory_limit_mode?: MemoryLimitMode;
+  memory_limit_value?: number;
+  eviction_policy?: EvictionPolicy;
+  preload_models?: string[];
+}
+
+// Rule test result
+export interface RuleTestResult {
+  matched_rule_id: number | null;
+  backend_type: BackendType;
+}

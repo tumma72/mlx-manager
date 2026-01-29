@@ -19,6 +19,15 @@ import type {
   UserUpdate,
   ModelCharacteristics,
   ToolDefinition,
+  CloudCredential,
+  CloudCredentialCreate,
+  BackendMapping,
+  BackendMappingCreate,
+  BackendMappingUpdate,
+  ServerPoolConfig,
+  ServerPoolConfigUpdate,
+  RuleTestResult,
+  BackendType,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -445,6 +454,125 @@ export const mcp = {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ name, arguments: args }),
+    });
+    return handleResponse(res);
+  },
+};
+
+// Settings API
+export const settings = {
+  // Providers
+  listProviders: async (): Promise<CloudCredential[]> => {
+    const res = await fetch(`${API_BASE}/settings/providers`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  createProvider: async (
+    data: CloudCredentialCreate,
+  ): Promise<CloudCredential> => {
+    const res = await fetch(`${API_BASE}/settings/providers`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteProvider: async (backendType: BackendType): Promise<void> => {
+    const res = await fetch(`${API_BASE}/settings/providers/${backendType}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  testProvider: async (
+    backendType: BackendType,
+  ): Promise<{ success: boolean }> => {
+    const res = await fetch(
+      `${API_BASE}/settings/providers/${backendType}/test`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
+    return handleResponse(res);
+  },
+
+  // Rules
+  listRules: async (): Promise<BackendMapping[]> => {
+    const res = await fetch(`${API_BASE}/settings/rules`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  createRule: async (data: BackendMappingCreate): Promise<BackendMapping> => {
+    const res = await fetch(`${API_BASE}/settings/rules`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  updateRule: async (
+    id: number,
+    data: BackendMappingUpdate,
+  ): Promise<BackendMapping> => {
+    const res = await fetch(`${API_BASE}/settings/rules/${id}`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  deleteRule: async (id: number): Promise<void> => {
+    const res = await fetch(`${API_BASE}/settings/rules/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  updateRulePriorities: async (
+    priorities: { id: number; priority: number }[],
+  ): Promise<void> => {
+    const res = await fetch(`${API_BASE}/settings/rules/priorities`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(priorities),
+    });
+    return handleResponse(res);
+  },
+
+  testRule: async (modelName: string): Promise<RuleTestResult> => {
+    const res = await fetch(`${API_BASE}/settings/rules/test`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ model_name: modelName }),
+    });
+    return handleResponse(res);
+  },
+
+  // Pool config
+  getPoolConfig: async (): Promise<ServerPoolConfig> => {
+    const res = await fetch(`${API_BASE}/settings/pool`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  updatePoolConfig: async (
+    data: ServerPoolConfigUpdate,
+  ): Promise<ServerPoolConfig> => {
+    const res = await fetch(`${API_BASE}/settings/pool`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
     });
     return handleResponse(res);
   },
