@@ -9,6 +9,7 @@ This module provides the infrastructure for continuous batching:
 - Continuous batching scheduler (ContinuousBatchingScheduler)
 - Batch inference engine (BatchInferenceEngine) for MLX generation
 - Scheduler manager (SchedulerManager) for per-model scheduler instances
+- Benchmarking utilities (BenchmarkResult, run_benchmark)
 """
 
 from mlx_manager.mlx_server.services.batching.batch_inference import (
@@ -38,11 +39,16 @@ from mlx_manager.mlx_server.services.batching.scheduler_manager import (
     reset_scheduler_manager,
 )
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
+from mlx_manager.mlx_server.services.batching.benchmark import (
+    BenchmarkResult,
+    run_benchmark,
+)
 
 __all__ = [
     "BLOCK_SIZE",
     "BatchInferenceEngine",
     "BatchRequest",
+    "BenchmarkResult",
     "BlockTable",
     "ContinuousBatchingScheduler",
     "KVBlock",
@@ -56,4 +62,5 @@ __all__ = [
     "get_scheduler_manager",
     "init_scheduler_manager",
     "reset_scheduler_manager",
+    "run_benchmark",
 ]
