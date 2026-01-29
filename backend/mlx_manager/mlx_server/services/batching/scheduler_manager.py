@@ -106,10 +106,6 @@ class SchedulerManager:
         Called when a model is loaded into the pool, to set up the
         BatchInferenceEngine for actual generation.
 
-        Note: This is a placeholder for full integration with the
-        inference engine. The scheduler currently uses a stub for
-        token generation.
-
         Args:
             model_id: The model identifier
             model: The loaded MLX model
@@ -117,12 +113,11 @@ class SchedulerManager:
             adapter: The model adapter for chat template handling
         """
         # Ensure scheduler exists
-        await self.get_scheduler(model_id)
+        scheduler = await self.get_scheduler(model_id)
 
-        # TODO: In future plans, this will configure a BatchInferenceEngine
-        # that performs actual generation. For now, the scheduler uses
-        # its built-in stub for testing.
-        logger.debug(f"Scheduler configured for model {model_id} (stub engine)")
+        # Wire the inference engine with the loaded model
+        scheduler.set_model(model, tokenizer, adapter)
+        logger.info(f"Scheduler configured for model {model_id} with inference engine")
 
     def get_priority_for_request(
         self,
