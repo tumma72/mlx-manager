@@ -1,18 +1,92 @@
 """Base cloud backend client with retry and circuit breaker support."""
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import httpx
 from httpx_retries import Retry, RetryTransport
-from pybreaker import CircuitBreaker, CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
+
+class CircuitBreakerError(Exception):
+    """Raised when circuit breaker is open."""
+
+    pass
+
+
+class AsyncCircuitBreaker:
+    """Simple async-compatible circuit breaker.
+
+    States:
+    - closed: Normal operation, requests pass through
+    - open: Requests fail immediately, circuit is tripped
+    - half-open: Allow one request to test if backend recovered
+
+    The circuit opens after `fail_max` consecutive failures and
+    automatically attempts to close after `reset_timeout` seconds.
+    """
+
+    def __init__(self, fail_max: int = 5, reset_timeout: float = 30.0):
+        """Initialize circuit breaker.
+
+        Args:
+            fail_max: Number of failures before opening circuit
+            reset_timeout: Seconds to wait before allowing a test request
+        """
+        self.fail_max = fail_max
+        self.reset_timeout = reset_timeout
+
+        self._fail_counter = 0
+        self._state = "closed"
+        self._opened_at: float | None = None
+
+    @property
+    def current_state(self) -> str:
+        """Get current circuit state, checking for half-open transition."""
+        if self._state == "open" and self._opened_at is not None:
+            if time.time() - self._opened_at >= self.reset_timeout:
+                self._state = "half-open"
+        return self._state
+
+    @property
+    def fail_counter(self) -> int:
+        """Get current failure count."""
+        return self._fail_counter
+
+    def success(self) -> None:
+        """Record a successful call - resets failure counter and closes circuit."""
+        self._fail_counter = 0
+        self._state = "closed"
+        self._opened_at = None
+
+    def failure(self) -> None:
+        """Record a failed call - may open circuit if threshold reached."""
+        self._fail_counter += 1
+        if self._fail_counter >= self.fail_max:
+            self._state = "open"
+            self._opened_at = time.time()
+
+    def check(self) -> None:
+        """Check if requests should be allowed.
+
+        Raises:
+            CircuitBreakerError: If circuit is open
+        """
+        state = self.current_state  # Triggers half-open check
+
+        if state == "open":
+            raise CircuitBreakerError("Circuit breaker is open")
+
+        # half-open allows one request through (for testing)
+        # closed allows all requests
+
+
 # Re-export for consumers
-__all__ = ["CloudBackendClient", "CircuitBreakerError"]
+__all__ = ["CloudBackendClient", "CircuitBreakerError", "AsyncCircuitBreaker"]
 
 
 class CloudBackendClient(ABC):
@@ -65,7 +139,7 @@ class CloudBackendClient(ABC):
         )
 
         # Circuit breaker per client instance
-        self._circuit_breaker = CircuitBreaker(
+        self._circuit_breaker = AsyncCircuitBreaker(
             fail_max=circuit_breaker_fail_max,
             reset_timeout=circuit_breaker_reset_timeout,
         )
@@ -96,11 +170,10 @@ class CloudBackendClient(ABC):
         json_data: dict[str, Any],
     ) -> httpx.Response:
         """POST request with circuit breaker protection."""
-        try:
-            # Check circuit breaker state
-            if self._circuit_breaker.current_state == "open":
-                raise CircuitBreakerError("Circuit breaker is open")
+        # Check circuit breaker before request
+        self._circuit_breaker.check()
 
+        try:
             response = await self._client.post(endpoint, json=json_data)
             response.raise_for_status()
 
@@ -111,9 +184,6 @@ class CloudBackendClient(ABC):
         except httpx.HTTPStatusError as e:
             self._circuit_breaker.failure()
             logger.warning(f"HTTP error from {self.base_url}: {e.response.status_code}")
-            raise
-        except CircuitBreakerError:
-            # Don't record failure again for circuit breaker errors
             raise
         except Exception as e:
             self._circuit_breaker.failure()
@@ -126,8 +196,8 @@ class CloudBackendClient(ABC):
         json_data: dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         """Streaming POST with circuit breaker protection."""
-        if self._circuit_breaker.current_state == "open":
-            raise CircuitBreakerError("Circuit breaker is open")
+        # Check circuit breaker before request
+        self._circuit_breaker.check()
 
         try:
             async with self._client.stream("POST", endpoint, json=json_data) as response:

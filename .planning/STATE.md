@@ -141,6 +141,9 @@ Recent decisions affecting current work:
 - **BackendType string enum**: Enables direct JSON serialization for LOCAL, OPENAI, ANTHROPIC values
 - **Priority-based pattern matching**: Higher priority patterns checked first for model routing
 - **One credential per backend type**: Unique constraint prevents configuration confusion
+- **Anthropic max_tokens required**: Unlike OpenAI's optional, Anthropic requires max_tokens with Field(ge=1) and no default
+- **System message separate field**: Anthropic stores system in dedicated field, not in messages array
+- **Anthropic temperature 0.0-1.0**: Stricter bounds than OpenAI's 0.0-2.0
 
 See PROJECT.md Key Decisions table for full history.
 
