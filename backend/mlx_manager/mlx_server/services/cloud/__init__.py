@@ -15,6 +15,11 @@ from mlx_manager.mlx_server.services.cloud.openai import (
     OpenAICloudBackend,
     create_openai_backend,
 )
+from mlx_manager.mlx_server.services.cloud.router import (
+    BackendRouter,
+    get_router,
+    reset_router,
+)
 
 __all__ = [
     "CloudBackendClient",
@@ -26,4 +31,7 @@ __all__ = [
     "AnthropicCloudBackend",
     "ANTHROPIC_API_URL",
     "create_anthropic_backend",
+    "BackendRouter",
+    "get_router",
+    "reset_router",
 ]
