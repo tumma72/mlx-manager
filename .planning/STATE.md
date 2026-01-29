@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 9 of 12 (Continuous Batching & Paged KV Cache)
-Plan: 7 of 7 complete
+Plan: 8 of 8 complete (including gap closure)
 Status: Phase complete
-Last activity: 2026-01-29 — Completed 09-07-PLAN.md (Benchmark and documentation)
+Last activity: 2026-01-29 — Completed 09-08-PLAN.md (Gap closure - inference engine wiring)
 
-Progress: [██████████] 100% (Phase 9 complete - continuous batching ready)
+Progress: [██████████] 100% (Phase 9 complete - continuous batching ready with gap closed)
 
 ## Milestone v1.2 Summary
 
@@ -148,10 +148,11 @@ None yet.
 ### Blockers/Concerns
 
 **Phase 9 complete:**
-- All 7 plans executed (types, priority queue, block manager, prefix cache, batch inference, scheduler manager, benchmark)
-- 171 batching tests passing
+- All 8 plans executed (types, priority queue, block manager, prefix cache, batch inference, scheduler manager, benchmark, gap closure)
+- 174 batching tests passing
 - Documentation complete (docs/BATCHING.md)
-- Ready for manual throughput testing
+- Gap closed: configure_scheduler now wires BatchInferenceEngine to scheduler
+- Ready for manual throughput testing with actual MLX inference
 
 **Phase 10 readiness (Cloud Fallback):**
 - Cost tracking data source decision deferred: hardcoded pricing table vs API fetch
@@ -172,7 +173,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-29T08:42:44Z
-Stopped at: Completed 09-07-PLAN.md (Benchmark and documentation) - Phase 9 complete
+Last session: 2026-01-29T10:05:51Z
+Stopped at: Completed 09-08-PLAN.md (Gap closure - inference engine wiring) - Phase 9 complete
 Resume file: None
 Next: Phase 10 (Cloud Fallback)
