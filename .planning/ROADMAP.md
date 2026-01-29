@@ -133,15 +133,15 @@ Plans:
 **Plans**: 9 plans in 4 waves
 
 Plans:
-- [ ] 10-01-PLAN.md — Anthropic Messages API schemas
-- [ ] 10-02-PLAN.md — Database models for backend routing
-- [ ] 10-03-PLAN.md — Protocol translator service
-- [ ] 10-04-PLAN.md — Cloud backend client with retries
-- [ ] 10-05-PLAN.md — /v1/messages endpoint with Anthropic SSE
-- [ ] 10-06-PLAN.md — OpenAI cloud backend
-- [ ] 10-07-PLAN.md — Anthropic cloud backend with translation
-- [ ] 10-08-PLAN.md — Backend router with failover
-- [ ] 10-09-PLAN.md — Wire router into chat endpoint
+- [x] 10-01-PLAN.md — Anthropic Messages API schemas
+- [x] 10-02-PLAN.md — Database models for backend routing
+- [x] 10-03-PLAN.md — Protocol translator service
+- [x] 10-04-PLAN.md — Cloud backend client with retries
+- [x] 10-05-PLAN.md — /v1/messages endpoint with Anthropic SSE
+- [x] 10-06-PLAN.md — OpenAI cloud backend
+- [x] 10-07-PLAN.md — Anthropic cloud backend with translation
+- [x] 10-08-PLAN.md — Backend router with failover
+- [x] 10-09-PLAN.md — Wire router into chat endpoint
 
 #### Phase 11: Configuration UI
 
@@ -194,7 +194,7 @@ Plans:
 | 7. Foundation | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
-| 10. Dual Protocol | v1.2 | 0/9 | Planned | - |
+| 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
 | 11. Configuration | v1.2 | 0/TBD | Not started | - |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
 

@@ -35,7 +35,7 @@
 
 - [x] **API-01**: OpenAI-compatible `/v1/chat/completions` endpoint with full parameter support
 - [x] **API-02**: OpenAI-compatible `/v1/completions` endpoint for legacy clients
-- [ ] **API-03**: Anthropic-compatible `/v1/messages` endpoint with protocol translation
+- [x] **API-03**: Anthropic-compatible `/v1/messages` endpoint with protocol translation
 - [x] **API-04**: Model listing endpoint `/v1/models` returns all hot + loadable models
 - [x] **API-05**: Management endpoints for model preload/unload and pool status
 
@@ -49,10 +49,10 @@
 
 ### Cloud Fallback (CLOUD)
 
-- [ ] **CLOUD-01**: OpenAI cloud backend for fallback routing when local unavailable
-- [ ] **CLOUD-02**: Anthropic cloud backend with automatic format translation
-- [ ] **CLOUD-03**: Model name → backend mapping stored in database
-- [ ] **CLOUD-04**: Automatic failover: local backend failure routes to configured cloud
+- [x] **CLOUD-01**: OpenAI cloud backend for fallback routing when local unavailable
+- [x] **CLOUD-02**: Anthropic cloud backend with automatic format translation
+- [x] **CLOUD-03**: Model name → backend mapping stored in database
+- [x] **CLOUD-04**: Automatic failover: local backend failure routes to configured cloud
 
 ### Configuration & UI (CONF)
 
@@ -115,7 +115,7 @@
 | BATCH-04 | Phase 9 | Pending |
 | API-01 | Phase 7 | Complete |
 | API-02 | Phase 7 | Complete |
-| API-03 | Phase 10 | Pending |
+| API-03 | Phase 10 | Complete |
 | API-04 | Phase 7 | Complete |
 | API-05 | Phase 8 | Pending |
 | ADAPT-01 | Phase 7 | Complete |
@@ -123,10 +123,10 @@
 | ADAPT-03 | Phase 8 | Pending |
 | ADAPT-04 | Phase 8 | Pending |
 | ADAPT-05 | Phase 8 | Pending |
-| CLOUD-01 | Phase 10 | Pending |
-| CLOUD-02 | Phase 10 | Pending |
-| CLOUD-03 | Phase 10 | Pending |
-| CLOUD-04 | Phase 10 | Pending |
+| CLOUD-01 | Phase 10 | Complete |
+| CLOUD-02 | Phase 10 | Complete |
+| CLOUD-03 | Phase 10 | Complete |
+| CLOUD-04 | Phase 10 | Complete |
 | CONF-01 | Phase 11 | Pending |
 | CONF-02 | Phase 11 | Pending |
 | CONF-03 | Phase 11 | Pending |

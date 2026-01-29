@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 10 - Cloud Fallback (Dual Protocol)
+**Current focus:** Phase 10 complete - ready for Phase 11
 
 ## Current Position
 
@@ -19,7 +19,7 @@ Progress: [██████████] 100% (Phase 10 complete)
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Phases 7-8 complete (14 plans total)
+**Status:** Phases 7-10 complete (31 plans total)
 **Phases:** 6 phases (7-12)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -163,14 +163,14 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 9 complete:**
-- All 8 plans executed (types, priority queue, block manager, prefix cache, batch inference, scheduler manager, benchmark, gap closure)
-- 174 batching tests passing
-- Documentation complete (docs/BATCHING.md)
-- Gap closed: configure_scheduler now wires BatchInferenceEngine to scheduler
-- Ready for manual throughput testing with actual MLX inference
+**Phase 10 complete:**
+- All 9 plans executed (schemas, DB models, protocol translator, cloud client, messages endpoint, OpenAI/Anthropic backends, router, chat integration)
+- ~180 new tests across cloud backends and routing
+- Verification passed: 6/6 must-haves verified
+- Ready for Phase 11 (Configuration UI)
 
-**Phase 10 readiness (Cloud Fallback):**
+**Phase 11 readiness (Configuration UI):**
+- API keys currently stored unencrypted (placeholder for AuthLib encryption)
 - Cost tracking data source decision deferred: hardcoded pricing table vs API fetch
 
 ## Research Documents
