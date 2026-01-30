@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { models } from '$lib/api/client';
+	import { models, settings } from '$lib/api/client';
 	import { systemStore } from '$stores';
 	import type { LocalModel } from '$lib/api/types';
 	import { Card, Button, Select } from '$components/ui';
@@ -16,40 +16,6 @@
 		memory_limit_value: number;
 		eviction_policy: EvictionPolicy;
 		preload_models: string[];
-	}
-
-	// API helpers (local until 11-02 provides settings client)
-	const API_BASE = '/api';
-
-	function getAuthHeaders(): Record<string, string> {
-		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-		const token = localStorage.getItem('mlx_manager_token');
-		if (token) {
-			headers['Authorization'] = `Bearer ${token}`;
-		}
-		return headers;
-	}
-
-	async function getPoolConfig(): Promise<ServerPoolConfig> {
-		const res = await fetch(`${API_BASE}/settings/pool`, {
-			headers: getAuthHeaders()
-		});
-		if (!res.ok) {
-			throw new Error('Failed to load pool configuration');
-		}
-		return res.json();
-	}
-
-	async function updatePoolConfig(data: Partial<ServerPoolConfig>): Promise<ServerPoolConfig> {
-		const res = await fetch(`${API_BASE}/settings/pool`, {
-			method: 'PUT',
-			headers: getAuthHeaders(),
-			body: JSON.stringify(data)
-		});
-		if (!res.ok) {
-			throw new Error('Failed to save pool configuration');
-		}
-		return res.json();
 	}
 
 	// Component state
@@ -106,7 +72,7 @@
 			await systemStore.refreshMemory();
 
 			// Load pool config and local models in parallel
-			const [config, modelsResult] = await Promise.all([getPoolConfig(), models.listLocal()]);
+			const [config, modelsResult] = await Promise.all([settings.getPoolConfig(), models.listLocal()]);
 
 			// Initialize form from config
 			memoryMode = config.memory_limit_mode;
@@ -126,7 +92,7 @@
 		error = null;
 		successMessage = null;
 		try {
-			await updatePoolConfig({
+			await settings.updatePoolConfig({
 				memory_limit_mode: memoryMode,
 				memory_limit_value: memoryValue,
 				eviction_policy: evictionPolicy,
