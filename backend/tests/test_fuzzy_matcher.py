@@ -15,7 +15,7 @@ TOOL_PARSER_TEST_CASES = [
     ("Qwen3-Coder-32B", "tool_call_parser", "qwen3_coder", True),
     ("Qwen3-MoE-30B", "tool_call_parser", "qwen3_moe", True),
     ("MiniMax-M2.1-3bit", "tool_call_parser", "minimax_m2", True),
-    ("GLM-4-9B", "tool_call_parser", "glm4_moe", True),
+    ("GLM-4-MoE", "tool_call_parser", "glm4_moe", True),
     ("Nemotron-3-8B", "tool_call_parser", "nemotron3_nano", True),
     ("Hermes-3-70B", "tool_call_parser", "hermes", True),
     ("Solar-10.7B", "tool_call_parser", "solar_open", True),
@@ -30,7 +30,7 @@ REASONING_PARSER_TEST_CASES = [
     ("Qwen3-8B-4bit", "reasoning_parser", "qwen3", True),
     ("Qwen3-MoE-30B", "reasoning_parser", "qwen3_moe", True),
     ("MiniMax-M2.1-3bit", "reasoning_parser", "minimax_m2", True),
-    ("GLM-4-9B", "reasoning_parser", "glm4_moe", True),
+    ("GLM-4-MoE", "reasoning_parser", "glm4_moe", True),
     ("Hermes-3-70B", "reasoning_parser", "hermes", True),
     # Qwen3-Coder should NOT match reasoning (not in options)
     ("Qwen3-Coder-32B", "reasoning_parser", None, False),

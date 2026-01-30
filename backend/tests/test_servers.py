@@ -375,3 +375,180 @@ async def test_check_health_returns_health_data(auth_client, sample_profile_data
         assert data["status"] == "healthy"
         assert data["response_time_ms"] == 25.5
         assert data["model_loaded"] is True
+
+
+# =============================================================================
+# Tests for profile.id None checks (defensive programming)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_start_server_profile_id_none():
+    """Test start_server rejects profile with None id (direct function call)."""
+    from mlx_manager.models import ServerProfile, User, UserStatus
+    from mlx_manager.routers.servers import start_server
+
+    # Create a profile object with None id (simulating unsaved profile)
+    unsaved_profile = ServerProfile(
+        id=None,
+        name="Unsaved Profile",
+        model_path="mlx-community/test",
+        model_type="lm",
+        port=10240,
+        host="127.0.0.1",
+    )
+
+    mock_user = User(
+        id=1, email="test@example.com", hashed_password="hashed", status=UserStatus.APPROVED
+    )
+
+    mock_session = AsyncMock()
+
+    # Should raise HTTPException with 400
+    with pytest.raises(Exception) as exc_info:
+        await start_server(mock_user, unsaved_profile, mock_session)
+
+    assert exc_info.value.status_code == 400
+    assert "Profile must be saved" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_restart_server_profile_id_none():
+    """Test restart_server rejects profile with None id (direct function call)."""
+    from mlx_manager.models import ServerProfile, User, UserStatus
+    from mlx_manager.routers.servers import restart_server
+
+    unsaved_profile = ServerProfile(
+        id=None,
+        name="Unsaved Profile",
+        model_path="mlx-community/test",
+        model_type="lm",
+        port=10240,
+        host="127.0.0.1",
+    )
+
+    mock_user = User(
+        id=1, email="test@example.com", hashed_password="hashed", status=UserStatus.APPROVED
+    )
+
+    mock_session = AsyncMock()
+
+    with pytest.raises(Exception) as exc_info:
+        await restart_server(mock_user, unsaved_profile, mock_session)
+
+    assert exc_info.value.status_code == 400
+    assert "Profile must be saved" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_check_server_health_profile_id_none():
+    """Test check_server_health rejects profile with None id (direct function call)."""
+    from mlx_manager.models import ServerProfile, User, UserStatus
+    from mlx_manager.routers.servers import check_server_health
+
+    unsaved_profile = ServerProfile(
+        id=None,
+        name="Unsaved Profile",
+        model_path="mlx-community/test",
+        model_type="lm",
+        port=10240,
+        host="127.0.0.1",
+    )
+
+    mock_user = User(
+        id=1, email="test@example.com", hashed_password="hashed", status=UserStatus.APPROVED
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await check_server_health(mock_user, unsaved_profile)
+
+    assert exc_info.value.status_code == 400
+    assert "Profile must be saved" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_get_server_status_profile_id_none():
+    """Test get_server_status rejects profile with None id (direct function call)."""
+    from mlx_manager.models import ServerProfile, User, UserStatus
+    from mlx_manager.routers.servers import get_server_status
+
+    unsaved_profile = ServerProfile(
+        id=None,
+        name="Unsaved Profile",
+        model_path="mlx-community/test",
+        model_type="lm",
+        port=10240,
+        host="127.0.0.1",
+    )
+
+    mock_user = User(
+        id=1, email="test@example.com", hashed_password="hashed", status=UserStatus.APPROVED
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await get_server_status(mock_user, unsaved_profile)
+
+    assert exc_info.value.status_code == 400
+    assert "Profile must be saved" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_get_server_status_success(auth_client, sample_profile_data):
+    """Test get_server_status returns correct status information."""
+    with patch("mlx_manager.routers.servers.server_manager") as mock:
+        mock.get_process_status = MagicMock(
+            return_value={
+                "running": True,
+                "pid": 12345,
+                "exit_code": None,
+                "failed": False,
+                "error_message": None,
+            }
+        )
+
+        # Create a profile
+        create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+        profile_id = create_response.json()["id"]
+
+        # Get status
+        response = await auth_client.get(f"/api/servers/{profile_id}/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["profile_id"] == profile_id
+        assert data["running"] is True
+        assert data["pid"] == 12345
+        assert data["exit_code"] is None
+        assert data["failed"] is False
+        assert data["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_server_status_failed(auth_client, sample_profile_data):
+    """Test get_server_status returns failure information."""
+    with patch("mlx_manager.routers.servers.server_manager") as mock:
+        mock.get_process_status = MagicMock(
+            return_value={
+                "running": False,
+                "pid": None,
+                "exit_code": 1,
+                "failed": True,
+                "error_message": "Model file not found",
+            }
+        )
+
+        # Create a profile
+        create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+        profile_id = create_response.json()["id"]
+
+        # Get status
+        response = await auth_client.get(f"/api/servers/{profile_id}/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["profile_id"] == profile_id
+        assert data["running"] is False
+        assert data["pid"] is None
+        assert data["exit_code"] == 1
+        assert data["failed"] is True
+        assert data["error_message"] == "Model file not found"

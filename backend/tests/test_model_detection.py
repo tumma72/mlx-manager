@@ -45,13 +45,23 @@ class TestFuzzyParserOptions:
         assert options.get("tool_call_parser") == "qwen3_coder"
         assert options.get("message_converter") == "qwen3_coder"
 
-    def test_glm_gets_options_via_single_option_fallback(self):
-        """Test GLM gets parser options via single-option family fallback."""
+    def test_glm_base_gets_tool_parser_only(self):
+        """Test GLM-4-9B gets tool parser but not reasoning (ambiguous with flash variant)."""
         options = get_parser_options("mlx-community/GLM-4-9B")
+        # Tool parser still works (only one GLM tool parser option)
         assert options.get("tool_call_parser") == "glm4_moe"
-        assert options.get("reasoning_parser") == "glm4_moe"
+        # Reasoning parser no longer matches (two GLM options: glm4_moe and glm47_flash)
+        # Without "moe" or "flash" in name, it's ambiguous which to use
+        assert "reasoning_parser" not in options
         # Message converter not matched (no "moe" variant in model name)
         assert "message_converter" not in options
+
+    def test_glm_moe_gets_all_options(self):
+        """Test GLM-4-MoE with explicit variant gets matched parsers."""
+        options = get_parser_options("mlx-community/GLM-4-MoE")
+        assert options.get("tool_call_parser") == "glm4_moe"
+        assert options.get("reasoning_parser") == "glm4_moe"
+        assert options.get("message_converter") == "glm4_moe"
 
     def test_nemotron_gets_options_via_single_option_fallback(self):
         """Test Nemotron gets parser options via single-option family fallback."""

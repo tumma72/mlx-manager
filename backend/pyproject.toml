@@ -107,6 +107,8 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.coverage.run]
+# Enable concurrency tracking for greenlet (ASGI) and thread
+concurrency = ["greenlet", "thread"]
 source = ["mlx_manager"]
 omit = [
     # CLI module: Requires interactive terminal, typer commands, and uvicorn server

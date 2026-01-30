@@ -196,6 +196,7 @@ class TestBackendMappingResponse:
         response = BackendMappingResponse(
             id=1,
             model_pattern="gpt-*",
+            pattern_type="prefix",
             backend_type=BackendType.OPENAI,
             backend_model=None,
             fallback_backend=None,

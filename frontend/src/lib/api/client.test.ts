@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { auth, profiles, models, servers, system, ApiError } from "./client";
+import {
+  auth,
+  profiles,
+  models,
+  servers,
+  system,
+  mcp,
+  settings,
+  ApiError,
+} from "./client";
 
 // Mock fetch
 const mockFetch = vi.fn();
@@ -26,8 +35,46 @@ function mockErrorResponse(detail: string, status = 400) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   mockFetch.mockReset();
+  // Clear auth before each test
+  const { authStore } = await import("$lib/stores");
+  authStore.clearAuth();
+});
+
+describe("auth headers", () => {
+  it("includes Authorization header when token is present", async () => {
+    const { authStore } = await import("$lib/stores");
+    authStore.token = "test-token-123";
+
+    mockFetch.mockResolvedValueOnce(mockResponse([]));
+
+    await profiles.list();
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/profiles", {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer test-token-123",
+      },
+    });
+
+    authStore.clearAuth();
+  });
+
+  it("does not include Authorization header when token is absent", async () => {
+    const { authStore } = await import("$lib/stores");
+    authStore.clearAuth();
+
+    mockFetch.mockResolvedValueOnce(mockResponse([]));
+
+    await profiles.list();
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/profiles", {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  });
 });
 
 describe("auth API", () => {
@@ -500,6 +547,45 @@ describe("models API", () => {
       expect(result).toEqual(parsers);
     });
   });
+
+  describe("getConfig", () => {
+    it("gets model config without tags", async () => {
+      const mockConfig = {
+        supports_tools: true,
+        supports_vision: false,
+        context_length: 8192,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockConfig));
+
+      const result = await models.getConfig("mlx-community/test-model");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/config/mlx-community/test-model",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockConfig);
+    });
+
+    it("gets model config with tags", async () => {
+      const mockConfig = {
+        supports_tools: true,
+        supports_vision: true,
+        context_length: 32768,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockConfig));
+
+      const result = await models.getConfig("mlx-community/test-model", [
+        "vision",
+        "tools",
+      ]);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/config/mlx-community/test-model?tags=vision%2Ctools",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockConfig);
+    });
+  });
 });
 
 describe("servers API", () => {
@@ -717,6 +803,280 @@ describe("system API", () => {
   });
 });
 
+describe("mcp API", () => {
+  describe("listTools", () => {
+    it("lists available MCP tools", async () => {
+      const mockTools = [
+        {
+          name: "test-tool",
+          description: "A test tool",
+          inputSchema: { type: "object" },
+        },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockTools));
+
+      const result = await mcp.listTools();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/mcp/tools",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockTools);
+    });
+  });
+
+  describe("executeTool", () => {
+    it("executes an MCP tool", async () => {
+      const mockResult = { result: "success", data: { value: 42 } };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockResult));
+
+      const result = await mcp.executeTool("test-tool", { param1: "value1" });
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/mcp/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "test-tool",
+          arguments: { param1: "value1" },
+        }),
+      });
+      expect(result).toEqual(mockResult);
+    });
+  });
+});
+
+describe("settings API", () => {
+  describe("listProviders", () => {
+    it("lists all cloud providers", async () => {
+      const mockProviders = [
+        { backend_type: "openai", api_key_hash: "hash1" },
+        { backend_type: "anthropic", api_key_hash: "hash2" },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockProviders));
+
+      const result = await settings.listProviders();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/providers",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockProviders);
+    });
+  });
+
+  describe("createProvider", () => {
+    it("creates a new provider", async () => {
+      const newProvider = { backend_type: "openai", api_key: "sk-test123" };
+      const createdProvider = {
+        backend_type: "openai",
+        api_key_hash: "hash123",
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(createdProvider, 201));
+
+      const result = await settings.createProvider(newProvider);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newProvider),
+      });
+      expect(result).toEqual(createdProvider);
+    });
+  });
+
+  describe("deleteProvider", () => {
+    it("deletes a provider", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await settings.deleteProvider("openai");
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/providers/openai", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  describe("testProvider", () => {
+    it("tests a provider connection", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ success: true }));
+
+      const result = await settings.testProvider("openai");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/providers/openai/test",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe("listRules", () => {
+    it("lists backend mapping rules", async () => {
+      const mockRules = [
+        {
+          id: 1,
+          pattern: "gpt-*",
+          backend_type: "openai",
+          priority: 1,
+        },
+        {
+          id: 2,
+          pattern: "claude-*",
+          backend_type: "anthropic",
+          priority: 2,
+        },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockRules));
+
+      const result = await settings.listRules();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/rules",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockRules);
+    });
+  });
+
+  describe("createRule", () => {
+    it("creates a new rule", async () => {
+      const newRule = {
+        pattern: "gpt-*",
+        backend_type: "openai",
+        priority: 1,
+      };
+      const createdRule = { id: 1, ...newRule };
+      mockFetch.mockResolvedValueOnce(mockResponse(createdRule, 201));
+
+      const result = await settings.createRule(newRule);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newRule),
+      });
+      expect(result).toEqual(createdRule);
+    });
+  });
+
+  describe("updateRule", () => {
+    it("updates an existing rule", async () => {
+      const updates = { priority: 5 };
+      const updatedRule = {
+        id: 1,
+        pattern: "gpt-*",
+        backend_type: "openai",
+        priority: 5,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(updatedRule));
+
+      const result = await settings.updateRule(1, updates);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/rules/1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      expect(result).toEqual(updatedRule);
+    });
+  });
+
+  describe("deleteRule", () => {
+    it("deletes a rule", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await settings.deleteRule(1);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/rules/1", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  describe("updateRulePriorities", () => {
+    it("updates multiple rule priorities", async () => {
+      const priorities = [
+        { id: 1, priority: 10 },
+        { id: 2, priority: 20 },
+      ];
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await settings.updateRulePriorities(priorities);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/rules/priorities", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(priorities),
+      });
+    });
+  });
+
+  describe("testRule", () => {
+    it("tests a rule against a model name", async () => {
+      const testResult = {
+        matched_rule_id: 1,
+        backend_type: "openai",
+        pattern: "gpt-*",
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(testResult));
+
+      const result = await settings.testRule("gpt-4");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/rules/test?model_name=gpt-4",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      expect(result).toEqual(testResult);
+    });
+  });
+
+  describe("getPoolConfig", () => {
+    it("gets server pool configuration", async () => {
+      const poolConfig = {
+        max_pool_size: 10,
+        idle_timeout_seconds: 300,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(poolConfig));
+
+      const result = await settings.getPoolConfig();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/pool",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(poolConfig);
+    });
+  });
+
+  describe("updatePoolConfig", () => {
+    it("updates pool configuration", async () => {
+      const updates = { max_pool_size: 20 };
+      const updatedConfig = {
+        max_pool_size: 20,
+        idle_timeout_seconds: 300,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(updatedConfig));
+
+      const result = await settings.updatePoolConfig(updates);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/pool", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      expect(result).toEqual(updatedConfig);
+    });
+  });
+});
+
 describe("ApiError", () => {
   it("includes status code and message", async () => {
     mockFetch.mockResolvedValueOnce(
@@ -880,6 +1240,39 @@ describe("ApiError", () => {
     // Restore
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).location = originalLocation;
+    clearAuthSpy.mockRestore();
+  });
+
+  it("clears auth on 401 response in SSR (no window)", async () => {
+    // Mock window as undefined (SSR scenario)
+    const originalWindow = global.window;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (global as any).window;
+
+    // Mock authStore
+    const { authStore } = await import("$lib/stores");
+    const clearAuthSpy = vi.spyOn(authStore, "clearAuth");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({ detail: "Not authenticated" }),
+      text: () =>
+        Promise.resolve(JSON.stringify({ detail: "Not authenticated" })),
+    });
+
+    try {
+      await profiles.list();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(401);
+      expect((error as ApiError).message).toBe("Session expired");
+      expect(clearAuthSpy).toHaveBeenCalled();
+    }
+
+    // Restore
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).window = originalWindow;
     clearAuthSpy.mockRestore();
   });
 });

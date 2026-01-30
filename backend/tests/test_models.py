@@ -1359,3 +1359,104 @@ async def test_start_download_existing_download_in_db(auth_client, test_engine):
         assert data["model_id"] == model_id
     finally:
         models.download_tasks.pop(existing_task_id, None)
+
+
+# =============================================================================
+# Tests for get_model_config()
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_model_config_local_model(auth_client):
+    """Test get_model_config returns characteristics for local model."""
+    with patch(
+        "mlx_manager.utils.model_detection.extract_characteristics_from_model"
+    ) as mock_extract_local:
+        mock_extract_local.return_value = {
+            "architecture": "llama",
+            "context_window": 4096,
+            "quantization": "4bit",
+        }
+
+        response = await auth_client.get("/api/models/config/mlx-community/local-model")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["architecture"] == "llama"
+        assert data["context_window"] == 4096
+        assert data["quantization"] == "4bit"
+
+
+@pytest.mark.asyncio
+async def test_get_model_config_remote_model(auth_client):
+    """Test get_model_config fetches and returns characteristics for remote model."""
+    with (
+        patch(
+            "mlx_manager.utils.model_detection.extract_characteristics_from_model"
+        ) as mock_extract_local,
+        patch("mlx_manager.services.hf_api.fetch_remote_config") as mock_fetch_remote,
+        patch("mlx_manager.utils.model_detection.extract_characteristics") as mock_extract_chars,
+    ):
+        # Local returns None
+        mock_extract_local.return_value = None
+
+        # Remote returns config
+        mock_fetch_remote.return_value = {
+            "architectures": ["LlamaForCausalLM"],
+            "max_position_embeddings": 8192,
+        }
+
+        # Extract from config
+        mock_extract_chars.return_value = {
+            "architecture": "llama",
+            "context_window": 8192,
+        }
+
+        response = await auth_client.get("/api/models/config/mlx-community/remote-model")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["architecture"] == "llama"
+        assert data["context_window"] == 8192
+
+
+@pytest.mark.asyncio
+async def test_get_model_config_not_found(auth_client):
+    """Test get_model_config returns 204 when config not available."""
+    with (
+        patch(
+            "mlx_manager.utils.model_detection.extract_characteristics_from_model"
+        ) as mock_extract_local,
+        patch("mlx_manager.services.hf_api.fetch_remote_config") as mock_fetch_remote,
+    ):
+        # Local returns None
+        mock_extract_local.return_value = None
+
+        # Remote also returns None
+        mock_fetch_remote.return_value = None
+
+        response = await auth_client.get("/api/models/config/mlx-community/unknown-model")
+        assert response.status_code == 204
+        assert response.content == b""
+
+
+@pytest.mark.asyncio
+async def test_get_model_config_with_tags(auth_client):
+    """Test get_model_config passes tags parameter correctly."""
+    with patch(
+        "mlx_manager.utils.model_detection.extract_characteristics_from_model"
+    ) as mock_extract_local:
+        mock_extract_local.return_value = {
+            "architecture": "llama",
+            "context_window": 4096,
+        }
+
+        response = await auth_client.get(
+            "/api/models/config/mlx-community/test-model?tags=mlx,quantized"
+        )
+        assert response.status_code == 200
+
+        # Verify tags were parsed and passed
+        mock_extract_local.assert_called_once_with(
+            "mlx-community/test-model", tags=["mlx", "quantized"]
+        )

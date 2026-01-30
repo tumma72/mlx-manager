@@ -192,73 +192,160 @@ class TestStaticFileServing:
             # Create a fake favicon
             favicon_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-            with patch("mlx_manager.main.STATIC_DIR", static_dir):
-                # Need to re-import to pick up the patched STATIC_DIR
-                # Instead, we test the function directly
-                from fastapi.responses import FileResponse
+            # Create _app directory so STATIC_DIR.exists() is True
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
 
-                # Simulate the favicon function behavior
-                if favicon_path.exists():
-                    response = FileResponse(str(favicon_path))
-                    assert response.path == str(favicon_path)
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                # Dynamically add the routes by importing main again
+                import importlib
+                import sys
+
+                # Remove main from modules so it gets re-evaluated
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+
+                # Create a test client with the patched app
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/favicon.png")
+                    assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_favicon_returns_404_when_missing(self):
         """Test favicon route returns 404 when file doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
             static_dir = Path(tmpdir)
-            # Don't create favicon.png
+            # Create _app directory but not favicon.png
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
 
-            from fastapi.responses import JSONResponse
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import importlib
+                import sys
 
-            # Simulate the favicon function behavior when file missing
-            favicon_path = static_dir / "favicon.png"
-            if not favicon_path.exists():
-                response = JSONResponse({"error": "Not found"}, status_code=404)
-                assert response.status_code == 404
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/favicon.png")
+                    assert response.status_code == 404
+                    assert response.json()["error"] == "Not found"
 
     @pytest.mark.asyncio
     async def test_spa_serves_exact_file_when_exists(self):
         """Test SPA route serves exact file when it exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             static_dir = Path(tmpdir)
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
 
             # Create a test file
             test_file = static_dir / "test.js"
             test_file.write_text("console.log('test');")
 
-            # Simulate the serve_spa function logic
-            full_path = "test.js"
-            file_path = static_dir / full_path
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import sys
 
-            assert file_path.exists()
-            assert file_path.is_file()
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/test.js")
+                    assert response.status_code == 200
+                    assert b"console.log('test');" in response.content
 
     @pytest.mark.asyncio
     async def test_spa_returns_index_for_route(self):
         """Test SPA route returns index.html for unknown paths."""
         with tempfile.TemporaryDirectory() as tmpdir:
             static_dir = Path(tmpdir)
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
 
             # Create index.html
             index_path = static_dir / "index.html"
-            index_path.write_text("<html></html>")
+            index_path.write_text("<html><body>SPA</body></html>")
 
-            # Simulate the serve_spa function logic for unknown path
-            full_path = "some/unknown/route"
-            file_path = static_dir / full_path
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import sys
 
-            assert not file_path.exists()
-            assert index_path.exists()
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/some/unknown/route")
+                    assert response.status_code == 200
+                    assert b"SPA" in response.content
 
     @pytest.mark.asyncio
     async def test_spa_skips_api_routes(self):
         """Test SPA route returns 404 for api/ paths."""
-        # Simulate the serve_spa function logic for API path
-        full_path = "api/profiles"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            static_dir = Path(tmpdir)
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
 
-        assert full_path.startswith("api/")
-        # The actual function would return JSONResponse with 404
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import sys
+
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/api/nonexistent")
+                    assert response.status_code == 404
+                    assert response.json()["error"] == "Not found"
+
+    @pytest.mark.asyncio
+    async def test_spa_returns_404_when_no_index(self):
+        """Test SPA route returns 404 when index.html doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            static_dir = Path(tmpdir)
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
+            # Don't create index.html
+
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import sys
+
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from mlx_manager import main
+                from httpx import ASGITransport, AsyncClient
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    response = await test_client.get("/some/unknown/route")
+                    assert response.status_code == 404
+                    assert response.json()["error"] == "Not found"
 
 
 class TestDevModeRoot:
