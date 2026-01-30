@@ -3,7 +3,7 @@
 	import { SortableList, sortItems } from '@rodrigodagostino/svelte-sortable-list';
 	import { settings } from '$lib/api/client';
 	import type { BackendMapping, CloudCredential } from '$lib/api/types';
-	import { Card } from '$lib/components/ui';
+	import { Card, ConfirmDialog } from '$lib/components/ui';
 	import { Loader2, RefreshCw } from 'lucide-svelte';
 	import RuleCard from './RuleCard.svelte';
 	import RuleForm from './RuleForm.svelte';
@@ -15,6 +15,10 @@
 	let loading = $state(true);
 	let reordering = $state(false);
 	let error = $state<string | null>(null);
+
+	// Delete confirmation dialog state
+	let deleteDialogOpen = $state(false);
+	let ruleToDelete = $state<number | null>(null);
 
 	// Transform rules to sortable items with string IDs
 	const sortableItems = $derived(
@@ -81,16 +85,25 @@
 		}
 	}
 
-	// Handle rule deletion
-	async function handleDelete(ruleId: number) {
-		if (!confirm('Delete this routing rule?')) return;
+	// Handle rule deletion - show confirmation dialog
+	function requestDelete(ruleId: number) {
+		ruleToDelete = ruleId;
+		deleteDialogOpen = true;
+	}
 
+	async function confirmDelete() {
+		if (ruleToDelete === null) return;
 		try {
-			await settings.deleteRule(ruleId);
+			await settings.deleteRule(ruleToDelete);
 			await loadData();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to delete rule';
 		}
+		ruleToDelete = null;
+	}
+
+	function cancelDelete() {
+		ruleToDelete = null;
 	}
 
 	// Handle rule created
@@ -161,7 +174,7 @@
 							<RuleCard
 								rule={item.rule}
 								hasWarning={hasWarning(item.rule)}
-								onDelete={() => handleDelete(item.rule.id)}
+								onDelete={() => requestDelete(item.rule.id)}
 							/>
 						</SortableList.Item>
 					{/each}
@@ -169,6 +182,16 @@
 			</div>
 		{/if}
 	</Card>
+
+	<ConfirmDialog
+		bind:open={deleteDialogOpen}
+		title="Delete Routing Rule"
+		description="Are you sure you want to delete this routing rule? This action cannot be undone."
+		confirmLabel="Delete"
+		variant="destructive"
+		onConfirm={confirmDelete}
+		onCancel={cancelDelete}
+	/>
 </div>
 
 <style>

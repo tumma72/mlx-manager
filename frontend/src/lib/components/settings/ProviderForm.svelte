@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { settings } from '$lib/api/client';
 	import type { BackendType, CloudCredential } from '$lib/api/types';
-	import { Button, Input } from '$components/ui';
+	import { Button, Input, ConfirmDialog } from '$components/ui';
 	import { Check, X, Loader2, RefreshCw, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
 
 	interface Props {
@@ -21,6 +21,9 @@
 	let deleting = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
 	let error = $state<string | null>(null);
+
+	// Delete confirmation dialog state
+	let deleteDialogOpen = $state(false);
 
 	// Mask the API key for display
 	const maskedKey = $derived(
@@ -95,7 +98,12 @@
 		}
 	}
 
-	async function handleDelete() {
+	// Request deletion - show confirmation dialog
+	function requestDelete() {
+		deleteDialogOpen = true;
+	}
+
+	async function confirmDelete() {
 		if (!existingCredential) return;
 
 		deleting = true;
@@ -209,7 +217,7 @@
 				{/if}
 			</Button>
 
-			<Button onclick={handleDelete} disabled={deleting} variant="destructive" size="sm">
+			<Button onclick={requestDelete} disabled={deleting} variant="destructive" size="sm">
 				{#if deleting}
 					<Loader2 class="h-4 w-4 mr-2 animate-spin" />
 				{:else}
@@ -219,4 +227,14 @@
 			</Button>
 		{/if}
 	</div>
+
+	<ConfirmDialog
+		bind:open={deleteDialogOpen}
+		title="Delete Provider Credentials"
+		description="Are you sure you want to delete the {backendType === 'openai' ? 'OpenAI' : 'Anthropic'} credentials? You will need to re-enter your API key to use this provider again."
+		confirmLabel="Delete"
+		variant="destructive"
+		onConfirm={confirmDelete}
+		onCancel={() => {}}
+	/>
 </div>
