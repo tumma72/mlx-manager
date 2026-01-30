@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 11 of 12 (Configuration UI)
-Plan: 5 of 5 complete
-Status: Phase 11 complete
-Last activity: 2026-01-29 — Completed 11-05-PLAN.md (Settings Integration)
+Plan: 6 of 6 complete (including gap closure)
+Status: Phase 11 complete with UAT bugs fixed
+Last activity: 2026-01-30 — Completed 11-06-PLAN.md (UAT Bug Fixes)
 
 Progress: [████████████] 100% (Phase 11 complete)
 
@@ -165,6 +165,8 @@ Recent decisions affecting current work:
 - **$derived.by() for type narrowing**: Use $derived.by() instead of $derived() for complex derivations requiring TypeScript type narrowing
 - **Sliders icon for settings**: Use Sliders icon for settings link (Settings icon already used for Profiles)
 - **settingsStore for provider tracking**: Centralized store tracks configured providers with helper methods
+- **$derived.by() for reactive props**: Use function form for props that need reactivity when parent changes
+- **ConfirmDialog pattern for deletes**: requestDelete opens dialog, confirmDelete executes, cancelDelete clears state
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -180,8 +182,9 @@ None yet.
 - Plan 03: Provider and model pool UI components
 - Plan 04: Routing rules UI with drag-drop reordering
 - Plan 05: Settings navbar link, page integration, and state management store
+- Plan 06: UAT bug fixes (auth token mismatch, reactivity, ConfirmDialog)
 
-All Phase 11 Configuration UI requirements met. Ready for Phase 12 (Production Readiness).
+All Phase 11 Configuration UI requirements met. UAT bugs resolved. Ready for Phase 12 (Production Readiness).
 
 ## Research Documents
 
@@ -199,7 +202,7 @@ All Phase 11 Configuration UI requirements met. Ready for Phase 12 (Production R
 
 ## Session Continuity
 
-Last session: 2026-01-29T17:45:42Z
-Stopped at: Completed 11-05-PLAN.md (Settings Integration)
+Last session: 2026-01-30T10:17:32Z
+Stopped at: Completed 11-06-PLAN.md (UAT Bug Fixes)
 Resume file: None
 Next: Phase 12 (Production Readiness)
