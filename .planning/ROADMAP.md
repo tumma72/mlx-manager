@@ -183,11 +183,16 @@ Plans:
 4. Request audit log captures: timestamp, model, backend type, duration, status, token count
 5. Admin panel displays request logs with filtering by model, backend, status, time range
 
-**Plans**: TBD
+**Plans**: 7 plans in 4 waves
 
 Plans:
-- [ ] 12-01: TBD
-- [ ] 12-02: TBD
+- [ ] 12-01-PLAN.md — LogFire integration (expand to both apps, HTTPX, SQLAlchemy, LLM)
+- [ ] 12-02-PLAN.md — RFC 7807 error responses with request_id
+- [ ] 12-03-PLAN.md — Per-endpoint configurable timeouts
+- [ ] 12-04-PLAN.md — Audit logging with background writes
+- [ ] 12-05-PLAN.md — Admin panel for audit logs with WebSocket
+- [ ] 12-06-PLAN.md — Timeout configuration UI
+- [ ] 12-07-PLAN.md — CLI benchmarks and PERFORMANCE.md
 
 ## Progress
 
@@ -200,7 +205,7 @@ Plans:
 | 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
 | 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
-| 12. Hardening | v1.2 | 0/TBD | Not started | - |
+| 12. Hardening | v1.2 | 0/7 | Not started | - |
 
 ## Technical Architecture
 
@@ -267,5 +272,5 @@ Plans:
 | pybreaker | 1.0+ | Circuit breaker pattern |
 
 ---
-*Roadmap revised: 2026-01-29*
+*Roadmap revised: 2026-01-30*
 *Previous version: adapter/proxy approach (deprecated)*
