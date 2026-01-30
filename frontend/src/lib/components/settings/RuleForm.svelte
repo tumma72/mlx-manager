@@ -19,9 +19,11 @@
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
-	const showWarning = $derived(
-		backendType !== 'local' && !configuredProviders.includes(backendType)
-	);
+	// Use $derived.by() to maintain reactivity for configuredProviders prop
+	// This ensures the warning updates when the parent's configuredProviders changes
+	const showWarning = $derived.by(() => {
+		return backendType !== 'local' && !configuredProviders.includes(backendType);
+	});
 
 	const patternPlaceholders: Record<PatternType, string> = {
 		exact: 'gpt-4-turbo',
