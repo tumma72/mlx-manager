@@ -15,15 +15,15 @@
 		LogOut,
 		User,
 		ChevronDown,
-		Sliders
+		Sliders,
+		ShieldCheck
 	} from 'lucide-svelte';
 
 	const navigation = [
 		{ href: '/servers' as const, label: 'Servers', icon: Server },
 		{ href: '/chat' as const, label: 'Chat', icon: MessageSquare },
 		{ href: '/models' as const, label: 'Models', icon: Package },
-		{ href: '/profiles' as const, label: 'Profiles', icon: Settings },
-		{ href: '/settings' as const, label: 'Settings', icon: Sliders }
+		{ href: '/profiles' as const, label: 'Profiles', icon: Settings }
 	];
 
 	// Pending users count for admin badge
@@ -84,28 +84,6 @@
 							{item.label}
 						</a>
 					{/each}
-
-					<!-- Admin-only Users link -->
-					{#if authStore.isAdmin}
-						{@const isActive = $page.url.pathname === '/users'}
-						<a
-							href={resolve('/users')}
-							class="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors
-								{isActive
-								? 'bg-mlx-100 text-mlx-700 dark:bg-mlx-900 dark:text-mlx-100'
-								: 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}"
-						>
-							<Users class="w-4 h-4" />
-							Users
-							{#if pendingCount > 0}
-								<span
-									class="ml-1 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full"
-								>
-									{pendingCount}
-								</span>
-							{/if}
-						</a>
-					{/if}
 				</div>
 			</div>
 
@@ -131,7 +109,11 @@
 						<DropdownMenu.Trigger
 							class="flex items-center gap-1 px-2 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
 						>
-							<User class="w-5 h-5" />
+							{#if authStore.isAdmin}
+								<ShieldCheck class="w-5 h-5 text-mlx-600 dark:text-mlx-400" />
+							{:else}
+								<User class="w-5 h-5" />
+							{/if}
 							<ChevronDown class="w-3 h-3" />
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Portal>
@@ -148,8 +130,35 @@
 										<p class="text-sm text-gray-500 dark:text-gray-400 truncate">
 											{authStore.user.email}
 										</p>
+										{#if authStore.isAdmin}
+											<p class="text-xs text-mlx-600 dark:text-mlx-400 mt-0.5">Administrator</p>
+										{/if}
 									</div>
 								{/if}
+								<a
+									href={resolve('/settings')}
+									class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								>
+									<Sliders class="w-4 h-4" />
+									Settings
+								</a>
+								{#if authStore.isAdmin}
+									<a
+										href={resolve('/users')}
+										class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									>
+										<Users class="w-4 h-4" />
+										Users
+										{#if pendingCount > 0}
+											<span
+												class="ml-auto inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full"
+											>
+												{pendingCount}
+											</span>
+										{/if}
+									</a>
+								{/if}
+								<DropdownMenu.Separator class="my-1 h-px bg-gray-200 dark:bg-gray-700" />
 								<DropdownMenu.Item
 									class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
 									onSelect={handleLogout}
