@@ -158,7 +158,7 @@ Plans:
 4. Model routing rules UI supports exact match, prefix, and regex patterns
 5. Configuration changes apply without server restart
 
-**Plans**: 5 plans in 3 waves
+**Plans**: 6 plans in 3 waves
 
 Plans:
 - [x] 11-01-PLAN.md — Backend encryption service and settings API
@@ -166,6 +166,7 @@ Plans:
 - [x] 11-03-PLAN.md — Model pool settings UI
 - [x] 11-04-PLAN.md — Routing rules UI with drag-drop
 - [x] 11-05-PLAN.md — Integration and navbar link
+- [x] 11-06-PLAN.md — UAT bug fixes (gap closure)
 
 #### Phase 12: Production Hardening
 
@@ -198,7 +199,7 @@ Plans:
 | 8. Multi-Model | v1.2 | 7/7 | Complete | 2026-01-28 |
 | 9. Batching | v1.2 | 8/8 | Complete | 2026-01-29 |
 | 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
-| 11. Configuration | v1.2 | 5/5 | Complete | 2026-01-29 |
+| 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 0/TBD | Not started | - |
 
 ## Technical Architecture
