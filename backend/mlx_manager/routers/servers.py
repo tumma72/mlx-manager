@@ -1,244 +1,246 @@
-"""Servers API router."""
+"""Servers API router.
 
-import asyncio
+With the embedded MLX Server, this router provides status information about
+the model pool and loaded models. Start/stop/restart endpoints are no longer
+needed since the server is embedded and always running.
+"""
+
+import os
 import time
-from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
-from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_current_user, get_profile_or_404
-from mlx_manager.models import (
-    HealthStatus,
-    RunningInstance,
-    RunningServerResponse,
-    ServerProfile,
-    ServerStatus,
-    User,
-)
-from mlx_manager.services.server_manager import server_manager
+from mlx_manager.dependencies import get_current_user
+from mlx_manager.models import User
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
 
-@router.get("", response_model=list[RunningServerResponse])
-async def list_running_servers(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: AsyncSession = Depends(get_db),
-) -> list[RunningServerResponse]:
-    """List all running server instances."""
-    # Get all running processes from server manager
-    running = server_manager.get_all_running()
-    running_profile_ids = {r["profile_id"] for r in running}
+class EmbeddedServerStatus(BaseModel):
+    """Status of the embedded MLX Server."""
 
-    # Get profile info for running servers
-    if not running_profile_ids:
+    status: str  # "running", "not_initialized"
+    type: str = "embedded"
+    uptime_seconds: float = 0.0
+    loaded_models: list[str] = []
+    memory_used_gb: float = 0.0
+    memory_limit_gb: float = 0.0
+
+
+class LoadedModelInfo(BaseModel):
+    """Information about a loaded model."""
+
+    model_id: str
+    model_type: str
+    size_gb: float
+    loaded_at: float
+    last_used: float
+    preloaded: bool
+
+
+class ServerHealthStatus(BaseModel):
+    """Health status of the embedded server."""
+
+    status: str  # "healthy", "degraded", "unhealthy"
+    model_pool_initialized: bool = False
+    loaded_model_count: int = 0
+    memory_used_gb: float = 0.0
+    memory_available_gb: float = 0.0
+
+
+# Server start time for uptime calculation
+_server_start_time = time.time()
+
+
+@router.get("", response_model=list[EmbeddedServerStatus])
+async def list_servers(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[EmbeddedServerStatus]:
+    """Return embedded MLX Server status.
+
+    With embedded mode, there's always exactly one server (the application itself).
+    Returns a list with one element for API compatibility.
+    """
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+        from mlx_manager.mlx_server.utils.memory import get_memory_usage
+
+        pool = get_model_pool()
+        loaded_models = pool.get_loaded_models()
+        memory = get_memory_usage()
+
+        return [
+            EmbeddedServerStatus(
+                status="running",
+                type="embedded",
+                uptime_seconds=time.time() - _server_start_time,
+                loaded_models=loaded_models,
+                memory_used_gb=memory.get("active_gb", 0.0),
+                memory_limit_gb=pool.max_memory_gb,
+            )
+        ]
+    except RuntimeError:
+        # Model pool not initialized yet
+        return [
+            EmbeddedServerStatus(
+                status="not_initialized",
+                type="embedded",
+                uptime_seconds=time.time() - _server_start_time,
+            )
+        ]
+
+
+@router.get("/models", response_model=list[LoadedModelInfo])
+async def list_loaded_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[LoadedModelInfo]:
+    """List models currently loaded in the embedded server's model pool."""
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+
+        pool = get_model_pool()
+        models = []
+
+        for model_id in pool.get_loaded_models():
+            if model_id in pool._models:
+                loaded = pool._models[model_id]
+                models.append(
+                    LoadedModelInfo(
+                        model_id=loaded.model_id,
+                        model_type=loaded.model_type,
+                        size_gb=loaded.size_gb,
+                        loaded_at=loaded.loaded_at,
+                        last_used=loaded.last_used,
+                        preloaded=loaded.preloaded,
+                    )
+                )
+
+        return models
+    except RuntimeError:
         return []
 
-    # ServerProfile.id is declared as int | None in SQLModel, but in_() works at runtime
-    result = await session.execute(
-        select(ServerProfile).where(
-            ServerProfile.id.in_(running_profile_ids)  # type: ignore[union-attr]
+
+@router.get("/health", response_model=ServerHealthStatus)
+async def check_server_health(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ServerHealthStatus:
+    """Check health of the embedded MLX Server.
+
+    Returns health status based on model pool state and memory usage.
+    """
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+        from mlx_manager.mlx_server.utils.memory import get_memory_usage
+
+        pool = get_model_pool()
+        loaded_models = pool.get_loaded_models()
+        memory = get_memory_usage()
+
+        memory_used = memory.get("active_gb", 0.0)
+        memory_limit = pool.max_memory_gb
+        memory_available = max(0.0, memory_limit - memory_used)
+
+        # Determine health status
+        if memory_available < 1.0 and len(loaded_models) > 0:
+            status = "degraded"  # Low memory but functional
+        else:
+            status = "healthy"
+
+        return ServerHealthStatus(
+            status=status,
+            model_pool_initialized=True,
+            loaded_model_count=len(loaded_models),
+            memory_used_gb=memory_used,
+            memory_available_gb=memory_available,
         )
-    )
-    profiles = {p.id: p for p in result.scalars().all()}
-
-    # Build response
-    servers = []
-    for r in running:
-        profile = profiles.get(r["profile_id"])
-        if not profile:
-            continue
-
-        # Calculate uptime
-        uptime = time.time() - r.get("create_time", time.time())
-
-        servers.append(
-            RunningServerResponse(
-                profile_id=profile.id,
-                profile_name=profile.name,
-                pid=r["pid"],
-                port=profile.port,
-                health_status=r.get("status", "unknown"),
-                uptime_seconds=uptime,
-                memory_mb=r.get("memory_mb", 0),
-                memory_percent=r.get("memory_percent", 0),
-                cpu_percent=r.get("cpu_percent", 0),
-            )
+    except RuntimeError:
+        return ServerHealthStatus(
+            status="unhealthy",
+            model_pool_initialized=False,
         )
 
-    return servers
+
+@router.get("/memory")
+async def get_memory_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Get detailed memory status for the embedded MLX Server."""
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+        from mlx_manager.mlx_server.utils.memory import get_memory_usage
+
+        pool = get_model_pool()
+        memory = get_memory_usage()
+
+        return {
+            "cache_gb": memory.get("cache_gb", 0.0),
+            "active_gb": memory.get("active_gb", 0.0),
+            "peak_gb": memory.get("peak_gb", 0.0),
+            "limit_gb": pool.max_memory_gb,
+            "available_gb": max(0.0, pool.max_memory_gb - memory.get("active_gb", 0.0)),
+            "max_models": pool.max_models,
+            "loaded_models": len(pool.get_loaded_models()),
+        }
+    except RuntimeError:
+        return {
+            "error": "Model pool not initialized",
+            "cache_gb": 0.0,
+            "active_gb": 0.0,
+            "peak_gb": 0.0,
+            "limit_gb": 0.0,
+            "available_gb": 0.0,
+            "max_models": 0,
+            "loaded_models": 0,
+        }
+
+
+# Legacy endpoint stubs for backward compatibility
+# These return appropriate responses indicating embedded mode
 
 
 @router.post("/{profile_id}/start")
 async def start_server(
     current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
-    session: AsyncSession = Depends(get_db),
-):
-    """Start a server for a profile."""
-    # Profile from DB always has an ID
-    if profile.id is None:
-        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
+    profile_id: int,
+) -> dict:
+    """Legacy endpoint - embedded server is always running.
 
-    # Clean up any stale running_instance record for this profile
-    result = await session.execute(
-        select(RunningInstance).where(RunningInstance.profile_id == profile.id)
-    )
-    stale_instance = result.scalar_one_or_none()
-    if stale_instance:
-        # Check if the process is actually running
-        if not server_manager.is_running(profile.id):
-            await session.delete(stale_instance)
-            await session.commit()
-
-    try:
-        pid = await server_manager.start_server(profile)
-
-        # Record in database
-        instance = RunningInstance(profile_id=profile.id, pid=pid, health_status="starting")
-        session.add(instance)
-        await session.commit()
-
-        return {"pid": pid, "port": profile.port}
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    Returns success since the embedded server handles model loading on-demand.
+    """
+    return {
+        "message": "Embedded server is always running. Models are loaded on-demand.",
+        "profile_id": profile_id,
+        "pid": os.getpid(),
+    }
 
 
 @router.post("/{profile_id}/stop")
 async def stop_server(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
-    force: bool = False,
-    session: AsyncSession = Depends(get_db),
-):
-    """Stop a running server."""
-    success = await server_manager.stop_server(profile_id, force=force)
+) -> dict:
+    """Legacy endpoint - embedded server cannot be stopped.
 
-    if not success:
-        raise HTTPException(status_code=404, detail="Server not running")
-
-    # Remove from database
-    result = await session.execute(
-        select(RunningInstance).where(RunningInstance.profile_id == profile_id)
-    )
-    instance = result.scalar_one_or_none()
-    if instance:
-        await session.delete(instance)
-        await session.commit()
-
-    return {"stopped": True}
+    Individual models can be unloaded via the model pool management endpoints.
+    """
+    return {
+        "message": "Embedded server cannot be stopped. Use /v1/admin/models to manage loaded models.",
+        "profile_id": profile_id,
+    }
 
 
 @router.post("/{profile_id}/restart")
 async def restart_server(
     current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
-    session: AsyncSession = Depends(get_db),
-):
-    """Restart a server."""
-    # Profile from DB always has an ID
-    if profile.id is None:
-        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
-
-    # Stop if running
-    await server_manager.stop_server(profile.id, force=False)
-    await asyncio.sleep(1)
-
-    # Start again
-    try:
-        pid = await server_manager.start_server(profile)
-
-        # Update database
-        result = await session.execute(
-            select(RunningInstance).where(RunningInstance.profile_id == profile.id)
-        )
-        instance = result.scalar_one_or_none()
-
-        if instance:
-            instance.pid = pid
-            instance.health_status = "starting"
-            instance.started_at = datetime.now(tz=UTC)
-        else:
-            instance = RunningInstance(profile_id=profile.id, pid=pid, health_status="starting")
-
-        session.add(instance)
-        await session.commit()
-
-        return {"pid": pid}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{profile_id}/health", response_model=HealthStatus)
-async def check_server_health(
-    current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
-):
-    """Check server health."""
-    # Profile from DB always has an ID
-    if profile.id is None:
-        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
-
-    if not server_manager.is_running(profile.id):
-        return HealthStatus(status="stopped")
-
-    health = await server_manager.check_health(profile)
-    return HealthStatus(**health)
-
-
-@router.get("/{profile_id}/status", response_model=ServerStatus)
-async def get_server_status(
-    current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
-):
-    """Get detailed server status including failure detection.
-
-    Returns process status, exit code, and error message from logs if failed.
-    """
-    if profile.id is None:
-        raise HTTPException(status_code=400, detail="Profile must be saved before this operation")
-
-    status = server_manager.get_process_status(profile.id)
-
-    return ServerStatus(
-        profile_id=profile.id,
-        running=status.get("running", False),
-        pid=status.get("pid"),
-        exit_code=status.get("exit_code"),
-        failed=status.get("failed", False),
-        error_message=status.get("error_message"),
-    )
-
-
-@router.get("/{profile_id}/logs")
-async def stream_logs(
-    current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
-    lines: int = 100,
-):
-    """SSE endpoint for live logs."""
+) -> dict:
+    """Legacy endpoint - embedded server cannot be restarted.
 
-    async def generate() -> AsyncGenerator[str, None]:
-        import json
-
-        while True:
-            log_lines = server_manager.get_log_lines(profile_id)
-
-            for line in log_lines:
-                yield f"data: {json.dumps({'line': line})}\n\n"
-
-            if not server_manager.is_running(profile_id):
-                yield f"data: {json.dumps({'status': 'stopped'})}\n\n"
-                break
-
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    To reload a model, unload it via /v1/admin/models and it will reload on next request.
+    """
+    return {
+        "message": "Embedded server cannot be restarted. Use /v1/admin/models to manage models.",
+        "profile_id": profile_id,
+    }
