@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 13 of 13 (MLX Server Integration)
-Plan: 3 of 5 (Chat UI Integration)
+Plan: 4 of 5 (Settings Wiring)
 Status: In progress
-Last activity: 2026-01-31 — Completed 13-03-PLAN.md (Chat UI Integration)
+Last activity: 2026-01-31 — Completed 13-04-PLAN.md (Settings Wiring)
 
-Progress: [███████████░] 97% (Plan 13-03 complete)
+Progress: [███████████░] 98% (Plan 13-04 complete)
 
 ## Milestone v1.2 Summary
 
@@ -191,6 +191,9 @@ Recent decisions affecting current work:
 - **Direct async generator consumption**: Chat router calls generate_chat_completion() directly instead of httpx proxy
 - **All profiles selectable for chat**: With embedded server, models load on-demand; no "running server" filter needed
 - **Cast for Union return types**: Use cast(AsyncGenerator[dict, None], gen) for inference functions returning Union types
+- **update_memory_limit sets MLX limit**: Calls mx.set_memory_limit() directly for immediate memory limit effect
+- **apply_preload_list marks evictable**: Models not in preload list have preloaded=False for LRU eviction
+- **refresh_rules clears backends**: Cached cloud backends closed and cleared on rule/credential changes
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -204,7 +207,8 @@ None yet.
 - Plan 01: Complete (mount MLX Server as sub-application)
 - Plan 02: Complete (remove legacy subprocess management)
 - Plan 03: Complete (Chat UI Integration)
-- Plan 04-05: Pending
+- Plan 04: Complete (Settings Wiring)
+- Plan 05: Pending (Test Updates)
 
 **Test failures expected:**
 - Tests in test_main.py and conftest.py reference deleted modules
@@ -227,7 +231,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-31T15:56:00Z
-Stopped at: Completed 13-03-PLAN.md (Chat UI Integration)
+Last session: 2026-01-31T15:57:04Z
+Stopped at: Completed 13-04-PLAN.md (Settings Wiring)
 Resume file: None
-Next: Execute 13-04-PLAN.md (Completions API Integration)
+Next: Execute 13-05-PLAN.md (Test Updates)
