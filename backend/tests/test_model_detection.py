@@ -22,59 +22,21 @@ from mlx_manager.utils.model_detection import (
 
 
 class TestFuzzyParserOptions:
-    """Tests for fuzzy parser options matching (replaces static MODEL_PARSER_CONFIGS)."""
+    """Tests for parser options matching.
 
-    def test_minimax_m2_gets_all_options(self):
-        """Test MiniMax M2 gets all parser options via fuzzy matching."""
-        options = get_parser_options("mlx-community/MiniMax-M2.1-3bit")
-        assert options.get("tool_call_parser") == "minimax_m2"
-        assert options.get("reasoning_parser") == "minimax_m2"
-        assert options.get("message_converter") == "minimax_m2"
+    NOTE: Parser options are no longer used with the embedded MLX Server.
+    All tests verify that get_parser_options returns empty dict.
+    """
 
-    def test_qwen3_base_gets_tool_and_reasoning(self):
-        """Test base Qwen3 gets tool/reasoning but NOT message_converter."""
-        options = get_parser_options("mlx-community/Qwen3-8B-4bit")
-        assert options.get("tool_call_parser") == "qwen3"
-        assert options.get("reasoning_parser") == "qwen3"
-        # Base Qwen3 should NOT get message_converter (no "coder" in name)
-        assert "message_converter" not in options
-
-    def test_qwen3_coder_gets_all_options(self):
-        """Test Qwen3 Coder gets all options including message_converter."""
-        options = get_parser_options("mlx-community/Qwen3-Coder-7B-4bit")
-        assert options.get("tool_call_parser") == "qwen3_coder"
-        assert options.get("message_converter") == "qwen3_coder"
-
-    def test_glm_base_gets_tool_parser_only(self):
-        """Test GLM-4-9B gets tool parser but not reasoning (ambiguous with flash variant)."""
-        options = get_parser_options("mlx-community/GLM-4-9B")
-        # Tool parser still works (only one GLM tool parser option)
-        assert options.get("tool_call_parser") == "glm4_moe"
-        # Reasoning parser no longer matches (two GLM options: glm4_moe and glm47_flash)
-        # Without "moe" or "flash" in name, it's ambiguous which to use
-        assert "reasoning_parser" not in options
-        # Message converter not matched (no "moe" variant in model name)
-        assert "message_converter" not in options
-
-    def test_glm_moe_gets_all_options(self):
-        """Test GLM-4-MoE with explicit variant gets matched parsers."""
-        options = get_parser_options("mlx-community/GLM-4-MoE")
-        assert options.get("tool_call_parser") == "glm4_moe"
-        assert options.get("reasoning_parser") == "glm4_moe"
-        assert options.get("message_converter") == "glm4_moe"
-
-    def test_nemotron_gets_options_via_single_option_fallback(self):
-        """Test Nemotron gets parser options via single-option family fallback."""
-        options = get_parser_options("mlx-community/Nemotron-3-8B")
-        assert options.get("tool_call_parser") == "nemotron3_nano"
-        assert options.get("reasoning_parser") == "nemotron3_nano"
-        # Message converter not matched (no "nano" variant in model name)
-        assert "message_converter" not in options
-
-    def test_unknown_model_returns_empty(self):
-        """Test unknown model family returns empty dict."""
-        options = get_parser_options("mlx-community/Llama-3.1-70B-4bit")
-        assert options == {}
+    def test_all_models_return_empty(self):
+        """Parser options always return empty dict (feature deprecated)."""
+        assert get_parser_options("mlx-community/MiniMax-M2.1-3bit") == {}
+        assert get_parser_options("mlx-community/Qwen3-8B-4bit") == {}
+        assert get_parser_options("mlx-community/Qwen3-Coder-7B-4bit") == {}
+        assert get_parser_options("mlx-community/GLM-4-9B") == {}
+        assert get_parser_options("mlx-community/GLM-4-MoE") == {}
+        assert get_parser_options("mlx-community/Nemotron-3-8B") == {}
+        assert get_parser_options("mlx-community/Llama-3.1-70B-4bit") == {}
 
 
 class TestGetLocalModelPath:
@@ -234,23 +196,17 @@ class TestDetectModelFamily:
 
 
 class TestGetParserOptions:
-    """Tests for get_parser_options function (uses fuzzy matching)."""
+    """Tests for get_parser_options function.
 
-    def test_returns_minimax_options(self, tmp_path):
-        """Test returns MiniMax parser options via fuzzy matching."""
+    NOTE: Parser options are deprecated with the embedded MLX Server.
+    """
+
+    def test_returns_empty_dict_always(self, tmp_path):
+        """Parser options always return empty dict (feature deprecated)."""
         with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
             mock_settings.hf_cache_path = tmp_path
-            result = get_parser_options("mlx-community/MiniMax-M2.1-3bit")
-            assert result.get("tool_call_parser") == "minimax_m2"
-            assert result.get("reasoning_parser") == "minimax_m2"
-            assert result.get("message_converter") == "minimax_m2"
-
-    def test_returns_empty_dict_for_unknown(self, tmp_path):
-        """Test returns empty dict for unknown model."""
-        with patch("mlx_manager.utils.model_detection.settings") as mock_settings:
-            mock_settings.hf_cache_path = tmp_path
-            result = get_parser_options("mlx-community/Llama-3-8B")
-            assert result == {}
+            assert get_parser_options("mlx-community/MiniMax-M2.1-3bit") == {}
+            assert get_parser_options("mlx-community/Llama-3-8B") == {}
 
 
 class TestGetModelDetectionInfo:
@@ -269,8 +225,8 @@ class TestGetModelDetectionInfo:
             result = get_model_detection_info("mlx-community/MiniMax-M2")
 
             assert result["model_family"] == "minimax"
-            # get_parser_options filters out None values
-            assert result["recommended_options"]["tool_call_parser"] == "minimax_m2"
+            # Parser options are empty now (feature deprecated)
+            assert result["recommended_options"] == {}
             assert result["is_downloaded"] is True
 
     def test_returns_info_for_not_downloaded(self, tmp_path):

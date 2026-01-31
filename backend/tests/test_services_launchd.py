@@ -78,40 +78,25 @@ class TestLaunchdManagerGeneratePlist:
     """
 
     def test_basic_plist(self, launchd_manager, sample_profile):
-        """Test basic plist generation with launch subcommand."""
+        """Test basic plist generation for mlx-manager serve."""
         plist = launchd_manager.generate_plist(sample_profile)
 
         assert plist["Label"] == "com.mlx-manager.test-profile"
         assert plist["RunAtLoad"] is True  # auto_start is True
         assert "ProgramArguments" in plist
-        assert "launch" in plist["ProgramArguments"]
-        assert "--model-path" in plist["ProgramArguments"]
-        assert "mlx-community/test-model" in plist["ProgramArguments"]
+        # With embedded server, we use mlx-manager serve
+        assert "serve" in plist["ProgramArguments"]
+        assert "--port" in plist["ProgramArguments"]
 
     def test_plist_program_arguments(self, launchd_manager, sample_profile):
-        """Test plist program arguments contain required options."""
+        """Test plist program arguments for embedded server."""
         plist = launchd_manager.generate_plist(sample_profile)
         args = plist["ProgramArguments"]
 
-        assert "launch" in args
-        assert "--model-type" in args
-        assert "lm" in args
+        # With embedded server, we just launch mlx-manager serve with port
+        assert "serve" in args
         assert "--port" in args
         assert "10240" in args
-        assert "--host" in args
-        assert "127.0.0.1" in args
-        assert "--max-concurrency" in args
-        assert "--queue-timeout" in args
-        assert "--queue-size" in args
-
-    def test_plist_maps_unsupported_model_types(self, launchd_manager, sample_profile):
-        """Test that unsupported model types are mapped to 'lm'."""
-        sample_profile.model_type = "whisper"
-        plist = launchd_manager.generate_plist(sample_profile)
-        args = plist["ProgramArguments"]
-
-        model_type_idx = args.index("--model-type") + 1
-        assert args[model_type_idx] == "lm"
 
     def test_plist_keepalive_settings(self, launchd_manager, sample_profile):
         """Test plist has correct KeepAlive settings."""

@@ -1,4 +1,8 @@
-"""Tests for the health checker service."""
+"""Tests for the health checker service.
+
+With the embedded MLX Server, the health checker monitors the model pool
+instead of external subprocess instances.
+"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,18 +55,18 @@ class TestHealthCheckerLoop:
     """Tests for the health check loop."""
 
     @pytest.mark.asyncio
-    async def test_health_check_loop_calls_check_all(self, health_checker_instance):
-        """Test that the loop calls _check_all_servers."""
+    async def test_health_check_loop_calls_check_model_pool(self, health_checker_instance):
+        """Test that the loop calls _check_model_pool."""
         call_count = 0
 
-        async def mock_check_all():
+        async def mock_check_pool():
             nonlocal call_count
             call_count += 1
             if call_count >= 2:
                 health_checker_instance._running = False
 
         with (
-            patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check_all),
+            patch.object(health_checker_instance, "_check_model_pool", side_effect=mock_check_pool),
             patch("mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock),
         ):
             health_checker_instance._running = True
@@ -75,7 +79,7 @@ class TestHealthCheckerLoop:
         """Test that the loop continues on errors."""
         call_count = 0
 
-        async def mock_check_all():
+        async def mock_check_pool():
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -84,8 +88,7 @@ class TestHealthCheckerLoop:
                 health_checker_instance._running = False
 
         with (
-            patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check_all),
-            patch("builtins.print"),  # Suppress error output
+            patch.object(health_checker_instance, "_check_model_pool", side_effect=mock_check_pool),
             patch("mlx_manager.services.health_checker.asyncio.sleep", new_callable=AsyncMock),
         ):
             health_checker_instance._running = True
@@ -95,125 +98,36 @@ class TestHealthCheckerLoop:
         assert call_count >= 2
 
 
-class TestHealthCheckerCheckAllServers:
-    """Tests for the _check_all_servers method."""
+class TestHealthCheckerCheckModelPool:
+    """Tests for the _check_model_pool method."""
 
     @pytest.mark.asyncio
-    async def test_check_all_with_no_instances(self, health_checker_instance):
-        """Test checking when no instances are running."""
-        mock_session = MagicMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.commit = AsyncMock()
+    async def test_check_pool_logs_status(self, health_checker_instance):
+        """Test checking model pool logs status."""
+        mock_pool = MagicMock()
+        mock_pool.get_loaded_models.return_value = ["model1", "model2"]
 
-        mock_context = MagicMock()
-        mock_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_context.__aexit__ = AsyncMock(return_value=None)
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+        ):
+            with patch(
+                "mlx_manager.mlx_server.utils.memory.get_memory_usage",
+                return_value={"active_gb": 8.0},
+            ):
+                await health_checker_instance._check_model_pool()
 
-        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
-            await health_checker_instance._check_all_servers()
-
-        # Should complete without error - commit is always called at the end
-        mock_session.commit.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_check_all_updates_stopped_server(self, health_checker_instance):
-        """Test updating status when server has stopped."""
-        mock_instance = MagicMock()
-        mock_instance.profile_id = 1
-
-        mock_profile = MagicMock()
-        mock_profile.id = 1
-
-        mock_session = MagicMock()
-        mock_session.commit = AsyncMock()
-        mock_session.add = MagicMock()
-
-        # First query returns instances, second returns profile
-        mock_result1 = MagicMock()
-        mock_result1.scalars.return_value.all.return_value = [mock_instance]
-
-        mock_result2 = MagicMock()
-        mock_result2.scalar_one_or_none.return_value = mock_profile
-
-        mock_session.execute = AsyncMock(side_effect=[mock_result1, mock_result2])
-
-        mock_context = MagicMock()
-        mock_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_context.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
-            with patch("mlx_manager.services.health_checker.server_manager") as mock_server_manager:
-                mock_server_manager.is_running.return_value = False
-
-                await health_checker_instance._check_all_servers()
-
-        assert mock_instance.health_status == "stopped"
-        mock_session.add.assert_called_with(mock_instance)
+        # Should complete without error
+        mock_pool.get_loaded_models.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_check_all_updates_healthy_server(self, health_checker_instance):
-        """Test updating status when server is healthy."""
-        mock_instance = MagicMock()
-        mock_instance.profile_id = 1
-
-        mock_profile = MagicMock()
-        mock_profile.id = 1
-
-        mock_session = MagicMock()
-        mock_session.commit = AsyncMock()
-        mock_session.add = MagicMock()
-
-        mock_result1 = MagicMock()
-        mock_result1.scalars.return_value.all.return_value = [mock_instance]
-
-        mock_result2 = MagicMock()
-        mock_result2.scalar_one_or_none.return_value = mock_profile
-
-        mock_session.execute = AsyncMock(side_effect=[mock_result1, mock_result2])
-
-        mock_context = MagicMock()
-        mock_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_context.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
-            with patch("mlx_manager.services.health_checker.server_manager") as mock_server_manager:
-                mock_server_manager.is_running.return_value = True
-                mock_server_manager.check_health = AsyncMock(return_value={"status": "healthy"})
-
-                await health_checker_instance._check_all_servers()
-
-        assert mock_instance.health_status == "healthy"
-        mock_session.add.assert_called_with(mock_instance)
-
-    @pytest.mark.asyncio
-    async def test_check_all_skips_missing_profile(self, health_checker_instance):
-        """Test that instances without profiles are skipped."""
-        mock_instance = MagicMock()
-        mock_instance.profile_id = 999
-
-        mock_session = MagicMock()
-        mock_session.commit = AsyncMock()
-        mock_session.add = MagicMock()
-
-        mock_result1 = MagicMock()
-        mock_result1.scalars.return_value.all.return_value = [mock_instance]
-
-        mock_result2 = MagicMock()
-        mock_result2.scalar_one_or_none.return_value = None  # Profile not found
-
-        mock_session.execute = AsyncMock(side_effect=[mock_result1, mock_result2])
-
-        mock_context = MagicMock()
-        mock_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_context.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("mlx_manager.services.health_checker.get_session", return_value=mock_context):
-            await health_checker_instance._check_all_servers()
-
-        # Instance should not be updated
-        mock_session.add.assert_not_called()
+    async def test_check_pool_handles_not_initialized(self, health_checker_instance):
+        """Test checking pool when not initialized."""
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            side_effect=RuntimeError("Pool not initialized"),
+        ):
+            # Should not raise
+            await health_checker_instance._check_model_pool()
 
 
 class TestHealthCheckerIntegration:
@@ -221,19 +135,20 @@ class TestHealthCheckerIntegration:
 
     @pytest.mark.asyncio
     async def test_full_lifecycle(self, health_checker_instance):
-        """Test starting, running briefly, and stopping."""
-        check_count = 0
+        """Test starting and stopping the health checker."""
+        mock_pool = MagicMock()
+        mock_pool.get_loaded_models.return_value = []
 
-        async def mock_check():
-            nonlocal check_count
-            check_count += 1
-
-        with patch.object(health_checker_instance, "_check_all_servers", side_effect=mock_check):
-            await health_checker_instance.start()
-
-            # Let it run for a brief moment
-            await asyncio.sleep(0.1)
-
-            await health_checker_instance.stop()
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+        ):
+            with patch(
+                "mlx_manager.mlx_server.utils.memory.get_memory_usage",
+                return_value={"active_gb": 0.0},
+            ):
+                await health_checker_instance.start()
+                # Let it run briefly
+                await asyncio.sleep(0.1)
+                await health_checker_instance.stop()
 
         assert health_checker_instance._running is False

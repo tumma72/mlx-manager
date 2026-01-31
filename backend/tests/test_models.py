@@ -790,75 +790,19 @@ async def test_get_active_downloads_in_memory_takes_precedence(auth_client, test
 
 
 # =============================================================================
-# Tests for get_available_parsers()
+# Tests for get_available_parsers() (deprecated - always returns empty list)
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_get_available_parsers_returns_sorted_list(auth_client):
-    """Test get_available_parsers returns a sorted combined list of all parsers."""
-    with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
-        mock_get_options.return_value = {
-            "tool_call_parsers": ["qwen3", "hermes", "minimax_m2"],
-            "reasoning_parsers": ["qwen3", "glm4_moe", "harmony"],
-            "message_converters": ["minimax", "qwen3_coder"],
-        }
+async def test_get_available_parsers_returns_empty_list(auth_client):
+    """Test get_available_parsers returns empty list (feature deprecated)."""
+    response = await auth_client.get("/api/models/available-parsers")
+    assert response.status_code == 200
 
-        response = await auth_client.get("/api/models/available-parsers")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert "parsers" in data
-
-        # Should be a sorted, deduplicated list
-        expected = sorted(
-            {
-                "qwen3",
-                "hermes",
-                "minimax_m2",
-                "glm4_moe",
-                "harmony",
-                "minimax",
-                "qwen3_coder",
-            }
-        )
-        assert data["parsers"] == expected
-
-
-@pytest.mark.asyncio
-async def test_get_available_parsers_handles_empty_lists(auth_client):
-    """Test get_available_parsers handles empty parser lists."""
-    with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
-        mock_get_options.return_value = {
-            "tool_call_parsers": [],
-            "reasoning_parsers": [],
-            "message_converters": [],
-        }
-
-        response = await auth_client.get("/api/models/available-parsers")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["parsers"] == []
-
-
-@pytest.mark.asyncio
-async def test_get_available_parsers_deduplicates(auth_client):
-    """Test get_available_parsers properly deduplicates parsers across lists."""
-    with patch("mlx_manager.routers.models.get_parser_options") as mock_get_options:
-        # Same parser appearing in all three lists
-        mock_get_options.return_value = {
-            "tool_call_parsers": ["qwen3", "qwen3", "hermes"],
-            "reasoning_parsers": ["qwen3", "hermes"],
-            "message_converters": ["qwen3"],
-        }
-
-        response = await auth_client.get("/api/models/available-parsers")
-        assert response.status_code == 200
-
-        data = response.json()
-        # qwen3 and hermes should only appear once each
-        assert data["parsers"] == ["hermes", "qwen3"]
+    data = response.json()
+    assert "parsers" in data
+    assert data["parsers"] == []
 
 
 # =============================================================================

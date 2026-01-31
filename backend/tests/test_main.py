@@ -5,128 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import sessionmaker
-
-
-# Test cleanup_stale_instances function
-class TestCleanupStaleInstances:
-    """Tests for cleanup_stale_instances function."""
-
-    @pytest.mark.asyncio
-    async def test_cleanup_removes_stale_instances(self, test_engine):
-        """Test that stale running instances are cleaned up."""
-        from mlx_manager.models import RunningInstance, ServerProfile
-
-        async_session_factory = sessionmaker(
-            test_engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-        )
-
-        # Create a test profile and running instance
-        async with async_session_factory() as session:
-            profile = ServerProfile(
-                name="Test Profile",
-                model_path="mlx-community/test-model",
-                model_type="lm",
-                port=10240,
-                host="127.0.0.1",
-            )
-            session.add(profile)
-            await session.commit()
-            await session.refresh(profile)
-
-            # Add a running instance record (but no actual process)
-            instance = RunningInstance(
-                profile_id=profile.id,
-                pid=99999,  # Non-existent PID
-                port=10240,
-            )
-            session.add(instance)
-            await session.commit()
-
-        # Mock the get_session to use our test session
-        with patch("mlx_manager.main.get_session"):
-            mock_session = AsyncMock(spec=AsyncSession)
-
-            # Create mock result that returns our instance
-            mock_result = MagicMock()
-            mock_scalars = MagicMock()
-            mock_scalars.all.return_value = [instance]
-            mock_result.scalars.return_value = mock_scalars
-            mock_session.execute = AsyncMock(return_value=mock_result)
-            mock_session.delete = AsyncMock()
-            mock_session.commit = AsyncMock()
-
-            # Create async context manager
-            @patch("mlx_manager.main.get_session")
-            async def run_cleanup(mock_gs):
-                from mlx_manager.main import cleanup_stale_instances
-
-                mock_gs.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_gs.return_value.__aexit__ = AsyncMock(return_value=None)
-
-                with patch("mlx_manager.main.server_manager") as mock_sm:
-                    mock_sm.is_running.return_value = False
-                    await cleanup_stale_instances()
-
-                mock_session.delete.assert_called_once_with(instance)
-                mock_session.commit.assert_called_once()
-
-            await run_cleanup()
-
-    @pytest.mark.asyncio
-    async def test_cleanup_keeps_running_instances(self):
-        """Test that running instances are not cleaned up."""
-        from mlx_manager.models import RunningInstance
-
-        mock_instance = MagicMock(spec=RunningInstance)
-        mock_instance.profile_id = 1
-
-        mock_session = AsyncMock(spec=AsyncSession)
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_instance]
-        mock_result.scalars.return_value = mock_scalars
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.delete = AsyncMock()
-        mock_session.commit = AsyncMock()
-
-        with patch("mlx_manager.main.get_session") as mock_gs:
-            mock_gs.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_gs.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            with patch("mlx_manager.main.server_manager") as mock_sm:
-                mock_sm.is_running.return_value = True  # Server is running
-
-                from mlx_manager.main import cleanup_stale_instances
-
-                await cleanup_stale_instances()
-
-            # Should NOT delete since server is running
-            mock_session.delete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_cleanup_with_no_instances(self):
-        """Test cleanup when no instances exist."""
-        mock_session = AsyncMock(spec=AsyncSession)
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = []  # No instances
-        mock_result.scalars.return_value = mock_scalars
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.commit = AsyncMock()
-
-        with patch("mlx_manager.main.get_session") as mock_gs:
-            mock_gs.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_gs.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            from mlx_manager.main import cleanup_stale_instances
-
-            await cleanup_stale_instances()
-
-        mock_session.commit.assert_called_once()
 
 
 class TestHealthEndpoint:
@@ -146,37 +24,35 @@ class TestLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_startup_calls_init_db(self):
         """Test that lifespan startup calls init_db."""
-        with patch("mlx_manager.main.init_db") as mock_init_db:
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
+
+        with (
+            patch("mlx_manager.main.init_db") as mock_init_db,
+            patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool"),
+        ):
             mock_init_db.return_value = None
+            mock_recover.return_value = []  # No pending downloads
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
 
-            with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
-                mock_cleanup.return_value = None
+            from mlx_manager.main import lifespan
 
-                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
-                    mock_recover.return_value = []  # No pending downloads
+            # Create a mock app
+            mock_app = MagicMock()
 
-                    with patch("mlx_manager.main.health_checker") as mock_hc:
-                        mock_hc.start = AsyncMock()
-                        mock_hc.stop = AsyncMock()
+            # Run through the lifespan
+            async with lifespan(mock_app):
+                mock_init_db.assert_called_once()
+                mock_recover.assert_called_once()
+                mock_hc.start.assert_called_once()
 
-                        with patch("mlx_manager.main.server_manager") as mock_sm:
-                            mock_sm.cleanup = AsyncMock()
-
-                            from mlx_manager.main import lifespan
-
-                            # Create a mock app
-                            mock_app = MagicMock()
-
-                            # Run through the lifespan
-                            async with lifespan(mock_app):
-                                mock_init_db.assert_called_once()
-                                mock_cleanup.assert_called_once()
-                                mock_recover.assert_called_once()
-                                mock_hc.start.assert_called_once()
-
-                            # After exiting context, shutdown should have occurred
-                            mock_hc.stop.assert_called_once()
-                            mock_sm.cleanup.assert_called_once()
+            # After exiting context, shutdown should have occurred
+            mock_hc.stop.assert_called_once()
 
 
 class TestStaticFileServing:
@@ -198,17 +74,16 @@ class TestStaticFileServing:
 
             with patch("mlx_manager.main.STATIC_DIR", static_dir):
                 # Dynamically add the routes by importing main again
-                import importlib
                 import sys
 
                 # Remove main from modules so it gets re-evaluated
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
-
                 # Create a test client with the patched app
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -226,14 +101,14 @@ class TestStaticFileServing:
             assets_dir.mkdir()
 
             with patch("mlx_manager.main.STATIC_DIR", static_dir):
-                import importlib
                 import sys
 
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -260,8 +135,9 @@ class TestStaticFileServing:
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -288,8 +164,9 @@ class TestStaticFileServing:
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -312,8 +189,9 @@ class TestStaticFileServing:
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -337,8 +215,9 @@ class TestStaticFileServing:
                 if "mlx_manager.main" in sys.modules:
                     del sys.modules["mlx_manager.main"]
 
-                from mlx_manager import main
                 from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
 
                 async with AsyncClient(
                     transport=ASGITransport(app=main.app), base_url="http://test"
@@ -721,80 +600,72 @@ class TestLifespanWithPendingDownloads:
     @pytest.mark.asyncio
     async def test_lifespan_resumes_pending_downloads(self):
         """Test that lifespan calls resume_pending_downloads when there are pending downloads."""
-        with patch("mlx_manager.main.init_db") as mock_init_db:
-            mock_init_db.return_value = None
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
 
-            with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
-                mock_cleanup.return_value = None
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
+            patch("mlx_manager.main.resume_pending_downloads") as mock_resume,
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks") as mock_cancel,
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool"),
+        ):
+            mock_recover.return_value = [
+                (1, "mlx-community/model1"),
+                (2, "mlx-community/model2"),
+            ]
+            mock_resume.return_value = None
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_cancel.return_value = None
 
-                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
-                    # Return pending downloads
-                    mock_recover.return_value = [
+            from mlx_manager.main import lifespan
+
+            mock_app = MagicMock()
+
+            async with lifespan(mock_app):
+                # Verify resume was called with pending downloads
+                mock_resume.assert_called_once_with(
+                    [
                         (1, "mlx-community/model1"),
                         (2, "mlx-community/model2"),
                     ]
+                )
 
-                    with patch("mlx_manager.main.resume_pending_downloads") as mock_resume:
-                        mock_resume.return_value = None
-
-                        with patch("mlx_manager.main.health_checker") as mock_hc:
-                            mock_hc.start = AsyncMock()
-                            mock_hc.stop = AsyncMock()
-
-                            with patch("mlx_manager.main.cancel_download_tasks") as mock_cancel:
-                                mock_cancel.return_value = None
-
-                                with patch("mlx_manager.main.server_manager") as mock_sm:
-                                    mock_sm.cleanup = AsyncMock()
-
-                                    from mlx_manager.main import lifespan
-
-                                    mock_app = MagicMock()
-
-                                    async with lifespan(mock_app):
-                                        # Verify resume was called with pending downloads
-                                        mock_resume.assert_called_once_with(
-                                            [
-                                                (1, "mlx-community/model1"),
-                                                (2, "mlx-community/model2"),
-                                            ]
-                                        )
-
-                                    # Verify cancel was called on shutdown
-                                    mock_cancel.assert_called_once()
+            # Verify cancel was called on shutdown
+            mock_cancel.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_lifespan_skips_resume_when_no_pending(self):
         """Test that lifespan doesn't call resume_pending_downloads when no pending downloads."""
-        with patch("mlx_manager.main.init_db") as mock_init_db:
-            mock_init_db.return_value = None
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
 
-            with patch("mlx_manager.main.cleanup_stale_instances") as mock_cleanup:
-                mock_cleanup.return_value = None
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
+            patch("mlx_manager.main.resume_pending_downloads") as mock_resume,
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks") as mock_cancel,
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool"),
+        ):
+            mock_recover.return_value = []  # No pending downloads
+            mock_resume.return_value = None
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_cancel.return_value = None
 
-                with patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover:
-                    # Return empty list - no pending downloads
-                    mock_recover.return_value = []
+            from mlx_manager.main import lifespan
 
-                    with patch("mlx_manager.main.resume_pending_downloads") as mock_resume:
-                        mock_resume.return_value = None
+            mock_app = MagicMock()
 
-                        with patch("mlx_manager.main.health_checker") as mock_hc:
-                            mock_hc.start = AsyncMock()
-                            mock_hc.stop = AsyncMock()
+            async with lifespan(mock_app):
+                # Verify resume was NOT called
+                mock_resume.assert_not_called()
 
-                            with patch("mlx_manager.main.cancel_download_tasks") as mock_cancel:
-                                mock_cancel.return_value = None
-
-                                with patch("mlx_manager.main.server_manager") as mock_sm:
-                                    mock_sm.cleanup = AsyncMock()
-
-                                    from mlx_manager.main import lifespan
-
-                                    mock_app = MagicMock()
-
-                                    async with lifespan(mock_app):
-                                        # Verify resume was NOT called
-                                        mock_resume.assert_not_called()
-
-                                    mock_cancel.assert_called_once()
+            mock_cancel.assert_called_once()

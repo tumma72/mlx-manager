@@ -153,14 +153,16 @@ class TestChatEndpointSetup:
         from mlx_manager.mlx_server.api.v1.chat import router
 
         routes = [r.path for r in router.routes]
-        assert "/v1/chat/completions" in routes
+        # Route is /chat/completions, the /v1 prefix is added at include time
+        assert "/chat/completions" in routes
 
     def test_v1_router_includes_chat(self) -> None:
         """v1 router should include chat router."""
         from mlx_manager.mlx_server.api.v1 import v1_router
 
         routes = [r.path for r in v1_router.routes]
-        assert "/v1/chat/completions" in routes
+        # Chat route is included; prefix is applied at mount time
+        assert "/chat/completions" in routes
 
 
 class TestFinishReasonLogic:
