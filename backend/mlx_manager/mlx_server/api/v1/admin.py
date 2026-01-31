@@ -1,18 +1,31 @@
-"""Admin API endpoints for model pool management.
+"""Admin API endpoints for model pool management and audit logs.
 
 These endpoints allow administrators to:
 - Preload models (protected from LRU eviction)
 - Unload models to free memory
 - Monitor pool status and memory usage
+- View and export audit logs
+- Subscribe to live audit log updates via WebSocket
 """
 
+import asyncio
+import csv
+import io
+import json
 import logging
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlmodel import select
 
+from mlx_manager.mlx_server.database import get_session
+from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
 from mlx_manager.mlx_server.models.pool import get_model_pool
+from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.utils.memory import get_memory_usage
 
 logger = logging.getLogger(__name__)
@@ -157,3 +170,213 @@ async def unload_model(model_id: str) -> ModelUnloadResponse:
 async def admin_health() -> dict[str, str]:
     """Admin health check endpoint."""
     return {"status": "healthy"}
+
+
+# ============================================================================
+# Audit Log Endpoints
+# ============================================================================
+
+
+@router.get("/audit-logs", response_model=list[AuditLogResponse])
+async def get_audit_logs(
+    model: str | None = Query(default=None, description="Filter by model"),
+    backend_type: str | None = Query(default=None, description="Filter by backend type"),
+    status: str | None = Query(default=None, description="Filter by status"),
+    start_time: datetime | None = Query(default=None, description="Start of time range"),
+    end_time: datetime | None = Query(default=None, description="End of time range"),
+    limit: int = Query(default=100, le=1000, description="Max results"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+) -> list[AuditLogResponse]:
+    """Get audit logs with optional filtering.
+
+    Supports filtering by:
+    - model: Exact model name match
+    - backend_type: local, openai, anthropic
+    - status: success, error, timeout
+    - start_time/end_time: Time range filter
+
+    Returns most recent first (descending timestamp).
+    """
+    async with get_session() as session:
+        query = select(AuditLog)
+
+        # Apply filters
+        if model:
+            query = query.where(AuditLog.model == model)
+        if backend_type:
+            query = query.where(AuditLog.backend_type == backend_type)
+        if status:
+            query = query.where(AuditLog.status == status)
+        if start_time:
+            query = query.where(AuditLog.timestamp >= start_time)
+        if end_time:
+            query = query.where(AuditLog.timestamp <= end_time)
+
+        # Order by timestamp descending (most recent first)
+        query = query.order_by(AuditLog.timestamp.desc())
+
+        # Apply pagination
+        query = query.offset(offset).limit(limit)
+
+        result = await session.execute(query)
+        logs = result.scalars().all()
+
+        return [AuditLogResponse.model_validate(log) for log in logs]
+
+
+@router.get("/audit-logs/stats")
+async def get_audit_stats() -> dict[str, Any]:
+    """Get aggregate statistics for audit logs."""
+    async with get_session() as session:
+        # Total count
+        total_result = await session.execute(select(func.count(AuditLog.id)))
+        total = total_result.scalar() or 0
+
+        # Count by status
+        status_result = await session.execute(
+            select(AuditLog.status, func.count(AuditLog.id)).group_by(AuditLog.status)
+        )
+        by_status = dict(status_result.all())
+
+        # Count by backend
+        backend_result = await session.execute(
+            select(AuditLog.backend_type, func.count(AuditLog.id)).group_by(
+                AuditLog.backend_type
+            )
+        )
+        by_backend = dict(backend_result.all())
+
+        # Unique models
+        models_result = await session.execute(
+            select(func.count(func.distinct(AuditLog.model)))
+        )
+        unique_models = models_result.scalar() or 0
+
+        return {
+            "total_requests": total,
+            "by_status": by_status,
+            "by_backend": by_backend,
+            "unique_models": unique_models,
+        }
+
+
+@router.get("/audit-logs/export")
+async def export_audit_logs(
+    model: str | None = Query(default=None),
+    backend_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    format: str = Query(default="jsonl", description="Export format: jsonl or csv"),
+) -> PlainTextResponse:
+    """Export audit logs in JSONL or CSV format.
+
+    JSONL format is standard and easily parseable by log tools.
+    CSV format is useful for spreadsheet analysis.
+    """
+    async with get_session() as session:
+        query = select(AuditLog)
+
+        if model:
+            query = query.where(AuditLog.model == model)
+        if backend_type:
+            query = query.where(AuditLog.backend_type == backend_type)
+        if status:
+            query = query.where(AuditLog.status == status)
+        if start_time:
+            query = query.where(AuditLog.timestamp >= start_time)
+        if end_time:
+            query = query.where(AuditLog.timestamp <= end_time)
+
+        query = query.order_by(AuditLog.timestamp.desc())
+        result = await session.execute(query)
+        logs = result.scalars().all()
+
+        if format == "csv":
+            output = io.StringIO()
+            if logs:
+                fieldnames = [
+                    "timestamp",
+                    "request_id",
+                    "model",
+                    "backend_type",
+                    "endpoint",
+                    "duration_ms",
+                    "status",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                    "error_type",
+                    "error_message",
+                ]
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                for log in logs:
+                    row = log.model_dump()
+                    row["timestamp"] = row["timestamp"].isoformat()
+                    writer.writerow({k: row.get(k) for k in fieldnames})
+
+            return PlainTextResponse(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
+            )
+        else:
+            # JSONL format (default)
+            lines = []
+            for log in logs:
+                data = log.model_dump()
+                data["timestamp"] = data["timestamp"].isoformat()
+                lines.append(json.dumps(data))
+
+            return PlainTextResponse(
+                content="\n".join(lines),
+                media_type="application/jsonl",
+                headers={
+                    "Content-Disposition": "attachment; filename=audit-logs.jsonl"
+                },
+            )
+
+
+# ============================================================================
+# WebSocket for Live Log Updates
+# ============================================================================
+
+
+@router.websocket("/ws/audit-logs")
+async def audit_log_stream(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time audit log streaming.
+
+    Sends recent logs on connect, then streams new entries.
+    """
+    await websocket.accept()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
+
+    def on_new_log(log: dict[str, Any]) -> None:
+        """Callback when new log entry is created."""
+        try:
+            queue.put_nowait(log)
+        except asyncio.QueueFull:
+            pass  # Drop if queue is full
+
+    # Subscribe to new logs
+    audit_service.subscribe(on_new_log)
+
+    try:
+        # Send recent logs first
+        for log in audit_service.get_recent_logs():
+            await websocket.send_json({"type": "log", "data": log})
+
+        # Stream new logs
+        while True:
+            try:
+                log = await asyncio.wait_for(queue.get(), timeout=30.0)
+                await websocket.send_json({"type": "log", "data": log})
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                await websocket.send_json({"type": "ping"})
+
+    except WebSocketDisconnect:
+        logger.debug("WebSocket client disconnected")
+    finally:
+        audit_service.unsubscribe(on_new_log)
