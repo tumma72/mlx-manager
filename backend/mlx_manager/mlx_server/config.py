@@ -1,9 +1,15 @@
 """MLX Server configuration."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Default database paths
+DEFAULT_MLX_MANAGER_DB = "~/.mlx-manager/mlx-manager.db"
+DEFAULT_MLX_SERVER_DB = "~/.mlx-manager/mlx-server.db"
 
 
 class MLXServerSettings(BaseSettings):
@@ -11,6 +17,11 @@ class MLXServerSettings(BaseSettings):
 
     All settings can be configured via environment variables with MLX_SERVER_ prefix.
     Example: MLX_SERVER_PORT=10242
+
+    When embedded_mode=True, the MLX Server runs within MLX Manager:
+    - Uses MLX Manager's database for shared audit logs
+    - Skips LogFire configuration (parent app handles it)
+    - Skips lifespan handler (parent app handles model pool init)
     """
 
     model_config = SettingsConfigDict(
@@ -19,7 +30,13 @@ class MLXServerSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Server binding
+    # Embedded mode (set to True when running within MLX Manager)
+    embedded_mode: bool = Field(
+        default=False,
+        description="Whether running embedded within MLX Manager",
+    )
+
+    # Server binding (standalone mode only)
     host: str = Field(default="127.0.0.1", description="Host to bind the server to")
     port: int = Field(default=10242, description="Port to bind the server to")
 
@@ -117,8 +134,8 @@ class MLXServerSettings(BaseSettings):
 
     # Audit logging
     database_path: str = Field(
-        default="~/.mlx-manager/mlx-server.db",
-        description="Path to audit log database",
+        default=DEFAULT_MLX_SERVER_DB,
+        description="Path to audit log database (uses MLX Manager's DB when embedded)",
     )
     audit_retention_days: int = Field(
         default=30,
@@ -127,11 +144,34 @@ class MLXServerSettings(BaseSettings):
         description="Days to retain audit logs before cleanup",
     )
 
+    def get_database_path(self) -> Path:
+        """Get the resolved database path.
+
+        When embedded_mode is True, uses MLX Manager's shared database.
+        Otherwise uses the configured database_path.
+
+        Returns:
+            Resolved Path to the database file
+        """
+        if self.embedded_mode:
+            # Use MLX Manager's database for shared audit logs
+            return Path(DEFAULT_MLX_MANAGER_DB).expanduser()
+        return Path(self.database_path).expanduser()
+
 
 @lru_cache
 def get_settings() -> MLXServerSettings:
     """Get cached settings instance."""
     return MLXServerSettings()
+
+
+def is_embedded() -> bool:
+    """Check if running in embedded mode within MLX Manager.
+
+    Returns:
+        True if embedded_mode is enabled, False otherwise
+    """
+    return get_settings().embedded_mode
 
 
 # For backward compatibility
