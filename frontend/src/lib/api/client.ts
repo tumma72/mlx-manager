@@ -30,6 +30,9 @@ import type {
   BackendType,
   TimeoutSettings,
   TimeoutSettingsUpdate,
+  AuditLog,
+  AuditLogFilter,
+  AuditStats,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -596,6 +599,68 @@ export const settings = {
       body: JSON.stringify(data),
     });
     return handleResponse(res);
+  },
+};
+
+// Audit Log API
+export const auditLogs = {
+  /**
+   * Get audit logs with optional filtering.
+   * Logs are returned most recent first.
+   */
+  list: async (filter: AuditLogFilter = {}): Promise<AuditLog[]> => {
+    const params = new URLSearchParams();
+    if (filter.model) params.set("model", filter.model);
+    if (filter.backend_type) params.set("backend_type", filter.backend_type);
+    if (filter.status) params.set("status", filter.status);
+    if (filter.start_time) params.set("start_time", filter.start_time);
+    if (filter.end_time) params.set("end_time", filter.end_time);
+    if (filter.limit) params.set("limit", filter.limit.toString());
+    if (filter.offset) params.set("offset", filter.offset.toString());
+
+    const res = await fetch(`${API_BASE}/system/audit-logs?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  /**
+   * Get aggregate statistics for audit logs.
+   */
+  stats: async (): Promise<AuditStats> => {
+    const res = await fetch(`${API_BASE}/system/audit-logs/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  /**
+   * Build URL for exporting audit logs in JSONL or CSV format.
+   * Opens download in a new tab.
+   */
+  exportUrl: (
+    filter: AuditLogFilter = {},
+    format: "jsonl" | "csv" = "jsonl",
+  ): string => {
+    const params = new URLSearchParams();
+    if (filter.model) params.set("model", filter.model);
+    if (filter.backend_type) params.set("backend_type", filter.backend_type);
+    if (filter.status) params.set("status", filter.status);
+    if (filter.start_time) params.set("start_time", filter.start_time);
+    if (filter.end_time) params.set("end_time", filter.end_time);
+    params.set("format", format);
+
+    return `${API_BASE}/system/audit-logs/export?${params}`;
+  },
+
+  /**
+   * Create WebSocket connection for real-time audit log streaming.
+   * Connects through manager API proxy to MLX Server.
+   */
+  createWebSocket: (): WebSocket => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    return new WebSocket(`${protocol}//${host}/api/system/ws/audit-logs`);
   },
 };
 

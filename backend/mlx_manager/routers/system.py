@@ -5,10 +5,13 @@ import logging
 import platform
 import subprocess
 import sys
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 
+import httpx
 import psutil
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.config import settings
@@ -186,6 +189,116 @@ async def get_launchd_status(
     """Get launchd service status."""
     status = launchd_manager.get_status(profile)
     return LaunchdStatus(**status)
+
+
+# ============================================================================
+# Audit Log Proxy Endpoints
+# ============================================================================
+
+# MLX Server base URL (default port 10242)
+MLX_SERVER_URL = "http://localhost:10242"
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    model: str | None = Query(default=None),
+    backend_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    """Proxy audit logs from MLX Server."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if model:
+        params["model"] = model
+    if backend_type:
+        params["backend_type"] = backend_type
+    if status:
+        params["status"] = status
+    if start_time:
+        params["start_time"] = start_time.isoformat()
+    if end_time:
+        params["end_time"] = end_time.isoformat()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{MLX_SERVER_URL}/admin/audit-logs", params=params, timeout=10.0
+            )
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+    except Exception as e:
+        logger.warning(f"Failed to fetch audit logs: {e}")
+        raise HTTPException(status_code=503, detail="MLX Server not available") from e
+
+
+@router.get("/audit-logs/stats")
+async def get_audit_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Proxy audit stats from MLX Server."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{MLX_SERVER_URL}/admin/audit-logs/stats", timeout=10.0
+            )
+            response.raise_for_status()
+            return response.json()  # type: ignore[no-any-return]
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+    except Exception as e:
+        logger.warning(f"Failed to fetch audit stats: {e}")
+        raise HTTPException(status_code=503, detail="MLX Server not available") from e
+
+
+@router.get("/audit-logs/export")
+async def export_audit_logs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    model: str | None = Query(default=None),
+    backend_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    format: str = Query(default="jsonl"),
+) -> StreamingResponse:
+    """Proxy audit log export from MLX Server."""
+    params: dict[str, Any] = {"format": format}
+    if model:
+        params["model"] = model
+    if backend_type:
+        params["backend_type"] = backend_type
+    if status:
+        params["status"] = status
+    if start_time:
+        params["start_time"] = start_time.isoformat()
+    if end_time:
+        params["end_time"] = end_time.isoformat()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{MLX_SERVER_URL}/admin/audit-logs/export", params=params, timeout=60.0
+            )
+            response.raise_for_status()
+
+            media_type = "text/csv" if format == "csv" else "application/jsonl"
+            filename = f"audit-logs.{format}"
+
+            return StreamingResponse(
+                content=iter([response.content]),
+                media_type=media_type,
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+    except Exception as e:
+        logger.warning(f"Failed to export audit logs: {e}")
+        raise HTTPException(status_code=503, detail="MLX Server not available") from e
 
 
 # ============================================================================
