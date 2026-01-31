@@ -237,3 +237,46 @@ async def test_legacy_restart_endpoint(auth_client, sample_profile_data):
 
     data = response.json()
     assert "embedded" in data["message"].lower() or "cannot be restarted" in data["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_server_status(auth_client, sample_profile_data):
+    """Test getting server status for a profile.
+
+    In embedded mode, the server is always running. This endpoint supports
+    the frontend's polling logic during "startup".
+    """
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    response = await auth_client.get(f"/api/servers/{profile_id}/status")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["profile_id"] == profile_id
+    assert data["running"] is True
+    assert data["pid"] == os.getpid()
+    assert data["failed"] is False
+    assert data["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_server_health_for_profile(auth_client, sample_profile_data):
+    """Test getting server health for a profile.
+
+    In embedded mode, the server is always healthy. The model_loaded field
+    is True to indicate the server is ready to accept requests (models load
+    on-demand when a chat request is made).
+    """
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    response = await auth_client.get(f"/api/servers/{profile_id}/health")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["model_loaded"] is True
+    assert data["error"] is None
