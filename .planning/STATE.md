@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 13 of 13 (MLX Server Integration)
-Plan: 2 of 5 (Legacy Subprocess Removal)
+Plan: 3 of 5 (Chat UI Integration)
 Status: In progress
-Last activity: 2026-01-31 — Completed 13-02-PLAN.md (remove legacy subprocess management)
+Last activity: 2026-01-31 — Completed 13-03-PLAN.md (Chat UI Integration)
 
-Progress: [███████████░] 96% (Plan 13-02 complete)
+Progress: [███████████░] 97% (Plan 13-03 complete)
 
 ## Milestone v1.2 Summary
 
@@ -188,6 +188,9 @@ Recent decisions affecting current work:
 - **Embedded database path**: When embedded_mode=True, MLX Server uses MLX Manager's database for shared audit logs
 - **Parser options stubs**: With embedded server, parser options endpoints return empty lists for backward compatibility
 - **Legacy endpoint messages**: start/stop/restart endpoints kept with informative messages about embedded mode
+- **Direct async generator consumption**: Chat router calls generate_chat_completion() directly instead of httpx proxy
+- **All profiles selectable for chat**: With embedded server, models load on-demand; no "running server" filter needed
+- **Cast for Union return types**: Use cast(AsyncGenerator[dict, None], gen) for inference functions returning Union types
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -200,7 +203,8 @@ None yet.
 **Phase 13 progress:**
 - Plan 01: Complete (mount MLX Server as sub-application)
 - Plan 02: Complete (remove legacy subprocess management)
-- Plan 03-05: Pending
+- Plan 03: Complete (Chat UI Integration)
+- Plan 04-05: Pending
 
 **Test failures expected:**
 - Tests in test_main.py and conftest.py reference deleted modules
@@ -223,7 +227,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-31T15:48:14Z
-Stopped at: Completed 13-02-PLAN.md (remove legacy subprocess management)
+Last session: 2026-01-31T15:56:00Z
+Stopped at: Completed 13-03-PLAN.md (Chat UI Integration)
 Resume file: None
-Next: Execute 13-03-PLAN.md (Chat UI Integration)
+Next: Execute 13-04-PLAN.md (Completions API Integration)
