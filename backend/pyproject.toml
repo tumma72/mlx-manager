@@ -66,6 +66,7 @@ Documentation = "https://github.com/tumma72/mlx-manager#readme"
 
 [project.scripts]
 mlx-manager = "mlx_manager.cli:main"
+mlx-benchmark = "mlx_manager.mlx_server.benchmark.cli:main"
 
 [project.gui-scripts]
 mlx-manager-menubar = "mlx_manager.menubar:main"
