@@ -66,15 +66,11 @@
 	let availableTools = $state<ToolDefinition[]>([]);
 	let toolsLoaded = $state(false);
 
-	// Get running profiles - use servers directly to determine running state
-	// This avoids issues with serverStore.isRunning() which can return false
-	// for profiles that are in the servers list but still in startingProfiles
-	const runningProfiles = $derived.by(() => {
-		const runningIds = new Set(serverStore.servers.map((s) => s.profile_id));
-		return profileStore.profiles.filter((p) => runningIds.has(p.id));
-	});
+	// With embedded server, all profiles can be used for chat
+	// The model will be loaded on-demand by the embedded MLX Server
+	const availableProfiles = $derived(profileStore.profiles);
 
-	const selectedProfile = $derived(runningProfiles.find((p) => p.id === selectedProfileId));
+	const selectedProfile = $derived(availableProfiles.find((p) => p.id === selectedProfileId));
 
 	// Determine if current profile supports multimodal
 	const isMultimodal = $derived(
@@ -115,9 +111,9 @@
 	// Reactively set selectedProfileId when stores load and URL param is present
 	$effect(() => {
 		if (urlProfileId !== null && selectedProfileId === null) {
-			// Check if this profile is actually running
-			const isRunning = runningProfiles.some((p) => p.id === urlProfileId);
-			if (isRunning) {
+			// With embedded server, any profile can be used (model loads on-demand)
+			const profileExists = availableProfiles.some((p) => p.id === urlProfileId);
+			if (profileExists) {
 				selectedProfileId = urlProfileId;
 			}
 		}
@@ -355,12 +351,14 @@
 							result.toolCallsDone = true;
 							break;
 						case 'error':
-							if (data.content.includes('Failed to connect')) {
-								result.error = { summary: 'Connection failed', details: data.content };
+							if (data.content.includes('Model not available') || data.content.includes('not found')) {
+								result.error = { summary: 'Model not available', details: data.content };
 							} else if (data.content.includes('timed out')) {
 								result.error = { summary: 'Request timed out', details: data.content };
+							} else if (data.content.includes('loading') || data.content.includes('Loading')) {
+								result.error = { summary: 'Model loading', details: data.content };
 							} else {
-								result.error = { summary: 'Server error', details: data.content };
+								result.error = { summary: 'Inference error', details: data.content };
 							}
 							break;
 						case 'done':
@@ -562,8 +560,8 @@
 
 			// Show error in chat area
 			chatError = {
-				summary: 'Failed to connect to model after 3 attempts',
-				details: `The model may still be loading. Check the Servers page for status.\n\nError: ${errorMsg}`
+				summary: 'Failed to get response after 3 attempts',
+				details: `The model may still be loading or the request may have failed.\n\nError: ${errorMsg}`
 			};
 
 			return false;
@@ -676,8 +674,8 @@
 		<h1 class="text-2xl font-bold">Chat</h1>
 		<div class="flex items-center gap-4">
 			<Select onchange={handleProfileChange} value={selectedProfileId?.toString() ?? ''}>
-				<option value="">Select a running server...</option>
-				{#each runningProfiles as profile (profile.id)}
+				<option value="">Select a profile...</option>
+				{#each availableProfiles as profile (profile.id)}
 					<option value={profile.id.toString()}>
 						{profile.name} ({getModelShortName(profile.model_path)})
 					</option>
@@ -691,19 +689,19 @@
 		</div>
 	</div>
 
-	{#if runningProfiles.length === 0}
+	{#if availableProfiles.length === 0}
 		<Card class="flex-1 flex items-center justify-center">
 			<div class="text-center">
 				<Bot class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-muted-foreground mb-4">No servers running.</p>
-				<Button href="/servers">Go to Servers</Button>
+				<p class="text-muted-foreground mb-4">No profiles configured.</p>
+				<Button href="/profiles">Create a Profile</Button>
 			</div>
 		</Card>
 	{:else if !selectedProfile}
 		<Card class="flex-1 flex items-center justify-center">
 			<div class="text-center">
 				<Bot class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-muted-foreground">Select a running server to start chatting.</p>
+				<p class="text-muted-foreground">Select a profile to start chatting.</p>
 			</div>
 		</Card>
 	{:else}

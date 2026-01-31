@@ -84,11 +84,11 @@ async def chat_completions(
 
         try:
             # Import inference services
-            from mlx_manager.mlx_server.services.inference import generate_chat_completion
-            from mlx_manager.mlx_server.services.vision import generate_vision_completion
-            from mlx_manager.mlx_server.services.image_processor import preprocess_images
             from mlx_manager.mlx_server.models.detection import detect_model_type
             from mlx_manager.mlx_server.models.types import ModelType
+            from mlx_manager.mlx_server.services.image_processor import preprocess_images
+            from mlx_manager.mlx_server.services.inference import generate_chat_completion
+            from mlx_manager.mlx_server.services.vision import generate_vision_completion
 
             # Detect model type
             model_type = detect_model_type(model_id)
@@ -185,11 +185,7 @@ async def chat_completions(
 
                             if content[i : i + 8] == "</think>":
                                 in_thinking = False
-                                duration = (
-                                    time.time() - thinking_start
-                                    if thinking_start
-                                    else 0
-                                )
+                                duration = time.time() - thinking_start if thinking_start else 0
                                 done_data = {
                                     "type": "thinking_done",
                                     "duration": round(duration, 1),
