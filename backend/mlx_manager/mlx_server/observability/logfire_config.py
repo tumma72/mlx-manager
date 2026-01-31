@@ -61,7 +61,20 @@ def instrument_llm_clients() -> None:
     """Add OpenAI and Anthropic instrumentation for LLM token tracking.
 
     Captures request duration, token usage, and exceptions.
+    Only instruments clients that are installed (openai/anthropic packages optional).
     """
-    logfire.instrument_openai()
-    logfire.instrument_anthropic()
-    logger.info("LogFire LLM client instrumentation enabled")
+    instrumented = []
+    try:
+        logfire.instrument_openai()
+        instrumented.append("OpenAI")
+    except Exception:
+        logger.debug("OpenAI client not available for instrumentation")
+
+    try:
+        logfire.instrument_anthropic()
+        instrumented.append("Anthropic")
+    except Exception:
+        logger.debug("Anthropic client not available for instrumentation")
+
+    if instrumented:
+        logger.info(f"LogFire LLM client instrumentation enabled: {', '.join(instrumented)}")

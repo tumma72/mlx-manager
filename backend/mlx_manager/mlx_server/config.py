@@ -80,6 +80,12 @@ class MLXServerSettings(BaseSettings):
         description="Enable continuous batching for text requests (experimental)",
     )
 
+    # Environment
+    environment: str = Field(
+        default="development",
+        description="Environment (development/production)",
+    )
+
     # Cloud routing
     enable_cloud_routing: bool = Field(
         default=False,
