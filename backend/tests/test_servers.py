@@ -3,6 +3,10 @@
 With the embedded MLX Server, this router provides status information
 about the model pool and loaded models. Start/stop/restart endpoints
 return informative messages since the embedded server is always running.
+
+The main /api/servers endpoint returns an empty list for UI compatibility
+(the frontend expects RunningServer objects with profile-based fields).
+Use /api/servers/embedded for actual embedded server status.
 """
 
 import os
@@ -12,8 +16,23 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_list_servers_returns_embedded_status(auth_client):
-    """Test listing servers returns embedded server status."""
+async def test_list_servers_returns_empty_for_ui_compatibility(auth_client):
+    """Test listing servers returns empty list for UI compatibility.
+
+    The frontend expects RunningServer objects with profile_id, profile_name,
+    pid, port, etc. Since embedded mode doesn't use profiles for server
+    management, we return an empty list.
+    """
+    response = await auth_client.get("/api/servers")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data == []
+
+
+@pytest.mark.asyncio
+async def test_get_embedded_status_running(auth_client):
+    """Test getting embedded server status when running."""
     mock_pool = MagicMock()
     mock_pool.get_loaded_models.return_value = []
     mock_pool.max_memory_gb = 32.0
@@ -25,28 +44,26 @@ async def test_list_servers_returns_embedded_status(auth_client):
             "mlx_manager.mlx_server.utils.memory.get_memory_usage",
             return_value={"active_gb": 0.0},
         ):
-            response = await auth_client.get("/api/servers")
+            response = await auth_client.get("/api/servers/embedded")
             assert response.status_code == 200
 
             data = response.json()
-            assert len(data) == 1
-            assert data[0]["status"] == "running"
-            assert data[0]["type"] == "embedded"
+            assert data["status"] == "running"
+            assert data["type"] == "embedded"
 
 
 @pytest.mark.asyncio
-async def test_list_servers_pool_not_initialized(auth_client):
-    """Test listing servers when pool is not initialized."""
+async def test_get_embedded_status_not_initialized(auth_client):
+    """Test getting embedded server status when pool not initialized."""
     with patch(
         "mlx_manager.mlx_server.models.pool.get_model_pool",
         side_effect=RuntimeError("Pool not initialized"),
     ):
-        response = await auth_client.get("/api/servers")
+        response = await auth_client.get("/api/servers/embedded")
         assert response.status_code == 200
 
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["status"] == "not_initialized"
+        assert data["status"] == "not_initialized"
 
 
 @pytest.mark.asyncio

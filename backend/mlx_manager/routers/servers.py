@@ -54,14 +54,31 @@ class ServerHealthStatus(BaseModel):
 _server_start_time = time.time()
 
 
-@router.get("", response_model=list[EmbeddedServerStatus])
+@router.get("")
 async def list_servers(
     current_user: Annotated[User, Depends(get_current_user)],
-) -> list[EmbeddedServerStatus]:
+) -> list[dict]:
+    """Return running servers list for UI compatibility.
+
+    With embedded mode, the old profile-based server model is deprecated.
+    This returns an empty list for UI compatibility - the frontend expects
+    RunningServer objects with profile_id, profile_name, pid, port, etc.
+
+    For embedded server status, use the /servers/embedded endpoint instead.
+    """
+    # Return empty list - no profile-based servers in embedded mode
+    # The UI will show "No servers running" which is acceptable for now
+    return []
+
+
+@router.get("/embedded", response_model=EmbeddedServerStatus)
+async def get_embedded_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> EmbeddedServerStatus:
     """Return embedded MLX Server status.
 
     With embedded mode, there's always exactly one server (the application itself).
-    Returns a list with one element for API compatibility.
+    This endpoint provides the actual status of the embedded server.
     """
     try:
         from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -71,25 +88,21 @@ async def list_servers(
         loaded_models = pool.get_loaded_models()
         memory = get_memory_usage()
 
-        return [
-            EmbeddedServerStatus(
-                status="running",
-                type="embedded",
-                uptime_seconds=time.time() - _server_start_time,
-                loaded_models=loaded_models,
-                memory_used_gb=memory.get("active_gb", 0.0),
-                memory_limit_gb=pool.max_memory_gb,
-            )
-        ]
+        return EmbeddedServerStatus(
+            status="running",
+            type="embedded",
+            uptime_seconds=time.time() - _server_start_time,
+            loaded_models=loaded_models,
+            memory_used_gb=memory.get("active_gb", 0.0),
+            memory_limit_gb=pool.max_memory_gb,
+        )
     except RuntimeError:
         # Model pool not initialized yet
-        return [
-            EmbeddedServerStatus(
-                status="not_initialized",
-                type="embedded",
-                uptime_seconds=time.time() - _server_start_time,
-            )
-        ]
+        return EmbeddedServerStatus(
+            status="not_initialized",
+            type="embedded",
+            uptime_seconds=time.time() - _server_start_time,
+        )
 
 
 @router.get("/models", response_model=list[LoadedModelInfo])
@@ -226,7 +239,8 @@ async def stop_server(
     Individual models can be unloaded via the model pool management endpoints.
     """
     return {
-        "message": "Embedded server cannot be stopped. Use /v1/admin/models to manage loaded models.",
+        "message": "Embedded server cannot be stopped. "
+        "Use /v1/admin/models to manage loaded models.",
         "profile_id": profile_id,
     }
 
