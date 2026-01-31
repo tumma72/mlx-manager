@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 12 of 12 (Production Hardening)
-Plan: 2 of 4 complete
+Plan: 2 of 4 complete (01 + 02)
 Status: In progress
-Last activity: 2026-01-31 — Completed 12-02-PLAN.md (RFC 7807 Error Responses)
+Last activity: 2026-01-31 — Completed 12-01-PLAN.md (LogFire Integration)
 
-Progress: [██████████░░] ~90% (Phase 12 plan 2/4)
+Progress: [██████████░░] ~92% (Phase 12 plan 2/4)
 
 ## Milestone v1.2 Summary
 
@@ -170,6 +170,9 @@ Recent decisions affecting current work:
 - **RFC 7807 Problem Details**: All API errors return type/title/status/detail/instance/request_id format
 - **request_id format**: req_{12-char-hex} prefix makes IDs identifiable in logs
 - **Type ignore for FastAPI handlers**: Starlette type stubs expect generic Exception but specific types work at runtime
+- **LogFire configured BEFORE instrumented imports**: configure() must be called before importing instrumented libraries for proper tracing
+- **send_to_logfire='if-token-present'**: Enables development without a LogFire token
+- **Graceful LLM client instrumentation**: try/except for optional openai/anthropic packages
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -180,12 +183,12 @@ None yet.
 ### Blockers/Concerns
 
 **Phase 12 in progress:**
-- Plan 01: Pydantic LogFire observability integration
+- Plan 01: Pydantic LogFire observability integration (COMPLETE)
 - Plan 02: RFC 7807 error responses with request_id (COMPLETE)
-- Plan 03: Health/readiness endpoints (pending)
-- Plan 04: Graceful shutdown (pending)
+- Plan 03: Request Timeouts (pending)
+- Plan 04: Comprehensive Testing (pending)
 
-Error handling foundation complete. Ready for PROD-03 and PROD-04.
+Observability and error handling foundation complete. Ready for PROD-03 and PROD-04.
 
 ## Research Documents
 
@@ -203,7 +206,7 @@ Error handling foundation complete. Ready for PROD-03 and PROD-04.
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:29:24Z
-Stopped at: Completed 12-02-PLAN.md (RFC 7807 Error Responses)
+Last session: 2026-01-31T11:31:00Z
+Stopped at: Completed 12-01-PLAN.md (LogFire Integration)
 Resume file: None
-Next: 12-03-PLAN.md (Health/Readiness Endpoints)
+Next: 12-03-PLAN.md (Request Timeouts)
