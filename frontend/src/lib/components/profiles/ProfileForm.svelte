@@ -19,10 +19,7 @@
 	let detectingOptions = $state(false);
 	let detectedFamily = $state<string | null>(null);
 
-	// Form state - only fields supported by mlx-openai-server CLI
-	// Supported: model-path, model-type (lm|multimodal), port, host,
-	// max-concurrency, queue-timeout, queue-size
-	// Also: tool-call-parser, reasoning-parser, message-converter for MiniMax/Qwen/GLM
+	// Form state - profile configuration fields
 	let name = $state('');
 	let description = $state('');
 	let systemPrompt = $state('');

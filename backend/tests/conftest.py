@@ -20,24 +20,6 @@ from mlx_manager.models import User, UserStatus
 from mlx_manager.services.auth_service import create_access_token, hash_password
 
 
-@pytest.fixture(autouse=True)
-def mock_find_mlx_openai_server(request):
-    """Mock find_mlx_openai_server globally since it's not available on Linux CI.
-
-    Skipped for test_utils_command_builder.py which tests the function directly.
-    """
-    # Skip for tests that specifically test find_mlx_openai_server
-    if "test_utils_command_builder" in request.fspath.basename:
-        yield
-        return
-
-    with patch(
-        "mlx_manager.utils.command_builder.find_mlx_openai_server",
-        return_value="/usr/local/bin/mlx-openai-server",
-    ):
-        yield
-
-
 @pytest.fixture(scope="function")
 async def test_engine():
     """Create a test database engine with in-memory SQLite."""
@@ -93,13 +75,9 @@ async def client(test_engine):
         mock_health_checker.start = AsyncMock()
         mock_health_checker.stop = AsyncMock()
 
-        # Mock the server manager
-        with patch("mlx_manager.main.server_manager") as mock_server_manager:
-            mock_server_manager.cleanup = AsyncMock()
-
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                yield client
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
 
     app.dependency_overrides.clear()
 
@@ -168,33 +146,6 @@ def mock_hf_client():
         )
         mock.download_model = AsyncMock()
         mock.delete_model = AsyncMock(return_value=True)
-        yield mock
-
-
-@pytest.fixture
-def mock_server_manager():
-    """Mock server manager for testing."""
-    with patch("mlx_manager.routers.servers.server_manager") as mock:
-        mock.start_server = AsyncMock(return_value=12345)
-        mock.stop_server = AsyncMock(return_value=True)
-        mock.check_health = AsyncMock(
-            return_value={
-                "status": "healthy",
-                "response_time_ms": 45.0,
-                "model_loaded": True,
-            }
-        )
-        mock.get_server_stats = MagicMock(
-            return_value={
-                "pid": 12345,
-                "memory_mb": 1024.0,
-                "cpu_percent": 10.0,
-                "status": "running",
-                "create_time": 1704067200.0,
-            }
-        )
-        mock.get_all_running = MagicMock(return_value=[])
-        mock.processes = {}
         yield mock
 
 
@@ -337,17 +288,13 @@ async def auth_client(test_engine, test_user_data):
         mock_health_checker.start = AsyncMock()
         mock_health_checker.stop = AsyncMock()
 
-        # Mock the server manager
-        with patch("mlx_manager.main.server_manager") as mock_server_manager:
-            mock_server_manager.cleanup = AsyncMock()
-
-            transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport,
-                base_url="http://test",
-                headers={"Authorization": f"Bearer {token}"},
-            ) as client:
-                yield client
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {token}"},
+        ) as client:
+            yield client
 
     app.dependency_overrides.clear()
 
@@ -395,17 +342,13 @@ async def admin_client(test_engine, test_admin_user_data):
         mock_health_checker.start = AsyncMock()
         mock_health_checker.stop = AsyncMock()
 
-        # Mock the server manager
-        with patch("mlx_manager.main.server_manager") as mock_server_manager:
-            mock_server_manager.cleanup = AsyncMock()
-
-            transport = ASGITransport(app=app)
-            async with AsyncClient(
-                transport=transport,
-                base_url="http://test",
-                headers={"Authorization": f"Bearer {token}"},
-            ) as client:
-                yield client
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {token}"},
+        ) as client:
+            yield client
 
     app.dependency_overrides.clear()
 

@@ -112,22 +112,12 @@ async def get_system_info(
     except ImportError as e:
         logger.debug(f"MLX not available: {e}")
 
-    # Try to get mlx-openai-server version
-    mlx_openai_server_version = None
-    try:
-        import mlx_openai_server  # type: ignore[import-not-found]
-
-        mlx_openai_server_version = getattr(mlx_openai_server, "__version__", "installed")
-    except ImportError as e:
-        logger.debug(f"mlx-openai-server not available: {e}")
-
     return SystemInfo(
         os_version=os_version,
         chip=chip,
         memory_gb=memory_gb,
         python_version=python_version,
         mlx_version=mlx_version,
-        mlx_openai_server_version=mlx_openai_server_version,
     )
 
 
@@ -138,9 +128,8 @@ async def get_available_parser_options(
     """
     Get available parser options.
 
-    DEPRECATED: Parser options were used for mlx-openai-server CLI arguments.
-    The embedded MLX Server doesn't use these. Returns empty lists for
-    backwards compatibility.
+    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
+    Returns empty lists for backwards compatibility.
     """
     return {
         "tool_call_parsers": [],

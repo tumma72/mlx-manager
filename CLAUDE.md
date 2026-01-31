@@ -174,12 +174,15 @@ npm run check && npm run lint && npm run test
 - **mlx_manager/main.py**: FastAPI app with lifespan handlers and static file serving
 - **mlx_manager/cli.py**: CLI entry point (typer-based)
 - **mlx_manager/menubar.py**: macOS status bar app (rumps-based)
-- **mlx_manager/routers/**: API endpoints organized by domain (profiles, models, servers, system)
+- **mlx_manager/routers/**: API endpoints organized by domain (profiles, models, servers, system, settings, chat)
+- **mlx_manager/mlx_server/**: Embedded MLX inference server (mounted at /v1):
+  - `services/inference.py`: Direct inference via mlx-lm/mlx-vlm/mlx-embeddings
+  - `models/pool.py`: Model pool manager with LRU eviction
+  - `routers/`: OpenAI-compatible API endpoints (chat, completions, embeddings)
 - **mlx_manager/services/**: Business logic singletons:
-  - `server_manager.py`: Manages mlx-openai-server subprocess lifecycle
   - `hf_client.py`: HuggingFace Hub integration for model search/download
-  - `health_checker.py`: Background health monitoring for running servers
-  - `launchd.py`: macOS launchd plist generation for MLX servers
+  - `health_checker.py`: Background health monitoring
+  - `launchd.py`: macOS launchd plist generation for MLX Manager
   - `manager_launchd.py`: launchd service for MLX Manager itself
 - **mlx_manager/models.py**: SQLModel entities and Pydantic response schemas
 - **mlx_manager/database.py**: Async SQLite via aiosqlite with session management

@@ -74,9 +74,7 @@ class TestLaunchdManagerGetPlistPath:
 class TestLaunchdManagerGeneratePlist:
     """Tests for the generate_plist method.
 
-    Note: mlx-openai-server CLI uses 'launch' subcommand and supports only:
-    --model-path, --model-type (lm|multimodal), --port, --host,
-    --max-concurrency, --queue-timeout, --queue-size
+    Note: With the embedded MLX Server, launchd now runs mlx-manager serve.
     """
 
     def test_basic_plist(self, launchd_manager, sample_profile):

@@ -126,4 +126,4 @@ MIT
 
 ## Acknowledgments
 
-Built on [MLX](https://github.com/ml-explore/mlx), [mlx-lm](https://github.com/ml-explore/mlx-lm), and [mlx-openai-server](https://github.com/cubist38/mlx-openai-server).
+Built on [MLX](https://github.com/ml-explore/mlx), [mlx-lm](https://github.com/ml-explore/mlx-lm), [mlx-vlm](https://github.com/Blaizzy/mlx-vlm), and [mlx-embeddings](https://github.com/ml-explore/mlx-embeddings).

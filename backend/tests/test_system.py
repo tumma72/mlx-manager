@@ -217,25 +217,14 @@ class TestGetSystemInfoExceptions:
         # Even if mlx import fails, endpoint should succeed
         assert response.status_code == 200
 
-    @pytest.mark.asyncio
-    async def test_mlx_openai_server_version_import_error(self, auth_client):
-        """Test mlx_openai_server_version is None when import fails."""
-        response = await auth_client.get("/api/system/info")
-        assert response.status_code == 200
-        # mlx_openai_server not installed in test env, should be None
-        data = response.json()
-        # The field should be present (possibly None)
-        assert "mlx_openai_server_version" in data
-
-
 # ============================================================================
-# Tests for get_parser_options endpoint (line 132)
+# Tests for get_parser_options endpoint (deprecated)
 # ============================================================================
 
 
 @pytest.mark.asyncio
 async def test_get_parser_options_endpoint(auth_client):
-    """Test the parser options endpoint returns valid data."""
+    """Test the parser options endpoint returns empty lists (deprecated)."""
     response = await auth_client.get("/api/system/parser-options")
     assert response.status_code == 200
 
@@ -243,8 +232,11 @@ async def test_get_parser_options_endpoint(auth_client):
     assert "tool_call_parsers" in data
     assert "reasoning_parsers" in data
     assert "message_converters" in data
+    # Parser options are no longer used with embedded MLX Server
     assert isinstance(data["tool_call_parsers"], list)
-    assert len(data["tool_call_parsers"]) > 0
+    assert data["tool_call_parsers"] == []
+    assert data["reasoning_parsers"] == []
+    assert data["message_converters"] == []
 
 
 # ============================================================================
@@ -270,53 +262,3 @@ async def test_install_launchd_service_exception(auth_client, sample_profile_dat
     assert "Failed to write plist" in response.json()["detail"]
 
 
-# ============================================================================
-# Tests for mlx_openai_server version extraction (line 109)
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_get_system_info_with_mlx_openai_server_installed(auth_client):
-    """Test system info returns mlx_openai_server version when installed."""
-    import sys
-    from types import ModuleType
-
-    # Create a mock module with __version__
-    mock_module = ModuleType("mlx_openai_server")
-    mock_module.__version__ = "1.5.0"
-
-    with (
-        patch("mlx_manager.routers.system.get_physical_memory_bytes") as mock_mem,
-        patch.dict(sys.modules, {"mlx_openai_server": mock_module}),
-    ):
-        mock_mem.return_value = 64 * (1024**3)
-
-        response = await auth_client.get("/api/system/info")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["mlx_openai_server_version"] == "1.5.0"
-
-
-@pytest.mark.asyncio
-async def test_get_system_info_mlx_openai_server_without_version(auth_client):
-    """Test system info uses 'installed' when module lacks __version__."""
-    import sys
-    from types import ModuleType
-
-    # Create a mock module without __version__
-    mock_module = ModuleType("mlx_openai_server")
-    # Don't set __version__
-
-    with (
-        patch("mlx_manager.routers.system.get_physical_memory_bytes") as mock_mem,
-        patch.dict(sys.modules, {"mlx_openai_server": mock_module}),
-    ):
-        mock_mem.return_value = 64 * (1024**3)
-
-        response = await auth_client.get("/api/system/info")
-
-    assert response.status_code == 200
-    data = response.json()
-    # Falls back to "installed" when __version__ not present
-    assert data["mlx_openai_server_version"] == "installed"

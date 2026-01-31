@@ -149,10 +149,9 @@ def check_mlx_lm_support(model_family: str) -> dict[str, Any]:
     }
 
 
-# NOTE: Static MODEL_PARSER_CONFIGS has been replaced with dynamic fuzzy matching.
-# The fuzzy matcher in fuzzy_matcher.py matches model names to parser options
-# dynamically using the options loaded from mlx-openai-server.
-# See get_parser_options() below for the new implementation.
+# NOTE: Parser options are no longer used with the embedded MLX Server.
+# The fuzzy matcher in fuzzy_matcher.py is kept for backwards compatibility
+# but is not actively used for parser option selection.
 
 
 def get_local_model_path(model_id: str) -> Path | None:
@@ -305,12 +304,8 @@ def get_parser_options(model_id: str) -> dict[str, str]:
     """
     Get recommended parser options for a model using fuzzy matching.
 
-    Uses dynamic fuzzy matching to find the best parser options for a model
-    based on its name. This replaces the previous static MODEL_PARSER_CONFIGS
-    approach and scales better to the 100+ model variants available.
-
-    Works OFFLINE - no network calls required (uses cached parser options
-    loaded from mlx-openai-server at startup).
+    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
+    This function is kept for backwards compatibility but returns empty results.
 
     Args:
         model_id: HuggingFace model ID (e.g., "mlx-community/Qwen3-8B-4bit")

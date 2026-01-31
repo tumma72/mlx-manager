@@ -25,8 +25,8 @@ from typing import cast
 def get_parser_options() -> dict[str, list[str]]:
     """Legacy function - returns empty parser options.
 
-    Parser options were used for mlx-openai-server CLI arguments.
-    The embedded MLX Server doesn't need these.
+    Parser options are no longer used with the embedded MLX Server.
+    Returns empty lists for backwards compatibility.
     """
     return {
         "tool_call_parsers": [],

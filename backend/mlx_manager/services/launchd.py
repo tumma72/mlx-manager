@@ -3,7 +3,7 @@
 NOTE: With the embedded MLX Server, launchd services for individual model
 profiles are no longer used. The MLX Manager itself can be installed as
 a launchd service instead. This module is kept for backwards compatibility
-and will build commands for mlx-manager serve instead of mlx-openai-server.
+and builds commands for mlx-manager serve.
 """
 
 import logging
@@ -40,9 +40,8 @@ class LaunchdManager:
     def generate_plist(self, profile: ServerProfile) -> dict:
         """Generate a launchd plist dictionary for a profile.
 
-        NOTE: With the embedded MLX Server, this now generates a plist
-        that runs mlx-manager serve (the main application) rather than
-        mlx-openai-server per profile. The profile's auto_start setting
+        NOTE: With the embedded MLX Server, this generates a plist
+        that runs mlx-manager serve. The profile's auto_start setting
         controls whether the manager starts at login.
         """
         label = self.get_label(profile)

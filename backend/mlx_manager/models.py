@@ -254,7 +254,6 @@ class SystemInfo(SQLModel):
     memory_gb: float
     python_version: str
     mlx_version: str | None = None
-    mlx_openai_server_version: str | None = None
 
 
 class HealthStatus(SQLModel):

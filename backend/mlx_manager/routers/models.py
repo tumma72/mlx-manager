@@ -338,9 +338,7 @@ async def get_available_parsers(
     """
     Get list of available parser options for dropdowns.
 
-    DEPRECATED: Parser options were used for mlx-openai-server CLI arguments.
-    The embedded MLX Server doesn't use these. Returns empty list for
-    backwards compatibility.
+    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
+    Returns empty list for backwards compatibility.
     """
-    # Parser options no longer used with embedded MLX Server
     return {"parsers": []}
