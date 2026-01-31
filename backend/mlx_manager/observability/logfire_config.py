@@ -1,6 +1,11 @@
-"""LogFire configuration for MLX Manager."""
+"""LogFire configuration for MLX Manager.
+
+Configures observability with reduced verbosity for normal operation.
+Set LOGFIRE_CONSOLE_VERBOSE=true to enable verbose console output.
+"""
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import logfire
@@ -22,18 +27,26 @@ def configure_logfire(
 
     MUST be called before creating FastAPI app or any instrumented clients.
     Uses send_to_logfire='if-token-present' for offline development.
+
+    Console output is disabled by default to reduce noise. Set
+    LOGFIRE_CONSOLE_VERBOSE=true to enable verbose console output.
     """
     global _configured
     if _configured:
         return
 
+    # Check if verbose console output is requested
+    verbose = os.environ.get("LOGFIRE_CONSOLE_VERBOSE", "").lower() in ("true", "1", "yes")
+
     logfire.configure(
         service_name=service_name,
         service_version=service_version,
         send_to_logfire="if-token-present",  # Offline mode without token
+        console=logfire.ConsoleOptions(verbose=verbose) if verbose else False,
     )
     _configured = True
-    logger.info(f"LogFire configured for {service_name}")
+    console_mode = "verbose" if verbose else "disabled"
+    logger.info(f"LogFire configured for {service_name} (console={console_mode})")
 
 
 def instrument_fastapi(app: "FastAPI") -> None:
