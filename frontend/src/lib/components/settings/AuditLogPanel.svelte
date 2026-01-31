@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { Download, RefreshCw, Filter, Wifi, WifiOff } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '$components/ui';
 	import { auditLogs } from '$lib/api/client';
 	import type { AuditLog, AuditLogFilter, AuditStats } from '$lib/api/types';
 
