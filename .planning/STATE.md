@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 12 in progress - Production Hardening
+**Current focus:** Phase 12 complete - Production Hardening
 
 ## Current Position
 
 Phase: 12 of 12 (Production Hardening)
-Plan: 6 of 6 complete (01 + 02 + 03 + 04 + 05 + 06)
+Plan: 7 of 7 complete (01 + 02 + 03 + 04 + 05 + 06 + 07)
 Status: Phase complete
-Last activity: 2026-01-31 — Completed 12-06-PLAN.md (Timeout Settings UI)
+Last activity: 2026-01-31 — Completed 12-07-PLAN.md (CLI Benchmarks and Performance Documentation)
 
 Progress: [████████████] 100% (Phase 12 complete)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Phases 7-11 complete (37 plans total)
+**Status:** All phases complete (44 plans total)
 **Phases:** 6 phases (7-12)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -180,6 +180,9 @@ Recent decisions affecting current work:
 - **track_request context manager**: Wraps request lifecycle, auto-logs on exit with status/error
 - **Timeout settings as key-value pairs**: Individual keys (timeout_chat_seconds, etc.) in Setting table for flexibility
 - **Range + Number inputs for timeouts**: Dual control pattern for quick slider adjustments and precise numeric entry
+- **Backend detection from model name**: gpt/o1->openai, claude->anthropic, else local for benchmark classification
+- **Typer-based CLI for benchmarks**: Consistency with existing mlx-manager CLI patterns
+- **Async httpx client for benchmarks**: Matches async patterns in inference service
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -196,6 +199,7 @@ None yet.
 - Plan 04: Audit Logging (COMPLETE)
 - Plan 05: Audit Log UI (COMPLETE)
 - Plan 06: Timeout Settings UI (COMPLETE)
+- Plan 07: CLI Benchmarks and Performance Documentation (COMPLETE)
 
 All PROD requirements complete. Phase 12 Production Hardening finished.
 
@@ -215,7 +219,7 @@ All PROD requirements complete. Phase 12 Production Hardening finished.
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:48:57Z
-Stopped at: Completed 12-06-PLAN.md (Timeout Settings UI)
+Last session: 2026-01-31T11:54:03Z
+Stopped at: Completed 12-07-PLAN.md (CLI Benchmarks and Performance Documentation)
 Resume file: None
 Next: Phase 12 complete, ready for v1.2 milestone wrap-up
