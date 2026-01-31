@@ -24,8 +24,6 @@ function createMockRule(
     fallback_backend: null,
     priority: 1,
     enabled: true,
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
     ...overrides,
   };
 }
@@ -155,6 +153,7 @@ describe("RuleTestInput", () => {
       const testPromise = new Promise<void>((resolve) => {
         resolveTest = resolve;
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       vi.mocked(settings.testRule).mockReturnValue(testPromise as any);
 
       render(RuleTestInput, { props: { rules: mockRules } });

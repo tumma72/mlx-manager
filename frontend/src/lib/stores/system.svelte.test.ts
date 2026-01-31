@@ -329,6 +329,9 @@ describe("SystemStore", () => {
     });
 
     it("handles fetch errors gracefully", async () => {
+      // Suppress expected console.error output
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
       mockSystemApi.memory.mockRejectedValue(new Error("Network error"));
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
@@ -336,6 +339,8 @@ describe("SystemStore", () => {
 
       // Should not throw
       await expect(refreshFn()).resolves.toBeUndefined();
+
+      consoleSpy.mockRestore();
     });
   });
 });

@@ -866,7 +866,7 @@ describe("settings API", () => {
 
   describe("createProvider", () => {
     it("creates a new provider", async () => {
-      const newProvider = { backend_type: "openai", api_key: "sk-test123" };
+      const newProvider = { backend_type: "openai" as const, api_key: "sk-test123" };
       const createdProvider = {
         backend_type: "openai",
         api_key_hash: "hash123",
@@ -945,8 +945,8 @@ describe("settings API", () => {
   describe("createRule", () => {
     it("creates a new rule", async () => {
       const newRule = {
-        pattern: "gpt-*",
-        backend_type: "openai",
+        model_pattern: "gpt-*",
+        backend_type: "openai" as const,
         priority: 1,
       };
       const createdRule = { id: 1, ...newRule };
@@ -1058,10 +1058,10 @@ describe("settings API", () => {
 
   describe("updatePoolConfig", () => {
     it("updates pool configuration", async () => {
-      const updates = { max_pool_size: 20 };
+      const updates = { memory_limit_value: 20 };
       const updatedConfig = {
-        max_pool_size: 20,
-        idle_timeout_seconds: 300,
+        memory_limit_value: 20,
+        memory_limit_mode: "gb",
       };
       mockFetch.mockResolvedValueOnce(mockResponse(updatedConfig));
 

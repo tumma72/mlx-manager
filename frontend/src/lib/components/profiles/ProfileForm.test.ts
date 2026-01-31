@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import ProfileForm from "./ProfileForm.svelte";
-import type { ServerProfile, ParserOptions } from "$api";
+import type { ServerProfile, ParserOptions, ServerProfileCreate, ServerProfileUpdate } from "$api";
 import { models as modelsApi, system as systemApi } from "$api";
 
 // Mock API modules
@@ -59,8 +59,8 @@ function createMockParserOptions(): ParserOptions {
 }
 
 describe("ProfileForm", () => {
-  let mockOnSubmit: ReturnType<typeof vi.fn>;
-  let mockOnCancel: ReturnType<typeof vi.fn>;
+  let mockOnSubmit: (data: ServerProfileCreate | ServerProfileUpdate) => Promise<void>;
+  let mockOnCancel: () => void;
 
   beforeEach(() => {
     mockOnSubmit = vi.fn().mockResolvedValue(undefined);
@@ -74,9 +74,10 @@ describe("ProfileForm", () => {
       model_family: "qwen",
       recommended_options: {
         tool_call_parser: "qwen3",
-        reasoning_parser: null,
+        reasoning_parser: undefined,
         message_converter: "qwen3",
       },
+      is_downloaded: true,
     });
   });
 
@@ -731,6 +732,9 @@ describe("ProfileForm", () => {
     });
 
     it("handles parser options load failure gracefully", async () => {
+      // Suppress expected console.error output
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
       const user = userEvent.setup();
       vi.mocked(systemApi.parserOptions).mockRejectedValue(
         new Error("API error"),
@@ -750,6 +754,8 @@ describe("ProfileForm", () => {
       await waitFor(() => {
         expect(screen.getByLabelText(/Tool Call Parser/)).toBeInTheDocument();
       });
+
+      consoleSpy.mockRestore();
     });
   });
 
@@ -785,6 +791,7 @@ describe("ProfileForm", () => {
 
     it("maps unsupported model types to lm", () => {
       const profile = createMockProfile({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         model_type: "whisper" as any, // Unsupported type
       });
 

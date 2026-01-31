@@ -16,14 +16,12 @@ function createMockRule(
     fallback_backend: null,
     priority: 1,
     enabled: true,
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
     ...overrides,
   };
 }
 
 describe("RuleCard", () => {
-  let mockOnDelete: ReturnType<typeof vi.fn>;
+  let mockOnDelete: () => void;
 
   beforeEach(() => {
     mockOnDelete = vi.fn();
@@ -111,7 +109,7 @@ describe("RuleCard", () => {
 
   describe("pattern type badges", () => {
     it("applies blue color for exact match", () => {
-      const { container } = render(RuleCard, {
+      render(RuleCard, {
         props: {
           rule: createMockRule({ pattern_type: "exact" }),
           onDelete: mockOnDelete,
@@ -123,7 +121,7 @@ describe("RuleCard", () => {
     });
 
     it("applies green color for prefix match", () => {
-      const { container } = render(RuleCard, {
+      render(RuleCard, {
         props: {
           rule: createMockRule({ pattern_type: "prefix" }),
           onDelete: mockOnDelete,
@@ -135,7 +133,7 @@ describe("RuleCard", () => {
     });
 
     it("applies purple color for regex", () => {
-      const { container } = render(RuleCard, {
+      render(RuleCard, {
         props: {
           rule: createMockRule({ pattern_type: "regex" }),
           onDelete: mockOnDelete,

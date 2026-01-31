@@ -42,11 +42,13 @@ function createMockModel(
 ): ModelSearchResult {
   return {
     model_id: "mlx-community/test-model",
+    author: "mlx-community",
     estimated_size_gb: 8.5,
     downloads: 1000,
     likes: 50,
     tags: [],
     is_downloaded: false,
+    last_modified: null,
     ...overrides,
   };
 }
@@ -323,7 +325,6 @@ describe("ModelCard", () => {
     });
 
     it("calls models.delete when deletion confirmed", async () => {
-      const user = userEvent.setup();
       render(ModelCard, {
         props: {
           model: createMockModel({
@@ -359,7 +360,6 @@ describe("ModelCard", () => {
     });
 
     it("calls onDeleted callback after successful deletion", async () => {
-      const user = userEvent.setup();
       const onDeleted = vi.fn();
 
       render(ModelCard, {
@@ -394,7 +394,6 @@ describe("ModelCard", () => {
     });
 
     it("displays error when deletion fails", async () => {
-      const user = userEvent.setup();
       vi.mocked(models.delete).mockRejectedValue(new Error("Permission denied"));
 
       render(ModelCard, {
@@ -426,7 +425,6 @@ describe("ModelCard", () => {
     });
 
     it("displays generic error when deletion fails with non-Error", async () => {
-      const user = userEvent.setup();
       vi.mocked(models.delete).mockRejectedValue("string error");
 
       render(ModelCard, {
@@ -458,7 +456,6 @@ describe("ModelCard", () => {
     });
 
     it("shows 'Deleting...' while delete is in progress", async () => {
-      const user = userEvent.setup();
       let resolveDelete: () => void;
       vi.mocked(models.delete).mockImplementation(
         () =>
@@ -498,7 +495,6 @@ describe("ModelCard", () => {
     });
 
     it("disables Delete button while deleting", async () => {
-      const user = userEvent.setup();
       let resolveDelete: () => void;
       vi.mocked(models.delete).mockImplementation(
         () =>
@@ -538,10 +534,9 @@ describe("ModelCard", () => {
 
   describe("use action", () => {
     it("calls onUse callback when Use button clicked", async () => {
-      const user = userEvent.setup();
       const onUse = vi.fn();
 
-      const { container } = render(ModelCard, {
+      render(ModelCard, {
         props: {
           model: createMockModel({
             model_id: "mlx-community/test",
@@ -553,7 +548,7 @@ describe("ModelCard", () => {
 
       // Find the Use button (not disabled, not in a dialog)
       const useButtons = screen.getAllByRole("button", { name: /^use$/i });
-      const useButton = useButtons.find(btn => !btn.disabled);
+      const useButton = useButtons.find(btn => !(btn as HTMLButtonElement).disabled);
       expect(useButton).toBeDefined();
 
       // Use fireEvent to bypass any pointer-events issues
@@ -570,7 +565,7 @@ describe("ModelCard", () => {
       });
 
       const useButtons = screen.getAllByRole("button", { name: /^use$/i });
-      const useButton = useButtons.find(btn => !btn.disabled);
+      const useButton = useButtons.find(btn => !(btn as HTMLButtonElement).disabled);
       expect(useButton).toBeDefined();
 
       // Use fireEvent to bypass pointer-events issues

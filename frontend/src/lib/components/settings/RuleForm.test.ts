@@ -13,7 +13,7 @@ vi.mock("$lib/api/client", () => ({
 }));
 
 describe("RuleForm", () => {
-  let mockOnSave: ReturnType<typeof vi.fn>;
+  let mockOnSave: () => void;
   let configuredProviders: BackendType[];
 
   beforeEach(() => {
@@ -28,8 +28,6 @@ describe("RuleForm", () => {
       fallback_backend: null,
       priority: 1,
       enabled: true,
-      created_at: "2024-01-01",
-      updated_at: "2024-01-01",
     });
   });
 
@@ -366,9 +364,8 @@ describe("RuleForm", () => {
       const createPromise = new Promise<void>((resolve) => {
         resolveCreate = resolve;
       });
-      vi.mocked(settings.createRule).mockReturnValue(
-        createPromise as any,
-      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      vi.mocked(settings.createRule).mockReturnValue(createPromise as any);
 
       render(RuleForm, {
         props: { onSave: mockOnSave, configuredProviders },

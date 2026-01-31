@@ -58,7 +58,7 @@ describe("ModelSpecs", () => {
     });
 
     it("shows ChevronDown icon when collapsed", () => {
-      const { container } = render(ModelSpecs, {
+      render(ModelSpecs, {
         props: {
           characteristics: createMockCharacteristics(),
         },

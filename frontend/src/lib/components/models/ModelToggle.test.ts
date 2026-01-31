@@ -22,7 +22,7 @@ describe("ModelToggle", () => {
     });
 
     it("highlights local button when mode is local", () => {
-      const { container } = render(ModelToggle, {
+      render(ModelToggle, {
         props: { mode: "local" },
       });
 
@@ -32,7 +32,7 @@ describe("ModelToggle", () => {
     });
 
     it("highlights online button when mode is online", () => {
-      const { container } = render(ModelToggle, {
+      render(ModelToggle, {
         props: { mode: "online" },
       });
 
@@ -105,7 +105,7 @@ describe("ModelToggle", () => {
     it("updates styling when mode changes", async () => {
       const user = userEvent.setup();
 
-      const { component } = render(ModelToggle, {
+      const { component: _component } = render(ModelToggle, {
         props: {
           mode: "local",
         },
@@ -134,7 +134,7 @@ describe("ModelToggle", () => {
       });
 
       const buttons = container.querySelectorAll("button");
-      buttons.forEach((button) => {
+      buttons.forEach((button: Element) => {
         expect(button).toHaveAttribute("type", "button");
       });
     });

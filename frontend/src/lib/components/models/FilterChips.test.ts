@@ -7,7 +7,7 @@ import { createEmptyFilters } from "./filter-types";
 import FilterChips from "./FilterChips.svelte";
 
 describe("FilterChips", () => {
-  let onRemove: ReturnType<typeof vi.fn>;
+  let onRemove: (type: "multimodal" | "architecture" | "quantization", value?: string | number) => void;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -319,7 +319,7 @@ describe("FilterChips", () => {
         quantization: [4],
       };
 
-      const { container } = render(FilterChips, { props: { filters, onRemove } });
+      render(FilterChips, { props: { filters, onRemove } });
 
       // Should render only multimodal and quantization chips
       expect(screen.getByText("Multimodal")).toBeInTheDocument();

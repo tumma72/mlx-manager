@@ -283,9 +283,9 @@ describe("FilterModal", () => {
     it("calls onApply with updated filters when Apply clicked", async () => {
       const user = userEvent.setup();
       const onApply = vi.fn();
-      let open = true;
+      const open = true;
 
-      const { component } = render(FilterModal, {
+      render(FilterModal, {
         props: {
           open,
           filters: defaultFilters,
@@ -313,7 +313,7 @@ describe("FilterModal", () => {
 
     it("closes modal when Apply clicked", async () => {
       const user = userEvent.setup();
-      const { component } = render(FilterModal, {
+      render(FilterModal, {
         props: {
           open: true,
           filters: defaultFilters,
@@ -394,9 +394,9 @@ describe("FilterModal", () => {
   describe("modal lifecycle", () => {
     it("resets local filters when modal opens", async () => {
       const user = userEvent.setup();
-      let open = false;
+      const open = false;
 
-      const { component, rerender } = render(FilterModal, {
+      const { rerender } = render(FilterModal, {
         props: {
           open,
           filters: defaultFilters,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { CloudCredential, BackendType } from "$lib/api/types";
+import type { CloudCredential } from "$lib/api/types";
 
 // Mock the API module before importing the store
 vi.mock("$lib/api/client", () => ({
@@ -314,7 +314,7 @@ describe("SettingsStore", () => {
           }),
       );
 
-      const loadPromise = settingsStore.loadProviders();
+      void settingsStore.loadProviders();
       // Wait a tick for loading to be set to true
       await new Promise((resolve) => setTimeout(resolve, 0));
 

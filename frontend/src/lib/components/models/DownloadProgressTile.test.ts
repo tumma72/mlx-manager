@@ -395,7 +395,7 @@ describe("DownloadProgressTile", () => {
     });
 
     it("shows error with red styling", () => {
-      const { container } = render(DownloadProgressTile, {
+      render(DownloadProgressTile, {
         props: {
           download: createMockDownload({
             status: "failed",

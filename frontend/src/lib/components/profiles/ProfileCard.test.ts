@@ -59,7 +59,6 @@ vi.mock("$lib/utils/format", () => ({
 
 // Import after mocking
 import { serverStore, profileStore } from "$stores";
-import { servers as serversApi } from "$api";
 import { goto } from "$app/navigation";
 
 // Helper to create mock profile
@@ -121,8 +120,8 @@ describe("ProfileCard", () => {
     vi.mocked(serverStore.isStarting).mockReturnValue(false);
     vi.mocked(serverStore.isRunning).mockReturnValue(false);
     vi.mocked(serverStore.isFailed).mockReturnValue(false);
-    vi.mocked(serverStore.getFailure).mockReturnValue(null);
-    vi.mocked(serverStore.getServer).mockReturnValue(null);
+    vi.mocked(serverStore.getFailure).mockReturnValue(undefined);
+    vi.mocked(serverStore.getServer).mockReturnValue(undefined);
     vi.mocked(serverStore.isProfilePolling).mockReturnValue(false);
     vi.mocked(serverStore.startProfilePolling).mockReturnValue(true);
   });

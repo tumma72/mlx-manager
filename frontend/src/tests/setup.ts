@@ -35,6 +35,7 @@ Element.prototype.animate = vi.fn(() => ({
   replaceState: 'active',
   startTime: 0,
   timeline: null,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 })) as any;
 
 // Mock EventSource for SSE

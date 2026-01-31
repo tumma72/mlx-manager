@@ -123,7 +123,7 @@ describe("ModelBadges", () => {
     });
 
     it("does not render multimodal badge when is_multimodal is false", () => {
-      const { container } = render(ModelBadges, {
+      render(ModelBadges, {
         props: {
           characteristics: createMockCharacteristics({
             is_multimodal: false,

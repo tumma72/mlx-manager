@@ -18,25 +18,23 @@ function createMockCredential(
   backendType: BackendType,
 ): CloudCredential {
   return {
+    id: 1,
     backend_type: backendType,
-    api_key_masked: "****...abcd",
     base_url: null,
     created_at: "2024-01-01",
-    updated_at: "2024-01-01",
   };
 }
 
 describe("ProviderForm", () => {
-  let mockOnSave: ReturnType<typeof vi.fn>;
-  let mockOnDelete: ReturnType<typeof vi.fn>;
+  let mockOnSave: () => void;
+  let mockOnDelete: () => void;
 
   beforeEach(() => {
     mockOnSave = vi.fn();
     mockOnDelete = vi.fn();
-    vi.mocked(settings.createProvider).mockResolvedValue(undefined);
+    vi.mocked(settings.createProvider).mockResolvedValue(createMockCredential("openai"));
     vi.mocked(settings.testProvider).mockResolvedValue({
       success: true,
-      message: "Connection successful",
     });
     vi.mocked(settings.deleteProvider).mockResolvedValue(undefined);
   });
@@ -510,7 +508,6 @@ describe("ProviderForm", () => {
     });
 
     it("shows error when API key is empty", async () => {
-      const user = userEvent.setup();
       render(ProviderForm, {
         props: {
           backendType: "openai",
@@ -568,9 +565,8 @@ describe("ProviderForm", () => {
       const savePromise = new Promise<void>((resolve) => {
         resolveSave = resolve;
       });
-      vi.mocked(settings.createProvider).mockReturnValue(
-        savePromise as any,
-      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      vi.mocked(settings.createProvider).mockReturnValue(savePromise as any);
 
       render(ProviderForm, {
         props: {
@@ -664,9 +660,8 @@ describe("ProviderForm", () => {
       const testPromise = new Promise<void>((resolve) => {
         resolveTest = resolve;
       });
-      vi.mocked(settings.testProvider).mockReturnValue(
-        testPromise as any,
-      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      vi.mocked(settings.testProvider).mockReturnValue(testPromise as any);
 
       render(ProviderForm, {
         props: {
