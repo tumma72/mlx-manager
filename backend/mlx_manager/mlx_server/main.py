@@ -1,5 +1,21 @@
 """MLX Inference Server - FastAPI Application."""
 
+# Configure LogFire FIRST (before any instrumented imports)
+from mlx_manager.mlx_server import __version__
+from mlx_manager.mlx_server.config import mlx_server_settings
+from mlx_manager.mlx_server.observability.logfire_config import (
+    configure_logfire,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_llm_clients,
+)
+
+# Initialize LogFire before other imports that use instrumented libraries
+if mlx_server_settings.logfire_enabled:
+    configure_logfire(service_version=__version__)
+    instrument_httpx()
+    instrument_llm_clients()
+
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -7,9 +23,8 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
-from mlx_manager.mlx_server.config import mlx_server_settings
+from mlx_manager.mlx_server.errors import register_error_handlers
 from mlx_manager.mlx_server.models import pool
 from mlx_manager.mlx_server.models.pool import ModelPoolManager
 from mlx_manager.mlx_server.utils.memory import get_memory_usage, set_memory_limit
@@ -75,19 +90,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Register RFC 7807 error handlers
+register_error_handlers(app)
+
 # Include API routers
 app.include_router(v1_router)
 
-# Configure LogFire instrumentation (conditional on settings)
+# Instrument FastAPI with LogFire (after app creation)
 if mlx_server_settings.logfire_enabled:
-    try:
-        import logfire
-
-        logfire.configure(token=mlx_server_settings.logfire_token)
-        logfire.instrument_fastapi(app)
-        logger.info("LogFire instrumentation enabled")
-    except Exception as e:
-        logger.warning(f"Failed to configure LogFire: {e}")
+    instrument_fastapi(app)
 
 
 @app.get("/health")
