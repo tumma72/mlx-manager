@@ -40,7 +40,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3.0",
     "mlx-vlm>=0.3.9",
     # MLX Server dependencies
-    "logfire[fastapi]>=3.0.0",
+    "logfire[fastapi,httpx,sqlalchemy]>=3.0.0",
     "sse-starlette>=2.0.0",
     # Cloud backend resilience
     "httpx-retries>=0.4",
@@ -102,6 +102,7 @@ filterwarnings = [
 ]
 
 [tool.mypy]
+ignore_missing_imports = true
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -134,3 +135,10 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+    "mlx_embeddings.*",
+    "mlx_vlm.*",
+]
+ignore_missing_imports = true
