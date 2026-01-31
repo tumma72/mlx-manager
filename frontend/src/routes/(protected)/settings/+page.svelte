@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { ProviderSection, ModelPoolSettings, RoutingRulesSection } from '$lib/components/settings';
+	import {
+		ProviderSection,
+		ModelPoolSettings,
+		RoutingRulesSection,
+		TimeoutSettings,
+		AuditLogPanel
+	} from '$lib/components/settings';
 </script>
 
 <svelte:head>
@@ -38,5 +44,16 @@
 			Configure model-to-backend routing rules with pattern matching. Rules are evaluated by priority (lower number = higher priority).
 		</p>
 		<RoutingRulesSection />
+	</section>
+
+	<hr class="border-gray-200 dark:border-gray-700" />
+
+	<!-- Timeouts -->
+	<section>
+		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Request Timeouts</h2>
+		<p class="text-sm text-muted-foreground mb-4">
+			Configure per-endpoint timeouts for inference requests. Longer timeouts allow for larger models and longer outputs.
+		</p>
+		<TimeoutSettings />
 	</section>
 </div>

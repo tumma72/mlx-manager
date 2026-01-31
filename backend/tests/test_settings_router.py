@@ -3,10 +3,6 @@
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import pytest
-
-from mlx_manager.models import BackendType
-
 
 # ============================================================================
 # Provider Endpoint Tests
@@ -1153,3 +1149,168 @@ class TestApiKeySecurity:
 
         response = await auth_client.get("/api/settings/providers")
         assert len(response.json()) == 2
+
+
+# ============================================================================
+# Timeout Configuration Endpoint Tests
+# ============================================================================
+
+
+class TestGetTimeoutSettings:
+    """Tests for GET /api/settings/timeouts."""
+
+    async def test_get_default_timeouts(self, auth_client):
+        """Returns default timeout values when none are configured."""
+        response = await auth_client.get("/api/settings/timeouts")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 900.0  # 15 min
+        assert data["completions_seconds"] == 600.0  # 10 min
+        assert data["embeddings_seconds"] == 120.0  # 2 min
+
+    async def test_get_configured_timeouts(self, auth_client):
+        """Returns configured timeout values after update."""
+        # Update timeouts first
+        await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 1800.0,
+                "completions_seconds": 900.0,
+                "embeddings_seconds": 60.0,
+            },
+        )
+
+        response = await auth_client.get("/api/settings/timeouts")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 1800.0
+        assert data["completions_seconds"] == 900.0
+        assert data["embeddings_seconds"] == 60.0
+
+
+class TestUpdateTimeoutSettings:
+    """Tests for PUT /api/settings/timeouts."""
+
+    async def test_update_all_timeouts(self, auth_client):
+        """Updates all timeout values."""
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 1200.0,
+                "completions_seconds": 800.0,
+                "embeddings_seconds": 180.0,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 1200.0
+        assert data["completions_seconds"] == 800.0
+        assert data["embeddings_seconds"] == 180.0
+
+    async def test_update_partial_timeouts(self, auth_client):
+        """Updates only specified timeout values."""
+        # Set initial values
+        await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 1000.0,
+                "completions_seconds": 500.0,
+                "embeddings_seconds": 100.0,
+            },
+        )
+
+        # Update only chat_seconds
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={"chat_seconds": 2000.0},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 2000.0
+        # Other values should remain unchanged
+        assert data["completions_seconds"] == 500.0
+        assert data["embeddings_seconds"] == 100.0
+
+    async def test_update_timeout_min_value(self, auth_client):
+        """Tests minimum value validation."""
+        # Chat and completions min is 60
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={"chat_seconds": 59.0},
+        )
+        assert response.status_code == 422  # Validation error
+
+        # Embeddings min is 30
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={"embeddings_seconds": 29.0},
+        )
+        assert response.status_code == 422
+
+    async def test_update_timeout_max_value(self, auth_client):
+        """Tests maximum value validation."""
+        # Chat and completions max is 7200
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={"chat_seconds": 7201.0},
+        )
+        assert response.status_code == 422
+
+        # Embeddings max is 600
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={"embeddings_seconds": 601.0},
+        )
+        assert response.status_code == 422
+
+    async def test_update_timeout_valid_boundary_values(self, auth_client):
+        """Tests valid boundary values."""
+        # Test minimum boundaries
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 60.0,
+                "completions_seconds": 60.0,
+                "embeddings_seconds": 30.0,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 60.0
+        assert data["completions_seconds"] == 60.0
+        assert data["embeddings_seconds"] == 30.0
+
+        # Test maximum boundaries
+        response = await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 7200.0,
+                "completions_seconds": 7200.0,
+                "embeddings_seconds": 600.0,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 7200.0
+        assert data["completions_seconds"] == 7200.0
+        assert data["embeddings_seconds"] == 600.0
+
+    async def test_update_timeout_persists_across_requests(self, auth_client):
+        """Verifies timeout values are persisted to the database."""
+        # Update timeouts
+        await auth_client.put(
+            "/api/settings/timeouts",
+            json={
+                "chat_seconds": 3600.0,
+                "completions_seconds": 1800.0,
+                "embeddings_seconds": 300.0,
+            },
+        )
+
+        # Get timeouts in a separate request
+        response = await auth_client.get("/api/settings/timeouts")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["chat_seconds"] == 3600.0
+        assert data["completions_seconds"] == 1800.0
+        assert data["embeddings_seconds"] == 300.0

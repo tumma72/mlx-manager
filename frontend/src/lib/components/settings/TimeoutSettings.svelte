@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Save, RotateCcw } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '$components/ui';
 	import { settings } from '$lib/api/client';
 	import type { TimeoutSettings } from '$lib/api/types';
 
@@ -88,7 +88,7 @@
 			<!-- Chat Completions -->
 			<div class="flex items-center gap-4">
 				<div class="flex-1">
-					<label class="block text-sm font-medium mb-1">
+					<label for="chat-timeout" class="block text-sm font-medium mb-1">
 						Chat Completions
 						<span class="text-muted-foreground font-normal ml-1"> (/v1/chat/completions) </span>
 					</label>
@@ -100,8 +100,10 @@
 							step="60"
 							class="flex-1"
 							bind:value={chatTimeout}
+							aria-label="Chat timeout slider"
 						/>
 						<input
+							id="chat-timeout"
 							type="number"
 							min="60"
 							max="7200"
@@ -122,7 +124,7 @@
 			<!-- Completions -->
 			<div class="flex items-center gap-4">
 				<div class="flex-1">
-					<label class="block text-sm font-medium mb-1">
+					<label for="completions-timeout" class="block text-sm font-medium mb-1">
 						Text Completions
 						<span class="text-muted-foreground font-normal ml-1"> (/v1/completions) </span>
 					</label>
@@ -134,8 +136,10 @@
 							step="60"
 							class="flex-1"
 							bind:value={completionsTimeout}
+							aria-label="Completions timeout slider"
 						/>
 						<input
+							id="completions-timeout"
 							type="number"
 							min="60"
 							max="7200"
@@ -156,7 +160,7 @@
 			<!-- Embeddings -->
 			<div class="flex items-center gap-4">
 				<div class="flex-1">
-					<label class="block text-sm font-medium mb-1">
+					<label for="embeddings-timeout" class="block text-sm font-medium mb-1">
 						Embeddings
 						<span class="text-muted-foreground font-normal ml-1"> (/v1/embeddings) </span>
 					</label>
@@ -168,8 +172,10 @@
 							step="30"
 							class="flex-1"
 							bind:value={embeddingsTimeout}
+							aria-label="Embeddings timeout slider"
 						/>
 						<input
+							id="embeddings-timeout"
 							type="number"
 							min="30"
 							max="600"
