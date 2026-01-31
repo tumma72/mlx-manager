@@ -9,7 +9,7 @@ Transform MLX Manager from a management UI for external servers (mlx-openai-serv
 ## Milestones
 
 - v1.1 UX & Auth - Phases 1-6 (shipped 2026-01-26)
-- v1.2 MLX Unified Server - Phases 7-12 (in progress)
+- v1.2 MLX Unified Server - Phases 7-13 (in progress)
 
 ## Phases
 
@@ -194,9 +194,35 @@ Plans:
 - [x] 12-06-PLAN.md — Timeout configuration UI
 - [x] 12-07-PLAN.md — CLI benchmarks and PERFORMANCE.md
 
+#### Phase 13: MLX Server Integration
+
+**Goal**: Embed MLX Server into MLX Manager — remove legacy mlx-openai-server code, wire Chat UI to embedded server, connect Settings to live server behavior
+
+**Depends on**: Phase 12
+
+**Requirements**: INT-01 (Embedded Server), INT-02 (Legacy Removal), INT-03 (Chat Integration), INT-04 (Settings Integration)
+
+**Success Criteria** (what must be TRUE):
+1. MLX Server routes mounted directly into MLX Manager FastAPI app (single process, single port)
+2. All mlx-openai-server code removed (server_manager.py, parser_options.py, command_builder.py)
+3. Chat UI sends requests to embedded `/v1/chat/completions` endpoint
+4. Model Pool Settings actually control the embedded server's model pool
+5. Cloud Provider Settings connect to the embedded server's routing
+6. Audit logs populate when using Chat UI
+7. No references to mlx-openai-server remain in codebase
+
+**Plans**: 5 plans in 3 waves
+
+Plans:
+- [ ] 13-01-PLAN.md — Mount MLX Server as sub-application of MLX Manager
+- [ ] 13-02-PLAN.md — Remove legacy mlx-openai-server subprocess management code
+- [ ] 13-03-PLAN.md — Wire Chat UI to embedded MLX Server
+- [ ] 13-04-PLAN.md — Wire Settings to embedded MLX Server configuration
+- [ ] 13-05-PLAN.md — Verify complete integration and update tests
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12
+**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -206,6 +232,7 @@ Plans:
 | 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
+| 13. Integration | v1.2 | 0/5 | Planned | - |
 
 ## Technical Architecture
 
