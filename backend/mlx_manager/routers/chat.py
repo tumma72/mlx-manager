@@ -99,7 +99,7 @@ async def chat_completions(
                 text_prompt, image_urls = _extract_text_and_images(request.messages)
                 images = await preprocess_images(image_urls) if image_urls else []
 
-                gen = generate_vision_completion(
+                gen = await generate_vision_completion(
                     model_id=model_id,
                     text_prompt=text_prompt,
                     images=images,
@@ -109,7 +109,7 @@ async def chat_completions(
                 )
             else:
                 # Text model inference
-                gen = generate_chat_completion(
+                gen = await generate_chat_completion(
                     model_id=model_id,
                     messages=request.messages,
                     max_tokens=4096,
@@ -117,7 +117,7 @@ async def chat_completions(
                     stream=True,
                 )
 
-            # Cast to async generator (generate_chat_completion returns Union type)
+            # Cast to async generator (both functions return AsyncGenerator when stream=True)
             async_gen = cast(AsyncGenerator[dict, None], gen)
 
             # Consume the async generator directly
