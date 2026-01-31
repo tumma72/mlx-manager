@@ -1,19 +1,25 @@
 """Servers API router.
 
 With the embedded MLX Server, this router provides status information about
-the model pool and loaded models. Start/stop/restart endpoints are no longer
-needed since the server is embedded and always running.
+the model pool and loaded models. The start endpoint triggers model loading,
+while stop/restart endpoints return informative messages since the server
+is always running.
 """
 
+import logging
 import os
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
-from mlx_manager.models import User
+from mlx_manager.models import ServerProfile, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
@@ -217,16 +223,47 @@ async def get_memory_status(
 async def start_server(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
+    db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> dict:
-    """Legacy endpoint - embedded server is always running.
+    """Load the profile's model into the embedded server.
 
-    Returns success since the embedded server handles model loading on-demand.
+    Triggers model loading in the background. The model will be available
+    for inference once loading completes. Use the health endpoint to check
+    if the model is loaded.
     """
-    return {
-        "message": "Embedded server is always running. Models are loaded on-demand.",
-        "profile_id": profile_id,
-        "pid": os.getpid(),
-    }
+    from mlx_manager.mlx_server.models.pool import get_model_pool
+
+    # Get the profile to find which model it uses
+    profile = await db.get(ServerProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    model_id = profile.model_path
+
+    try:
+        pool = get_model_pool()
+
+        # Check if already loaded
+        if pool.is_loaded(model_id):
+            return {"status": "already_loaded", "model": model_id, "pid": os.getpid()}
+
+        # Start loading in background
+        async def load_model() -> None:
+            try:
+                await pool.get_model(model_id)
+                logger.info(f"Model loaded successfully: {model_id}")
+            except Exception as e:
+                logger.error(f"Failed to load model {model_id}: {e}")
+
+        background_tasks.add_task(load_model)
+        return {"status": "loading", "model": model_id, "pid": os.getpid()}
+
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Model pool not initialized. Server may still be starting.",
+        )
 
 
 @router.post("/{profile_id}/stop")
@@ -316,22 +353,36 @@ class ProfileHealthStatus(BaseModel):
 async def get_server_health(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
+    db: AsyncSession = Depends(get_db),
 ) -> ProfileHealthStatus:
-    """Get health status for a profile's server.
+    """Check if profile's model is loaded in the embedded server.
 
-    In embedded mode, the server is always healthy. This checks if the profile's
-    model is currently loaded in the model pool.
-
-    The frontend uses this to determine when a "starting" server is ready.
-    With embedded mode, we return healthy with model_loaded=True to indicate
-    the server is ready to accept requests (models load on-demand).
+    Returns health status based on whether the profile's specific model
+    is currently loaded in the model pool.
     """
-    # In embedded mode, the server is always ready to accept requests.
-    # Models load on-demand, so we report as healthy with model_loaded=True.
-    # This satisfies the frontend's polling logic which waits for model_loaded.
-    return ProfileHealthStatus(
-        status="healthy",
-        response_time_ms=1,  # Effectively instant since embedded
-        model_loaded=True,  # Models load on-demand, server is always "ready"
-        error=None,
-    )
+    # Get the profile to find which model it uses
+    profile = await db.get(ServerProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    model_id = profile.model_path
+
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+
+        pool = get_model_pool()
+        is_loaded = pool.is_loaded(model_id)
+
+        return ProfileHealthStatus(
+            status="healthy",
+            model_loaded=is_loaded,
+            response_time_ms=1,
+            error=None,
+        )
+    except RuntimeError:
+        return ProfileHealthStatus(
+            status="unhealthy",
+            model_loaded=False,
+            response_time_ms=0,
+            error="Model pool not initialized",
+        )

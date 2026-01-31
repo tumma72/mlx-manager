@@ -197,18 +197,75 @@ async def test_get_memory_status(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_legacy_start_endpoint(auth_client, sample_profile_data):
-    """Test legacy start endpoint returns informative message."""
+async def test_start_endpoint_triggers_model_loading(auth_client, sample_profile_data):
+    """Test start endpoint triggers model loading in background."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+    model_path = sample_profile_data["model_path"]
+
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = False
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.post(f"/api/servers/{profile_id}/start")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "loading"
+        assert data["model"] == model_path
+        assert data["pid"] == os.getpid()
+
+
+@pytest.mark.asyncio
+async def test_start_endpoint_already_loaded(auth_client, sample_profile_data):
+    """Test start endpoint when model is already loaded."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+    model_path = sample_profile_data["model_path"]
+
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = True
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.post(f"/api/servers/{profile_id}/start")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "already_loaded"
+        assert data["model"] == model_path
+
+
+@pytest.mark.asyncio
+async def test_start_endpoint_pool_not_initialized(auth_client, sample_profile_data):
+    """Test start endpoint when model pool is not initialized."""
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
-    response = await auth_client.post(f"/api/servers/{profile_id}/start")
-    assert response.status_code == 200
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool",
+        side_effect=RuntimeError("Pool not initialized"),
+    ):
+        response = await auth_client.post(f"/api/servers/{profile_id}/start")
+        assert response.status_code == 503
 
-    data = response.json()
-    assert "embedded" in data["message"].lower() or "always running" in data["message"].lower()
-    assert data["pid"] == os.getpid()
+
+@pytest.mark.asyncio
+async def test_start_endpoint_profile_not_found(auth_client):
+    """Test start endpoint with non-existent profile."""
+    mock_pool = MagicMock()
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.post("/api/servers/99999/start")
+        assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -262,21 +319,78 @@ async def test_get_server_status(auth_client, sample_profile_data):
 
 
 @pytest.mark.asyncio
-async def test_get_server_health_for_profile(auth_client, sample_profile_data):
-    """Test getting server health for a profile.
-
-    In embedded mode, the server is always healthy. The model_loaded field
-    is True to indicate the server is ready to accept requests (models load
-    on-demand when a chat request is made).
-    """
+async def test_get_server_health_for_profile_model_loaded(auth_client, sample_profile_data):
+    """Test getting server health when profile's model is loaded."""
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
-    response = await auth_client.get(f"/api/servers/{profile_id}/health")
-    assert response.status_code == 200
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = True
 
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert data["model_loaded"] is True
-    assert data["error"] is None
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.get(f"/api/servers/{profile_id}/health")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["model_loaded"] is True
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_server_health_for_profile_model_not_loaded(auth_client, sample_profile_data):
+    """Test getting server health when profile's model is not loaded."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = False
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.get(f"/api/servers/{profile_id}/health")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["model_loaded"] is False
+        assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_server_health_for_profile_pool_not_initialized(
+    auth_client, sample_profile_data
+):
+    """Test getting server health when model pool is not initialized."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool",
+        side_effect=RuntimeError("Pool not initialized"),
+    ):
+        response = await auth_client.get(f"/api/servers/{profile_id}/health")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert data["model_loaded"] is False
+        assert data["error"] == "Model pool not initialized"
+
+
+@pytest.mark.asyncio
+async def test_get_server_health_for_profile_not_found(auth_client):
+    """Test getting server health for non-existent profile."""
+    mock_pool = MagicMock()
+
+    with patch(
+        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
+    ):
+        response = await auth_client.get("/api/servers/99999/health")
+        assert response.status_code == 404
