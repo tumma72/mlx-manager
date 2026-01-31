@@ -339,3 +339,16 @@ export interface RuleTestResult {
   matched_rule_id: number | null;
   backend_type: BackendType;
 }
+
+// Timeout settings
+export interface TimeoutSettings {
+  chat_seconds: number;
+  completions_seconds: number;
+  embeddings_seconds: number;
+}
+
+export interface TimeoutSettingsUpdate {
+  chat_seconds?: number;
+  completions_seconds?: number;
+  embeddings_seconds?: number;
+}

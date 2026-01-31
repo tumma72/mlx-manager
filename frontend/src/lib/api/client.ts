@@ -28,6 +28,8 @@ import type {
   ServerPoolConfigUpdate,
   RuleTestResult,
   BackendType,
+  TimeoutSettings,
+  TimeoutSettingsUpdate,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -570,6 +572,25 @@ export const settings = {
     data: ServerPoolConfigUpdate,
   ): Promise<ServerPoolConfig> => {
     const res = await fetch(`${API_BASE}/settings/pool`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  // Timeouts
+  getTimeoutSettings: async (): Promise<TimeoutSettings> => {
+    const res = await fetch(`${API_BASE}/settings/timeouts`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  updateTimeoutSettings: async (
+    data: TimeoutSettingsUpdate,
+  ): Promise<TimeoutSettings> => {
+    const res = await fetch(`${API_BASE}/settings/timeouts`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(data),

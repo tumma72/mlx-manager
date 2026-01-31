@@ -1,4 +1,4 @@
-"""Settings API router for providers, routing rules, and model pool configuration."""
+"""Settings API router for providers, routing rules, model pool, and timeout configuration."""
 
 import json
 import re
@@ -7,6 +7,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -26,11 +27,33 @@ from mlx_manager.models import (
     ServerConfig,
     ServerConfigResponse,
     ServerConfigUpdate,
+    Setting,
     User,
 )
 from mlx_manager.services.encryption_service import decrypt_api_key, encrypt_api_key
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+# ============================================================================
+# Timeout Configuration Models
+# ============================================================================
+
+
+class TimeoutSettings(BaseModel):
+    """Timeout configuration for MLX Server endpoints."""
+
+    chat_seconds: float = Field(default=900.0, ge=60, le=7200)
+    completions_seconds: float = Field(default=600.0, ge=60, le=7200)
+    embeddings_seconds: float = Field(default=120.0, ge=30, le=600)
+
+
+class TimeoutSettingsUpdate(BaseModel):
+    """Update model for timeout settings."""
+
+    chat_seconds: float | None = Field(default=None, ge=60, le=7200)
+    completions_seconds: float | None = Field(default=None, ge=60, le=7200)
+    embeddings_seconds: float | None = Field(default=None, ge=30, le=600)
 
 
 # ============================================================================
@@ -453,3 +476,72 @@ async def update_pool_config(
         eviction_policy=config.eviction_policy,
         preload_models=preload_models,
     )
+
+
+# ============================================================================
+# Timeout Configuration Endpoints
+# ============================================================================
+
+
+@router.get("/timeouts", response_model=TimeoutSettings)
+async def get_timeout_settings(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+) -> TimeoutSettings:
+    """Get current timeout settings.
+
+    Returns configured timeouts or defaults if not set.
+    """
+    result = await session.execute(
+        select(Setting).where(
+            Setting.key.in_(
+                [
+                    "timeout_chat_seconds",
+                    "timeout_completions_seconds",
+                    "timeout_embeddings_seconds",
+                ]
+            )
+        )
+    )
+    settings_map = {s.key: float(s.value) for s in result.scalars().all()}
+
+    return TimeoutSettings(
+        chat_seconds=settings_map.get("timeout_chat_seconds", 900.0),
+        completions_seconds=settings_map.get("timeout_completions_seconds", 600.0),
+        embeddings_seconds=settings_map.get("timeout_embeddings_seconds", 120.0),
+    )
+
+
+@router.put("/timeouts", response_model=TimeoutSettings)
+async def update_timeout_settings(
+    current_user: Annotated[User, Depends(get_current_user)],
+    data: TimeoutSettingsUpdate,
+    session: AsyncSession = Depends(get_db),
+) -> TimeoutSettings:
+    """Update timeout settings.
+
+    Only provided fields are updated. Values persist in database.
+    Note: MLX Server reads from environment or config file at startup,
+    so changes here are stored for reference but may require restart.
+    """
+    updates = {
+        "timeout_chat_seconds": data.chat_seconds,
+        "timeout_completions_seconds": data.completions_seconds,
+        "timeout_embeddings_seconds": data.embeddings_seconds,
+    }
+
+    for key, value in updates.items():
+        if value is not None:
+            result = await session.execute(select(Setting).where(Setting.key == key))
+            setting = result.scalars().first()
+            if setting:
+                setting.value = str(value)
+                setting.updated_at = datetime.now(tz=UTC)
+            else:
+                setting = Setting(key=key, value=str(value))
+                session.add(setting)
+
+    await session.commit()
+
+    # Return updated settings
+    return await get_timeout_settings(current_user, session)
