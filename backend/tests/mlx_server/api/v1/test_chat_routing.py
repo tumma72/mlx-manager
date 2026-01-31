@@ -1,6 +1,5 @@
 """Tests for chat endpoint routing integration."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +8,6 @@ from sse_starlette.sse import EventSourceResponse
 from mlx_manager.mlx_server.api.v1.chat import (
     _handle_routed_request,
     _handle_text_request,
-    router,
 )
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionRequest,
@@ -120,6 +118,7 @@ class TestRoutingEnabled:
         settings = MagicMock()
         settings.enable_cloud_routing = True
         settings.enable_batching = False
+        settings.timeout_chat_seconds = 900.0  # Required for timeout handling
         mock_settings.return_value = settings
 
         # Setup router mock
@@ -127,7 +126,7 @@ class TestRoutingEnabled:
         router_mock.route_request = AsyncMock(return_value=mock_completion_response)
         mock_get_router.return_value = router_mock
 
-        result = await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request)
 
         # Should use router
         router_mock.route_request.assert_called_once()
