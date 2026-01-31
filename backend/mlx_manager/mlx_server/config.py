@@ -100,6 +100,33 @@ class MLXServerSettings(BaseSettings):
         description="Maximum concurrent requests per batch",
     )
 
+    # Timeout settings (seconds) - per CONTEXT.md decisions
+    # Same timeouts apply to both local and cloud backends
+    timeout_chat_seconds: float = Field(
+        default=900.0,  # 15 minutes
+        description="Timeout for /v1/chat/completions endpoint",
+    )
+    timeout_completions_seconds: float = Field(
+        default=600.0,  # 10 minutes
+        description="Timeout for /v1/completions endpoint",
+    )
+    timeout_embeddings_seconds: float = Field(
+        default=120.0,  # 2 minutes
+        description="Timeout for /v1/embeddings endpoint",
+    )
+
+    # Audit logging
+    database_path: str = Field(
+        default="~/.mlx-manager/mlx-server.db",
+        description="Path to audit log database",
+    )
+    audit_retention_days: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="Days to retain audit logs before cleanup",
+    )
+
 
 @lru_cache
 def get_settings() -> MLXServerSettings:
