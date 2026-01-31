@@ -1,5 +1,17 @@
 """MLX Model Manager - FastAPI Application."""
 
+# Configure LogFire FIRST (before any instrumented imports)
+from mlx_manager import __version__
+from mlx_manager.observability.logfire_config import (
+    configure_logfire,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_sqlalchemy,
+)
+
+configure_logfire(service_version=__version__)
+instrument_httpx()
+
 import asyncio
 import logging
 import sys
@@ -28,8 +40,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import select
 
-from mlx_manager import __version__
-from mlx_manager.database import get_session, init_db, recover_incomplete_downloads
+from mlx_manager.database import engine, get_session, init_db, recover_incomplete_downloads
 from mlx_manager.models import RunningInstance
 from mlx_manager.routers import (
     auth_router,
@@ -45,6 +56,9 @@ from mlx_manager.routers.models import download_tasks
 from mlx_manager.services.health_checker import health_checker
 from mlx_manager.services.hf_client import hf_client
 from mlx_manager.services.server_manager import server_manager
+
+# Instrument SQLAlchemy after engine is imported
+instrument_sqlalchemy(engine)
 
 # Static files directory (embedded frontend build)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -165,6 +179,9 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+# Instrument FastAPI with LogFire (after app creation)
+instrument_fastapi(app)
 
 # CORS configuration - more permissive since we serve frontend from same origin
 app.add_middleware(
