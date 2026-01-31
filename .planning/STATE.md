@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 11 complete - ready for Phase 12
+**Current focus:** Phase 12 in progress - Production Hardening
 
 ## Current Position
 
-Phase: 11 of 12 (Configuration UI)
-Plan: 6 of 6 complete (including gap closure)
-Status: Phase 11 complete with UAT bugs fixed
-Last activity: 2026-01-30 — Completed 11-06-PLAN.md (UAT Bug Fixes)
+Phase: 12 of 12 (Production Hardening)
+Plan: 2 of 4 complete
+Status: In progress
+Last activity: 2026-01-31 — Completed 12-02-PLAN.md (RFC 7807 Error Responses)
 
-Progress: [████████████] 100% (Phase 11 complete)
+Progress: [██████████░░] ~90% (Phase 12 plan 2/4)
 
 ## Milestone v1.2 Summary
 
@@ -167,6 +167,9 @@ Recent decisions affecting current work:
 - **settingsStore for provider tracking**: Centralized store tracks configured providers with helper methods
 - **$derived.by() for reactive props**: Use function form for props that need reactivity when parent changes
 - **ConfirmDialog pattern for deletes**: requestDelete opens dialog, confirmDelete executes, cancelDelete clears state
+- **RFC 7807 Problem Details**: All API errors return type/title/status/detail/instance/request_id format
+- **request_id format**: req_{12-char-hex} prefix makes IDs identifiable in logs
+- **Type ignore for FastAPI handlers**: Starlette type stubs expect generic Exception but specific types work at runtime
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -176,15 +179,13 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 11 complete:**
-- Plan 01: Backend encryption service and settings API (17 encryption + 49 router tests)
-- Plan 02: Frontend settings store and API client
-- Plan 03: Provider and model pool UI components
-- Plan 04: Routing rules UI with drag-drop reordering
-- Plan 05: Settings navbar link, page integration, and state management store
-- Plan 06: UAT bug fixes (auth token mismatch, reactivity, ConfirmDialog)
+**Phase 12 in progress:**
+- Plan 01: Pydantic LogFire observability integration
+- Plan 02: RFC 7807 error responses with request_id (COMPLETE)
+- Plan 03: Health/readiness endpoints (pending)
+- Plan 04: Graceful shutdown (pending)
 
-All Phase 11 Configuration UI requirements met. UAT bugs resolved. Ready for Phase 12 (Production Readiness).
+Error handling foundation complete. Ready for PROD-03 and PROD-04.
 
 ## Research Documents
 
@@ -202,7 +203,7 @@ All Phase 11 Configuration UI requirements met. UAT bugs resolved. Ready for Pha
 
 ## Session Continuity
 
-Last session: 2026-01-30T10:17:32Z
-Stopped at: Completed 11-06-PLAN.md (UAT Bug Fixes)
+Last session: 2026-01-31T11:29:24Z
+Stopped at: Completed 12-02-PLAN.md (RFC 7807 Error Responses)
 Resume file: None
-Next: Phase 12 (Production Readiness)
+Next: 12-03-PLAN.md (Health/Readiness Endpoints)
