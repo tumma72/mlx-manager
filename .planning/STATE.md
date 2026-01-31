@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 13 of 13 (MLX Server Integration)
-Plan: 1 of 5 (Sub-Application Mounting)
+Plan: 2 of 5 (Legacy Subprocess Removal)
 Status: In progress
-Last activity: 2026-01-31 — Completed 13-01-PLAN.md (mount MLX Server as sub-application)
+Last activity: 2026-01-31 — Completed 13-02-PLAN.md (remove legacy subprocess management)
 
-Progress: [███████████░] 94% (Plan 13-01 complete)
+Progress: [███████████░] 96% (Plan 13-02 complete)
 
 ## Milestone v1.2 Summary
 
@@ -186,7 +186,8 @@ Recent decisions affecting current work:
 - **Mount at /v1 with no router prefix**: Prevents double prefix /v1/v1/* when routers already had /v1 prefix
 - **Lazy app initialization via __getattr__**: Module-level app deferred to prevent LogFire config on import
 - **Embedded database path**: When embedded_mode=True, MLX Server uses MLX Manager's database for shared audit logs
-- **RunningInstance kept for backward compatibility**: Servers router still needs it for subprocess management
+- **Parser options stubs**: With embedded server, parser options endpoints return empty lists for backward compatibility
+- **Legacy endpoint messages**: start/stop/restart endpoints kept with informative messages about embedded mode
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -196,15 +197,14 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 12 complete, Phase 13 added:**
-- Phase 12 (Production Hardening): All 7 plans complete
-- Phase 13 (MLX Server Integration): Added to close critical integration gap
+**Phase 13 progress:**
+- Plan 01: Complete (mount MLX Server as sub-application)
+- Plan 02: Complete (remove legacy subprocess management)
+- Plan 03-05: Pending
 
-**Critical issue identified during Phase 12 UAT:**
-- MLX Server built in phases 7-12 was never wired to the UI
-- Chat UI still used mlx-openai-server (now removed from dependencies)
-- Settings UI configured a server that wasn't connected
-- Phase 13 added to embed MLX Server into MLX Manager
+**Test failures expected:**
+- Tests in test_main.py and conftest.py reference deleted modules
+- Will be addressed in Plan 05 (Test Updates)
 
 ## Research Documents
 
@@ -217,13 +217,13 @@ None yet.
 ## Known Tech Debt (Carried Forward)
 
 1. **Throughput metrics not available** — Will be solved by our own server with proper metrics
-2. **mlx-openai-server v1.5.0 regression** — No longer relevant after v1.2 ships our own server
+2. ~~**mlx-openai-server v1.5.0 regression**~~ — Resolved: mlx-openai-server removed
 3. **Download completion UX** — Doesn't auto-refresh local models list after download completes
-4. **RunningInstance and servers router refactoring** — Still uses subprocess management model, needs update for embedded mode
+4. ~~**RunningInstance and servers router refactoring**~~ — Resolved: Plan 13-02
 
 ## Session Continuity
 
-Last session: 2026-01-31T15:44:17Z
-Stopped at: Completed 13-01-PLAN.md (mount MLX Server as sub-application)
+Last session: 2026-01-31T15:48:14Z
+Stopped at: Completed 13-02-PLAN.md (remove legacy subprocess management)
 Resume file: None
-Next: Execute 13-02-PLAN.md (update UI endpoints)
+Next: Execute 13-03-PLAN.md (Chat UI Integration)
