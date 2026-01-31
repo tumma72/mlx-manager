@@ -289,9 +289,7 @@ async def update_rule_priorities(
 ):
     """Batch update rule priorities (for drag-drop reordering)."""
     for update in updates:
-        result = await session.execute(
-            select(BackendMapping).where(BackendMapping.id == update.id)
-        )
+        result = await session.execute(select(BackendMapping).where(BackendMapping.id == update.id))
         rule = result.scalar_one_or_none()
 
         if rule:

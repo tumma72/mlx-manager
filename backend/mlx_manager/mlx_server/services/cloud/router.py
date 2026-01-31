@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.database import get_db
-from mlx_manager.models import BackendMapping, BackendType, CloudCredential
 from mlx_manager.mlx_server.services.cloud.anthropic import AnthropicCloudBackend
 from mlx_manager.mlx_server.services.cloud.openai import OpenAICloudBackend
+from mlx_manager.models import BackendMapping, BackendType, CloudCredential
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +244,18 @@ class BackendRouter:
 
         self._cloud_backends[backend_type] = backend
         return backend
+
+    async def refresh_rules(self) -> None:
+        """Reload routing rules from database. Call after rule/credential updates.
+
+        Clears cached cloud backends so they will be recreated with fresh credentials.
+        """
+        # Clear cached cloud backends (credentials may have changed)
+        for backend in self._cloud_backends.values():
+            await backend.close()
+        self._cloud_backends.clear()
+
+        logger.info("Routing rules refreshed: cloud backends cleared for reload")
 
     async def close(self) -> None:
         """Close all cloud backend clients."""
