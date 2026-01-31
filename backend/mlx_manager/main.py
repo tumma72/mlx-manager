@@ -41,7 +41,6 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import select
 
 from mlx_manager.database import engine, get_session, init_db, recover_incomplete_downloads
-from mlx_manager.models import RunningInstance
 from mlx_manager.routers import (
     auth_router,
     chat_router,
@@ -55,25 +54,19 @@ from mlx_manager.routers import (
 from mlx_manager.routers.models import download_tasks
 from mlx_manager.services.health_checker import health_checker
 from mlx_manager.services.hf_client import hf_client
-from mlx_manager.services.server_manager import server_manager
+
+# MLX Server imports for embedded mode
+from mlx_manager.mlx_server.main import create_app as create_mlx_server_app
+from mlx_manager.mlx_server.models import pool
+from mlx_manager.mlx_server.models.pool import ModelPoolManager
+from mlx_manager.mlx_server.config import mlx_server_settings
+from mlx_manager.mlx_server.utils.memory import set_memory_limit
 
 # Instrument SQLAlchemy after engine is imported
 instrument_sqlalchemy(engine)
 
 # Static files directory (embedded frontend build)
 STATIC_DIR = Path(__file__).parent / "static"
-
-
-async def cleanup_stale_instances() -> None:
-    """Clean up stale running_instances records from previous sessions."""
-    async with get_session() as session:
-        result = await session.execute(select(RunningInstance))
-        instances = result.scalars().all()
-        for instance in instances:
-            # Check if process is actually running
-            if not server_manager.is_running(instance.profile_id):
-                await session.delete(instance)
-        await session.commit()
 
 
 # Track running download tasks for cleanup on shutdown
@@ -155,7 +148,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("MLX Manager starting up...")
     await init_db()
-    await cleanup_stale_instances()
+
+    # Initialize MLX Server model pool
+    set_memory_limit(mlx_server_settings.max_memory_gb)
+    pool.model_pool = ModelPoolManager(
+        max_memory_gb=mlx_server_settings.max_memory_gb,
+        max_models=mlx_server_settings.max_models,
+    )
+    logger.info("MLX Server model pool initialized")
+
+    # Initialize scheduler manager if batching enabled
+    scheduler_mgr = None
+    if mlx_server_settings.enable_batching:
+        from mlx_manager.mlx_server.services.batching import init_scheduler_manager
+
+        scheduler_mgr = init_scheduler_manager(
+            block_pool_size=mlx_server_settings.batch_block_pool_size,
+            max_batch_size=mlx_server_settings.batch_max_batch_size,
+        )
+        logger.info("MLX Server batching scheduler initialized")
 
     # Resume any incomplete downloads from previous sessions
     pending_downloads = await recover_incomplete_downloads()
@@ -170,7 +181,16 @@ async def lifespan(app: FastAPI):
     # Shutdown
     await cancel_download_tasks()
     await health_checker.stop()
-    await server_manager.cleanup()
+
+    # Shutdown scheduler manager if initialized
+    if scheduler_mgr is not None:
+        await scheduler_mgr.shutdown()
+        logger.info("MLX Server batching scheduler shutdown complete")
+
+    # Cleanup model pool
+    if pool.model_pool:
+        await pool.model_pool.cleanup()
+        logger.info("MLX Server model pool cleaned up")
 
 
 app = FastAPI(
@@ -182,6 +202,12 @@ app = FastAPI(
 
 # Instrument FastAPI with LogFire (after app creation)
 instrument_fastapi(app)
+
+# Mount MLX Server at /v1 prefix (after instrumentation for proper tracing)
+# Routes: /v1/models, /v1/chat/completions, /v1/completions, /v1/embeddings
+# Admin routes: /v1/admin/*
+mlx_server_app = create_mlx_server_app(embedded=True)
+app.mount("/v1", mlx_server_app, name="mlx_server")
 
 # CORS configuration - more permissive since we serve frontend from same origin
 app.add_middleware(
@@ -235,6 +261,7 @@ if STATIC_DIR.exists():
     async def serve_spa(request: Request, full_path: str) -> Response:
         """Serve SPA with fallback to index.html."""
         # Skip API routes (they should be handled by routers)
+        # Note: MLX Server routes at /v1/* are handled by mounted sub-app
         if full_path.startswith("api/"):
             return JSONResponse({"error": "Not found"}, status_code=404)
 

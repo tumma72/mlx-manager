@@ -24,7 +24,7 @@ AnthropicStopReason = Literal["end_turn", "max_tokens", "stop_sequence", "tool_u
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["messages"])
+router = APIRouter(tags=["messages"])
 
 
 @router.post("/messages", response_model=None)

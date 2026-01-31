@@ -36,7 +36,7 @@ from mlx_manager.mlx_server.services.vision import generate_vision_completion
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["chat"])
+router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat/completions", response_model=None)

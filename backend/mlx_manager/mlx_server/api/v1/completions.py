@@ -22,7 +22,7 @@ from mlx_manager.mlx_server.services.inference import generate_completion
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["completions"])
+router = APIRouter(tags=["completions"])
 
 
 @router.post("/completions", response_model=None)

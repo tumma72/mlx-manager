@@ -6,7 +6,7 @@ from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.schemas.openai import ModelInfo, ModelListResponse
 
-router = APIRouter(prefix="/v1", tags=["models"])
+router = APIRouter(tags=["models"])
 
 
 def get_available_models() -> list[str]:
