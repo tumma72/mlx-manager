@@ -1,6 +1,7 @@
 """Settings API router for providers, routing rules, model pool, and timeout configuration."""
 
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Annotated
@@ -13,6 +14,8 @@ from sqlmodel import select
 
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
+from mlx_manager.mlx_server.models.pool import get_model_pool
+from mlx_manager.mlx_server.services.cloud.router import get_router as get_backend_router
 from mlx_manager.models import (
     BackendMapping,
     BackendMappingCreate,
@@ -31,6 +34,8 @@ from mlx_manager.models import (
     User,
 )
 from mlx_manager.services.encryption_service import decrypt_api_key, encrypt_api_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -103,6 +108,14 @@ async def create_or_update_provider(
 
     await session.commit()
     await session.refresh(credential)
+
+    # Invalidate cache so new credentials take effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
+
     return credential
 
 
@@ -123,6 +136,13 @@ async def delete_provider(
 
     await session.delete(credential)
     await session.commit()
+
+    # Invalidate cache so removed credentials take effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
 
 
 @router.post("/providers/{backend_type}/test")
@@ -246,6 +266,14 @@ async def create_rule(
     session.add(rule)
     await session.commit()
     await session.refresh(rule)
+
+    # Invalidate cache so new rule takes effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
+
     return rule
 
 
@@ -272,6 +300,14 @@ async def update_rule_priorities(
             session.add(rule)
 
     await session.commit()
+
+    # Invalidate cache so priority changes take effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
+
     return {"success": True, "updated": len(updates)}
 
 
@@ -348,6 +384,14 @@ async def update_rule(
     session.add(rule)
     await session.commit()
     await session.refresh(rule)
+
+    # Invalidate cache so rule changes take effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
+
     return rule
 
 
@@ -366,6 +410,13 @@ async def delete_rule(
 
     await session.delete(rule)
     await session.commit()
+
+    # Invalidate cache so removed rule takes effect immediately
+    try:
+        backend_router = get_backend_router()
+        await backend_router.refresh_rules()
+    except Exception as e:
+        logger.warning(f"Failed to refresh backend router: {e}")
 
 
 def _matches_pattern(model_name: str, pattern: str, pattern_type: str) -> bool:
@@ -426,7 +477,10 @@ async def update_pool_config(
     data: ServerConfigUpdate,
     session: AsyncSession = Depends(get_db),
 ):
-    """Update model pool configuration."""
+    """Update model pool configuration.
+
+    Changes are applied immediately to the running embedded server.
+    """
     result = await session.execute(select(ServerConfig).where(ServerConfig.id == 1))
     config = result.scalar_one_or_none()
 
@@ -464,6 +518,27 @@ async def update_pool_config(
     await session.commit()
     await session.refresh(config)
 
+    # Apply changes to running pool
+    try:
+        pool = get_model_pool()
+
+        # Update memory limit if provided
+        if data.memory_limit_value is not None:
+            mode = data.memory_limit_mode or config.memory_limit_mode
+            if mode == "percent":
+                pool.update_memory_limit(memory_pct=data.memory_limit_value / 100)
+            else:  # "gb"
+                pool.update_memory_limit(memory_gb=data.memory_limit_value)
+
+        # Apply preload list if provided
+        if data.preload_models is not None:
+            preload_result = await pool.apply_preload_list(data.preload_models)
+            logger.info(f"Preload result: {preload_result}")
+
+    except RuntimeError:
+        # Pool not initialized (shouldn't happen in embedded mode)
+        logger.warning("Model pool not initialized, settings saved but not applied")
+
     # Parse preload_models for response
     try:
         preload_models = json.loads(config.preload_models)
@@ -476,6 +551,21 @@ async def update_pool_config(
         eviction_policy=config.eviction_policy,
         preload_models=preload_models,
     )
+
+
+@router.get("/pool/status")
+async def get_pool_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Get live model pool status.
+
+    Returns current memory usage, loaded models, and configuration.
+    """
+    try:
+        pool = get_model_pool()
+        return pool.get_status()
+    except RuntimeError:
+        return {"status": "not_initialized"}
 
 
 # ============================================================================
