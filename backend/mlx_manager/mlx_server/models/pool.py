@@ -357,6 +357,96 @@ class ModelPoolManager:
         """Check if a model is currently loaded."""
         return model_id in self._models
 
+    # =========================================================================
+    # Dynamic Configuration Methods
+    # =========================================================================
+
+    def update_memory_limit(
+        self,
+        memory_gb: float | None = None,
+        memory_pct: float | None = None,
+    ) -> None:
+        """Update memory limit at runtime.
+
+        Args:
+            memory_gb: Absolute memory limit in GB
+            memory_pct: Memory limit as percentage of system memory (0.0-1.0)
+        """
+        if memory_pct is not None:
+            self._memory_limit_pct = memory_pct
+            self.max_memory_gb = self._get_effective_memory_limit()
+        elif memory_gb is not None:
+            self._memory_limit_pct = None
+            self.max_memory_gb = memory_gb
+
+        # Update MLX memory limit
+        from mlx_manager.mlx_server.utils.memory import set_memory_limit
+
+        set_memory_limit(self.max_memory_gb)
+
+        logger.info(f"Memory limit updated to {self.max_memory_gb:.1f}GB")
+
+    def update_max_models(self, max_models: int) -> None:
+        """Update maximum hot models at runtime.
+
+        Args:
+            max_models: Maximum number of models to keep loaded simultaneously
+        """
+        self.max_models = max_models
+        logger.info(f"Max models updated to {max_models}")
+
+    async def apply_preload_list(self, model_ids: list[str]) -> dict[str, str]:
+        """Preload specified models, unload others.
+
+        Args:
+            model_ids: List of model IDs to preload and protect from eviction
+
+        Returns:
+            dict of model_id -> status ('loaded', 'failed', 'already_loaded')
+        """
+        results: dict[str, str] = {}
+
+        # Preload new models
+        for model_id in model_ids:
+            if self.is_loaded(model_id):
+                self._models[model_id].preloaded = True
+                results[model_id] = "already_loaded"
+            else:
+                try:
+                    await self.preload_model(model_id)
+                    results[model_id] = "loaded"
+                except Exception as e:
+                    logger.error(f"Failed to preload {model_id}: {e}")
+                    results[model_id] = f"failed: {e}"
+
+        # Mark models not in preload list as evictable
+        for model_id, loaded in self._models.items():
+            if model_id not in model_ids:
+                loaded.preloaded = False
+
+        return results
+
+    def get_status(self) -> dict:
+        """Get current pool status.
+
+        Returns:
+            dict with pool configuration and loaded models info
+        """
+        return {
+            "max_memory_gb": self.max_memory_gb,
+            "current_memory_gb": self._current_memory_gb(),
+            "max_models": self.max_models,
+            "loaded_models": [
+                {
+                    "model_id": m.model_id,
+                    "size_gb": m.size_gb,
+                    "preloaded": m.preloaded,
+                    "last_used": m.last_used,
+                }
+                for m in self._models.values()
+            ],
+        }
+
     async def cleanup(self) -> None:
         """Unload all models and clear cache."""
         async with self._lock:

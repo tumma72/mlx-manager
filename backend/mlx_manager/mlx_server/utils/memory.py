@@ -51,18 +51,17 @@ def clear_cache() -> None:
         logger.warning(f"Failed to clear cache: {e}")
 
 
-def set_memory_limit(max_gb: float, relaxed: bool = True) -> None:
+def set_memory_limit(max_gb: float) -> None:
     """Set MLX memory limit.
 
     Args:
         max_gb: Maximum memory in gigabytes
-        relaxed: If True, allow exceeding limit temporarily
     """
     try:
         mx = _get_mx()
         max_bytes = int(max_gb * 1024**3)
-        # Use new API (mx.set_memory_limit) instead of deprecated mx.metal.set_memory_limit
-        mx.set_memory_limit(max_bytes, relaxed=relaxed)
+        # Use new API (mx.set_memory_limit) - no relaxed parameter in newer MLX versions
+        mx.set_memory_limit(max_bytes)
         logger.info(f"MLX memory limit set to {max_gb:.1f} GB")
     except Exception as e:
         logger.warning(f"Failed to set memory limit: {e}")
