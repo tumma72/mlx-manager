@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 12 of 12 (Production Hardening)
-Plan: 2 of 4 complete (01 + 02)
+Plan: 3 of 4 complete (01 + 02 + 03)
 Status: In progress
-Last activity: 2026-01-31 — Completed 12-01-PLAN.md (LogFire Integration)
+Last activity: 2026-01-31 — Completed 12-03-PLAN.md (Request Timeouts)
 
-Progress: [██████████░░] ~92% (Phase 12 plan 2/4)
+Progress: [███████████░] ~94% (Phase 12 plan 3/4)
 
 ## Milestone v1.2 Summary
 
@@ -173,6 +173,8 @@ Recent decisions affecting current work:
 - **LogFire configured BEFORE instrumented imports**: configure() must be called before importing instrumented libraries for proper tracing
 - **send_to_logfire='if-token-present'**: Enables development without a LogFire token
 - **Graceful LLM client instrumentation**: try/except for optional openai/anthropic packages
+- **Per-endpoint timeouts**: Chat 15min, Completions 10min, Embeddings 2min via asyncio.wait_for
+- **Streaming timeout error events**: SSE error event with type/message before close for graceful degradation
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -185,10 +187,10 @@ None yet.
 **Phase 12 in progress:**
 - Plan 01: Pydantic LogFire observability integration (COMPLETE)
 - Plan 02: RFC 7807 error responses with request_id (COMPLETE)
-- Plan 03: Request Timeouts (pending)
+- Plan 03: Request Timeouts (COMPLETE)
 - Plan 04: Comprehensive Testing (pending)
 
-Observability and error handling foundation complete. Ready for PROD-03 and PROD-04.
+Observability, error handling, and timeout foundation complete. Ready for PROD-04.
 
 ## Research Documents
 
@@ -206,7 +208,7 @@ Observability and error handling foundation complete. Ready for PROD-03 and PROD
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:31:00Z
-Stopped at: Completed 12-01-PLAN.md (LogFire Integration)
+Last session: 2026-01-31T11:41:00Z
+Stopped at: Completed 12-03-PLAN.md (Request Timeouts)
 Resume file: None
-Next: 12-03-PLAN.md (Request Timeouts)
+Next: 12-04-PLAN.md (Comprehensive Testing)
