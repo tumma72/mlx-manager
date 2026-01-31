@@ -15,6 +15,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlock,
     Usage,
 )
+from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
 from mlx_manager.mlx_server.services.protocol import get_translator
 
@@ -38,24 +39,39 @@ async def create_message(
 
     Reference: https://platform.claude.com/docs/en/api/messages
     """
+    request_id = f"msg_{uuid.uuid4().hex[:24]}"
     logger.info(f"Messages request: model={request.model}, stream={request.stream}")
 
     translator = get_translator()
 
-    try:
-        # Convert to internal format
-        internal = translator.anthropic_to_internal(request)
+    async with audit_service.track_request(
+        request_id=request_id,
+        model=request.model,
+        endpoint="/v1/messages",
+        backend_type="local",
+    ) as audit_ctx:
+        try:
+            # Convert to internal format
+            internal = translator.anthropic_to_internal(request)
 
-        if request.stream:
-            return await _handle_streaming(request, internal)
-        else:
-            return await _handle_non_streaming(request, internal)
+            if request.stream:
+                return await _handle_streaming(request, internal)
+            else:
+                result = await _handle_non_streaming(request, internal)
+                # Update audit context with usage
+                if result.usage:
+                    audit_ctx.prompt_tokens = result.usage.input_tokens
+                    audit_ctx.completion_tokens = result.usage.output_tokens
+                    audit_ctx.total_tokens = (
+                        result.usage.input_tokens + result.usage.output_tokens
+                    )
+                return result
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Messages API error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Messages API error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _handle_non_streaming(

@@ -83,7 +83,7 @@ class AuditService:
         try:
             yield ctx
             ctx.status = "success"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             ctx.status = "timeout"
             ctx.error_type = "TimeoutError"
             ctx.error_message = "Request timed out"

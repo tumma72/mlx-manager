@@ -96,7 +96,7 @@ async def _handle_streaming(
                 yield {"data": json.dumps(chunk)}
 
             yield {"data": "[DONE]"}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Streaming completion timed out after {timeout}s")
             # Send error event before closing
             error_event = {
@@ -132,7 +132,7 @@ async def _handle_non_streaming(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Completion timed out after {timeout}s")
         raise TimeoutHTTPException(
             timeout_seconds=timeout,

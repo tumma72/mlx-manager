@@ -35,6 +35,8 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     Accepts a single string or array of strings and returns embeddings
     in OpenAI-compatible format. Embeddings are L2-normalized.
     """
+    request_id = f"emb-{uuid.uuid4().hex[:12]}"
+
     # Normalize input to list
     texts = [request.input] if isinstance(request.input, str) else list(request.input)
 
@@ -53,33 +55,45 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     settings = get_settings()
     timeout = settings.timeout_embeddings_seconds
 
-    try:
-        # Generate embeddings with timeout
-        embeddings_list, total_tokens = await asyncio.wait_for(
-            generate_embeddings(
-                model_id=request.model,
-                texts=texts,
-            ),
-            timeout=timeout,
-        )
+    async with audit_service.track_request(
+        request_id=request_id,
+        model=request.model,
+        endpoint="/v1/embeddings",
+        backend_type="local",
+    ) as audit_ctx:
+        try:
+            # Generate embeddings with timeout
+            embeddings_list, total_tokens = await asyncio.wait_for(
+                generate_embeddings(
+                    model_id=request.model,
+                    texts=texts,
+                ),
+                timeout=timeout,
+            )
 
-        # Build response
-        return EmbeddingResponse(
-            data=[EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings_list)],
-            model=request.model,
-            usage=EmbeddingUsage(
-                prompt_tokens=total_tokens,
-                total_tokens=total_tokens,
-            ),
-        )
+            # Update audit context with token count
+            audit_ctx.prompt_tokens = total_tokens
+            audit_ctx.total_tokens = total_tokens
 
-    except asyncio.TimeoutError:
-        logger.warning(f"Embeddings generation timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Embeddings generation timed out after {int(timeout)} seconds. "
-            f"Consider reducing batch size or using a smaller model.",
-        )
-    except Exception as e:
-        logger.error(f"Embeddings generation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+            # Build response
+            return EmbeddingResponse(
+                data=[
+                    EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings_list)
+                ],
+                model=request.model,
+                usage=EmbeddingUsage(
+                    prompt_tokens=total_tokens,
+                    total_tokens=total_tokens,
+                ),
+            )
+
+        except TimeoutError:
+            logger.warning(f"Embeddings generation timed out after {timeout}s")
+            raise TimeoutHTTPException(
+                timeout_seconds=timeout,
+                detail=f"Embeddings generation timed out after {int(timeout)} seconds. "
+                f"Consider reducing batch size or using a smaller model.",
+            )
+        except Exception as e:
+            logger.error(f"Embeddings generation failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e)) from e

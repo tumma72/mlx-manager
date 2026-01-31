@@ -45,6 +45,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("MLX Server starting...")
 
+    # Initialize audit database
+    from mlx_manager.mlx_server.database import init_db as init_audit_db
+
+    await init_audit_db()
+
     # Set memory limit
     set_memory_limit(mlx_server_settings.max_memory_gb)
 

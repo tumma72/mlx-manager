@@ -144,7 +144,7 @@ async def _handle_vision_request(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Vision completion timed out after {timeout}s")
         raise TimeoutHTTPException(
             timeout_seconds=timeout,
@@ -258,7 +258,7 @@ async def _handle_routed_request(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Routed chat completion timed out after {timeout}s")
         raise TimeoutHTTPException(
             timeout_seconds=timeout,
@@ -356,7 +356,7 @@ async def _handle_streaming(
 
             # Final [DONE] message
             yield {"data": "[DONE]"}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Streaming chat completion timed out after {timeout}s")
             # Send error event before closing (per CONTEXT.md streaming errors)
             error_event = {
@@ -392,7 +392,7 @@ async def _handle_non_streaming(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Chat completion timed out after {timeout}s")
         raise TimeoutHTTPException(
             timeout_seconds=timeout,
@@ -507,7 +507,7 @@ async def _stream_batched_response(
             async for token_data in token_stream:
                 # Check elapsed time
                 if time.monotonic() - start_time > timeout:
-                    raise asyncio.TimeoutError()
+                    raise TimeoutError()
 
                 # Token data from scheduler contains token_id, text, request_id
                 token_text = token_data.get("text", "")
@@ -545,7 +545,7 @@ async def _stream_batched_response(
             yield {"data": json.dumps(final_chunk)}
             yield {"data": "[DONE]"}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Streaming batched completion timed out after {timeout}s")
             # Send error event before closing
             error_event = {
@@ -579,7 +579,7 @@ async def _complete_batched_response(
 
     try:
         await asyncio.wait_for(collect_tokens(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Batched chat completion timed out after {timeout}s")
         raise TimeoutHTTPException(
             timeout_seconds=timeout,
