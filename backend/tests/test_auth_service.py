@@ -1,6 +1,7 @@
 """Tests for authentication service."""
 
 import os
+import warnings
 from datetime import timedelta
 
 import jwt
@@ -129,11 +130,14 @@ class TestDecodeToken:
         """Test that token with wrong secret returns None."""
         data = {"sub": "test@example.com"}
         # Create token with different secret
-        wrong_token = jwt.encode(
-            {**data, "exp": 9999999999},
-            "wrong_secret",
-            algorithm=settings.jwt_algorithm,
-        )
+        # Suppress expected InsecureKeyLengthWarning for this test case
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*HMAC key.*below the minimum.*")
+            wrong_token = jwt.encode(
+                {**data, "exp": 9999999999},
+                "wrong_secret",
+                algorithm=settings.jwt_algorithm,
+            )
 
         payload = decode_token(wrong_token)
 
@@ -143,11 +147,15 @@ class TestDecodeToken:
         """Test that token with wrong algorithm returns None."""
         data = {"sub": "test@example.com"}
         # Create token with different algorithm
-        wrong_token = jwt.encode(
-            {**data, "exp": 9999999999},
-            settings.jwt_secret,
-            algorithm="HS512",  # Different from HS256
-        )
+        # Suppress expected InsecureKeyLengthWarning for this test case
+        # (HS512 requires 64+ byte keys, but our test key is only 35 bytes)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*HMAC key.*below the minimum.*")
+            wrong_token = jwt.encode(
+                {**data, "exp": 9999999999},
+                settings.jwt_secret,
+                algorithm="HS512",  # Different from HS256
+            )
 
         payload = decode_token(wrong_token)
 

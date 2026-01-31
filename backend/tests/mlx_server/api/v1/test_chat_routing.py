@@ -199,10 +199,10 @@ class TestRoutingFallback:
     """Tests for fallback behavior when routing fails."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_routed_request")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
     async def test_routing_failure_falls_back_to_direct(
-        self, mock_direct, mock_get_router, mock_settings, basic_request
+        self, mock_direct, mock_routed, mock_settings, basic_request
     ):
         """When routing fails, fall back to direct inference."""
         settings = MagicMock()
@@ -210,12 +210,8 @@ class TestRoutingFallback:
         settings.enable_batching = False
         mock_settings.return_value = settings
 
-        # Make router fail
-        router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(
-            side_effect=Exception("Router unavailable")
-        )
-        mock_get_router.return_value = router_mock
+        # Make routed request fail
+        mock_routed.side_effect = RuntimeError("Router unavailable")
 
         mock_direct.return_value = MagicMock()
 
@@ -226,11 +222,11 @@ class TestRoutingFallback:
         mock_direct.assert_called_once_with(basic_request)
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_routed_request")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_batched_request")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
     async def test_routing_failure_falls_back_to_batching(
-        self, mock_scheduler_mgr, mock_batched, mock_get_router, mock_settings, basic_request
+        self, mock_scheduler_mgr, mock_batched, mock_routed, mock_settings, basic_request
     ):
         """When routing fails and batching is enabled, fall back to batching."""
         settings = MagicMock()
@@ -238,12 +234,8 @@ class TestRoutingFallback:
         settings.enable_batching = True
         mock_settings.return_value = settings
 
-        # Make router fail
-        router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(
-            side_effect=Exception("Router unavailable")
-        )
-        mock_get_router.return_value = router_mock
+        # Make routed request fail
+        mock_routed.side_effect = RuntimeError("Router unavailable")
 
         # Setup scheduler manager mock
         mgr = MagicMock()

@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MLX_MANAGER_")
 
     # JWT Authentication
-    jwt_secret: str = Field(default="CHANGE_ME_IN_PRODUCTION")
+    # Default secret is 32+ bytes (256+ bits) to meet RFC 7518 Section 3.2 requirements for HS256
+    jwt_secret: str = Field(default="CHANGE_ME_IN_PRODUCTION_USE_ENV_VAR")
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 7
 
