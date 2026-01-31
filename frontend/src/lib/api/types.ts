@@ -352,3 +352,37 @@ export interface TimeoutSettingsUpdate {
   completions_seconds?: number;
   embeddings_seconds?: number;
 }
+
+// Audit log types
+export interface AuditLog {
+  id: number;
+  request_id: string;
+  timestamp: string;
+  model: string;
+  backend_type: "local" | "openai" | "anthropic";
+  endpoint: string;
+  duration_ms: number;
+  status: "success" | "error" | "timeout";
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  error_type: string | null;
+  error_message: string | null;
+}
+
+export interface AuditLogFilter {
+  model?: string;
+  backend_type?: string;
+  status?: string;
+  start_time?: string;
+  end_time?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AuditStats {
+  total_requests: number;
+  by_status: Record<string, number>;
+  by_backend: Record<string, number>;
+  unique_models: number;
+}
