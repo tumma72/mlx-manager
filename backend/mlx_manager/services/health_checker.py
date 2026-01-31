@@ -1,20 +1,17 @@
-"""Background health checker service."""
+"""Background health checker service.
+
+With the embedded MLX Server, this now monitors the model pool health
+instead of external subprocess instances.
+"""
 
 import asyncio
 import logging
-from datetime import UTC, datetime
-
-from sqlmodel import select
-
-from mlx_manager.database import get_session
-from mlx_manager.models import RunningInstance, ServerProfile
-from mlx_manager.services.server_manager import server_manager
 
 logger = logging.getLogger(__name__)
 
 
 class HealthChecker:
-    """Background service that monitors server health."""
+    """Background service that monitors embedded MLX Server health."""
 
     def __init__(self, interval: int = 30):
         self.interval = interval
@@ -40,45 +37,29 @@ class HealthChecker:
         """Main health check loop."""
         while self._running:
             try:
-                await self._check_all_servers()
+                await self._check_model_pool()
             except Exception as e:
-                logger.warning(f"Health check error for servers: {e}")
+                logger.debug(f"Health check: {e}")
 
             await asyncio.sleep(self.interval)
 
-    async def _check_all_servers(self) -> None:
-        """Check health of all running servers."""
-        async with get_session() as session:
-            # Get all running instances
-            stmt = select(RunningInstance)
-            result = await session.execute(stmt)
-            instances = result.scalars().all()
+    async def _check_model_pool(self) -> None:
+        """Check health of the embedded MLX Server model pool."""
+        try:
+            from mlx_manager.mlx_server.models.pool import get_model_pool
+            from mlx_manager.mlx_server.utils.memory import get_memory_usage
 
-            for instance in instances:
-                # Get profile
-                profile_stmt = select(ServerProfile).where(ServerProfile.id == instance.profile_id)
-                profile_result = await session.execute(profile_stmt)
-                profile = profile_result.scalar_one_or_none()
+            pool = get_model_pool()
+            loaded_models = pool.get_loaded_models()
+            memory = get_memory_usage()
 
-                if not profile:
-                    continue
-
-                # Check if process is still running
-                if not server_manager.is_running(instance.profile_id):
-                    instance.health_status = "stopped"
-                    instance.last_health_check = datetime.now(tz=UTC)
-                    session.add(instance)
-                    continue
-
-                # Check health endpoint
-                health = await server_manager.check_health(profile)
-
-                # Update instance
-                instance.health_status = health["status"]
-                instance.last_health_check = datetime.now(tz=UTC)
-                session.add(instance)
-
-            await session.commit()
+            logger.debug(
+                f"Model pool health: {len(loaded_models)} models loaded, "
+                f"{memory['active_gb']:.1f}GB active"
+            )
+        except RuntimeError:
+            # Pool not initialized yet - this is normal during startup
+            pass
 
 
 # Singleton instance

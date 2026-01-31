@@ -147,17 +147,8 @@ class ServerProfileUpdate(SQLModel):
     system_prompt: str | None = None
 
 
-class RunningInstance(SQLModel, table=True):
-    """Running server instance tracking."""
-
-    __tablename__ = "running_instances"  # type: ignore
-
-    id: int | None = Field(default=None, primary_key=True)
-    profile_id: int = Field(foreign_key="server_profiles.id", unique=True)
-    pid: int
-    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    health_status: str = Field(default="starting")
-    last_health_check: datetime | None = None
+# NOTE: RunningInstance model removed - no longer needed with embedded MLX Server.
+# The running_instances table can be dropped manually if it exists.
 
 
 class DownloadedModel(SQLModel, table=True):
