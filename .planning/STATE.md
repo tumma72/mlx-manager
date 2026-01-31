@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 12 complete - Production Hardening
+**Current focus:** Phase 13 - MLX Server Integration
 
 ## Current Position
 
-Phase: 12 of 12 (Production Hardening)
-Plan: 7 of 7 complete (01 + 02 + 03 + 04 + 05 + 06 + 07)
-Status: Phase complete
-Last activity: 2026-01-31 — Completed 12-07-PLAN.md (CLI Benchmarks and Performance Documentation)
+Phase: 13 of 13 (MLX Server Integration)
+Plan: 1 of 5 (Sub-Application Mounting)
+Status: In progress
+Last activity: 2026-01-31 — Completed 13-01-PLAN.md (mount MLX Server as sub-application)
 
-Progress: [████████████] 100% (Phase 12 complete)
+Progress: [███████████░] 94% (Plan 13-01 complete)
 
 ## Milestone v1.2 Summary
 
@@ -183,6 +183,10 @@ Recent decisions affecting current work:
 - **Backend detection from model name**: gpt/o1->openai, claude->anthropic, else local for benchmark classification
 - **Typer-based CLI for benchmarks**: Consistency with existing mlx-manager CLI patterns
 - **Async httpx client for benchmarks**: Matches async patterns in inference service
+- **Mount at /v1 with no router prefix**: Prevents double prefix /v1/v1/* when routers already had /v1 prefix
+- **Lazy app initialization via __getattr__**: Module-level app deferred to prevent LogFire config on import
+- **Embedded database path**: When embedded_mode=True, MLX Server uses MLX Manager's database for shared audit logs
+- **RunningInstance kept for backward compatibility**: Servers router still needs it for subprocess management
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -192,16 +196,15 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 12 complete:**
-- Plan 01: Pydantic LogFire observability integration (COMPLETE)
-- Plan 02: RFC 7807 error responses with request_id (COMPLETE)
-- Plan 03: Request Timeouts (COMPLETE)
-- Plan 04: Audit Logging (COMPLETE)
-- Plan 05: Audit Log UI (COMPLETE)
-- Plan 06: Timeout Settings UI (COMPLETE)
-- Plan 07: CLI Benchmarks and Performance Documentation (COMPLETE)
+**Phase 12 complete, Phase 13 added:**
+- Phase 12 (Production Hardening): All 7 plans complete
+- Phase 13 (MLX Server Integration): Added to close critical integration gap
 
-All PROD requirements complete. Phase 12 Production Hardening finished.
+**Critical issue identified during Phase 12 UAT:**
+- MLX Server built in phases 7-12 was never wired to the UI
+- Chat UI still used mlx-openai-server (now removed from dependencies)
+- Settings UI configured a server that wasn't connected
+- Phase 13 added to embed MLX Server into MLX Manager
 
 ## Research Documents
 
@@ -216,10 +219,11 @@ All PROD requirements complete. Phase 12 Production Hardening finished.
 1. **Throughput metrics not available** — Will be solved by our own server with proper metrics
 2. **mlx-openai-server v1.5.0 regression** — No longer relevant after v1.2 ships our own server
 3. **Download completion UX** — Doesn't auto-refresh local models list after download completes
+4. **RunningInstance and servers router refactoring** — Still uses subprocess management model, needs update for embedded mode
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:54:03Z
-Stopped at: Completed 12-07-PLAN.md (CLI Benchmarks and Performance Documentation)
+Last session: 2026-01-31T15:44:17Z
+Stopped at: Completed 13-01-PLAN.md (mount MLX Server as sub-application)
 Resume file: None
-Next: Phase 12 complete, ready for v1.2 milestone wrap-up
+Next: Execute 13-02-PLAN.md (update UI endpoints)
