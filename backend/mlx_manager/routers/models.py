@@ -18,7 +18,6 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.models import Download, LocalModel, ModelSearchResult, User
 from mlx_manager.services.hf_client import hf_client
-from mlx_manager.services.parser_options import get_parser_options
 from mlx_manager.utils.model_detection import get_model_detection_info
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -339,15 +338,9 @@ async def get_available_parsers(
     """
     Get list of available parser options for dropdowns.
 
-    DEPRECATED: Use /api/system/parser-options instead for separate
-    tool_call_parsers, reasoning_parsers, and message_converters lists.
-
-    Returns a combined list of all parser identifiers for backwards
-    compatibility.
+    DEPRECATED: Parser options were used for mlx-openai-server CLI arguments.
+    The embedded MLX Server doesn't use these. Returns empty list for
+    backwards compatibility.
     """
-    options = get_parser_options()
-    # Combine all unique parsers for backwards compatibility
-    all_parsers = set(options["tool_call_parsers"])
-    all_parsers.update(options["reasoning_parsers"])
-    all_parsers.update(options["message_converters"])
-    return {"parsers": sorted(all_parsers)}
+    # Parser options no longer used with embedded MLX Server
+    return {"parsers": []}

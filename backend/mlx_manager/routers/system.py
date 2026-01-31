@@ -19,7 +19,6 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory, User
 from mlx_manager.services.launchd import launchd_manager
-from mlx_manager.services.parser_options import ParserOptions, get_parser_options
 
 logger = logging.getLogger(__name__)
 
@@ -135,15 +134,19 @@ async def get_system_info(
 @router.get("/parser-options")
 async def get_available_parser_options(
     current_user: Annotated[User, Depends(get_current_user)],
-) -> ParserOptions:
+) -> dict[str, list[str]]:
     """
-    Get available parser options from installed mlx-openai-server.
+    Get available parser options.
 
-    Returns lists of valid options for tool_call_parser, reasoning_parser,
-    and message_converter. These are dynamically discovered from the
-    installed mlx-openai-server package.
+    DEPRECATED: Parser options were used for mlx-openai-server CLI arguments.
+    The embedded MLX Server doesn't use these. Returns empty lists for
+    backwards compatibility.
     """
-    return get_parser_options()
+    return {
+        "tool_call_parsers": [],
+        "reasoning_parsers": [],
+        "message_converters": [],
+    }
 
 
 @router.post("/launchd/install/{profile_id}")

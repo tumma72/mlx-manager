@@ -1,4 +1,10 @@
-"""macOS launchd service manager."""
+"""macOS launchd service manager.
+
+NOTE: With the embedded MLX Server, launchd services for individual model
+profiles are no longer used. The MLX Manager itself can be installed as
+a launchd service instead. This module is kept for backwards compatibility
+and will build commands for mlx-manager serve instead of mlx-openai-server.
+"""
 
 import logging
 import plistlib
@@ -8,7 +14,6 @@ from pathlib import Path
 
 from mlx_manager.models import ServerProfile
 from mlx_manager.types import LaunchdStatus
-from mlx_manager.utils.command_builder import build_mlx_server_command
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +38,21 @@ class LaunchdManager:
         return self.launch_agents_dir / f"{self.get_label(profile)}.plist"
 
     def generate_plist(self, profile: ServerProfile) -> dict:
-        """Generate a launchd plist dictionary for a profile."""
+        """Generate a launchd plist dictionary for a profile.
+
+        NOTE: With the embedded MLX Server, this now generates a plist
+        that runs mlx-manager serve (the main application) rather than
+        mlx-openai-server per profile. The profile's auto_start setting
+        controls whether the manager starts at login.
+        """
         label = self.get_label(profile)
 
-        # Build program arguments using the shared command builder
-        program_args = build_mlx_server_command(profile)
+        # Find mlx-manager executable
+        python_dir = Path(sys.executable).parent
+        mlx_manager_path = python_dir / "mlx-manager"
+
+        # Build command for mlx-manager serve
+        program_args = [str(mlx_manager_path), "serve", "--port", str(profile.port)]
 
         # Build plist dictionary
         plist = {

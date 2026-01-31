@@ -18,7 +18,21 @@ from abc import ABC, abstractmethod
 from functools import lru_cache
 from typing import cast
 
-from mlx_manager.services.parser_options import get_parser_options
+# Parser options no longer used with embedded MLX Server
+# Return empty options to maintain API compatibility
+
+
+def get_parser_options() -> dict[str, list[str]]:
+    """Legacy function - returns empty parser options.
+
+    Parser options were used for mlx-openai-server CLI arguments.
+    The embedded MLX Server doesn't need these.
+    """
+    return {
+        "tool_call_parsers": [],
+        "reasoning_parsers": [],
+        "message_converters": [],
+    }
 
 
 class FuzzyMatcher(ABC):
