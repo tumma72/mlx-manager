@@ -1,5 +1,6 @@
 """Chat completions endpoint."""
 
+import asyncio
 import json
 import logging
 import time
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
@@ -20,6 +22,7 @@ from mlx_manager.mlx_server.schemas.openai import (
     Usage,
     extract_content_parts,
 )
+from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.batching import (
     BatchRequest,
     ContinuousBatchingScheduler,
@@ -46,6 +49,7 @@ async def create_chat_completion(
     Supports both text-only and multimodal (vision) requests.
     Compatible with OpenAI Chat Completions API.
     """
+    request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     logger.info(f"Chat completion request: model={request.model}, stream={request.stream}")
 
     # Extract text and images from all user messages
@@ -62,22 +66,36 @@ async def create_chat_completion(
     model_type = detect_model_type(request.model)
     is_vision_model = model_type == ModelType.VISION
 
-    try:
-        if has_images or is_vision_model:
-            # Vision model or multimodal request - use vision path
-            # Vision models use Processor (not Tokenizer) and require mlx_vlm
-            return await _handle_vision_request(request, all_image_urls)
-        else:
-            # Text-only request with text model - use mlx_lm path
-            return await _handle_text_request(request)
-    except HTTPException:
-        raise
-    except RuntimeError as e:
-        logger.error(f"Generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    async with audit_service.track_request(
+        request_id=request_id,
+        model=request.model,
+        endpoint="/v1/chat/completions",
+        backend_type="local",
+    ) as audit_ctx:
+        try:
+            if has_images or is_vision_model:
+                # Vision model or multimodal request - use vision path
+                # Vision models use Processor (not Tokenizer) and require mlx_vlm
+                result = await _handle_vision_request(request, all_image_urls)
+            else:
+                # Text-only request with text model - use mlx_lm path
+                result = await _handle_text_request(request)
+
+            # Update audit context with usage if available (non-streaming)
+            if isinstance(result, ChatCompletionResponse) and result.usage:
+                audit_ctx.prompt_tokens = result.usage.prompt_tokens
+                audit_ctx.completion_tokens = result.usage.completion_tokens
+                audit_ctx.total_tokens = result.usage.total_tokens
+
+            return result
+        except HTTPException:
+            raise
+        except RuntimeError as e:
+            logger.error(f"Generation error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def _handle_vision_request(
@@ -110,15 +128,29 @@ async def _handle_vision_request(
             prompt_parts.append(f"Assistant: {text}")
     text_prompt = "\n".join(prompt_parts)
 
-    # Generate vision completion
-    result = await generate_vision_completion(
-        model_id=request.model,
-        text_prompt=text_prompt,
-        images=images,
-        max_tokens=request.max_tokens or 4096,
-        temperature=request.temperature,
-        stream=request.stream,
-    )
+    # Generate vision completion with timeout
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
+
+    try:
+        result = await asyncio.wait_for(
+            generate_vision_completion(
+                model_id=request.model,
+                text_prompt=text_prompt,
+                images=images,
+                max_tokens=request.max_tokens or 4096,
+                temperature=request.temperature,
+                stream=request.stream,
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Vision completion timed out after {timeout}s")
+        raise TimeoutHTTPException(
+            timeout_seconds=timeout,
+            detail=f"Vision completion timed out after {int(timeout)} seconds. "
+            f"Consider using a smaller model or fewer images.",
+        )
 
     if request.stream:
         # result is an async generator
@@ -209,16 +241,30 @@ async def _handle_routed_request(
             text, _ = extract_content_parts(m.content)
         messages.append({"role": m.role, "content": text})
 
-    # Get router singleton and route request
+    # Get router singleton and route request with timeout
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
     backend_router = get_router()
-    result = await backend_router.route_request(
-        model=request.model,
-        messages=messages,
-        max_tokens=request.max_tokens or 4096,
-        temperature=request.temperature,
-        stream=request.stream,
-        top_p=request.top_p,
-    )
+
+    try:
+        result = await asyncio.wait_for(
+            backend_router.route_request(
+                model=request.model,
+                messages=messages,
+                max_tokens=request.max_tokens or 4096,
+                temperature=request.temperature,
+                stream=request.stream,
+                top_p=request.top_p,
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Routed chat completion timed out after {timeout}s")
+        raise TimeoutHTTPException(
+            timeout_seconds=timeout,
+            detail=f"Chat completion timed out after {int(timeout)} seconds. "
+            f"The backend may be overloaded or the request too large.",
+        )
 
     if request.stream:
         # result is an async generator
@@ -285,24 +331,41 @@ async def _handle_streaming(
     messages: list[dict[str, Any]],
     stop: list[str] | None,
 ) -> EventSourceResponse:
-    """Handle streaming response."""
+    """Handle streaming response with timeout."""
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
 
     async def event_generator() -> Any:
-        gen = await generate_chat_completion(
-            model_id=request.model,
-            messages=messages,
-            max_tokens=request.max_tokens or 4096,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            stop=stop,
-            stream=True,
-        )
-        async for chunk in gen:  # type: ignore[union-attr]
-            # Format as SSE data
-            yield {"data": json.dumps(chunk)}
+        try:
+            # Apply timeout to the entire streaming operation
+            gen = await asyncio.wait_for(
+                generate_chat_completion(
+                    model_id=request.model,
+                    messages=messages,
+                    max_tokens=request.max_tokens or 4096,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    stop=stop,
+                    stream=True,
+                ),
+                timeout=timeout,
+            )
+            async for chunk in gen:  # type: ignore[union-attr]
+                # Format as SSE data
+                yield {"data": json.dumps(chunk)}
 
-        # Final [DONE] message
-        yield {"data": "[DONE]"}
+            # Final [DONE] message
+            yield {"data": "[DONE]"}
+        except asyncio.TimeoutError:
+            logger.warning(f"Streaming chat completion timed out after {timeout}s")
+            # Send error event before closing (per CONTEXT.md streaming errors)
+            error_event = {
+                "error": {
+                    "type": "https://mlx-manager.dev/errors/timeout",
+                    "message": f"Request timed out after {int(timeout)} seconds",
+                }
+            }
+            yield {"event": "error", "data": json.dumps(error_event)}
 
     return EventSourceResponse(event_generator())
 
@@ -313,15 +376,29 @@ async def _handle_non_streaming(
     stop: list[str] | None,
 ) -> ChatCompletionResponse:
     """Handle non-streaming response."""
-    result = await generate_chat_completion(
-        model_id=request.model,
-        messages=messages,
-        max_tokens=request.max_tokens or 4096,
-        temperature=request.temperature,
-        top_p=request.top_p,
-        stop=stop,
-        stream=False,
-    )
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
+
+    try:
+        result = await asyncio.wait_for(
+            generate_chat_completion(
+                model_id=request.model,
+                messages=messages,
+                max_tokens=request.max_tokens or 4096,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                stop=stop,
+                stream=False,
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Chat completion timed out after {timeout}s")
+        raise TimeoutHTTPException(
+            timeout_seconds=timeout,
+            detail=f"Chat completion timed out after {int(timeout)} seconds. "
+            f"Consider using a smaller model or reducing max_tokens.",
+        )
 
     # Convert to Pydantic response model
     # Cast to dict since we passed stream=False
@@ -416,18 +493,43 @@ async def _stream_batched_response(
     model: str,
 ) -> EventSourceResponse:
     """Stream tokens from scheduler as SSE events in OpenAI format."""
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
     created = int(time.time())
 
     async def generate_stream() -> Any:
-        # Submit to scheduler - returns async generator of token dicts
-        token_stream = scheduler.submit(batch_request)
+        try:
+            # Submit to scheduler - returns async generator of token dicts
+            token_stream = scheduler.submit(batch_request)
 
-        async for token_data in token_stream:
-            # Token data from scheduler contains token_id, text, request_id
-            token_text = token_data.get("text", "")
+            # Wrap streaming in timeout using async_timeout pattern
+            start_time = time.monotonic()
+            async for token_data in token_stream:
+                # Check elapsed time
+                if time.monotonic() - start_time > timeout:
+                    raise asyncio.TimeoutError()
 
-            # Format as OpenAI ChatCompletionChunk
-            chunk = {
+                # Token data from scheduler contains token_id, text, request_id
+                token_text = token_data.get("text", "")
+
+                # Format as OpenAI ChatCompletionChunk
+                chunk = {
+                    "id": batch_request.request_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": token_text},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield {"data": json.dumps(chunk)}
+
+            # Send final chunk with finish_reason
+            final_chunk = {
                 "id": batch_request.request_id,
                 "object": "chat.completion.chunk",
                 "created": created,
@@ -435,29 +537,24 @@ async def _stream_batched_response(
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"content": token_text},
-                        "finish_reason": None,
+                        "delta": {},
+                        "finish_reason": "stop",
                     }
                 ],
             }
-            yield {"data": json.dumps(chunk)}
+            yield {"data": json.dumps(final_chunk)}
+            yield {"data": "[DONE]"}
 
-        # Send final chunk with finish_reason
-        final_chunk = {
-            "id": batch_request.request_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop",
+        except asyncio.TimeoutError:
+            logger.warning(f"Streaming batched completion timed out after {timeout}s")
+            # Send error event before closing
+            error_event = {
+                "error": {
+                    "type": "https://mlx-manager.dev/errors/timeout",
+                    "message": f"Request timed out after {int(timeout)} seconds",
                 }
-            ],
-        }
-        yield {"data": json.dumps(final_chunk)}
-        yield {"data": "[DONE]"}
+            }
+            yield {"event": "error", "data": json.dumps(error_event)}
 
     return EventSourceResponse(generate_stream())
 
@@ -468,14 +565,27 @@ async def _complete_batched_response(
     model: str,
 ) -> ChatCompletionResponse:
     """Collect all tokens and return complete ChatCompletionResponse."""
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
     created = int(time.time())
     collected_tokens: list[str] = []
 
-    # Submit to scheduler and collect all tokens
-    token_stream = scheduler.submit(batch_request)
-    async for token_data in token_stream:
-        token_text = token_data.get("text", "")
-        collected_tokens.append(token_text)
+    async def collect_tokens() -> None:
+        """Collect all tokens from scheduler."""
+        token_stream = scheduler.submit(batch_request)
+        async for token_data in token_stream:
+            token_text = token_data.get("text", "")
+            collected_tokens.append(token_text)
+
+    try:
+        await asyncio.wait_for(collect_tokens(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(f"Batched chat completion timed out after {timeout}s")
+        raise TimeoutHTTPException(
+            timeout_seconds=timeout,
+            detail=f"Chat completion timed out after {int(timeout)} seconds. "
+            f"Consider reducing max_tokens or batch load.",
+        )
 
     # Build response text
     response_text = "".join(collected_tokens)
