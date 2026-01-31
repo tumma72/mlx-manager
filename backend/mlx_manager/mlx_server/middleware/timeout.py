@@ -19,7 +19,9 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
-def with_timeout(seconds: float) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
+def with_timeout(
+    seconds: float,
+) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """Decorator to add timeout to async endpoint.
 
     Args:
@@ -43,7 +45,7 @@ def with_timeout(seconds: float) -> Callable[[Callable[P, Awaitable[T]]], Callab
                     func(*args, **kwargs),
                     timeout=seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(f"Endpoint {func.__name__} timed out after {seconds}s")
                 raise TimeoutHTTPException(
                     timeout_seconds=seconds,
