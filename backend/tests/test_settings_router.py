@@ -1,8 +1,9 @@
 """Tests for the settings router."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 # ============================================================================
 # Provider Endpoint Tests
@@ -1314,3 +1315,269 @@ class TestUpdateTimeoutSettings:
         assert data["chat_seconds"] == 3600.0
         assert data["completions_seconds"] == 1800.0
         assert data["embeddings_seconds"] == 300.0
+
+
+# ============================================================================
+# Pool Status Endpoint Tests
+# ============================================================================
+
+
+class TestGetPoolStatus:
+    """Tests for GET /api/settings/pool/status."""
+
+    async def test_get_pool_status_initialized(self, auth_client):
+        """Returns pool status when pool is initialized."""
+        mock_status = {
+            "memory_used_mb": 1024,
+            "memory_limit_mb": 4096,
+            "loaded_models": ["model1", "model2"],
+            "eviction_policy": "lru",
+        }
+
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_pool = MagicMock()
+            mock_pool.get_status.return_value = mock_status
+            mock_get_pool.return_value = mock_pool
+
+            response = await auth_client.get("/api/settings/pool/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["memory_used_mb"] == 1024
+        assert data["loaded_models"] == ["model1", "model2"]
+
+    async def test_get_pool_status_not_initialized(self, auth_client):
+        """Returns 'not_initialized' when pool is not ready."""
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_get_pool.side_effect = RuntimeError("Pool not initialized")
+
+            response = await auth_client.get("/api/settings/pool/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "not_initialized"
+
+
+# ============================================================================
+# Backend Router Refresh Exception Tests
+# ============================================================================
+
+
+class TestBackendRouterRefreshExceptions:
+    """Tests for exception handling when backend router refresh fails."""
+
+    async def test_create_provider_refresh_failure(self, auth_client):
+        """Provider creation succeeds even if router refresh fails."""
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.post(
+                "/api/settings/providers",
+                json={"backend_type": "openai", "api_key": "sk-test123"},
+            )
+
+        # Should still succeed - refresh failure is just logged
+        assert response.status_code == 200
+        assert response.json()["backend_type"] == "openai"
+
+    async def test_delete_provider_refresh_failure(self, auth_client):
+        """Provider deletion succeeds even if router refresh fails."""
+        # First create a provider
+        await auth_client.post(
+            "/api/settings/providers",
+            json={"backend_type": "openai", "api_key": "sk-test"},
+        )
+
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.delete("/api/settings/providers/openai")
+
+        # Should still succeed
+        assert response.status_code == 204
+
+    async def test_create_rule_refresh_failure(self, auth_client):
+        """Rule creation succeeds even if router refresh fails."""
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.post(
+                "/api/settings/rules",
+                json={
+                    "model_pattern": "gpt-*",
+                    "backend_type": "openai",
+                },
+            )
+
+        # Should still succeed
+        assert response.status_code == 201
+
+    async def test_update_rule_refresh_failure(self, auth_client):
+        """Rule update succeeds even if router refresh fails."""
+        # Create rule first
+        create_response = await auth_client.post(
+            "/api/settings/rules",
+            json={"model_pattern": "test", "backend_type": "openai"},
+        )
+        rule_id = create_response.json()["id"]
+
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.put(
+                f"/api/settings/rules/{rule_id}",
+                json={"priority": 100},
+            )
+
+        # Should still succeed
+        assert response.status_code == 200
+
+    async def test_delete_rule_refresh_failure(self, auth_client):
+        """Rule deletion succeeds even if router refresh fails."""
+        # Create rule first
+        create_response = await auth_client.post(
+            "/api/settings/rules",
+            json={"model_pattern": "test", "backend_type": "openai"},
+        )
+        rule_id = create_response.json()["id"]
+
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.delete(f"/api/settings/rules/{rule_id}")
+
+        # Should still succeed
+        assert response.status_code == 204
+
+    async def test_update_priorities_refresh_failure(self, auth_client):
+        """Priority update succeeds even if router refresh fails."""
+        # Create a rule
+        r1 = await auth_client.post(
+            "/api/settings/rules",
+            json={"model_pattern": "rule1", "backend_type": "openai", "priority": 10},
+        )
+        rule_id = r1.json()["id"]
+
+        with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+            mock_router.side_effect = Exception("Router not available")
+
+            response = await auth_client.put(
+                "/api/settings/rules/priorities",
+                json=[{"id": rule_id, "priority": 100}],
+            )
+
+        # Should still succeed
+        assert response.status_code == 200
+
+
+# ============================================================================
+# Test Provider Connection Edge Cases
+# ============================================================================
+
+
+class TestTestProviderConnectionEdgeCases:
+    """Tests for edge cases in provider connection testing."""
+
+    async def test_test_unsupported_backend_type(self, auth_client):
+        """Test connection for unsupported backend type returns error."""
+        # Create a provider with 'local' type (which doesn't support testing)
+        # Actually 'local' is a valid BackendType but not supported for API testing
+        await auth_client.post(
+            "/api/settings/providers",
+            json={"backend_type": "local", "api_key": "dummy-key"},
+        )
+
+        response = await auth_client.post("/api/settings/providers/local/test")
+
+        assert response.status_code == 400
+        assert "Unsupported backend type" in response.json()["detail"]
+
+
+# ============================================================================
+# Pool Configuration with Model Pool Integration
+# ============================================================================
+
+
+class TestPoolConfigWithModelPool:
+    """Tests for pool configuration with actual model pool integration."""
+
+    async def test_update_pool_with_percent_memory_mode(self, auth_client):
+        """Updates pool and applies percent memory limit to running pool."""
+        mock_pool = MagicMock()
+        mock_pool.update_memory_limit = MagicMock()
+        mock_pool.apply_preload_list = AsyncMock(return_value={"loaded": 1})
+
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_get_pool.return_value = mock_pool
+
+            response = await auth_client.put(
+                "/api/settings/pool",
+                json={
+                    "memory_limit_mode": "percent",
+                    "memory_limit_value": 75,
+                },
+            )
+
+        assert response.status_code == 200
+        # Verify memory limit was applied with percent mode
+        mock_pool.update_memory_limit.assert_called_once()
+        call_kwargs = mock_pool.update_memory_limit.call_args.kwargs
+        assert "memory_pct" in call_kwargs
+        assert call_kwargs["memory_pct"] == 0.75
+
+    async def test_update_pool_with_gb_memory_mode(self, auth_client):
+        """Updates pool and applies GB memory limit to running pool."""
+        mock_pool = MagicMock()
+        mock_pool.update_memory_limit = MagicMock()
+
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_get_pool.return_value = mock_pool
+
+            response = await auth_client.put(
+                "/api/settings/pool",
+                json={
+                    "memory_limit_mode": "gb",
+                    "memory_limit_value": 16,
+                },
+            )
+
+        assert response.status_code == 200
+        # Verify memory limit was applied with GB mode
+        mock_pool.update_memory_limit.assert_called_once()
+        call_kwargs = mock_pool.update_memory_limit.call_args.kwargs
+        assert "memory_gb" in call_kwargs
+        assert call_kwargs["memory_gb"] == 16
+
+    async def test_update_pool_with_preload_models(self, auth_client):
+        """Updates pool and applies preload list to running pool."""
+        mock_pool = MagicMock()
+        mock_pool.update_memory_limit = MagicMock()
+        mock_pool.apply_preload_list = AsyncMock(return_value={"loaded": 2, "failed": 0})
+
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_get_pool.return_value = mock_pool
+
+            response = await auth_client.put(
+                "/api/settings/pool",
+                json={
+                    "preload_models": ["model1", "model2"],
+                },
+            )
+
+        assert response.status_code == 200
+        # Verify preload was applied
+        mock_pool.apply_preload_list.assert_called_once_with(["model1", "model2"])
+
+    async def test_update_pool_when_pool_not_initialized(self, auth_client):
+        """Updates pool config even when pool is not initialized."""
+        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
+            mock_get_pool.side_effect = RuntimeError("Pool not initialized")
+
+            response = await auth_client.put(
+                "/api/settings/pool",
+                json={"memory_limit_value": 50},
+            )
+
+        # Should succeed - settings are saved even if pool isn't running
+        assert response.status_code == 200
+        assert response.json()["memory_limit_value"] == 50

@@ -1,6 +1,6 @@
 """Tests for the system API router."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -260,5 +260,319 @@ async def test_install_launchd_service_exception(auth_client, sample_profile_dat
 
     assert response.status_code == 500
     assert "Failed to write plist" in response.json()["detail"]
+
+
+# ============================================================================
+# Audit Log Proxy Endpoint Tests
+# ============================================================================
+
+
+class TestGetAuditLogs:
+    """Tests for GET /api/system/audit-logs."""
+
+    @pytest.mark.asyncio
+    async def test_get_audit_logs_success(self, auth_client):
+        """Test successful audit log retrieval."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"id": 1, "model": "gpt-4", "status": "success"},
+            {"id": 2, "model": "claude-3", "status": "success"},
+        ]
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["model"] == "gpt-4"
+
+    @pytest.mark.asyncio
+    async def test_get_audit_logs_with_filters(self, auth_client):
+        """Test audit log retrieval with query filters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"id": 1, "model": "gpt-4", "status": "success"}]
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get(
+                "/api/system/audit-logs",
+                params={
+                    "model": "gpt-4",
+                    "backend_type": "openai",
+                    "status": "success",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-12-31T23:59:59Z",
+                    "limit": 50,
+                    "offset": 10,
+                },
+            )
+
+        assert response.status_code == 200
+        # Verify the filter parameters were passed
+        call_args = mock_instance.get.call_args
+        params = call_args.kwargs.get("params", {})
+        assert params.get("model") == "gpt-4"
+        assert params.get("backend_type") == "openai"
+        assert params.get("limit") == 50
+
+    @pytest.mark.asyncio
+    async def test_get_audit_logs_http_error(self, auth_client):
+        """Test audit log retrieval with HTTP error from MLX Server."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server error", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs")
+
+        assert response.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_get_audit_logs_server_unavailable(self, auth_client):
+        """Test audit log retrieval when MLX Server is unavailable."""
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.side_effect = Exception("Connection refused")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs")
+
+        assert response.status_code == 503
+        assert "MLX Server not available" in response.json()["detail"]
+
+
+class TestGetAuditStats:
+    """Tests for GET /api/system/audit-logs/stats."""
+
+    @pytest.mark.asyncio
+    async def test_get_audit_stats_success(self, auth_client):
+        """Test successful audit stats retrieval."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "total_requests": 1000,
+            "success_count": 950,
+            "error_count": 50,
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/stats")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_requests"] == 1000
+
+    @pytest.mark.asyncio
+    async def test_get_audit_stats_http_error(self, auth_client):
+        """Test audit stats with HTTP error from MLX Server."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Not found", request=MagicMock(), response=MagicMock(status_code=404)
+        )
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/stats")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_audit_stats_server_unavailable(self, auth_client):
+        """Test audit stats when MLX Server is unavailable."""
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.side_effect = Exception("Connection refused")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/stats")
+
+        assert response.status_code == 503
+        assert "MLX Server not available" in response.json()["detail"]
+
+
+class TestExportAuditLogs:
+    """Tests for GET /api/system/audit-logs/export."""
+
+    @pytest.mark.asyncio
+    async def test_export_audit_logs_jsonl(self, auth_client):
+        """Test exporting audit logs as JSONL."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{"id": 1}\n{"id": 2}\n'
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/export")
+
+        assert response.status_code == 200
+        assert "application/jsonl" in response.headers.get("content-type", "")
+        assert "attachment" in response.headers.get("content-disposition", "")
+
+    @pytest.mark.asyncio
+    async def test_export_audit_logs_csv(self, auth_client):
+        """Test exporting audit logs as CSV."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"id,model,status\n1,gpt-4,success\n"
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get(
+                "/api/system/audit-logs/export", params={"format": "csv"}
+            )
+
+        assert response.status_code == 200
+        assert "text/csv" in response.headers.get("content-type", "")
+
+    @pytest.mark.asyncio
+    async def test_export_audit_logs_with_filters(self, auth_client):
+        """Test exporting audit logs with filters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b'{"id": 1}\n'
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get(
+                "/api/system/audit-logs/export",
+                params={
+                    "model": "gpt-4",
+                    "backend_type": "openai",
+                    "status": "success",
+                    "start_time": "2024-01-01T00:00:00Z",
+                    "end_time": "2024-12-31T23:59:59Z",
+                },
+            )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_export_audit_logs_http_error(self, auth_client):
+        """Test export with HTTP error from MLX Server."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server error", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/export")
+
+        assert response.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_export_audit_logs_server_unavailable(self, auth_client):
+        """Test export when MLX Server is unavailable."""
+        with patch("mlx_manager.routers.system.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.side_effect = Exception("Connection refused")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.get("/api/system/audit-logs/export")
+
+        assert response.status_code == 503
+        assert "MLX Server not available" in response.json()["detail"]
+
+
+# ============================================================================
+# WebSocket Proxy Tests
+# ============================================================================
+
+
+class TestAuditLogWebSocketProxy:
+    """Tests for WebSocket /api/system/ws/audit-logs."""
+
+    def test_websocket_connection_failure(self):
+        """Test WebSocket when MLX Server connection fails."""
+        import websockets
+        from starlette.testclient import TestClient as SyncTestClient
+
+        from mlx_manager.main import app
+
+        # Patch websockets.connect to simulate connection failure
+        with patch.object(websockets, "connect") as mock_connect:
+            mock_connect.side_effect = Exception("Connection refused")
+
+            # Use synchronous TestClient for WebSocket testing
+            with SyncTestClient(app) as sync_client:
+                # WebSocket should accept connection then send error message
+                with sync_client.websocket_connect("/api/system/ws/audit-logs") as ws:
+                    # Should receive error message
+                    data = ws.receive_json()
+                    assert data["type"] == "error"
+                    assert "MLX Server not available" in data["message"]
 
 
