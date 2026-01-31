@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 12 of 12 (Production Hardening)
-Plan: 3 of 4 complete (01 + 02 + 03)
-Status: In progress
-Last activity: 2026-01-31 — Completed 12-03-PLAN.md (Request Timeouts)
+Plan: 4 of 4 complete (01 + 02 + 03 + 04)
+Status: Phase complete
+Last activity: 2026-01-31 — Completed 12-04-PLAN.md (Audit Logging)
 
-Progress: [███████████░] ~94% (Phase 12 plan 3/4)
+Progress: [████████████] 100% (Phase 12 complete)
 
 ## Milestone v1.2 Summary
 
@@ -175,6 +175,9 @@ Recent decisions affecting current work:
 - **Graceful LLM client instrumentation**: try/except for optional openai/anthropic packages
 - **Per-endpoint timeouts**: Chat 15min, Completions 10min, Embeddings 2min via asyncio.wait_for
 - **Streaming timeout error events**: SSE error event with type/message before close for graceful degradation
+- **Privacy-first audit logging**: AuditLog model has no prompt/response content fields, only metadata
+- **Background audit writes**: asyncio.create_task for non-blocking logging
+- **track_request context manager**: Wraps request lifecycle, auto-logs on exit with status/error
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -184,13 +187,13 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 12 in progress:**
+**Phase 12 complete:**
 - Plan 01: Pydantic LogFire observability integration (COMPLETE)
 - Plan 02: RFC 7807 error responses with request_id (COMPLETE)
 - Plan 03: Request Timeouts (COMPLETE)
-- Plan 04: Comprehensive Testing (pending)
+- Plan 04: Audit Logging (COMPLETE)
 
-Observability, error handling, and timeout foundation complete. Ready for PROD-04.
+All PROD requirements complete. Phase 12 Production Hardening finished.
 
 ## Research Documents
 
@@ -208,7 +211,7 @@ Observability, error handling, and timeout foundation complete. Ready for PROD-0
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:41:00Z
-Stopped at: Completed 12-03-PLAN.md (Request Timeouts)
+Last session: 2026-01-31T11:41:26Z
+Stopped at: Completed 12-04-PLAN.md (Audit Logging)
 Resume file: None
-Next: 12-04-PLAN.md (Comprehensive Testing)
+Next: Phase 12 complete, ready for v1.2 milestone wrap-up
