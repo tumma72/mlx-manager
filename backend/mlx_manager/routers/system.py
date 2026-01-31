@@ -1,5 +1,6 @@
 """System API router."""
 
+import asyncio
 import logging
 import platform
 import subprocess
@@ -7,7 +8,7 @@ import sys
 from typing import Annotated
 
 import psutil
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.config import settings
@@ -185,3 +186,62 @@ async def get_launchd_status(
     """Get launchd service status."""
     status = launchd_manager.get_status(profile)
     return LaunchdStatus(**status)
+
+
+# ============================================================================
+# WebSocket Proxy for Audit Logs
+# ============================================================================
+
+
+@router.websocket("/ws/audit-logs")
+async def proxy_audit_log_stream(websocket: WebSocket) -> None:
+    """Proxy WebSocket connection to MLX Server for audit log streaming.
+
+    The frontend connects to the manager API (port 8080), not directly to
+    the MLX Server (port 10242). This endpoint proxies the WebSocket
+    connection to the MLX Server's audit log stream.
+    """
+    await websocket.accept()
+
+    # MLX Server WebSocket URL (default port 10242)
+    mlx_server_ws_url = "ws://localhost:10242/admin/ws/audit-logs"
+
+    try:
+        import websockets
+
+        async with websockets.connect(mlx_server_ws_url) as mlx_ws:
+
+            async def receive_from_mlx() -> None:
+                """Forward messages from MLX Server to frontend."""
+                async for message in mlx_ws:
+                    await websocket.send_text(message)
+
+            async def receive_from_client() -> None:
+                """Forward messages from frontend to MLX Server."""
+                while True:
+                    try:
+                        data = await websocket.receive_text()
+                        await mlx_ws.send(data)
+                    except WebSocketDisconnect:
+                        return
+
+            # Run both directions concurrently
+            done, pending = await asyncio.wait(
+                [
+                    asyncio.create_task(receive_from_mlx()),
+                    asyncio.create_task(receive_from_client()),
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+
+    except Exception as e:
+        logger.warning(f"Audit log WebSocket proxy failed: {e}")
+        try:
+            await websocket.send_json(
+                {"type": "error", "message": "MLX Server not available for audit logs"}
+            )
+        except Exception:
+            pass  # Client may have already disconnected
+        await websocket.close()
