@@ -163,14 +163,6 @@ describe("ProfileCard", () => {
       expect(screen.queryByText("A test profile")).not.toBeInTheDocument();
     });
 
-    it("renders port number", () => {
-      render(ProfileCard, {
-        props: { profile: createMockProfile({ port: 8080 }) },
-      });
-
-      expect(screen.getByText("8080")).toBeInTheDocument();
-    });
-
     it("renders model type", () => {
       render(ProfileCard, {
         props: { profile: createMockProfile({ model_type: "multimodal" }) },

@@ -108,7 +108,6 @@ describe("ProfileForm", () => {
       });
 
       expect(screen.getByLabelText(/Name/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Port/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Model Path/)).toBeInTheDocument();
     });
 
@@ -152,19 +151,6 @@ describe("ProfileForm", () => {
       expect(
         screen.getByRole("button", { name: "Cancel" }),
       ).toBeInTheDocument();
-    });
-
-    it("initializes port with nextPort prop", () => {
-      render(ProfileForm, {
-        props: {
-          nextPort: 12345,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      const portInput = screen.getByLabelText(/Port/) as HTMLInputElement;
-      expect(portInput.value).toBe("12345");
     });
 
     it("initializes model path with initialModelPath prop", () => {
@@ -218,7 +204,6 @@ describe("ProfileForm", () => {
         name: "Existing Profile",
         description: "Test description",
         model_path: "mlx-community/existing-model",
-        port: 11111,
       });
 
       render(ProfileForm, {
@@ -239,9 +224,6 @@ describe("ProfileForm", () => {
       expect(
         (screen.getByLabelText(/Model Path/) as HTMLInputElement).value,
       ).toBe("mlx-community/existing-model");
-      expect((screen.getByLabelText(/Port/) as HTMLInputElement).value).toBe(
-        "11111",
-      );
     });
 
     it("populates system prompt", () => {

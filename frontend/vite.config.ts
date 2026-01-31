@@ -9,6 +9,11 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
       },
+      // MLX Server inference endpoints - embedded in MLX Manager
+      "/v1": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
 });

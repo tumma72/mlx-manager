@@ -164,22 +164,20 @@
 				return;
 			}
 
-			// Server is running, check if model is loaded
+			// Server is running, check if health endpoint reports ready
+			// With embedded server, this always returns healthy immediately
 			try {
-				const response = await fetch(`http://${profile.host}:${profile.port}/v1/models`);
-				if (response.ok) {
-					const data = await response.json();
-					if (data.data && data.data.length > 0) {
-						// Model is loaded - server is ready!
-						serverStore.markStartupSuccess(profile.id);
-						isPolling = false;
-						pollTimeoutId = null;
-						serverStore.stopProfilePolling(profile.id);
-						return;
-					}
+				const health = await serversApi.health(profile.id);
+				if (health.status === 'healthy' && health.model_loaded) {
+					// Server is ready!
+					serverStore.markStartupSuccess(profile.id);
+					isPolling = false;
+					pollTimeoutId = null;
+					serverStore.stopProfilePolling(profile.id);
+					return;
 				}
 			} catch {
-				// Model endpoint not responding yet, keep polling
+				// Health check failed, keep polling
 			}
 
 			// Continue polling
@@ -388,15 +386,9 @@
 		</div>
 	</div>
 
-	<!-- Server Stats (when running or starting) -->
+	<!-- Server Stats (when running) -->
 	{#if currentServer && isRunning}
-		<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-			<div class="flex items-center gap-2">
-				<Activity class="w-4 h-4 text-muted-foreground" />
-				<span class="text-muted-foreground">Port:</span>
-				<span class="font-mono">{profile.port}</span>
-			</div>
-
+		<div class="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
 			<div class="flex items-center gap-2">
 				<Cpu class="w-4 h-4 text-muted-foreground" />
 				<span class="text-muted-foreground">PID:</span>
@@ -410,17 +402,13 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				<Activity class="w-4 h-4 text-muted-foreground" />
 				<span class="text-muted-foreground">Uptime:</span>
 				<span>{formatDuration(currentServer.uptime_seconds)}</span>
 			</div>
 		</div>
 	{:else}
 		<div class="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-			<div class="flex items-center gap-2">
-				<Activity class="w-4 h-4" />
-				<span>Port:</span>
-				<span class="font-mono">{profile.port}</span>
-			</div>
 			<div class="flex items-center gap-2">
 				<span>Type:</span>
 				<span>{profile.model_type}</span>

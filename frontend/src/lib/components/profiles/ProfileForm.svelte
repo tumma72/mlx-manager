@@ -174,16 +174,9 @@
 
 		<div class="space-y-4">
 			<!-- Basic Info -->
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-				<div>
-					<label for="name" class="block text-sm font-medium mb-1">Name *</label>
-					<Input id="name" bind:value={name} placeholder="e.g., Coding Assistant" required />
-				</div>
-
-				<div>
-					<label for="port" class="block text-sm font-medium mb-1">Port *</label>
-					<Input id="port" type="number" bind:value={port} required />
-				</div>
+			<div>
+				<label for="name" class="block text-sm font-medium mb-1">Name *</label>
+				<Input id="name" bind:value={name} placeholder="e.g., Coding Assistant" required />
 			</div>
 
 			<div>

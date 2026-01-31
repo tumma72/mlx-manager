@@ -106,14 +106,8 @@
 		</div>
 	</div>
 
-	<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-		<div class="flex items-center gap-2">
-			<Activity class="w-4 h-4 text-muted-foreground" />
-			<span class="text-muted-foreground">Port:</span>
-			<span class="font-mono">{profile.port}</span>
-		</div>
-
-		{#if server}
+	{#if server}
+		<div class="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
 			<div class="flex items-center gap-2">
 				<Cpu class="w-4 h-4 text-muted-foreground" />
 				<span class="text-muted-foreground">PID:</span>
@@ -127,11 +121,12 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				<Activity class="w-4 h-4 text-muted-foreground" />
 				<span class="text-muted-foreground">Uptime:</span>
 				<span>{formatDuration(server.uptime_seconds)}</span>
 			</div>
-		{/if}
-	</div>
+		</div>
+	{/if}
 
 	<div class="mt-3 text-sm text-muted-foreground truncate">
 		<span class="font-mono">{profile.model_path}</span>

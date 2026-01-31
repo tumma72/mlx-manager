@@ -101,14 +101,6 @@ describe("ServerCard", () => {
       expect(screen.getByText("My Profile")).toBeInTheDocument();
     });
 
-    it("renders port number", () => {
-      render(ServerCard, {
-        props: { profile: createMockProfile({ port: 8080 }) },
-      });
-
-      expect(screen.getByText("8080")).toBeInTheDocument();
-    });
-
     it("renders model path", () => {
       render(ServerCard, {
         props: {
@@ -738,14 +730,6 @@ describe("ServerCard", () => {
           "mlx-community/very-long-model-name-that-is-really-quite-long",
         ),
       ).toBeInTheDocument();
-    });
-
-    it("handles large port numbers", () => {
-      render(ServerCard, {
-        props: { profile: createMockProfile({ port: 65535 }) },
-      });
-
-      expect(screen.getByText("65535")).toBeInTheDocument();
     });
 
     it("handles large PID numbers", () => {
