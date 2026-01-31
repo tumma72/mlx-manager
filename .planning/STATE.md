@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 12 of 12 (Production Hardening)
-Plan: 4 of 4 complete (01 + 02 + 03 + 04)
+Plan: 6 of 6 complete (01 + 02 + 03 + 04 + 05 + 06)
 Status: Phase complete
-Last activity: 2026-01-31 — Completed 12-04-PLAN.md (Audit Logging)
+Last activity: 2026-01-31 — Completed 12-06-PLAN.md (Timeout Settings UI)
 
 Progress: [████████████] 100% (Phase 12 complete)
 
@@ -178,6 +178,8 @@ Recent decisions affecting current work:
 - **Privacy-first audit logging**: AuditLog model has no prompt/response content fields, only metadata
 - **Background audit writes**: asyncio.create_task for non-blocking logging
 - **track_request context manager**: Wraps request lifecycle, auto-logs on exit with status/error
+- **Timeout settings as key-value pairs**: Individual keys (timeout_chat_seconds, etc.) in Setting table for flexibility
+- **Range + Number inputs for timeouts**: Dual control pattern for quick slider adjustments and precise numeric entry
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -192,6 +194,8 @@ None yet.
 - Plan 02: RFC 7807 error responses with request_id (COMPLETE)
 - Plan 03: Request Timeouts (COMPLETE)
 - Plan 04: Audit Logging (COMPLETE)
+- Plan 05: Audit Log UI (COMPLETE)
+- Plan 06: Timeout Settings UI (COMPLETE)
 
 All PROD requirements complete. Phase 12 Production Hardening finished.
 
@@ -211,7 +215,7 @@ All PROD requirements complete. Phase 12 Production Hardening finished.
 
 ## Session Continuity
 
-Last session: 2026-01-31T11:41:26Z
-Stopped at: Completed 12-04-PLAN.md (Audit Logging)
+Last session: 2026-01-31T11:48:57Z
+Stopped at: Completed 12-06-PLAN.md (Timeout Settings UI)
 Resume file: None
 Next: Phase 12 complete, ready for v1.2 milestone wrap-up
