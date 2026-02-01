@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -327,6 +329,201 @@ class ModelPoolManager:
         loaded.preloaded = True
         logger.info(f"Model preloaded (protected from eviction): {model_id}")
         return loaded
+
+    # =========================================================================
+    # LoRA Adapter Loading Methods
+    # =========================================================================
+
+    def _validate_adapter_path(self, adapter_path: str) -> AdapterInfo:
+        """Validate an adapter path and parse its configuration.
+
+        Args:
+            adapter_path: Path to the LoRA adapter directory
+
+        Returns:
+            AdapterInfo with parsed adapter metadata
+
+        Raises:
+            ValueError: If adapter path is invalid or adapter_config.json is missing
+        """
+        path = Path(adapter_path)
+
+        # Check if directory exists
+        if not path.exists():
+            raise ValueError(f"Adapter path does not exist: {adapter_path}")
+
+        if not path.is_dir():
+            raise ValueError(f"Adapter path is not a directory: {adapter_path}")
+
+        # Check for adapter_config.json
+        config_path = path / "adapter_config.json"
+        if not config_path.exists():
+            raise ValueError(
+                f"adapter_config.json not found in adapter directory: {adapter_path}"
+            )
+
+        # Parse adapter_config.json
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid adapter_config.json: {e}") from e
+
+        # Extract base_model if available
+        base_model = config.get("base_model_name_or_path")
+
+        return AdapterInfo(
+            adapter_path=adapter_path,
+            base_model=base_model,
+            description=config.get("description"),
+        )
+
+    def _get_adapter_cache_key(self, model_id: str, adapter_path: str) -> str:
+        """Generate a composite cache key for model+adapter combination.
+
+        Args:
+            model_id: Base model ID
+            adapter_path: Path to LoRA adapter
+
+        Returns:
+            Composite cache key
+        """
+        return f"{model_id}::{adapter_path}"
+
+    async def get_model_with_adapter(
+        self, model_id: str, adapter_path: str
+    ) -> LoadedModel:
+        """Get a model with a LoRA adapter loaded.
+
+        The model+adapter combination is cached separately from the base model,
+        allowing the same base model to be loaded with multiple different adapters.
+
+        Args:
+            model_id: HuggingFace model ID for the base model
+            adapter_path: Path to the LoRA adapter directory
+
+        Returns:
+            LoadedModel with adapter loaded and adapter_info populated
+
+        Raises:
+            ValueError: If adapter path is invalid
+            RuntimeError: If model loading fails
+            HTTPException: 503 if insufficient memory
+        """
+        # Validate adapter path first
+        adapter_info = self._validate_adapter_path(adapter_path)
+
+        # Create composite cache key
+        cache_key = self._get_adapter_cache_key(model_id, adapter_path)
+
+        async with self._lock:
+            # Return cached model+adapter
+            if cache_key in self._models:
+                loaded = self._models[cache_key]
+                loaded.touch()
+                logger.debug(f"Model+adapter cache hit: {cache_key}")
+                return loaded
+
+            # Wait if already loading
+            if cache_key in self._loading:
+                logger.debug(f"Waiting for model+adapter load: {cache_key}")
+
+        # Wait outside lock if loading
+        if cache_key in self._loading:
+            await self._loading[cache_key].wait()
+            return self._models[cache_key]
+
+        # Ensure memory before loading
+        async with self._lock:
+            await self._ensure_memory_for_load(model_id)
+
+        # Load model with adapter
+        return await self._load_model_with_adapter(
+            model_id, adapter_path, adapter_info, cache_key
+        )
+
+    async def _load_model_with_adapter(
+        self,
+        model_id: str,
+        adapter_path: str,
+        adapter_info: AdapterInfo,
+        cache_key: str,
+    ) -> LoadedModel:
+        """Load a model with a LoRA adapter.
+
+        Only TEXT_GEN models support LoRA adapters currently.
+        Vision and embedding models don't have LoRA support in mlx-vlm/mlx-embeddings.
+
+        Args:
+            model_id: Base model ID
+            adapter_path: Path to LoRA adapter
+            adapter_info: Parsed adapter metadata
+            cache_key: Composite cache key for the model+adapter
+
+        Returns:
+            LoadedModel with adapter applied
+        """
+        async with self._lock:
+            # Double-check after acquiring lock
+            if cache_key in self._models:
+                return self._models[cache_key]
+
+            # Mark as loading
+            self._loading[cache_key] = asyncio.Event()
+
+        logger.info(f"Loading model with adapter: {model_id} + {adapter_path}")
+        start_time = time.time()
+
+        try:
+            # Detect model type - adapters only supported for TEXT_GEN
+            model_type = detect_model_type(model_id)
+
+            if model_type != ModelType.TEXT_GEN:
+                raise ValueError(
+                    f"LoRA adapters only supported for text-gen models, "
+                    f"got {model_type.value} for {model_id}"
+                )
+
+            # Load model with adapter using mlx-lm
+            from mlx_lm import load
+
+            result = await asyncio.to_thread(load, model_id, adapter_path=adapter_path)
+            model, tokenizer = result[0], result[1]
+
+            # Get memory after loading
+            from mlx_manager.mlx_server.utils.memory import get_memory_usage
+
+            memory = get_memory_usage()
+
+            loaded = LoadedModel(
+                model_id=cache_key,  # Use composite key as model_id for cache lookup
+                model=model,
+                tokenizer=tokenizer,
+                model_type=model_type.value,
+                size_gb=memory["active_gb"],
+                adapter_path=adapter_path,
+                adapter_info=adapter_info,
+            )
+
+            async with self._lock:
+                self._models[cache_key] = loaded
+                self._loading[cache_key].set()
+                del self._loading[cache_key]
+
+            elapsed = time.time() - start_time
+            logger.info(
+                f"Model+adapter loaded: {model_id} + {adapter_path} "
+                f"({elapsed:.1f}s, {loaded.size_gb:.1f}GB)"
+            )
+            return loaded
+
+        except Exception as e:
+            async with self._lock:
+                if cache_key in self._loading:
+                    self._loading[cache_key].set()
+                    del self._loading[cache_key]
+            logger.error(f"Failed to load model with adapter {cache_key}: {e}")
+            raise RuntimeError(f"Failed to load model with adapter: {e}") from e
 
     async def unload_model(self, model_id: str) -> bool:
         """Unload a model from the pool.
