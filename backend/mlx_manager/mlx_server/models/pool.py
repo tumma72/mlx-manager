@@ -13,7 +13,7 @@ import psutil
 from fastapi import HTTPException
 
 from mlx_manager.mlx_server.models.detection import detect_model_type
-from mlx_manager.mlx_server.models.types import ModelType
+from mlx_manager.mlx_server.models.types import AdapterInfo, ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ class LoadedModel:
     size_gb: float = 0.0  # Estimated size
     model_type: str = "text-gen"  # Type of model (from ModelType enum values)
     preloaded: bool = False  # Whether protected from eviction
+    adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
+    adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -432,19 +434,29 @@ class ModelPoolManager:
         Returns:
             dict with pool configuration and loaded models info
         """
+        loaded_models = []
+        for m in self._models.values():
+            model_info: dict[str, Any] = {
+                "model_id": m.model_id,
+                "size_gb": m.size_gb,
+                "preloaded": m.preloaded,
+                "last_used": m.last_used,
+            }
+            if m.adapter_path:
+                model_info["adapter_path"] = m.adapter_path
+            if m.adapter_info:
+                model_info["adapter_info"] = {
+                    "adapter_path": m.adapter_info.adapter_path,
+                    "base_model": m.adapter_info.base_model,
+                    "description": m.adapter_info.description,
+                }
+            loaded_models.append(model_info)
+
         return {
             "max_memory_gb": self.max_memory_gb,
             "current_memory_gb": self._current_memory_gb(),
             "max_models": self.max_models,
-            "loaded_models": [
-                {
-                    "model_id": m.model_id,
-                    "size_gb": m.size_gb,
-                    "preloaded": m.preloaded,
-                    "last_used": m.last_used,
-                }
-                for m in self._models.values()
-            ],
+            "loaded_models": loaded_models,
         }
 
     async def cleanup(self) -> None:

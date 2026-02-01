@@ -1,6 +1,16 @@
 """Model types for the MLX server."""
 
+from dataclasses import dataclass
 from enum import Enum
+
+
+@dataclass
+class AdapterInfo:
+    """Information about a loaded LoRA adapter."""
+
+    adapter_path: str
+    base_model: str | None = None  # From adapter_config.json if available
+    description: str | None = None
 
 
 class ModelType(str, Enum):
