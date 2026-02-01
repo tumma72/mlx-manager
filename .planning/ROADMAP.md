@@ -239,12 +239,12 @@ Plans:
 **Plans**: 6 plans in 3 waves
 
 Plans:
-- [ ] 14-01-PLAN.md — Extended OpenAI schemas and ModelAdapter protocol
-- [ ] 14-02-PLAN.md — Tool call parsers (Llama, Qwen, GLM4)
-- [ ] 14-03-PLAN.md — Reasoning/thinking mode extraction
-- [ ] 14-04-PLAN.md — Structured output validation service
-- [ ] 14-05-PLAN.md — LoRA adapter loading support
-- [ ] 14-06-PLAN.md — Chat endpoint integration and tests
+- [x] 14-01-PLAN.md — Extended OpenAI schemas and ModelAdapter protocol
+- [x] 14-02-PLAN.md — Tool call parsers (Llama, Qwen, GLM4)
+- [x] 14-03-PLAN.md — Reasoning/thinking mode extraction
+- [x] 14-04-PLAN.md — Structured output validation service
+- [x] 14-05-PLAN.md — LoRA adapter loading support
+- [x] 14-06-PLAN.md — Chat endpoint integration and tests
 
 ## Progress
 
@@ -259,7 +259,7 @@ Plans:
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 0/5 | Planned | - |
-| 14. Adapters | v1.2 | 0/6 | Planned | - |
+| 14. Adapters | v1.2 | 6/6 | Complete | 2026-02-01 |
 
 ## Technical Architecture
 
