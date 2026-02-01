@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 5 of 6 (LoRA Adapter Loading)
+Plan: 4 of 6 (Structured Output Validation)
 Status: In progress
-Last activity: 2026-02-01 — Completed 14-05-PLAN.md (LoRA Adapter Loading)
+Last activity: 2026-02-01 — Completed 14-04-PLAN.md (Structured Output Validation)
 
-Progress: [███████████░] 99% (Plan 14-05 complete)
+Progress: [███████████░] 99% (Plans 14-01, 14-04, 14-05 complete)
 
 ## Milestone v1.2 Summary
 
@@ -198,12 +198,9 @@ Recent decisions affecting current work:
 - **ToolChoiceOption as type alias**: `Literal["none", "auto", "required"] | dict[str, Any] | None` provides flexibility for tool_choice parameter
 - **ChatMessage content nullable**: Allows tool-only assistant messages where content is None but tool_calls is populated
 - **Optional protocol methods pattern**: Add to Protocol, implement defaults in DefaultAdapter, adapters inherit
-- **Composite cache key for adapters**: Use model_id::adapter_path format to allow same base model with different adapters
-- **LoRA adapters TEXT_GEN only**: mlx-vlm and mlx-embeddings don't support adapters yet
-- **Adapter validation requirements**: Directory must exist and contain adapter_config.json
-- **Module-level ReasoningExtractor**: Single instance per adapter module for efficiency
-- **Four reasoning tag patterns**: <think>, <thinking>, <reasoning>, <reflection> for model compatibility
-- **reasoning_content field pattern**: Following Anthropic Claude API pattern for thinking content
+- **Draft202012Validator for JSON Schema**: Use modern JSON Schema draft for structured output validation
+- **Error path format**: dot.notation for objects, [N] for arrays in validation error paths
+- **Type coercion in validation**: Schema-guided coercion for LLM outputs (string "5" -> int 5)
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -216,10 +213,10 @@ None yet.
 **Phase 14 progress:**
 - Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
 - Plan 02: Pending (Tool Parsers - Llama, Qwen, GLM4)
-- Plan 03: Complete (Reasoning Extraction)
-- Plan 04: Pending (Message Converters)
-- Plan 05: Complete (LoRA Adapter Loading)
-- Plan 06: Pending (Structured Output)
+- Plan 03: Pending (Reasoning Extraction)
+- Plan 04: Complete (Structured Output Validation)
+- Plan 05: Complete (LoRA Adapter Support)
+- Plan 06: Pending (Integration)
 
 **Phase 13 test updates pending:**
 - Tests in test_main.py and conftest.py reference deleted modules
@@ -242,7 +239,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01
-Stopped at: Completed 14-05-PLAN.md (LoRA Adapter Loading)
+Last session: 2026-02-01T11:10:00Z
+Stopped at: Completed 14-04-PLAN.md (Structured Output Validation)
 Resume file: None
-Next: Execute 14-06-PLAN.md (Structured Output)
+Next: Execute 14-02-PLAN.md (Tool Parsers)
