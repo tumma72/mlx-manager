@@ -138,6 +138,9 @@ class ChatMessage(BaseModel):
     - role: "tool"
     - tool_call_id: ID of the tool call this is a response to
     - content: The tool's response
+
+    For reasoning models (DeepSeek-R1, Qwen3-thinking, Llama-thinking):
+    - reasoning_content: Chain-of-thought content extracted from <think> tags
     """
 
     role: Literal["system", "user", "assistant", "tool"]
@@ -146,6 +149,10 @@ class ChatMessage(BaseModel):
     tool_calls: list[ToolCall] | None = None
     # For tool response messages
     tool_call_id: str | None = None
+    # For reasoning models - extracted chain-of-thought content
+    # Populated when model outputs thinking tags like <think>...</think>
+    # None for non-reasoning models or when no thinking content present
+    reasoning_content: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -245,11 +252,17 @@ class ToolCallDelta(BaseModel):
 
 
 class ChatCompletionChunkDelta(BaseModel):
-    """Delta content in streaming response."""
+    """Delta content in streaming response.
+
+    For reasoning models, reasoning_content can be streamed incrementally
+    just like regular content.
+    """
 
     role: str | None = None
     content: str | None = None
     tool_calls: list[ToolCallDelta] | None = None
+    # For reasoning models - chain-of-thought content can be streamed
+    reasoning_content: str | None = None
 
 
 class ChatCompletionChunkChoice(BaseModel):
