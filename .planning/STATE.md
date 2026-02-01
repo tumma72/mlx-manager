@@ -201,6 +201,9 @@ Recent decisions affecting current work:
 - **Composite cache key for adapters**: Use model_id::adapter_path format to allow same base model with different adapters
 - **LoRA adapters TEXT_GEN only**: mlx-vlm and mlx-embeddings don't support adapters yet
 - **Adapter validation requirements**: Directory must exist and contain adapter_config.json
+- **Module-level ReasoningExtractor**: Single instance per adapter module for efficiency
+- **Four reasoning tag patterns**: <think>, <thinking>, <reasoning>, <reflection> for model compatibility
+- **reasoning_content field pattern**: Following Anthropic Claude API pattern for thinking content
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -213,7 +216,7 @@ None yet.
 **Phase 14 progress:**
 - Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
 - Plan 02: Pending (Tool Parsers - Llama, Qwen, GLM4)
-- Plan 03: Pending (Reasoning Extraction)
+- Plan 03: Complete (Reasoning Extraction)
 - Plan 04: Pending (Message Converters)
 - Plan 05: Complete (LoRA Adapter Loading)
 - Plan 06: Pending (Structured Output)
