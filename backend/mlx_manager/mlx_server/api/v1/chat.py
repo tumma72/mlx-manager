@@ -19,6 +19,8 @@ from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
+    FunctionCall,
+    ToolCall,
     Usage,
     extract_content_parts,
 )
@@ -32,11 +34,17 @@ from mlx_manager.mlx_server.services.batching import (
 from mlx_manager.mlx_server.services.cloud.router import get_router
 from mlx_manager.mlx_server.services.image_processor import preprocess_images
 from mlx_manager.mlx_server.services.inference import generate_chat_completion
+from mlx_manager.mlx_server.services.structured_output import (
+    StructuredOutputValidator,
+)
 from mlx_manager.mlx_server.services.vision import generate_vision_completion
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+# Module-level validator instance
+_structured_output_validator = StructuredOutputValidator()
 
 
 @router.post("/chat/completions", response_model=None)
@@ -303,7 +311,12 @@ async def _handle_routed_request(
 async def _handle_direct_request(
     request: ChatCompletionRequest,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text request via direct inference (non-batched)."""
+    """Handle text request via direct inference (non-batched).
+
+    Supports:
+    - Tool calling: Passes tools to inference service
+    - Structured output: Validates response against JSON schema
+    """
     # Convert messages to dict format, extracting text from content blocks
     messages: list[dict[str, Any]] = []
     for m in request.messages:
@@ -320,18 +333,29 @@ async def _handle_direct_request(
         else ([request.stop] if request.stop else None)
     )
 
+    # Convert tools to dict format if present (and tool_choice is not "none")
+    tools: list[dict[str, Any]] | None = None
+    if request.tools and request.tool_choice != "none":
+        tools = [tool.model_dump() for tool in request.tools]
+        logger.debug(f"Passing {len(tools)} tools to inference")
+
     if request.stream:
-        return await _handle_streaming(request, messages, stop)
+        return await _handle_streaming(request, messages, stop, tools)
     else:
-        return await _handle_non_streaming(request, messages, stop)
+        return await _handle_non_streaming(request, messages, stop, tools)
 
 
 async def _handle_streaming(
     request: ChatCompletionRequest,
     messages: list[dict[str, Any]],
     stop: list[str] | None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> EventSourceResponse:
-    """Handle streaming response with timeout."""
+    """Handle streaming response with timeout.
+
+    Supports tool calling in streaming mode - tool calls are detected
+    and included in the final chunk.
+    """
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
 
@@ -347,6 +371,7 @@ async def _handle_streaming(
                     top_p=request.top_p,
                     stop=stop,
                     stream=True,
+                    tools=tools,
                 ),
                 timeout=timeout,
             )
@@ -374,8 +399,15 @@ async def _handle_non_streaming(
     request: ChatCompletionRequest,
     messages: list[dict[str, Any]],
     stop: list[str] | None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> ChatCompletionResponse:
-    """Handle non-streaming response."""
+    """Handle non-streaming response.
+
+    Supports:
+    - Tool calling: tool_calls included in response message
+    - Reasoning: reasoning_content included in response message
+    - Structured output: validates response against JSON schema
+    """
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
 
@@ -389,6 +421,7 @@ async def _handle_non_streaming(
                 top_p=request.top_p,
                 stop=stop,
                 stream=False,
+                tools=tools,
             ),
             timeout=timeout,
         )
@@ -400,10 +433,41 @@ async def _handle_non_streaming(
             f"Consider using a smaller model or reducing max_tokens.",
         )
 
-    # Convert to Pydantic response model
     # Cast to dict since we passed stream=False
     result_dict = cast(dict[str, Any], result)
     choice = result_dict["choices"][0]
+    msg = choice["message"]
+
+    # Validate structured output if json_schema is specified
+    content = msg.get("content", "")
+    if (
+        request.response_format
+        and request.response_format.type == "json_schema"
+        and request.response_format.json_schema
+    ):
+        schema = request.response_format.json_schema
+        validation_result = _structured_output_validator.validate_and_coerce(
+            content, schema
+        )
+        if not validation_result.success:
+            logger.warning(
+                f"Structured output validation failed: {validation_result.error}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model output failed JSON schema validation: "
+                f"{validation_result.error} at path {validation_result.error_path}",
+            )
+        logger.debug("Structured output validation passed")
+
+    # Build ChatMessage with optional tool_calls and reasoning_content
+    chat_message = ChatMessage(
+        role=msg["role"],
+        content=content,
+        tool_calls=_convert_tool_calls(msg.get("tool_calls")),
+        reasoning_content=msg.get("reasoning_content"),
+    )
+
     return ChatCompletionResponse(
         id=result_dict["id"],
         created=result_dict["created"],
@@ -411,10 +475,7 @@ async def _handle_non_streaming(
         choices=[
             ChatCompletionChoice(
                 index=choice["index"],
-                message=ChatMessage(
-                    role=choice["message"]["role"],
-                    content=choice["message"]["content"],
-                ),
+                message=chat_message,
                 finish_reason=choice["finish_reason"],
             )
         ],
@@ -424,6 +485,34 @@ async def _handle_non_streaming(
             total_tokens=result_dict["usage"]["total_tokens"],
         ),
     )
+
+
+def _convert_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[ToolCall] | None:
+    """Convert tool calls dict to Pydantic ToolCall objects.
+
+    Args:
+        tool_calls: List of tool call dicts from inference service
+
+    Returns:
+        List of ToolCall objects, or None if no tool calls
+    """
+    if not tool_calls:
+        return None
+
+    result: list[ToolCall] = []
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        result.append(
+            ToolCall(
+                id=tc.get("id", ""),
+                type=tc.get("type", "function"),
+                function=FunctionCall(
+                    name=func.get("name", ""),
+                    arguments=func.get("arguments", "{}"),
+                ),
+            )
+        )
+    return result
 
 
 # --- Batched Request Handlers ---
