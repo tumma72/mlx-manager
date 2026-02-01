@@ -9,7 +9,7 @@ Transform MLX Manager from a management UI for external servers (mlx-openai-serv
 ## Milestones
 
 - v1.1 UX & Auth - Phases 1-6 (shipped 2026-01-26)
-- v1.2 MLX Unified Server - Phases 7-13 (in progress)
+- v1.2 MLX Unified Server - Phases 7-14 (in progress)
 
 ## Phases
 
@@ -220,9 +220,35 @@ Plans:
 - [ ] 13-04-PLAN.md — Wire Settings to embedded MLX Server configuration
 - [ ] 13-05-PLAN.md — Verify complete integration and update tests
 
+#### Phase 14: Model Adapter Enhancements
+
+**Goal**: Achieve feature parity with mlx-openai-server, mlx-omni-server, and vllm-mlx by implementing tool calling, reasoning mode, message converters, structured output, and LoRA support
+
+**Depends on**: Phase 13
+
+**Requirements**: ADAPT-06 (Tool Calling), ADAPT-07 (Reasoning Mode), ADAPT-08 (Message Converters), ADAPT-09 (Structured Output), ADAPT-10 (LoRA Adapters)
+
+**Success Criteria** (what must be TRUE):
+1. Tool/function calling works with model-specific parsers (Llama, Qwen, GLM4)
+2. Reasoning/thinking mode parses `<think>`, `<reasoning>` tags and reasoning_content field
+3. Message converters translate between OpenAI format and model-specific formats
+4. Structured output validates responses against JSON Schema
+5. LoRA adapters can be loaded alongside base models
+6. All parsers integrated into chat completions endpoint
+
+**Plans**: 6 plans in 3 waves
+
+Plans:
+- [ ] 14-01-PLAN.md — Extended OpenAI schemas and ModelAdapter protocol
+- [ ] 14-02-PLAN.md — Tool call parsers (Llama, Qwen, GLM4)
+- [ ] 14-03-PLAN.md — Reasoning/thinking mode extraction
+- [ ] 14-04-PLAN.md — Structured output validation service
+- [ ] 14-05-PLAN.md — LoRA adapter loading support
+- [ ] 14-06-PLAN.md — Chat endpoint integration and tests
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13
+**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -233,6 +259,7 @@ Plans:
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 0/5 | Planned | - |
+| 14. Adapters | v1.2 | 0/6 | Planned | - |
 
 ## Technical Architecture
 
@@ -268,7 +295,7 @@ Plans:
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
 |  |                    Model Adapters (per family)                 |  |
-|  |  Llama | Qwen | Mistral | Gemma | VisionAddOn                  |  |
+|  |  Llama | Qwen | Mistral | Gemma | GLM4 | VisionAddOn           |  |
 |  +---------------------------+------------------------------------+  |
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
@@ -296,8 +323,8 @@ Plans:
 | logfire | latest | Observability |
 | httpx | 0.27+ | Cloud backend clients |
 | httpx-retries | 0.4+ | Retry transport for cloud backends |
-| pybreaker | 1.0+ | Circuit breaker pattern |
+| jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-01-31*
+*Roadmap revised: 2026-02-01*
 *Previous version: adapter/proxy approach (deprecated)*
