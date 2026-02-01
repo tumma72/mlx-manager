@@ -8,8 +8,10 @@ This adapter prepends system message to first user message for v1/v2 compatibili
 
 from typing import Any, cast
 
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
-class MistralAdapter:
+
+class MistralAdapter(DefaultAdapter):
     """Adapter for Mistral model family."""
 
     @property

@@ -5,8 +5,10 @@ Gemma models use <start_of_turn> and <end_of_turn> tokens for chat formatting.
 
 from typing import Any, cast
 
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
-class GemmaAdapter:
+
+class GemmaAdapter(DefaultAdapter):
     """Adapter for Gemma model family."""
 
     @property

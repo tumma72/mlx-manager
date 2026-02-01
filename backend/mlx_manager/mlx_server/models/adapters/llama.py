@@ -15,10 +15,12 @@ Without both, the model continues generating past the assistant's response.
 import logging
 from typing import Any, cast
 
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+
 logger = logging.getLogger(__name__)
 
 
-class LlamaAdapter:
+class LlamaAdapter(DefaultAdapter):
     """Adapter for Llama family models."""
 
     @property

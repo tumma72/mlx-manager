@@ -5,8 +5,10 @@ Qwen models use ChatML format with <|im_start|> and <|im_end|> tokens.
 
 from typing import Any, cast
 
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
-class QwenAdapter:
+
+class QwenAdapter(DefaultAdapter):
     """Adapter for Qwen model family."""
 
     @property
