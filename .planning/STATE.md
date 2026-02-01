@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 13 - MLX Server Integration
+**Current focus:** Phase 14 - Model Adapter Enhancements
 
 ## Current Position
 
-Phase: 13 of 13 (MLX Server Integration)
-Plan: 4 of 5 (Settings Wiring)
+Phase: 14 of 14 (Model Adapter Enhancements)
+Plan: 1 of 6 (Extended OpenAI schemas & ModelAdapter protocol)
 Status: In progress
-Last activity: 2026-01-31 — Completed 13-04-PLAN.md (Settings Wiring)
+Last activity: 2026-02-01 — Completed 14-01-PLAN.md (Extended schemas & protocol)
 
-Progress: [███████████░] 98% (Plan 13-04 complete)
+Progress: [███████████░] 99% (Plan 14-01 complete)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** All phases complete (44 plans total)
-**Phases:** 6 phases (7-12)
+**Status:** In progress
+**Phases:** 8 phases (7-14)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
 - Continuous Batching: BATCH-01 to BATCH-04 (4 requirements)
@@ -194,6 +194,10 @@ Recent decisions affecting current work:
 - **update_memory_limit sets MLX limit**: Calls mx.set_memory_limit() directly for immediate memory limit effect
 - **apply_preload_list marks evictable**: Models not in preload list have preloaded=False for LRU eviction
 - **refresh_rules clears backends**: Cached cloud backends closed and cleared on rule/credential changes
+- **Adapters inherit from DefaultAdapter**: Makes existing adapters (Llama, Qwen, Mistral, Gemma) protocol-compliant without duplicating code
+- **ToolChoiceOption as type alias**: `Literal["none", "auto", "required"] | dict[str, Any] | None` provides flexibility for tool_choice parameter
+- **ChatMessage content nullable**: Allows tool-only assistant messages where content is None but tool_calls is populated
+- **Optional protocol methods pattern**: Add to Protocol, implement defaults in DefaultAdapter, adapters inherit
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -203,16 +207,17 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 13 progress:**
-- Plan 01: Complete (mount MLX Server as sub-application)
-- Plan 02: Complete (remove legacy subprocess management)
-- Plan 03: Complete (Chat UI Integration)
-- Plan 04: Complete (Settings Wiring)
-- Plan 05: Pending (Test Updates)
+**Phase 14 progress:**
+- Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
+- Plan 02: Pending (Tool Parsers - Llama, Qwen, GLM4)
+- Plan 03: Pending (Reasoning Extraction)
+- Plan 04: Pending (Message Converters)
+- Plan 05: Pending (Structured Output)
+- Plan 06: Pending (LoRA Adapter Support)
 
-**Test failures expected:**
+**Phase 13 test updates pending:**
 - Tests in test_main.py and conftest.py reference deleted modules
-- Will be addressed in Plan 05 (Test Updates)
+- Should be addressed separately
 
 ## Research Documents
 
@@ -231,7 +236,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-31T15:57:04Z
-Stopped at: Completed 13-04-PLAN.md (Settings Wiring)
+Last session: 2026-02-01T18:04:00Z
+Stopped at: Completed 14-01-PLAN.md (Extended schemas & protocol)
 Resume file: None
-Next: Execute 13-05-PLAN.md (Test Updates)
+Next: Execute 14-02-PLAN.md (Tool Parsers)
