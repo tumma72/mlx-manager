@@ -4,6 +4,11 @@ CRITICAL: This module implements stop token detection in the generation loop.
 mlx_lm's stream_generate() doesn't accept stop_tokens directly - we must
 check each generated token against the model's terminators to prevent
 Llama 3.x models from generating indefinitely.
+
+Extended capabilities:
+- Tool calling: Tools injected into prompt, tool calls parsed from output
+- Reasoning extraction: Chain-of-thought content in <think> tags extracted
+- Structured output: JSON schema validation (handled at API layer)
 """
 
 import asyncio
@@ -13,6 +18,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from queue import Empty, Queue
+from typing import Any
 
 try:
     import logfire
@@ -32,6 +38,7 @@ async def generate_chat_completion(
     top_p: float = 1.0,
     stop: list[str] | None = None,
     stream: bool = False,
+    tools: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[dict, None] | dict:
     """Generate a chat completion.
 
@@ -43,10 +50,12 @@ async def generate_chat_completion(
         top_p: Nucleus sampling parameter
         stop: Additional stop strings (user-provided)
         stream: If True, yield chunks; if False, return complete response
+        tools: Optional list of tool definitions in OpenAI format
 
     Yields/Returns:
         Streaming: yields chunk dicts
-        Non-streaming: returns complete response dict
+        Non-streaming: returns complete response dict with optional tool_calls
+                      and reasoning_content in the message
     """
     from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -60,20 +69,40 @@ async def generate_chat_completion(
     # Get adapter for model family
     adapter = get_adapter(model_id)
 
+    # Build messages with tool definitions if provided
+    effective_messages = messages
+    if tools and adapter.supports_tool_calling():
+        # Inject tool definitions into system prompt
+        tool_prompt = adapter.format_tools_for_prompt(tools)
+        if tool_prompt:
+            effective_messages = _inject_tools_into_messages(messages, tool_prompt)
+            logger.debug(f"Injected tools into prompt for {model_id}")
+
     # Apply chat template
-    prompt = adapter.apply_chat_template(tokenizer, messages, add_generation_prompt=True)
+    prompt = adapter.apply_chat_template(
+        tokenizer, effective_messages, add_generation_prompt=True
+    )
 
     # CRITICAL: Get stop token IDs from adapter
     # Llama 3.x requires BOTH eos_token_id AND <|eot_id|> (end of turn)
     # Without this, models will generate past the assistant's response
     stop_token_ids: set[int] = set(adapter.get_stop_tokens(tokenizer))
+
+    # Add tool-specific stop tokens when tools are enabled
+    if tools and adapter.supports_tool_calling():
+        tool_stop_tokens = adapter.get_tool_call_stop_tokens(tokenizer)
+        stop_token_ids.update(tool_stop_tokens)
+
     logger.debug(f"Stop token IDs for {model_id}: {stop_token_ids}")
 
     # Generate unique ID for this completion
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
 
-    logger.info(f"Starting generation: {completion_id}, model={model_id}, max_tokens={max_tokens}")
+    logger.info(
+        f"Starting generation: {completion_id}, model={model_id}, "
+        f"max_tokens={max_tokens}, tools={'yes' if tools else 'no'}"
+    )
 
     # LogFire span for observability
     span_context = None
@@ -84,6 +113,7 @@ async def generate_chat_completion(
             max_tokens=max_tokens,
             temperature=temperature,
             stream=stream,
+            has_tools=tools is not None,
         )
         span_context.__enter__()
 
@@ -100,6 +130,8 @@ async def generate_chat_completion(
                 completion_id=completion_id,
                 created=created,
                 model_id=model_id,
+                adapter=adapter,
+                tools=tools,
             )
         else:
             return await _generate_chat_complete(
@@ -113,10 +145,50 @@ async def generate_chat_completion(
                 completion_id=completion_id,
                 created=created,
                 model_id=model_id,
+                adapter=adapter,
+                tools=tools,
             )
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
+
+
+def _inject_tools_into_messages(
+    messages: list[dict[str, Any]], tool_prompt: str
+) -> list[dict[str, Any]]:
+    """Inject tool definitions into the message list.
+
+    Appends tool definitions to the system message if one exists,
+    otherwise creates a new system message at the beginning.
+
+    Args:
+        messages: Original message list
+        tool_prompt: Formatted tool definitions string
+
+    Returns:
+        New message list with tool definitions injected
+    """
+    result = list(messages)  # Make a copy
+
+    # Find system message
+    system_idx = None
+    for i, msg in enumerate(result):
+        if msg.get("role") == "system":
+            system_idx = i
+            break
+
+    if system_idx is not None:
+        # Append to existing system message
+        existing_content = result[system_idx].get("content", "")
+        result[system_idx] = {
+            **result[system_idx],
+            "content": f"{existing_content}\n\n{tool_prompt}",
+        }
+    else:
+        # Create new system message at the beginning
+        result.insert(0, {"role": "system", "content": tool_prompt})
+
+    return result
 
 
 async def _stream_chat_generate(
@@ -130,6 +202,8 @@ async def _stream_chat_generate(
     completion_id: str,
     created: int,
     model_id: str,
+    adapter: Any = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Generate tokens with streaming for chat completion.
 
@@ -137,12 +211,17 @@ async def _stream_chat_generate(
     respect Metal GPU thread affinity. Tokens are passed via Queue to the
     async generator. Using run_in_executor with next(generator) does NOT work
     because MLX Metal operations have thread affinity requirements.
+
+    For tool calling and reasoning: We buffer the entire response to detect
+    tool calls at the end. Reasoning content is accumulated but processed
+    after generation completes.
     """
     from mlx_lm import stream_generate
 
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     completion_tokens = 0
+    accumulated_text = ""  # Buffer for tool call and reasoning detection
 
     # Queue for passing tokens from generation thread to async generator
     # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
@@ -209,7 +288,9 @@ async def _stream_chat_generate(
         while True:
             # Poll queue without blocking event loop (use run_in_executor for queue.get)
             try:
-                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
+                result = await loop.run_in_executor(
+                    None, lambda: token_queue.get(timeout=0.1)
+                )
             except Empty:
                 continue
 
@@ -223,6 +304,7 @@ async def _stream_chat_generate(
 
             token_text, token_id, is_stop = result
             completion_tokens += 1
+            accumulated_text += token_text
 
             if is_stop:
                 # Stop token found - don't yield the stop token text
@@ -247,7 +329,30 @@ async def _stream_chat_generate(
         # Wait for thread to finish
         gen_thread.join(timeout=1.0)
 
-        # Final chunk with finish_reason
+        # Post-process: Check for tool calls in accumulated text
+        tool_calls = None
+        if tools and adapter and adapter.supports_tool_calling():
+            tool_calls = adapter.parse_tool_calls(accumulated_text)
+            if tool_calls:
+                finish_reason = "tool_calls"
+                logger.debug(
+                    f"Detected {len(tool_calls)} tool calls in streaming response"
+                )
+
+        # Build final chunk with finish_reason and optional tool_calls
+        final_delta: dict[str, Any] = {}
+        if tool_calls:
+            # Include tool_calls in final delta
+            final_delta["tool_calls"] = [
+                {
+                    "index": i,
+                    "id": tc["id"],
+                    "type": tc["type"],
+                    "function": tc["function"],
+                }
+                for i, tc in enumerate(tool_calls)
+            ]
+
         yield {
             "id": completion_id,
             "object": "chat.completion.chunk",
@@ -256,7 +361,7 @@ async def _stream_chat_generate(
             "choices": [
                 {
                     "index": 0,
-                    "delta": {},
+                    "delta": final_delta,
                     "finish_reason": finish_reason,
                 }
             ],
@@ -273,6 +378,7 @@ async def _stream_chat_generate(
                 completion_id=completion_id,
                 completion_tokens=completion_tokens,
                 finish_reason=finish_reason,
+                has_tool_calls=tool_calls is not None,
             )
 
     finally:
@@ -291,12 +397,18 @@ async def _generate_chat_complete(
     completion_id: str,
     created: int,
     model_id: str,
+    adapter: Any = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> dict:
     """Generate complete response (non-streaming) for chat completion.
 
     CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
     thread affinity. Results are passed via Queue. Using run_in_executor with
     next(generator) does NOT work because MLX Metal has thread affinity.
+
+    Post-processes the response to:
+    - Parse tool calls if tools are enabled and adapter supports it
+    - Extract reasoning content if adapter supports reasoning mode
     """
     from mlx_lm import stream_generate
 
@@ -349,7 +461,9 @@ async def _generate_chat_complete(
 
         # Wait for result (with timeout to not block forever - 5 min max)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
+        result = await loop.run_in_executor(
+            None, lambda: result_queue.get(timeout=300)
+        )
 
         gen_thread.join(timeout=1.0)
 
@@ -360,8 +474,26 @@ async def _generate_chat_complete(
         response_text, finish_reason = result
         completion_tokens = len(tokenizer.encode(response_text))
 
+        # Post-process: Parse tool calls
+        tool_calls = None
+        if tools and adapter and adapter.supports_tool_calling():
+            tool_calls = adapter.parse_tool_calls(response_text)
+            if tool_calls:
+                finish_reason = "tool_calls"
+                logger.debug(f"Detected {len(tool_calls)} tool calls in response")
+
+        # Post-process: Extract reasoning content
+        reasoning_content = None
+        final_content = response_text
+        if adapter and adapter.supports_reasoning_mode():
+            reasoning_content, final_content = adapter.extract_reasoning(response_text)
+            if reasoning_content:
+                logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
+
         logger.info(
-            f"Chat complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}"
+            f"Chat complete: {completion_id}, tokens={completion_tokens}, "
+            f"reason={finish_reason}, has_tools={tool_calls is not None}, "
+            f"has_reasoning={reasoning_content is not None}"
         )
 
         if LOGFIRE_AVAILABLE:
@@ -372,7 +504,23 @@ async def _generate_chat_complete(
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
                 finish_reason=finish_reason,
+                has_tool_calls=tool_calls is not None,
+                has_reasoning=reasoning_content is not None,
             )
+
+        # Build message dict
+        message: dict[str, Any] = {
+            "role": "assistant",
+            "content": final_content,
+        }
+
+        # Add tool_calls to message if present
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+
+        # Add reasoning_content to message if present
+        if reasoning_content:
+            message["reasoning_content"] = reasoning_content
 
         return {
             "id": completion_id,
@@ -382,10 +530,7 @@ async def _generate_chat_complete(
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": response_text,
-                    },
+                    "message": message,
                     "finish_reason": finish_reason,
                 }
             ],
