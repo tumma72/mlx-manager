@@ -4,9 +4,57 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 """
 
 import time
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+# --- Tool Calling Schemas ---
+
+
+class FunctionDefinition(BaseModel):
+    """Function definition for tool calling."""
+
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class Tool(BaseModel):
+    """Tool definition for tool calling."""
+
+    type: Literal["function"] = "function"
+    function: FunctionDefinition
+
+
+class FunctionCall(BaseModel):
+    """Function call details in assistant response."""
+
+    name: str
+    arguments: str  # JSON string
+
+
+class ToolCall(BaseModel):
+    """Tool call in assistant response."""
+
+    id: str
+    type: Literal["function"] = "function"
+    function: FunctionCall
+
+
+class ResponseFormat(BaseModel):
+    """Response format specification for structured output."""
+
+    type: Literal["text", "json_object", "json_schema"] = "text"
+    json_schema: dict[str, Any] | None = None  # For type="json_schema"
+
+
+# Tool choice can be:
+# - "none": Don't call any tools
+# - "auto": Model decides whether to call tools
+# - "required": Model must call at least one tool
+# - {"type": "function", "function": {"name": "..."}} for specific function
+ToolChoiceOption = Literal["none", "auto", "required"] | dict[str, Any] | None
 
 # --- Vision Content Blocks ---
 
@@ -83,10 +131,22 @@ class ChatMessage(BaseModel):
     Content can be:
     - A simple string (text-only message)
     - A list of content blocks (for multimodal messages with images)
+
+    For assistant messages with tool calls:
+    - tool_calls: List of tool calls the assistant wants to make
+
+    For tool response messages:
+    - role: "tool"
+    - tool_call_id: ID of the tool call this is a response to
+    - content: The tool's response
     """
 
-    role: Literal["system", "user", "assistant"]
-    content: str | list[ContentBlock]
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | list[ContentBlock] | None = None
+    # For assistant messages with tool calls
+    tool_calls: list[ToolCall] | None = None
+    # For tool response messages
+    tool_call_id: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -102,6 +162,13 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
     # n: int = 1  # Not supported initially (always 1)
+
+    # Tool calling support
+    tools: list[Tool] | None = None
+    tool_choice: ToolChoiceOption = None
+
+    # Structured output support
+    response_format: ResponseFormat | None = None
 
 
 class CompletionRequest(BaseModel):
@@ -125,7 +192,7 @@ class ChatCompletionChoice(BaseModel):
 
     index: int
     message: ChatMessage
-    finish_reason: Literal["stop", "length", "content_filter"] | None = None
+    finish_reason: Literal["stop", "length", "content_filter", "tool_calls"] | None = None
 
 
 class CompletionChoice(BaseModel):
@@ -169,11 +236,21 @@ class CompletionResponse(BaseModel):
 # --- Streaming Response Models ---
 
 
+class ToolCallDelta(BaseModel):
+    """Partial tool call in streaming response."""
+
+    index: int
+    id: str | None = None
+    type: Literal["function"] | None = None
+    function: FunctionCall | None = None
+
+
 class ChatCompletionChunkDelta(BaseModel):
     """Delta content in streaming response."""
 
     role: str | None = None
     content: str | None = None
+    tool_calls: list[ToolCallDelta] | None = None
 
 
 class ChatCompletionChunkChoice(BaseModel):
@@ -181,7 +258,7 @@ class ChatCompletionChunkChoice(BaseModel):
 
     index: int
     delta: ChatCompletionChunkDelta
-    finish_reason: Literal["stop", "length", "content_filter"] | None = None
+    finish_reason: Literal["stop", "length", "content_filter", "tool_calls"] | None = None
 
 
 class ChatCompletionChunk(BaseModel):
