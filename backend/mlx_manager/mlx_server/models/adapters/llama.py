@@ -4,6 +4,7 @@ Supports:
 - Llama 3.x (Llama-3.2-3B-Instruct, Llama-3.1-8B-Instruct, etc.)
 - CodeLlama variants
 - Meta Llama models
+- Llama-thinking variants with <think> tag reasoning mode
 
 Critical: Llama 3 requires TWO stop tokens for proper chat completion:
 1. eos_token_id (<|end_of_text|>)
@@ -16,12 +17,22 @@ import logging
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+from mlx_manager.mlx_server.models.adapters.parsers.llama import LlamaToolParser
+from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
 
 logger = logging.getLogger(__name__)
 
+# Module-level instances
+_reasoning_extractor = ReasoningExtractor()
+_tool_parser = LlamaToolParser()
+
 
 class LlamaAdapter(DefaultAdapter):
-    """Adapter for Llama family models."""
+    """Adapter for Llama family models.
+
+    Supports reasoning mode for Llama-thinking variants that output
+    chain-of-thought content in <think> tags.
+    """
 
     @property
     def family(self) -> str:
@@ -93,3 +104,33 @@ class LlamaAdapter(DefaultAdapter):
         Convenience method for generation loop.
         """
         return token_id in self.get_stop_tokens(tokenizer)
+
+    # --- Reasoning Mode Support ---
+
+    def supports_reasoning_mode(self) -> bool:
+        """Check if this model supports thinking/reasoning output.
+
+        Returns True because Llama-thinking variants use <think> tags
+        for chain-of-thought content. Not all Llama models output reasoning,
+        but the adapter reports the capability; extraction only happens
+        when the model actually outputs reasoning tags.
+
+        Returns:
+            True - Llama family supports reasoning mode
+        """
+        return True
+
+    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
+        """Extract reasoning content from response.
+
+        Llama-thinking variants output chain-of-thought in <think> tags.
+        Delegates to ReasoningExtractor for pattern matching.
+
+        Args:
+            text: Model output text that may contain reasoning tags
+
+        Returns:
+            Tuple of (reasoning_content, final_content).
+            reasoning_content is None if no reasoning tags found.
+        """
+        return _reasoning_extractor.extract(text)

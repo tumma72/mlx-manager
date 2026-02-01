@@ -1,15 +1,24 @@
 """Qwen model family adapter (Qwen, Qwen2, Qwen2.5, Qwen3).
 
 Qwen models use ChatML format with <|im_start|> and <|im_end|> tokens.
+Qwen3-thinking variants output chain-of-thought content in <think> tags.
 """
 
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
+
+# Module-level extractor instance for reasoning extraction
+_reasoning_extractor = ReasoningExtractor()
 
 
 class QwenAdapter(DefaultAdapter):
-    """Adapter for Qwen model family."""
+    """Adapter for Qwen model family.
+
+    Supports reasoning mode for Qwen3-thinking variants that output
+    chain-of-thought content in <think> tags.
+    """
 
     @property
     def family(self) -> str:
@@ -56,3 +65,33 @@ class QwenAdapter(DefaultAdapter):
             pass
 
         return stop_tokens
+
+    # --- Reasoning Mode Support ---
+
+    def supports_reasoning_mode(self) -> bool:
+        """Check if this model supports thinking/reasoning output.
+
+        Returns True because Qwen3-thinking variants use <think> tags
+        for chain-of-thought content. Not all Qwen models output reasoning,
+        but the adapter reports the capability; extraction only happens
+        when the model actually outputs reasoning tags.
+
+        Returns:
+            True - Qwen family supports reasoning mode
+        """
+        return True
+
+    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
+        """Extract reasoning content from response.
+
+        Qwen3-thinking variants output chain-of-thought in <think> tags.
+        Delegates to ReasoningExtractor for pattern matching.
+
+        Args:
+            text: Model output text that may contain reasoning tags
+
+        Returns:
+            Tuple of (reasoning_content, final_content).
+            reasoning_content is None if no reasoning tags found.
+        """
+        return _reasoning_extractor.extract(text)
