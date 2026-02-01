@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 2 of 6 (Tool Parsers)
-Status: In progress
-Last activity: 2026-02-01 — Completed 14-02-PLAN.md (Tool Parsers)
+Plan: 6 of 6 (Chat Endpoint Integration)
+Status: Phase complete
+Last activity: 2026-02-01 — Completed 14-06-PLAN.md (Chat Endpoint Integration)
 
-Progress: [███████████░] 99% (Plans 14-01, 14-02, 14-03, 14-04, 14-05 complete)
+Progress: [████████████] 100% (Phase 14 complete - all 6 plans executed)
 
 ## Milestone v1.2 Summary
 
@@ -204,6 +204,10 @@ Recent decisions affecting current work:
 - **GLM4 deduplication via MD5 content hash**: GLM4 has known duplicate tag bug - hash name+args to deduplicate
 - **Module-level parser instances**: Stateless parsers instantiated at module level to avoid repeated allocation
 - **Parsers return empty list, adapters convert to None**: Consistent with protocol semantics
+- **Tool injection into system message**: Tools are formatted by adapter and appended/prepended to system message
+- **Post-generation tool call parsing**: Tool calls detected after full response generated, not during streaming
+- **Streaming buffers for tool detection**: Accumulated text allows tool call detection in final chunk
+- **Structured output validation at API layer**: Validation happens in chat.py with 400 error on schema failure
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -213,13 +217,13 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 14 progress:**
+**Phase 14 complete:**
 - Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
 - Plan 02: Complete (Tool Parsers - Llama, Qwen, GLM4)
 - Plan 03: Complete (Reasoning Extraction)
 - Plan 04: Complete (Structured Output Validation)
 - Plan 05: Complete (LoRA Adapter Support)
-- Plan 06: Pending (Integration)
+- Plan 06: Complete (Chat Endpoint Integration)
 
 **Phase 13 test updates pending:**
 - Tests in test_main.py and conftest.py reference deleted modules
@@ -242,7 +246,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01T11:13:00Z
-Stopped at: Completed 14-02-PLAN.md (Tool Parsers)
+Last session: 2026-02-01T11:21:28Z
+Stopped at: Completed 14-06-PLAN.md (Chat Endpoint Integration)
 Resume file: None
-Next: Execute 14-06-PLAN.md (Integration)
+Next: Phase 14 complete - ready for milestone planning or next phase
