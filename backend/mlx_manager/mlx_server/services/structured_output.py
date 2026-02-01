@@ -222,9 +222,7 @@ class StructuredOutputValidator:
 
         return None
 
-    def validate_and_coerce(
-        self, output: str, schema: dict[str, Any]
-    ) -> ValidationResult:
+    def validate_and_coerce(self, output: str, schema: dict[str, Any]) -> ValidationResult:
         """Validate with type coercion for common LLM output issues.
 
         LLMs sometimes output values as strings when integers or booleans
@@ -335,9 +333,7 @@ class StructuredOutputValidator:
         # Coerce string "null" to None
         if isinstance(data, str) and data.lower() == "null":
             # Check if null is allowed in the schema
-            if "null" in schema.get("type", []) if isinstance(
-                schema.get("type"), list
-            ) else False:
+            if "null" in schema.get("type", []) if isinstance(schema.get("type"), list) else False:
                 return None
 
         return data
