@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 4 of 6 (Structured Output Validation)
+Plan: 2 of 6 (Tool Parsers)
 Status: In progress
-Last activity: 2026-02-01 — Completed 14-04-PLAN.md (Structured Output Validation)
+Last activity: 2026-02-01 — Completed 14-02-PLAN.md (Tool Parsers)
 
-Progress: [███████████░] 99% (Plans 14-01, 14-04, 14-05 complete)
+Progress: [███████████░] 99% (Plans 14-01, 14-02, 14-03, 14-04, 14-05 complete)
 
 ## Milestone v1.2 Summary
 
@@ -201,6 +201,9 @@ Recent decisions affecting current work:
 - **Draft202012Validator for JSON Schema**: Use modern JSON Schema draft for structured output validation
 - **Error path format**: dot.notation for objects, [N] for arrays in validation error paths
 - **Type coercion in validation**: Schema-guided coercion for LLM outputs (string "5" -> int 5)
+- **GLM4 deduplication via MD5 content hash**: GLM4 has known duplicate tag bug - hash name+args to deduplicate
+- **Module-level parser instances**: Stateless parsers instantiated at module level to avoid repeated allocation
+- **Parsers return empty list, adapters convert to None**: Consistent with protocol semantics
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -212,8 +215,8 @@ None yet.
 
 **Phase 14 progress:**
 - Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
-- Plan 02: Pending (Tool Parsers - Llama, Qwen, GLM4)
-- Plan 03: Pending (Reasoning Extraction)
+- Plan 02: Complete (Tool Parsers - Llama, Qwen, GLM4)
+- Plan 03: Complete (Reasoning Extraction)
 - Plan 04: Complete (Structured Output Validation)
 - Plan 05: Complete (LoRA Adapter Support)
 - Plan 06: Pending (Integration)
@@ -239,7 +242,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01T11:10:00Z
-Stopped at: Completed 14-04-PLAN.md (Structured Output Validation)
+Last session: 2026-02-01T11:13:00Z
+Stopped at: Completed 14-02-PLAN.md (Tool Parsers)
 Resume file: None
-Next: Execute 14-02-PLAN.md (Tool Parsers)
+Next: Execute 14-06-PLAN.md (Integration)
