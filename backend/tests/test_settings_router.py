@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pytest
 
 # ============================================================================
 # Provider Endpoint Tests

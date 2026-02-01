@@ -7,7 +7,6 @@ Usage:
 """
 
 import asyncio
-from typing import Optional
 
 import typer
 
@@ -22,16 +21,18 @@ app = typer.Typer(
 PROMPTS = {
     "short": "What is 2+2?",
     "medium": "Explain the concept of machine learning in simple terms.",
-    "long": """You are a helpful AI assistant. Please provide a detailed explanation of the following topic:
-
-What are the key differences between transformer models and recurrent neural networks (RNNs)? Include discussion of:
-1. Architecture differences
-2. Training characteristics
-3. Inference speed
-4. Memory usage
-5. Common use cases
-
-Be thorough but concise.""",
+    "long": (
+        "You are a helpful AI assistant. Please provide a detailed explanation "
+        "of the following topic:\n\n"
+        "What are the key differences between transformer models and recurrent "
+        "neural networks (RNNs)? Include discussion of:\n"
+        "1. Architecture differences\n"
+        "2. Training characteristics\n"
+        "3. Inference speed\n"
+        "4. Memory usage\n"
+        "5. Common use cases\n\n"
+        "Be thorough but concise."
+    ),
 }
 
 # Default models by tier (if available)
@@ -134,7 +135,7 @@ def suite(
         "-n",
         help="Runs per model",
     ),
-    output: Optional[str] = typer.Option(
+    output: str | None = typer.Option(
         None,
         "--output",
         "-o",

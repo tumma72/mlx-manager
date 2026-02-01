@@ -11,8 +11,6 @@ for any future use cases.
 
 from unittest.mock import patch
 
-import pytest
-
 
 class TestGetParserOptions:
     """Test get_parser_options returns empty (deprecated)."""
@@ -264,10 +262,9 @@ class TestGetMatcherFallback:
 
     def test_fallback_to_difflib_when_rapidfuzz_unavailable(self):
         """Falls back to DifflibMatcher when rapidfuzz not installed."""
-        from mlx_manager.utils.fuzzy_matcher import DifflibMatcher
-
         # Clear the cache first
         from mlx_manager.utils import fuzzy_matcher
+        from mlx_manager.utils.fuzzy_matcher import DifflibMatcher
 
         fuzzy_matcher.get_matcher.cache_clear()
 

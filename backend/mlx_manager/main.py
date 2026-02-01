@@ -38,9 +38,15 @@ logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import select
 
-from mlx_manager.database import engine, get_session, init_db, recover_incomplete_downloads
+from mlx_manager.database import engine, init_db, recover_incomplete_downloads
+from mlx_manager.mlx_server.config import mlx_server_settings
+
+# MLX Server imports for embedded mode
+from mlx_manager.mlx_server.main import create_app as create_mlx_server_app
+from mlx_manager.mlx_server.models import pool
+from mlx_manager.mlx_server.models.pool import ModelPoolManager
+from mlx_manager.mlx_server.utils.memory import set_memory_limit
 from mlx_manager.routers import (
     auth_router,
     chat_router,
@@ -54,13 +60,6 @@ from mlx_manager.routers import (
 from mlx_manager.routers.models import download_tasks
 from mlx_manager.services.health_checker import health_checker
 from mlx_manager.services.hf_client import hf_client
-
-# MLX Server imports for embedded mode
-from mlx_manager.mlx_server.main import create_app as create_mlx_server_app
-from mlx_manager.mlx_server.models import pool
-from mlx_manager.mlx_server.models.pool import ModelPoolManager
-from mlx_manager.mlx_server.config import mlx_server_settings
-from mlx_manager.mlx_server.utils.memory import set_memory_limit
 
 # Instrument SQLAlchemy after engine is imported
 instrument_sqlalchemy(engine)

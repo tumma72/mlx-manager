@@ -372,7 +372,7 @@ async def audit_log_stream(websocket: WebSocket) -> None:
             try:
                 log = await asyncio.wait_for(queue.get(), timeout=30.0)
                 await websocket.send_json({"type": "log", "data": log})
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send ping to keep connection alive
                 await websocket.send_json({"type": "ping"})
 

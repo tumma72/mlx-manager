@@ -6,11 +6,10 @@ Measures throughput (tokens/second) for:
 - Failover scenarios
 """
 
-import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx

@@ -6,7 +6,6 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # Default database paths
 DEFAULT_MLX_MANAGER_DB = "~/.mlx-manager/mlx-manager.db"
 DEFAULT_MLX_SERVER_DB = "~/.mlx-manager/mlx-server.db"
