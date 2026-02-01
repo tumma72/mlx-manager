@@ -4,13 +4,18 @@ Qwen models use ChatML format with <|im_start|> and <|im_end|> tokens.
 Qwen3-thinking variants output chain-of-thought content in <think> tags.
 """
 
+import logging
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+from mlx_manager.mlx_server.models.adapters.parsers.qwen import QwenToolParser
 from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
 
-# Module-level extractor instance for reasoning extraction
+logger = logging.getLogger(__name__)
+
+# Module-level instances
 _reasoning_extractor = ReasoningExtractor()
+_tool_parser = QwenToolParser()
 
 
 class QwenAdapter(DefaultAdapter):
@@ -65,6 +70,57 @@ class QwenAdapter(DefaultAdapter):
             pass
 
         return stop_tokens
+
+    # --- Tool Calling Support ---
+
+    def supports_tool_calling(self) -> bool:
+        """Check if this model family supports tool calling.
+
+        Returns:
+            True - Qwen supports tool calling via Hermes format
+        """
+        return True
+
+    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
+        """Parse tool calls from model output text.
+
+        Qwen uses Hermes-style format: <tool_call>{"name": ..., "arguments": ...}</tool_call>
+
+        Args:
+            text: Model output text that may contain tool calls
+
+        Returns:
+            List of tool call dicts in OpenAI format, or None if no calls found.
+        """
+        calls = _tool_parser.parse(text)
+        return calls if calls else None
+
+    def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
+        """Format tool definitions for inclusion in system prompt.
+
+        Args:
+            tools: List of tool definitions in OpenAI format
+
+        Returns:
+            Formatted string to append to system prompt
+        """
+        return _tool_parser.format_tools(tools)
+
+    def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
+        """Get additional stop tokens to use when tools are enabled.
+
+        Qwen stops at </tool_call> for tool completions.
+
+        Args:
+            tokenizer: HuggingFace tokenizer
+
+        Returns:
+            List of token IDs that indicate tool call completion
+        """
+        # </tool_call> is typically tokenized as multiple tokens
+        # We rely on the regular stop tokens for now
+        # The parser will detect tool calls in the output
+        return []
 
     # --- Reasoning Mode Support ---
 

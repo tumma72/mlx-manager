@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 1 of 6 (Extended OpenAI schemas & ModelAdapter protocol)
+Plan: 5 of 6 (LoRA Adapter Loading)
 Status: In progress
-Last activity: 2026-02-01 — Completed 14-01-PLAN.md (Extended schemas & protocol)
+Last activity: 2026-02-01 — Completed 14-05-PLAN.md (LoRA Adapter Loading)
 
-Progress: [███████████░] 99% (Plan 14-01 complete)
+Progress: [███████████░] 99% (Plan 14-05 complete)
 
 ## Milestone v1.2 Summary
 
@@ -198,6 +198,9 @@ Recent decisions affecting current work:
 - **ToolChoiceOption as type alias**: `Literal["none", "auto", "required"] | dict[str, Any] | None` provides flexibility for tool_choice parameter
 - **ChatMessage content nullable**: Allows tool-only assistant messages where content is None but tool_calls is populated
 - **Optional protocol methods pattern**: Add to Protocol, implement defaults in DefaultAdapter, adapters inherit
+- **Composite cache key for adapters**: Use model_id::adapter_path format to allow same base model with different adapters
+- **LoRA adapters TEXT_GEN only**: mlx-vlm and mlx-embeddings don't support adapters yet
+- **Adapter validation requirements**: Directory must exist and contain adapter_config.json
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -212,8 +215,8 @@ None yet.
 - Plan 02: Pending (Tool Parsers - Llama, Qwen, GLM4)
 - Plan 03: Pending (Reasoning Extraction)
 - Plan 04: Pending (Message Converters)
-- Plan 05: Pending (Structured Output)
-- Plan 06: Pending (LoRA Adapter Support)
+- Plan 05: Complete (LoRA Adapter Loading)
+- Plan 06: Pending (Structured Output)
 
 **Phase 13 test updates pending:**
 - Tests in test_main.py and conftest.py reference deleted modules
@@ -236,7 +239,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01T18:04:00Z
-Stopped at: Completed 14-01-PLAN.md (Extended schemas & protocol)
+Last session: 2026-02-01
+Stopped at: Completed 14-05-PLAN.md (LoRA Adapter Loading)
 Resume file: None
-Next: Execute 14-02-PLAN.md (Tool Parsers)
+Next: Execute 14-06-PLAN.md (Structured Output)

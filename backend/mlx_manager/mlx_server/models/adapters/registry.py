@@ -4,6 +4,7 @@ import logging
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter, ModelAdapter
 from mlx_manager.mlx_server.models.adapters.gemma import GemmaAdapter
+from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
 from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
 from mlx_manager.mlx_server.models.adapters.mistral import MistralAdapter
 from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
@@ -16,6 +17,7 @@ _ADAPTERS: dict[str, ModelAdapter] = {
     "qwen": QwenAdapter(),
     "mistral": MistralAdapter(),
     "gemma": GemmaAdapter(),
+    "glm4": GLM4Adapter(),
     "default": DefaultAdapter(),
 }
 
@@ -46,6 +48,10 @@ def detect_model_family(model_id: str) -> str:
     # Gemma family (Phase 8)
     if "gemma" in model_id_lower:
         return "gemma"
+
+    # GLM4 family (includes ChatGLM)
+    if "glm" in model_id_lower or "chatglm" in model_id_lower:
+        return "glm4"
 
     # Phi family
     if "phi" in model_id_lower:

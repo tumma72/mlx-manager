@@ -105,6 +105,68 @@ class LlamaAdapter(DefaultAdapter):
         """
         return token_id in self.get_stop_tokens(tokenizer)
 
+    # --- Tool Calling Support ---
+
+    def supports_tool_calling(self) -> bool:
+        """Check if this model family supports tool calling.
+
+        Returns:
+            True - Llama 3.x supports tool calling
+        """
+        return True
+
+    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
+        """Parse tool calls from model output text.
+
+        Llama 3.x uses XML-style format: <function=name>{"args": ...}</function>
+
+        Args:
+            text: Model output text that may contain tool calls
+
+        Returns:
+            List of tool call dicts in OpenAI format, or None if no calls found.
+        """
+        calls = _tool_parser.parse(text)
+        return calls if calls else None
+
+    def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
+        """Format tool definitions for inclusion in system prompt.
+
+        Args:
+            tools: List of tool definitions in OpenAI format
+
+        Returns:
+            Formatted string to append to system prompt
+        """
+        return _tool_parser.format_tools(tools)
+
+    def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
+        """Get additional stop tokens to use when tools are enabled.
+
+        Llama 3.x stops at </function> and <|eom_id|> for tool calls.
+
+        Args:
+            tokenizer: HuggingFace tokenizer
+
+        Returns:
+            List of token IDs that indicate tool call completion
+        """
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        stop_tokens: list[int] = []
+
+        # Try to get </function> token (may not exist in all tokenizers)
+        # The string "</function>" may be tokenized as multiple tokens
+        # so we look for <|eom_id|> which is a special token for tool completion
+        try:
+            eom_id = actual_tokenizer.convert_tokens_to_ids("<|eom_id|>")
+            if eom_id is not None and eom_id != actual_tokenizer.unk_token_id:
+                stop_tokens.append(eom_id)
+                logger.debug("Llama tool stop token: <|eom_id|> (%d)", eom_id)
+        except Exception:
+            pass
+
+        return stop_tokens
+
     # --- Reasoning Mode Support ---
 
     def supports_reasoning_mode(self) -> bool:
