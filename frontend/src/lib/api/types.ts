@@ -144,7 +144,6 @@ export interface SystemInfo {
   memory_gb: number;
   python_version: string;
   mlx_version: string | null;
-  mlx_openai_server_version: string | null;
 }
 
 export interface DownloadProgress {

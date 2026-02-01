@@ -34,8 +34,7 @@ function infoEqual(a: SystemInfo | null, b: SystemInfo): boolean {
     a.chip === b.chip &&
     a.memory_gb === b.memory_gb &&
     a.python_version === b.python_version &&
-    a.mlx_version === b.mlx_version &&
-    a.mlx_openai_server_version === b.mlx_openai_server_version
+    a.mlx_version === b.mlx_version
   );
 }
 

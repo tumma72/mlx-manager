@@ -39,7 +39,6 @@ const mockSystemInfo = {
   memory_gb: 64,
   python_version: "3.11.0",
   mlx_version: "0.1.0",
-  mlx_openai_server_version: "1.5.0",
 };
 
 const mockMemory = {

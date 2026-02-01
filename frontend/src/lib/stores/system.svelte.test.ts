@@ -39,7 +39,6 @@ function createMockInfo(overrides: Partial<SystemInfo> = {}): SystemInfo {
     memory_gb: 128,
     python_version: "3.12.0",
     mlx_version: "0.20.0",
-    mlx_openai_server_version: "1.5.0",
     ...overrides,
   };
 }
