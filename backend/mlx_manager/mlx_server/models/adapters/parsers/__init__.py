@@ -7,9 +7,13 @@ Each model family has its own unique format for tool calls:
 """
 
 from mlx_manager.mlx_server.models.adapters.parsers.base import ToolCallParser
+from mlx_manager.mlx_server.models.adapters.parsers.glm4 import GLM4ToolParser
 from mlx_manager.mlx_server.models.adapters.parsers.llama import LlamaToolParser
+from mlx_manager.mlx_server.models.adapters.parsers.qwen import QwenToolParser
 
 __all__ = [
     "ToolCallParser",
+    "GLM4ToolParser",
     "LlamaToolParser",
+    "QwenToolParser",
 ]
