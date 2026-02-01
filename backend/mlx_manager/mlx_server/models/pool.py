@@ -81,7 +81,7 @@ class ModelPoolManager:
             Memory limit in GB
         """
         if self._memory_limit_pct is not None:
-            total_memory_gb = psutil.virtual_memory().total / (1024**3)
+            total_memory_gb: float = psutil.virtual_memory().total / (1024**3)
             return total_memory_gb * self._memory_limit_pct
         return self.max_memory_gb
 
@@ -358,9 +358,7 @@ class ModelPoolManager:
         # Check for adapter_config.json
         config_path = path / "adapter_config.json"
         if not config_path.exists():
-            raise ValueError(
-                f"adapter_config.json not found in adapter directory: {adapter_path}"
-            )
+            raise ValueError(f"adapter_config.json not found in adapter directory: {adapter_path}")
 
         # Parse adapter_config.json
         try:
@@ -390,9 +388,7 @@ class ModelPoolManager:
         """
         return f"{model_id}::{adapter_path}"
 
-    async def get_model_with_adapter(
-        self, model_id: str, adapter_path: str
-    ) -> LoadedModel:
+    async def get_model_with_adapter(self, model_id: str, adapter_path: str) -> LoadedModel:
         """Get a model with a LoRA adapter loaded.
 
         The model+adapter combination is cached separately from the base model,
@@ -438,9 +434,7 @@ class ModelPoolManager:
             await self._ensure_memory_for_load(model_id)
 
         # Load model with adapter
-        return await self._load_model_with_adapter(
-            model_id, adapter_path, adapter_info, cache_key
-        )
+        return await self._load_model_with_adapter(model_id, adapter_path, adapter_info, cache_key)
 
     async def _load_model_with_adapter(
         self,
