@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 14 - Model Adapter Enhancements
+**Current focus:** Phase 13 - MLX Server Integration (Verification)
 
 ## Current Position
 
-Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 6 of 6 (Chat Endpoint Integration)
-Status: Phase complete
-Last activity: 2026-02-01 — Completed 14-06-PLAN.md (Chat Endpoint Integration)
+Phase: 13 of 14 (MLX Server Integration)
+Plan: 5 of 5 (Test Updates)
+Status: Awaiting human verification
+Last activity: 2026-02-01 — Completed 13-05-PLAN.md tasks, awaiting verification
 
-Progress: [████████████] 100% (Phase 14 complete - all 6 plans executed)
+Progress: [████████████] 99% (Phase 13-05 automation complete, pending checkpoint)
 
 ## Milestone v1.2 Summary
 
@@ -225,9 +225,12 @@ None yet.
 - Plan 05: Complete (LoRA Adapter Support)
 - Plan 06: Complete (Chat Endpoint Integration)
 
-**Phase 13 test updates pending:**
-- Tests in test_main.py and conftest.py reference deleted modules
-- Should be addressed separately
+**Phase 13 MLX Server Integration:**
+- Plan 01: Complete (Mount MLX Server at /v1)
+- Plan 02: Complete (Legacy subprocess code removal)
+- Plan 03: Complete (Chat router wiring)
+- Plan 04: Complete (Settings wiring)
+- Plan 05: Automation complete, awaiting verification checkpoint
 
 ## Research Documents
 
@@ -246,7 +249,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01T11:21:28Z
-Stopped at: Completed 14-06-PLAN.md (Chat Endpoint Integration)
+Last session: 2026-02-01T12:28:00Z
+Stopped at: 13-05-PLAN.md checkpoint - awaiting human verification
 Resume file: None
-Next: Phase 14 complete - ready for milestone planning or next phase
+Next: Complete 13-05 verification, then Phase 13 complete
