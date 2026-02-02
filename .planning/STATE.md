@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 ## Current Position
 
-Phase: 13 of 14 (MLX Server Integration)
-Plan: 5 of 5 (Test Updates)
-Status: Awaiting human verification
-Last activity: 2026-02-01 — Completed 13-05-PLAN.md tasks, awaiting verification
+Phase: 14 of 14 (Model Adapter Enhancements)
+Plan: 7 of 9 (Unified ResponseProcessor) - COMPLETE
+Status: Executing gap closure plans
+Last activity: 2026-02-02 — Completed 14-07-PLAN.md (Unified ResponseProcessor)
 
-Progress: [████████████] 99% (Phase 13-05 automation complete, pending checkpoint)
+Progress: [███████████░] 93% (14-07 complete, 14-08, 14-09 pending)
 
 ## Milestone v1.2 Summary
 
@@ -208,6 +208,9 @@ Recent decisions affecting current work:
 - **Post-generation tool call parsing**: Tool calls detected after full response generated, not during streaming
 - **Streaming buffers for tool detection**: Accumulated text allows tool call detection in final chunk
 - **Structured output validation at API layer**: Validation happens in chat.py with 400 error on schema failure
+- **Pydantic models for ResponseProcessor**: Use BaseModel for ParseResult and ToolCall for type safety and model_dump() serialization
+- **Single-pass extraction with span removal**: Collect all matches, merge overlapping spans, remove in reverse order to preserve indices
+- **Callback-based pattern registration**: ResponseProcessor uses register_tool_pattern(pattern, callback) for extensibility
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -217,20 +220,19 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 14 complete:**
-- Plan 01: Complete (Extended OpenAI schemas & ModelAdapter protocol)
-- Plan 02: Complete (Tool Parsers - Llama, Qwen, GLM4)
-- Plan 03: Complete (Reasoning Extraction)
-- Plan 04: Complete (Structured Output Validation)
-- Plan 05: Complete (LoRA Adapter Support)
-- Plan 06: Complete (Chat Endpoint Integration)
+**Phase 14 gap closure (v1.2 blocking):**
+- Plan 01-06: Complete
+- Plan 07: Complete (Unified ResponseProcessor - tool call markers now removed)
+- Plan 08: Pending (StreamingProcessor - filter patterns during streaming)
+- Plan 09: Pending (Generic OpenAI/Anthropic-compatible providers)
 
 **Phase 13 MLX Server Integration:**
-- Plan 01: Complete (Mount MLX Server at /v1)
-- Plan 02: Complete (Legacy subprocess code removal)
-- Plan 03: Complete (Chat router wiring)
-- Plan 04: Complete (Settings wiring)
-- Plan 05: Automation complete, awaiting verification checkpoint
+- Plans 01-05: Complete (awaiting final verification)
+
+**Critical bugs fixed by 14-07:**
+1. ~~Tool call markers remain in response content~~ - FIXED (ResponseProcessor removes all spans)
+2. Streaming doesn't extract reasoning (non-streaming does) - 14-08 will address
+3. ~~Multiple parsing passes inefficient~~ - FIXED (now single-pass)
 
 ## Research Documents
 
@@ -249,7 +251,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-01T12:28:00Z
-Stopped at: 13-05-PLAN.md checkpoint - awaiting human verification
+Last session: 2026-02-02T12:35:22Z
+Stopped at: Completed 14-07-PLAN.md
 Resume file: None
-Next: Complete 13-05 verification, then Phase 13 complete
+Next: Execute 14-08-PLAN.md (StreamingProcessor)
