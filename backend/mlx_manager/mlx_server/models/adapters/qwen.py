@@ -55,9 +55,13 @@ class QwenAdapter(DefaultAdapter):
             logger.info("Applied Qwen3 chat template with enable_thinking=True")
             logger.debug(f"Chat template result (last 200 chars): ...{result[-200:]}")
             return result
-        except TypeError as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             # Older tokenizers don't support enable_thinking parameter
-            logger.warning(f"Tokenizer doesn't support enable_thinking: {e}")
+            # - TypeError: unexpected keyword argument
+            # - ValueError: invalid parameter value
+            # - KeyError: template lookup fails
+            # - AttributeError: tokenizer missing method
+            logger.debug(f"Tokenizer doesn't support enable_thinking, falling back: {e}")
             result = cast(
                 str,
                 actual_tokenizer.apply_chat_template(

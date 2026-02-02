@@ -179,7 +179,7 @@ async def chat_completions(
                     # Debug: Log when we first see content
                     if len(tag_buffer) == 0:
                         preview = content[:50] if len(content) > 50 else content
-                        logger.info(f"First content starts with: {repr(preview)}")
+                        logger.debug(f"First content starts with: {repr(preview)}")
                     tag_buffer += content
 
                     # Process buffered content, looking for complete tags
