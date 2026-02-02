@@ -210,16 +210,18 @@ async def _stream_chat_generate(
     async generator. Using run_in_executor with next(generator) does NOT work
     because MLX Metal operations have thread affinity requirements.
 
-    For tool calling and reasoning: We buffer the entire response to detect
-    tool calls at the end. Reasoning content is accumulated but processed
-    after generation completes.
+    Uses StreamingProcessor to filter patterns during generation:
+    - Tool call markers (<tool_call>, <function=>) never reach the client
+    - Thinking tags (<think>, etc.) filtered from stream
+    - Final processing extracts tool_calls and reasoning from accumulated text
     """
     from mlx_lm import stream_generate
 
+    from mlx_manager.mlx_server.services.response_processor import StreamingProcessor
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     completion_tokens = 0
-    accumulated_text = ""  # Buffer for tool call and reasoning detection
+    stream_processor = StreamingProcessor()  # Filters patterns during streaming
 
     # Queue for passing tokens from generation thread to async generator
     # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
@@ -300,37 +302,37 @@ async def _stream_chat_generate(
 
             token_text, token_id, is_stop = result
             completion_tokens += 1
-            accumulated_text += token_text
 
             if is_stop:
                 # Stop token found - don't yield the stop token text
                 finish_reason = "stop"
+                # Feed to processor but don't yield (updates accumulated text)
+                stream_processor.feed(token_text)
                 break
 
-            # Yield content chunk
-            yield {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model_id,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": token_text},
-                        "finish_reason": None,
-                    }
-                ],
-            }
+            # Filter token through StreamingProcessor
+            # This filters out tool call markers and thinking tags
+            filtered_output, should_yield = stream_processor.feed(token_text)
+            if should_yield and filtered_output:
+                yield {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model_id,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": filtered_output},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
 
         # Wait for thread to finish
         gen_thread.join(timeout=1.0)
 
-        # Post-process: Single-pass extraction with ResponseProcessor
-        # This replaces multi-pass adapter.parse_tool_calls()
-        from mlx_manager.mlx_server.services.response_processor import get_response_processor
-
-        processor = get_response_processor()
-        result_parsed = processor.process(accumulated_text)
+        # Finalize StreamingProcessor - extracts tool calls and reasoning
+        result_parsed = stream_processor.finalize()
 
         # Extract tool calls from ParseResult
         tool_calls = None
