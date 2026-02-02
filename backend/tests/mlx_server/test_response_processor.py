@@ -17,13 +17,13 @@ import pytest
 from mlx_manager.mlx_server.services.response_processor import (
     ParseResult,
     ResponseProcessor,
+    StreamingProcessor,
     ToolCall,
     ToolCallFunction,
     create_default_processor,
     get_response_processor,
     reset_response_processor,
 )
-
 
 # --- Pydantic Model Tests ---
 
@@ -192,7 +192,10 @@ class TestToolCallExtraction:
     def test_hermes_tool_call(self) -> None:
         """Parses Hermes/Qwen style tool calls."""
         processor = get_response_processor()
-        text = 'Here is the result: <tool_call>{"name": "get_weather", "arguments": {"city": "SF"}}</tool_call>'
+        text = (
+            "Here is the result: "
+            '<tool_call>{"name": "get_weather", "arguments": {"city": "SF"}}</tool_call>'
+        )
 
         result = processor.process(text)
 
@@ -221,7 +224,9 @@ class TestToolCallExtraction:
     def test_glm4_xml_tool_call(self) -> None:
         """Parses GLM4 nested XML style tool calls."""
         processor = get_response_processor()
-        text = '<tool_call><name>calculate</name><arguments>{"x": 5, "y": 3}</arguments></tool_call>'
+        text = (
+            '<tool_call><name>calculate</name><arguments>{"x": 5, "y": 3}</arguments></tool_call>'
+        )
 
         result = processor.process(text)
 
@@ -274,7 +279,7 @@ Done."""
     def test_invalid_json_still_extracted(self) -> None:
         """Tool calls with invalid JSON are still extracted."""
         processor = get_response_processor()
-        text = '<function=test>{not valid json}</function>'
+        text = "<function=test>{not valid json}</function>"
 
         result = processor.process(text)
 
@@ -384,7 +389,9 @@ class TestCombinedExtraction:
     def test_thinking_and_tool_calls(self) -> None:
         """Extracts both thinking content and tool calls."""
         processor = get_response_processor()
-        text = '<think>I need to search</think>Searching...<function=search>{"q": "test"}</function>'
+        text = (
+            '<think>I need to search</think>Searching...<function=search>{"q": "test"}</function>'
+        )
 
         result = processor.process(text)
 
@@ -485,7 +492,7 @@ class TestEdgeCases:
     def test_unicode_content(self) -> None:
         """Handles unicode content correctly."""
         processor = get_response_processor()
-        text = '<think>Analyzing...</think>Result: 42'
+        text = "<think>Analyzing...</think>Result: 42"
 
         result = processor.process(text)
 
@@ -507,7 +514,7 @@ class TestEdgeCases:
         """Handles deeply nested JSON in tool calls."""
         processor = get_response_processor()
         args = {"nested": {"deep": {"value": [1, 2, {"x": "y"}]}}}
-        text = f'<function=complex>{json.dumps(args)}</function>'
+        text = f"<function=complex>{json.dumps(args)}</function>"
 
         result = processor.process(text)
 
@@ -562,7 +569,7 @@ class TestProcessorFactory:
         assert len(result.tool_calls) == 1
 
         # Test Llama format
-        result = processor.process('<function=f>{}</function>')
+        result = processor.process("<function=f>{}</function>")
         assert len(result.tool_calls) == 1
 
         # Test GLM4 format
@@ -605,3 +612,400 @@ class TestCustomProcessor:
         assert result.content == "<think>test</think>content"
         assert result.reasoning is None
         assert result.tool_calls == []
+
+
+# --- Streaming Processor Tests ---
+
+
+class TestStreamingProcessorBasic:
+    """Basic tests for StreamingProcessor filtering."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_streaming_passthrough_no_patterns(self) -> None:
+        """Normal text passes through without modification."""
+        processor = StreamingProcessor()
+        tokens = ["Hello", " ", "world", "!"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        assert "".join(outputs) == "Hello world!"
+
+    def test_streaming_filters_think_tags(self) -> None:
+        """Think tags are filtered from stream."""
+        processor = StreamingProcessor()
+        tokens = ["Hello", "<think>", "analyzing", "</think>", " world"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<think>" not in yielded
+        assert "analyzing" not in yielded
+        assert "Hello" in yielded
+        assert "world" in yielded
+
+    def test_streaming_filters_tool_call_tags(self) -> None:
+        """Tool call tags are filtered from stream."""
+        processor = StreamingProcessor()
+        tokens = [
+            "Result: ",
+            "<tool_call>",
+            '{"name": "search", "arguments": {}}',
+            "</tool_call>",
+            " Done",
+        ]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<tool_call>" not in yielded
+        assert "</tool_call>" not in yielded
+        assert "Result:" in yielded
+        assert "Done" in yielded
+
+    def test_streaming_filters_function_tags(self) -> None:
+        """Llama function tags are filtered from stream."""
+        processor = StreamingProcessor()
+        tokens = ["OK ", "<function=test>", '{"x": 1}', "</function>", " bye"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<function=" not in yielded
+        assert "</function>" not in yielded
+        assert "OK" in yielded
+        assert "bye" in yielded
+
+
+class TestStreamingProcessorPartialMarkers:
+    """Tests for partial marker detection across tokens."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_partial_think_tag_across_tokens(self) -> None:
+        """Handles <think> split across multiple tokens."""
+        processor = StreamingProcessor()
+        tokens = ["Hello ", "<", "think", ">", "thought", "</think>", " end"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<think>" not in yielded
+        assert "thought" not in yielded
+        assert "Hello" in yielded
+        assert "end" in yielded
+
+    def test_partial_tool_call_across_tokens(self) -> None:
+        """Handles <tool_call> split across tokens."""
+        processor = StreamingProcessor()
+        tokens = ["Start ", "<tool", "_call>", '{"name": "f", "arguments": {}}', "</tool_call>"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<tool" not in yielded
+        assert "_call>" not in yielded
+        assert "Start" in yielded
+
+    def test_partial_function_across_tokens(self) -> None:
+        """Handles <function= split across tokens."""
+        processor = StreamingProcessor()
+        tokens = ["Hi ", "<func", "tion=", "test>", "{}", "</function>", " bye"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<function" not in yielded
+        assert "Hi" in yielded
+        assert "bye" in yielded
+
+    def test_false_partial_marker(self) -> None:
+        """Tokens that look like partial markers but aren't are yielded."""
+        processor = StreamingProcessor()
+        # '<' followed by something that isn't a pattern start
+        tokens = ["Compare ", "<", "5", " ", ">", " 3"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        # After finalize, pending buffer should be flushed
+        processor.finalize()
+        # The '<' and partial content should eventually be yielded
+        yielded = "".join(outputs)
+        # Should include 'Compare ' and eventually the comparison
+        assert "Compare" in yielded
+
+
+class TestStreamingProcessorMultiplePatterns:
+    """Tests for responses with multiple patterns."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_multiple_think_tags(self) -> None:
+        """Handles multiple thinking sections."""
+        processor = StreamingProcessor()
+        tokens = [
+            "<think>",
+            "first",
+            "</think>",
+            "A",
+            "<think>",
+            "second",
+            "</think>",
+            "B",
+        ]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "first" not in yielded
+        assert "second" not in yielded
+        assert "A" in yielded
+        assert "B" in yielded
+
+    def test_thinking_and_tool_call(self) -> None:
+        """Handles both thinking and tool call in same response."""
+        processor = StreamingProcessor()
+        tokens = [
+            "<think>",
+            "planning",
+            "</think>",
+            "Calling: ",
+            "<tool_call>",
+            '{"name": "f", "arguments": {}}',
+            "</tool_call>",
+            " done",
+        ]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "planning" not in yielded
+        assert "<tool_call>" not in yielded
+        assert "Calling:" in yielded
+        assert "done" in yielded
+
+
+class TestStreamingProcessorFinalize:
+    """Tests for finalize() method."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_finalize_extracts_reasoning(self) -> None:
+        """finalize() extracts reasoning from accumulated text."""
+        processor = StreamingProcessor()
+        tokens = ["<think>", "my thoughts", "</think>", "answer"]
+
+        for token in tokens:
+            processor.feed(token)
+
+        result = processor.finalize()
+        assert result.reasoning == "my thoughts"
+        assert result.content == "answer"
+
+    def test_finalize_extracts_tool_calls(self) -> None:
+        """finalize() extracts tool calls from accumulated text."""
+        processor = StreamingProcessor()
+        tokens = ['<tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call>']
+
+        for token in tokens:
+            processor.feed(token)
+
+        result = processor.finalize()
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "search"
+
+    def test_finalize_extracts_both(self) -> None:
+        """finalize() extracts both reasoning and tool calls."""
+        processor = StreamingProcessor()
+        tokens = [
+            "<think>",
+            "Let me search",
+            "</think>",
+            '<function=search>{"q": "test"}</function>',
+        ]
+
+        for token in tokens:
+            processor.feed(token)
+
+        result = processor.finalize()
+        assert result.reasoning == "Let me search"
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "search"
+
+    def test_finalize_content_is_clean(self) -> None:
+        """finalize() returns clean content without markers."""
+        processor = StreamingProcessor()
+        tokens = [
+            "Hello ",
+            "<think>",
+            "thinking",
+            "</think>",
+            "World",
+            "<|endoftext|>",
+        ]
+
+        for token in tokens:
+            processor.feed(token)
+
+        result = processor.finalize()
+        assert "<think>" not in result.content
+        assert "</think>" not in result.content
+        assert "<|endoftext|>" not in result.content
+        assert "Hello" in result.content
+        assert "World" in result.content
+
+
+class TestStreamingProcessorEdgeCases:
+    """Edge case tests for StreamingProcessor."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_empty_tokens(self) -> None:
+        """Handles empty token strings."""
+        processor = StreamingProcessor()
+        tokens = ["Hello", "", " ", "", "world"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "Hello" in yielded
+        assert "world" in yielded
+
+    def test_pattern_split_many_tokens(self) -> None:
+        """Handles pattern split across many tokens."""
+        processor = StreamingProcessor()
+        # <tool_call> split char by char
+        tokens = ["Start ", "<", "t", "o", "o", "l", "_", "c", "a", "l", "l", ">"]
+        tokens += ['{"name": "f", "arguments": {}}', "</tool_call>", " end"]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "Start" in yielded
+        assert "end" in yielded
+        assert "<tool_call>" not in yielded
+
+    def test_no_patterns_passthrough(self) -> None:
+        """Text without patterns passes through completely."""
+        processor = StreamingProcessor()
+        tokens = ["Just", " normal", " text", " here", "."]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        assert "".join(outputs) == "Just normal text here."
+
+    def test_get_accumulated_text(self) -> None:
+        """get_accumulated_text() returns all text including patterns."""
+        processor = StreamingProcessor()
+        tokens = ["Hello", "<think>", "thought", "</think>", "world"]
+
+        for token in tokens:
+            processor.feed(token)
+
+        accumulated = processor.get_accumulated_text()
+        assert "Hello" in accumulated
+        assert "<think>" in accumulated
+        assert "thought" in accumulated
+        assert "</think>" in accumulated
+        assert "world" in accumulated
+
+    def test_get_pending_content(self) -> None:
+        """get_pending_content() returns buffered content."""
+        processor = StreamingProcessor()
+
+        # Feed partial marker
+        processor.feed("Hello ")
+        processor.feed("<tool")  # Partial marker
+
+        pending = processor.get_pending_content()
+        assert "<tool" in pending
+
+    def test_python_tag_pattern(self) -> None:
+        """Filters <|python_tag|>...<|eom_id|> pattern."""
+        processor = StreamingProcessor()
+        tokens = [
+            "Result: ",
+            "<|python_tag|>",
+            "module.func(x=1)",
+            "<|eom_id|>",
+            " done",
+        ]
+        outputs = []
+
+        for token in tokens:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                outputs.append(output)
+
+        yielded = "".join(outputs)
+        assert "<|python_tag|>" not in yielded
+        assert "<|eom_id|>" not in yielded
+        assert "Result:" in yielded
+        assert "done" in yielded
