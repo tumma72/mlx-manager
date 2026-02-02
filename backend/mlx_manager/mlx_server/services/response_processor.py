@@ -315,9 +315,7 @@ class ResponseProcessor:
             reasoning=reasoning,
         )
 
-    def _merge_overlapping_spans(
-        self, spans: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
+    def _merge_overlapping_spans(self, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Merge overlapping or adjacent spans.
 
         Args:

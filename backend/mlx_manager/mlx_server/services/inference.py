@@ -79,9 +79,7 @@ async def generate_chat_completion(
             logger.debug(f"Injected tools into prompt for {model_id}")
 
     # Apply chat template
-    prompt = adapter.apply_chat_template(
-        tokenizer, effective_messages, add_generation_prompt=True
-    )
+    prompt = adapter.apply_chat_template(tokenizer, effective_messages, add_generation_prompt=True)
 
     # CRITICAL: Get stop token IDs from adapter
     # Llama 3.x requires BOTH eos_token_id AND <|eot_id|> (end of turn)
@@ -288,9 +286,7 @@ async def _stream_chat_generate(
         while True:
             # Poll queue without blocking event loop (use run_in_executor for queue.get)
             try:
-                result = await loop.run_in_executor(
-                    None, lambda: token_queue.get(timeout=0.1)
-                )
+                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
             except Empty:
                 continue
 
@@ -342,9 +338,7 @@ async def _stream_chat_generate(
             # Convert Pydantic models to dicts for response
             tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
             finish_reason = "tool_calls"
-            logger.debug(
-                f"Detected {len(tool_calls)} tool calls in streaming response"
-            )
+            logger.debug(f"Detected {len(tool_calls)} tool calls in streaming response")
 
         # Build final chunk with finish_reason and optional tool_calls
         final_delta: dict[str, Any] = {}
@@ -468,9 +462,7 @@ async def _generate_chat_complete(
 
         # Wait for result (with timeout to not block forever - 5 min max)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: result_queue.get(timeout=300)
-        )
+        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
 
         gen_thread.join(timeout=1.0)
 
