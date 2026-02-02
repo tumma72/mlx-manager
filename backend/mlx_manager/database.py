@@ -40,13 +40,21 @@ async def migrate_schema() -> None:
         ("server_profiles", "reasoning_parser", "TEXT", None),
         ("server_profiles", "message_converter", "TEXT", None),
         ("server_profiles", "system_prompt", "TEXT", None),
+        # CloudCredential columns for provider configuration (Phase 14 bug fix)
+        ("cloud_credentials", "api_type", "TEXT", "'openai'"),
+        ("cloud_credentials", "name", "TEXT", "''"),
     ]
 
     async with engine.begin() as conn:
         for table, column, col_type, default in migrations:
-            # Check if column exists
+            # Check if table and column exist
             result = await conn.execute(text(f"PRAGMA table_info({table})"))
             columns = [row[1] for row in result.fetchall()]
+
+            # Skip if table doesn't exist (no columns returned)
+            # Fresh databases will have the column from CREATE TABLE
+            if not columns:
+                continue
 
             if column not in columns:
                 # Add the column
