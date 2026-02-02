@@ -2,6 +2,12 @@
 
 Tests the ReasoningExtractor for extracting chain-of-thought content
 from model output tags like <think>, <thinking>, etc.
+
+Reasoning extraction from model responses is now handled by ResponseProcessor
+(tested in test_response_processor.py). This file tests:
+- ReasoningExtractor class directly
+- Adapter support flags for reasoning mode
+- Thinking pattern definitions
 """
 
 from mlx_manager.mlx_server.services.reasoning import (
@@ -146,7 +152,11 @@ Step 3: Check the result.
 
 
 class TestAdapterReasoningSupport:
-    """Tests for adapter reasoning mode support."""
+    """Tests for adapter reasoning mode support flags.
+
+    Note: Adapters no longer have extract_reasoning() method.
+    Reasoning extraction is handled by ResponseProcessor.
+    """
 
     def test_llama_adapter_supports_reasoning_mode(self):
         """Llama adapter supports reasoning mode."""
@@ -164,6 +174,14 @@ class TestAdapterReasoningSupport:
 
         assert adapter.supports_reasoning_mode() is True
 
+    def test_glm4_adapter_supports_reasoning_mode(self):
+        """GLM4 adapter supports reasoning mode."""
+        from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
+
+        adapter = GLM4Adapter()
+
+        assert adapter.supports_reasoning_mode() is True
+
     def test_default_adapter_does_not_support_reasoning_mode(self):
         """Default adapter does not support reasoning mode."""
         from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
@@ -171,42 +189,6 @@ class TestAdapterReasoningSupport:
         adapter = DefaultAdapter()
 
         assert adapter.supports_reasoning_mode() is False
-
-    def test_llama_adapter_extract_reasoning(self):
-        """Llama adapter delegates to ReasoningExtractor."""
-        from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
-
-        adapter = LlamaAdapter()
-        text = "<think>My reasoning.</think>My answer."
-
-        reasoning, content = adapter.extract_reasoning(text)
-
-        assert reasoning == "My reasoning."
-        assert content == "My answer."
-
-    def test_qwen_adapter_extract_reasoning(self):
-        """Qwen adapter delegates to ReasoningExtractor."""
-        from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
-
-        adapter = QwenAdapter()
-        text = "<thinking>Let me think...</thinking>Here's my response."
-
-        reasoning, content = adapter.extract_reasoning(text)
-
-        assert reasoning == "Let me think..."
-        assert content == "Here's my response."
-
-    def test_default_adapter_extract_reasoning_passthrough(self):
-        """Default adapter returns text unchanged."""
-        from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
-
-        adapter = DefaultAdapter()
-        text = "<think>test</think>content"
-
-        reasoning, content = adapter.extract_reasoning(text)
-
-        assert reasoning is None
-        assert content == text
 
 
 class TestThinkingPatterns:
