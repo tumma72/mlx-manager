@@ -127,7 +127,9 @@ class TestMistralAdapter:
     def test_apply_chat_template_prepends_system_message(self):
         """Verify system message is prepended to first user message."""
         adapter = MistralAdapter()
-        tokenizer = MagicMock()
+        # Use spec=[] to prevent auto-creation of .tokenizer attribute
+        # This ensures getattr(tokenizer, "tokenizer", tokenizer) returns tokenizer itself
+        tokenizer = MagicMock(spec=["apply_chat_template"])
         tokenizer.apply_chat_template.return_value = "formatted"
 
         messages = [
@@ -148,7 +150,9 @@ class TestMistralAdapter:
     def test_apply_chat_template_no_system_message(self):
         """Verify messages without system are passed through."""
         adapter = MistralAdapter()
-        tokenizer = MagicMock()
+        # Use spec=[] to prevent auto-creation of .tokenizer attribute
+        # This ensures getattr(tokenizer, "tokenizer", tokenizer) returns tokenizer itself
+        tokenizer = MagicMock(spec=["apply_chat_template"])
         tokenizer.apply_chat_template.return_value = "formatted"
 
         messages = [
@@ -227,7 +231,9 @@ class TestGemmaAdapter:
     def test_apply_chat_template(self):
         """Verify chat template is applied using tokenizer."""
         adapter = GemmaAdapter()
-        tokenizer = MagicMock()
+        # Use spec=[] to prevent auto-creation of .tokenizer attribute
+        # This ensures getattr(tokenizer, "tokenizer", tokenizer) returns tokenizer itself
+        tokenizer = MagicMock(spec=["apply_chat_template"])
         tokenizer.apply_chat_template.return_value = "formatted"
 
         messages = [{"role": "user", "content": "Hello"}]
