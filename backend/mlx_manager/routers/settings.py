@@ -17,6 +17,9 @@ from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.services.cloud.router import get_router as get_backend_router
 from mlx_manager.models import (
+    API_TYPE_FOR_BACKEND,
+    DEFAULT_BASE_URLS,
+    ApiType,
     BackendMapping,
     BackendMappingCreate,
     BackendMappingResponse,
@@ -33,7 +36,11 @@ from mlx_manager.models import (
     Setting,
     User,
 )
-from mlx_manager.services.encryption_service import decrypt_api_key, encrypt_api_key
+from mlx_manager.services.encryption_service import (
+    InvalidToken,
+    decrypt_api_key,
+    encrypt_api_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +89,16 @@ async def create_or_update_provider(
     data: CloudCredentialCreate,
     session: AsyncSession = Depends(get_db),
 ):
-    """Create or update cloud provider credentials (upsert by backend_type)."""
+    """Create or update cloud provider credentials.
+
+    For known providers (openai, anthropic, together, groq, etc.), upserts by backend_type.
+    For generic providers (openai_compatible, anthropic_compatible), creates new if name differs.
+    """
+    # Determine api_type from data or from backend type mapping
+    api_type = data.api_type
+    if api_type is None:
+        api_type = API_TYPE_FOR_BACKEND.get(data.backend_type, ApiType.OPENAI)
+
     # Check for existing credential for this backend type
     result = await session.execute(
         select(CloudCredential).where(CloudCredential.backend_type == data.backend_type)
@@ -95,12 +111,16 @@ async def create_or_update_provider(
     if credential:
         # Update existing
         credential.encrypted_api_key = encrypted_key
+        credential.api_type = api_type
+        credential.name = data.name
         credential.base_url = data.base_url
         credential.updated_at = datetime.now(tz=UTC)
     else:
         # Create new
         credential = CloudCredential(
             backend_type=data.backend_type,
+            api_type=api_type,
+            name=data.name,
             encrypted_api_key=encrypted_key,
             base_url=data.base_url,
         )
@@ -145,6 +165,26 @@ async def delete_provider(
         logger.warning(f"Failed to refresh backend router: {e}")
 
 
+@router.get("/providers/defaults")
+async def get_provider_defaults(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, list[dict[str, str]]]:
+    """Get default base URLs and API types for known providers.
+
+    Returns information about all supported provider types including
+    their default base URLs and which API protocol they use.
+    """
+    providers = [
+        {
+            "backend_type": bt.value,
+            "base_url": url,
+            "api_type": API_TYPE_FOR_BACKEND[bt].value,
+        }
+        for bt, url in DEFAULT_BASE_URLS.items()
+    ]
+    return {"providers": providers}
+
+
 @router.post("/providers/{backend_type}/test")
 async def test_provider_connection(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -165,20 +205,33 @@ async def test_provider_connection(
         raise HTTPException(status_code=404, detail="Provider not configured")
 
     # Decrypt the API key for testing
-    api_key = decrypt_api_key(credential.encrypted_api_key)
+    try:
+        api_key = decrypt_api_key(credential.encrypted_api_key)
+    except InvalidToken:
+        # Key was encrypted with different salt/secret - needs to be re-entered
+        raise HTTPException(
+            status_code=400,
+            detail="API key cannot be decrypted. Please re-enter your API key.",
+        )
 
-    # Determine base URL and headers based on backend type
-    if backend_type == BackendType.OPENAI:
-        base_url = credential.base_url or "https://api.openai.com"
-        headers = {"Authorization": f"Bearer {api_key}"}
-    elif backend_type == BackendType.ANTHROPIC:
-        base_url = credential.base_url or "https://api.anthropic.com"
+    # Determine API type from credential or mapping
+    api_type = credential.api_type
+    if api_type is None:
+        api_type = API_TYPE_FOR_BACKEND.get(backend_type, ApiType.OPENAI)
+
+    # Determine base URL from credential or default
+    base_url = credential.base_url
+    if not base_url:
+        base_url = DEFAULT_BASE_URLS.get(backend_type, "https://api.openai.com")
+
+    # Set headers based on API type
+    if api_type == ApiType.ANTHROPIC:
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported backend type for testing")
+    else:  # OPENAI
+        headers = {"Authorization": f"Bearer {api_key}"}
 
     # Test the connection
     try:
