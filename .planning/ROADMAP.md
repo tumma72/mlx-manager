@@ -9,7 +9,7 @@ Transform MLX Manager from a management UI for external servers (mlx-openai-serv
 ## Milestones
 
 - v1.1 UX & Auth - Phases 1-6 (shipped 2026-01-26)
-- v1.2 MLX Unified Server - Phases 7-14 (in progress)
+- v1.2 MLX Unified Server - Phases 7-15 (in progress)
 
 ## Phases
 
@@ -249,9 +249,32 @@ Plans:
 - [x] 14-08-PLAN.md — StreamingProcessor (filter patterns during streaming)
 - [x] 14-09-PLAN.md — Generic OpenAI/Anthropic-compatible providers
 
+#### Phase 15: Code Cleanup & Integration Tests
+
+**Goal**: Remove dead parser code, fix blocker bugs discovered during UAT, and create integration tests for ResponseProcessor to validate core inference works with all model families
+
+**Depends on**: Phase 14
+
+**Requirements**: CLEAN-01 (Dead Code Removal), CLEAN-02 (Bug Fixes), CLEAN-03 (Integration Tests)
+
+**Success Criteria** (what must be TRUE):
+1. Dead code removed: adapters/parsers/ folder, unused adapter methods (parse_tool_calls, extract_reasoning)
+2. Database migration created for CloudCredential api_type and name columns
+3. Qwen adapter handles enable_thinking exceptions properly (not just TypeError)
+4. Streaming token logging changed from INFO to DEBUG level
+5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
+6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
+
+**Plans**: TBD (run /gsd:plan-phase 15 to break down)
+
+Plans:
+- [ ] 15-01-PLAN.md — TBD
+- [ ] 15-02-PLAN.md — TBD
+- [ ] 15-03-PLAN.md — TBD
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14
+**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14 -> 15
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -263,6 +286,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 0/5 | Planned | - |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
+| 15. Cleanup & Tests | v1.2 | 0/3 | Not Started | - |
 
 ## Technical Architecture
 

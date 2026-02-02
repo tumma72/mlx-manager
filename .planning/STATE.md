@@ -5,22 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 14 - Model Adapter Enhancements (COMPLETE)
+**Current focus:** Phase 15 - Code Cleanup & Integration Tests (NOT STARTED)
 
 ## Current Position
 
-Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 9 of 9 (Generic Provider Support) - COMPLETE
-Status: Phase 14 complete, v1.2 ready for final verification
-Last activity: 2026-02-02 - Completed 14-09-PLAN.md (Generic Providers)
+Phase: 15 of 15 (Code Cleanup & Integration Tests)
+Plan: 0 of 3 (Not started)
+Status: Phase 14 UAT revealed infrastructure bugs; Phase 15 created for cleanup and tests
+Last activity: 2026-02-02 - Created Phase 15 after UAT halted
 
-Progress: [████████████] 100% (All Phase 14 plans complete)
+Progress: [░░░░░░░░░░░░] 0% (Phase 15 not started)
+
+**Next Phase:** Phase 15 - Remove dead parser code, fix blocker bugs, create integration tests
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
 **Status:** Complete - ready for final verification
-**Phases:** 8 phases (7-14)
+**Phases:** 9 phases (7-15)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
 - Continuous Batching: BATCH-01 to BATCH-04 (4 requirements)
@@ -258,7 +260,11 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-02T14:02:01Z
-Stopped at: Completed 14-09-PLAN.md (Generic Providers)
+Last session: 2026-02-02T16:00:00Z
+Stopped at: Phase 14 UAT halted - infrastructure bugs found
 Resume file: None
-Next: v1.2 final verification, database migration for new CloudCredential fields (api_type, name)
+Next: /gsd:discuss-phase 15 then /gsd:plan-phase 15
+
+### Roadmap Evolution
+
+- Phase 15 added: Code Cleanup & Integration Tests (dead code removal, bug fixes, integration tests for ResponseProcessor)
