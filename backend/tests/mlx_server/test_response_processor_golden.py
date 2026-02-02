@@ -7,12 +7,13 @@ Tests validate that:
 4. All model family formats are correctly parsed
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from mlx_manager.mlx_server.services.response_processor import (
-    get_response_processor,
     StreamingProcessor,
+    get_response_processor,
     reset_response_processor,
 )
 

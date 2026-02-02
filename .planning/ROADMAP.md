@@ -268,9 +268,9 @@ Plans:
 **Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
-- [ ] 15-02-PLAN.md — Bug fixes (DB migration, Qwen exception handling, logging levels, vision fix)
-- [ ] 15-03-PLAN.md — Golden file integration tests for ResponseProcessor
+- [x] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
+- [x] 15-02-PLAN.md — Bug fixes (DB migration, Qwen exception handling, logging levels, vision fix)
+- [x] 15-03-PLAN.md — Golden file integration tests for ResponseProcessor
 
 ## Progress
 
@@ -284,9 +284,9 @@ Plans:
 | 10. Dual Protocol | v1.2 | 9/9 | Complete | 2026-01-29 |
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
-| 13. Integration | v1.2 | 0/5 | Planned | - |
+| 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 0/3 | Planned | - |
+| 15. Cleanup & Tests | v1.2 | 3/3 | Complete | 2026-02-02 |
 
 ## Technical Architecture
 
