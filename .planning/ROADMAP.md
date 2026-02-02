@@ -245,6 +245,9 @@ Plans:
 - [x] 14-04-PLAN.md — Structured output validation service
 - [x] 14-05-PLAN.md — LoRA adapter loading support
 - [x] 14-06-PLAN.md — Chat endpoint integration and tests
+- [x] 14-07-PLAN.md — Unified ResponseProcessor (single-pass parsing, fix content cleanup)
+- [x] 14-08-PLAN.md — StreamingProcessor (filter patterns during streaming)
+- [x] 14-09-PLAN.md — Generic OpenAI/Anthropic-compatible providers
 
 ## Progress
 
@@ -259,7 +262,7 @@ Plans:
 | 11. Configuration | v1.2 | 6/6 | Complete | 2026-01-30 |
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 0/5 | Planned | - |
-| 14. Adapters | v1.2 | 6/6 | Complete | 2026-02-01 |
+| 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
 
 ## Technical Architecture
 

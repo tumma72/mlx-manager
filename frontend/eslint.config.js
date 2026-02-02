@@ -15,6 +15,16 @@ export default [
         ...globals.node,
       },
     },
+    rules: {
+      // Ignore unused variables starting with underscore (intentionally unused)
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
+    },
   },
   {
     files: ["**/*.svelte"],

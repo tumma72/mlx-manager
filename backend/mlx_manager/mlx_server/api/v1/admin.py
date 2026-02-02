@@ -240,16 +240,12 @@ async def get_audit_stats() -> dict[str, Any]:
 
         # Count by backend
         backend_result = await session.execute(
-            select(AuditLog.backend_type, func.count(AuditLog.id)).group_by(
-                AuditLog.backend_type
-            )
+            select(AuditLog.backend_type, func.count(AuditLog.id)).group_by(AuditLog.backend_type)
         )
         by_backend = dict(backend_result.all())
 
         # Unique models
-        models_result = await session.execute(
-            select(func.count(func.distinct(AuditLog.model)))
-        )
+        models_result = await session.execute(select(func.count(func.distinct(AuditLog.model))))
         unique_models = models_result.scalar() or 0
 
         return {
@@ -332,9 +328,7 @@ async def export_audit_logs(
             return PlainTextResponse(
                 content="\n".join(lines),
                 media_type="application/jsonl",
-                headers={
-                    "Content-Disposition": "attachment; filename=audit-logs.jsonl"
-                },
+                headers={"Content-Disposition": "attachment; filename=audit-logs.jsonl"},
             )
 
 

@@ -36,17 +36,40 @@ class QwenAdapter(DefaultAdapter):
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
     ) -> str:
-        """Apply Qwen chat template using tokenizer's built-in template."""
-        # Qwen tokenizers have proper chat templates - use them
-        result: str = cast(
-            str,
-            tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=add_generation_prompt,
-                tokenize=False,
-            ),
-        )
-        return result
+        """Apply Qwen chat template using tokenizer's built-in template.
+
+        For Qwen3 models, enables thinking mode which wraps reasoning
+        in <think>...</think> tags.
+        """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+
+        # Try with enable_thinking for Qwen3 (wraps reasoning in <think> tags)
+        try:
+            result: str = cast(
+                str,
+                actual_tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=add_generation_prompt,
+                    tokenize=False,
+                    enable_thinking=True,  # Qwen3 thinking mode
+                ),
+            )
+            logger.info("Applied Qwen3 chat template with enable_thinking=True")
+            logger.debug(f"Chat template result (last 200 chars): ...{result[-200:]}")
+            return result
+        except TypeError as e:
+            # Older tokenizers don't support enable_thinking parameter
+            logger.warning(f"Tokenizer doesn't support enable_thinking: {e}")
+            result = cast(
+                str,
+                actual_tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=add_generation_prompt,
+                    tokenize=False,
+                ),
+            )
+            return result
 
     def get_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get Qwen stop tokens.
@@ -151,3 +174,14 @@ class QwenAdapter(DefaultAdapter):
             reasoning_content is None if no reasoning tags found.
         """
         return _reasoning_extractor.extract(text)
+
+    def clean_response(self, text: str) -> str:
+        """Clean response by removing tool calls, special tokens, and reasoning tags.
+
+        Args:
+            text: Raw model output
+
+        Returns:
+            Cleaned text suitable for display
+        """
+        return _tool_parser.clean_response(text)

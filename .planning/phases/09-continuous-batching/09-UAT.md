@@ -1,5 +1,5 @@
 ---
-status: complete
+status: testing
 phase: 09-continuous-batching
 source: 09-01-SUMMARY.md, 09-02-SUMMARY.md, 09-03-SUMMARY.md, 09-04-SUMMARY.md, 09-05-SUMMARY.md, 09-06-SUMMARY.md, 09-07-SUMMARY.md, 09-08-SUMMARY.md
 started: 2026-01-29T10:30:00Z
@@ -30,16 +30,26 @@ result: pass
 
 ### 5. Batching Tests Pass
 expected: Running `cd backend && pytest tests/mlx_server/batching -v --tb=short 2>&1 | tail -5` shows all batching tests pass (174+ tests).
-result: pass
+result: issue
+reported: "3 warnings that shouldn't be there - SwigPyPacked/SwigPyObject DeprecationWarnings from test_batch_inference.py, LogfireNotConfiguredWarning from test_vision.py"
+severity: minor
 
 ## Summary
 
 total: 5
-passed: 5
-issues: 0
+passed: 4
+issues: 1
 pending: 0
 skipped: 0
 
 ## Gaps
 
-[none yet]
+- truth: "Batching tests should run without warnings"
+  status: failed
+  reason: "User reported: 3 warnings that shouldn't be there - SwigPyPacked/SwigPyObject DeprecationWarnings from test_batch_inference.py, LogfireNotConfiguredWarning from test_vision.py"
+  severity: minor
+  test: 5
+  root_cause: ""
+  artifacts: []
+  missing: []
+  debug_session: ""

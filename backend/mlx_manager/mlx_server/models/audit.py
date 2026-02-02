@@ -33,9 +33,7 @@ class AuditLogBase(SQLModel):
 
     # Token counts (optional - may not be available for all backends)
     prompt_tokens: int | None = Field(default=None, description="Prompt token count")
-    completion_tokens: int | None = Field(
-        default=None, description="Completion token count"
-    )
+    completion_tokens: int | None = Field(default=None, description="Completion token count")
     total_tokens: int | None = Field(default=None, description="Total token count")
 
     # Error info (only for failed requests)

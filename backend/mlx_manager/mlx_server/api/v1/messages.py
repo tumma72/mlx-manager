@@ -62,9 +62,7 @@ async def create_message(
                 if result.usage:
                     audit_ctx.prompt_tokens = result.usage.input_tokens
                     audit_ctx.completion_tokens = result.usage.output_tokens
-                    audit_ctx.total_tokens = (
-                        result.usage.input_tokens + result.usage.output_tokens
-                    )
+                    audit_ctx.total_tokens = result.usage.input_tokens + result.usage.output_tokens
                 return result
 
         except HTTPException:
@@ -101,9 +99,7 @@ async def _handle_non_streaming(
 
     # Translate stop reason
     openai_stop = choice.get("finish_reason", "stop")
-    anthropic_stop = cast(
-        AnthropicStopReason, translator.openai_stop_to_anthropic(openai_stop)
-    )
+    anthropic_stop = cast(AnthropicStopReason, translator.openai_stop_to_anthropic(openai_stop))
 
     return AnthropicMessagesResponse(
         id=result["id"].replace("chatcmpl-", "msg_"),
@@ -152,29 +148,33 @@ async def _handle_streaming(
         # 1. message_start event - Anthropic requires this as first event
         yield {
             "event": "message_start",
-            "data": json.dumps({
-                "type": "message_start",
-                "message": {
-                    "id": request_id,
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [],
-                    "model": request.model,
-                    "stop_reason": None,
-                    "stop_sequence": None,
-                    "usage": {"input_tokens": 0, "output_tokens": 0},
-                },
-            }),
+            "data": json.dumps(
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": request_id,
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [],
+                        "model": request.model,
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "usage": {"input_tokens": 0, "output_tokens": 0},
+                    },
+                }
+            ),
         }
 
         # 2. content_block_start event - signals beginning of text block
         yield {
             "event": "content_block_start",
-            "data": json.dumps({
-                "type": "content_block_start",
-                "index": 0,
-                "content_block": {"type": "text", "text": ""},
-            }),
+            "data": json.dumps(
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                }
+            ),
         }
 
         # 3. Stream tokens as content_block_delta events
@@ -207,11 +207,13 @@ async def _handle_streaming(
                     output_tokens += 1
                     yield {
                         "event": "content_block_delta",
-                        "data": json.dumps({
-                            "type": "content_block_delta",
-                            "index": 0,
-                            "delta": {"type": "text_delta", "text": token_text},
-                        }),
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_delta",
+                                "index": 0,
+                                "delta": {"type": "text_delta", "text": token_text},
+                            }
+                        ),
                     }
 
                 # Capture finish_reason for translation at end
@@ -221,20 +223,24 @@ async def _handle_streaming(
         # 4. content_block_stop event - signals end of text block
         yield {
             "event": "content_block_stop",
-            "data": json.dumps({
-                "type": "content_block_stop",
-                "index": 0,
-            }),
+            "data": json.dumps(
+                {
+                    "type": "content_block_stop",
+                    "index": 0,
+                }
+            ),
         }
 
         # 5. message_delta event - contains final stop_reason and usage
         yield {
             "event": "message_delta",
-            "data": json.dumps({
-                "type": "message_delta",
-                "delta": {"stop_reason": finish_reason, "stop_sequence": None},
-                "usage": {"output_tokens": output_tokens},
-            }),
+            "data": json.dumps(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": finish_reason, "stop_sequence": None},
+                    "usage": {"output_tokens": output_tokens},
+                }
+            ),
         }
 
         # 6. message_stop event - signals stream complete

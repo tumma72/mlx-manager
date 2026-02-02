@@ -17,9 +17,16 @@ from mlx_manager.mlx_server.models.adapters.parsers.base import ToolCallParser
 
 logger = logging.getLogger(__name__)
 
-# Pattern for Hermes-style tool calls
+# Pattern for Hermes-style tool calls (preferred)
 TOOL_CALL_PATTERN = re.compile(
     r"<tool_call>\s*(.*?)\s*</tool_call>",
+    re.DOTALL,
+)
+
+# Fallback pattern for raw JSON tool calls (when model doesn't use tags)
+# Matches: {"name": "func_name", "arguments": {...}}
+RAW_TOOL_CALL_PATTERN = re.compile(
+    r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*\})\s*\}',
     re.DOTALL,
 )
 
@@ -35,6 +42,9 @@ class QwenToolParser(ToolCallParser):
     def parse(self, text: str) -> list[dict[str, Any]]:
         """Parse Qwen tool calls from output text.
 
+        Tries tagged format first (<tool_call>...</tool_call>), then falls back
+        to raw JSON detection for smaller models that don't follow tag format.
+
         Args:
             text: Model output text
 
@@ -43,6 +53,7 @@ class QwenToolParser(ToolCallParser):
         """
         calls: list[dict[str, Any]] = []
 
+        # Try tagged format first (preferred)
         for match in TOOL_CALL_PATTERN.finditer(text):
             try:
                 json_str = match.group(1).strip()
@@ -72,7 +83,70 @@ class QwenToolParser(ToolCallParser):
                 logger.warning("Invalid JSON in Qwen tool call: %s", e)
                 continue
 
+        # If no tagged calls found, try raw JSON fallback
+        # (for smaller models that don't follow tag format)
+        if not calls:
+            for match in RAW_TOOL_CALL_PATTERN.finditer(text):
+                try:
+                    name = match.group(1)
+                    arguments_str = match.group(2)
+
+                    # Validate it's valid JSON
+                    json.loads(arguments_str)
+
+                    calls.append(
+                        {
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": arguments_str,
+                            },
+                        }
+                    )
+                    logger.debug(f"Detected raw JSON tool call: {name}")
+                except (json.JSONDecodeError, IndexError) as e:
+                    logger.debug("Invalid raw JSON tool call: %s", e)
+                    continue
+
         return calls
+
+    def clean_response(self, text: str) -> str:
+        """Remove tool calls and special tokens from response text.
+
+        After parsing tool calls, the raw JSON/tags should be stripped
+        from the displayed response.
+
+        Args:
+            text: Raw model output
+
+        Returns:
+            Cleaned text without tool calls or special tokens
+        """
+        cleaned = text
+
+        # Remove tagged tool calls
+        cleaned = TOOL_CALL_PATTERN.sub("", cleaned)
+
+        # Remove raw JSON tool calls
+        cleaned = RAW_TOOL_CALL_PATTERN.sub("", cleaned)
+
+        # Remove common special tokens
+        special_tokens = [
+            "<|endoftext|>",
+            "<|im_end|>",
+            "<|im_start|>",
+            "<|end|>",
+            "<|eot_id|>",
+        ]
+        for token in special_tokens:
+            cleaned = cleaned.replace(token, "")
+
+        # Clean up excessive whitespace/newlines from removals
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = cleaned.strip()
+
+        return cleaned
 
     def format_tools(self, tools: list[dict[str, Any]]) -> str:
         """Format tools for Qwen prompt (Hermes style).

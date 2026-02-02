@@ -159,9 +159,7 @@ async def preprocess_images(
         should_close = True
 
     try:
-        tasks = [
-            preprocess_image(img_input, client, max_dimension) for img_input in image_inputs
-        ]
+        tasks = [preprocess_image(img_input, client, max_dimension) for img_input in image_inputs]
         return await asyncio.gather(*tasks)
     finally:
         if should_close:

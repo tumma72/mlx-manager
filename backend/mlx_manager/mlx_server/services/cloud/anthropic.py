@@ -104,10 +104,12 @@ class AnthropicCloudBackend(CloudBackendClient):
             if msg["role"] == "system":
                 system_content = msg["content"]
             else:
-                anthropic_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"],
-                })
+                anthropic_messages.append(
+                    {
+                        "role": msg["role"],
+                        "content": msg["content"],
+                    }
+                )
 
         request: dict[str, Any] = {
             "model": model,
@@ -163,14 +165,16 @@ class AnthropicCloudBackend(CloudBackendClient):
             "object": "chat.completion",
             "created": 0,  # Anthropic doesn't include timestamp
             "model": anthropic_response.get("model", ""),
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": content_text,
-                },
-                "finish_reason": openai_stop,
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content_text,
+                    },
+                    "finish_reason": openai_stop,
+                }
+            ],
             "usage": {
                 "prompt_tokens": usage.get("input_tokens", 0),
                 "completion_tokens": usage.get("output_tokens", 0),
@@ -220,11 +224,13 @@ class AnthropicCloudBackend(CloudBackendClient):
                                 "object": "chat.completion.chunk",
                                 "created": 0,
                                 "model": request_data.get("model", ""),
-                                "choices": [{
-                                    "index": 0,
-                                    "delta": {"content": token_text},
-                                    "finish_reason": None,
-                                }],
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": token_text},
+                                        "finish_reason": None,
+                                    }
+                                ],
                             }
 
                 # Handle message_delta for finish reason
@@ -237,11 +243,13 @@ class AnthropicCloudBackend(CloudBackendClient):
                             "object": "chat.completion.chunk",
                             "created": 0,
                             "model": request_data.get("model", ""),
-                            "choices": [{
-                                "index": 0,
-                                "delta": {},
-                                "finish_reason": openai_stop,
-                            }],
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {},
+                                    "finish_reason": openai_stop,
+                                }
+                            ],
                         }
 
                 # Handle message_stop

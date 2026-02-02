@@ -7,16 +7,9 @@
 	import { Card, Button, Select } from '$components/ui';
 	import { Loader2, Save, X, ChevronDown } from 'lucide-svelte';
 
-	// Types for pool configuration (local until 11-02 provides them)
+	// Types for pool configuration
 	type MemoryLimitMode = 'percent' | 'gb';
 	type EvictionPolicy = 'lru' | 'lfu' | 'ttl';
-
-	interface ServerPoolConfig {
-		memory_limit_mode: MemoryLimitMode;
-		memory_limit_value: number;
-		eviction_policy: EvictionPolicy;
-		preload_models: string[];
-	}
 
 	// Component state
 	let localModels = $state<LocalModel[]>([]);

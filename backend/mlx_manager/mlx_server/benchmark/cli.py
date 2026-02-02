@@ -45,11 +45,11 @@ MODEL_TIERS = {
 
 def print_result(summary: BenchmarkSummary) -> None:
     """Pretty print benchmark result."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Model: {summary.model}")
     print(f"Backend: {summary.backend}")
     print(f"Runs: {summary.successful_runs}/{summary.runs} successful")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Avg throughput: {summary.avg_tokens_per_second:.1f} tok/s")
     print(f"  Min throughput: {summary.min_tokens_per_second:.1f} tok/s")
     print(f"  Max throughput: {summary.max_tokens_per_second:.1f} tok/s")

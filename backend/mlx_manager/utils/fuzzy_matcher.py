@@ -262,25 +262,15 @@ def get_matcher() -> FuzzyMatcher:
 
 def find_parser_options(model_id: str) -> dict[str, str]:
     """
-    Find recommended parser options for a model using fuzzy matching.
+    Find recommended parser options for a model.
 
-    This is the main entry point for the fuzzy matching system.
-    It matches the model name against available parser options and
-    returns the best matches above the threshold.
+    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
+    Always returns an empty dict for backwards compatibility.
 
     Args:
-        model_id: HuggingFace model ID (e.g., "mlx-community/Qwen3-8B-4bit")
+        model_id: HuggingFace model ID (ignored)
 
     Returns:
-        Dictionary with matched parser options (only non-None values).
-        Keys are "tool_call_parser", "reasoning_parser", "message_converter".
+        Empty dictionary.
     """
-    matcher = get_matcher()
-
-    result = {}
-    for parser_type in ["tool_call_parser", "reasoning_parser", "message_converter"]:
-        match = matcher.find_best_match(model_id, parser_type)
-        if match:
-            result[parser_type] = match
-
-    return result
+    return {}

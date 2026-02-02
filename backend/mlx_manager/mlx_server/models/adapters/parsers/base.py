@@ -1,7 +1,19 @@
 """Base tool call parser protocol."""
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
+
+# Common special tokens across model families
+COMMON_SPECIAL_TOKENS = [
+    "<|endoftext|>",
+    "<|im_end|>",
+    "<|im_start|>",
+    "<|end|>",
+    "<|eot_id|>",
+    "<|start_header_id|>",
+    "<|end_header_id|>",
+]
 
 
 class ToolCallParser(ABC):
@@ -38,3 +50,27 @@ class ToolCallParser(ABC):
             Formatted string to include in system prompt or tool section
         """
         ...
+
+    def clean_response(self, text: str) -> str:
+        """Remove tool calls and special tokens from response text.
+
+        Override in subclasses for model-specific cleaning.
+        Default implementation removes common special tokens.
+
+        Args:
+            text: Raw model output
+
+        Returns:
+            Cleaned text suitable for display
+        """
+        cleaned = text
+
+        # Remove common special tokens
+        for token in COMMON_SPECIAL_TOKENS:
+            cleaned = cleaned.replace(token, "")
+
+        # Clean up excessive whitespace from removals
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = cleaned.strip()
+
+        return cleaned

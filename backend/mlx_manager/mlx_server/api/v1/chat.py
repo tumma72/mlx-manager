@@ -446,13 +446,9 @@ async def _handle_non_streaming(
         and request.response_format.json_schema
     ):
         schema = request.response_format.json_schema
-        validation_result = _structured_output_validator.validate_and_coerce(
-            content, schema
-        )
+        validation_result = _structured_output_validator.validate_and_coerce(content, schema)
         if not validation_result.success:
-            logger.warning(
-                f"Structured output validation failed: {validation_result.error}"
-            )
+            logger.warning(f"Structured output validation failed: {validation_result.error}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Model output failed JSON schema validation: "
@@ -547,9 +543,7 @@ async def _handle_batched_request(
         messages.append({"role": m.role, "content": text})
 
     # Apply chat template to get prompt string
-    prompt = adapter.apply_chat_template(
-        loaded.tokenizer, messages, add_generation_prompt=True
-    )
+    prompt = adapter.apply_chat_template(loaded.tokenizer, messages, add_generation_prompt=True)
 
     # Tokenize prompt
     prompt_tokens = actual_tokenizer.encode(prompt)

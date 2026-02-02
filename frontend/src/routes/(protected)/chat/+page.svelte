@@ -307,6 +307,7 @@
 
 		const decoder = new TextDecoder();
 		let buffer = '';
+		let modelLoadNotified = false; // Track if we've notified about model load
 
 		while (true) {
 			const { done, value } = await reader.read();
@@ -324,6 +325,11 @@
 						case 'thinking':
 							result.thinking += data.content;
 							streamingThinking += data.content;
+							// Refresh serverStore once model is loaded (first chunk means model loaded)
+							if (!modelLoadNotified) {
+								modelLoadNotified = true;
+								serverStore.refresh();
+							}
 							break;
 						case 'thinking_done':
 							result.thinkingDur = data.duration;
@@ -332,6 +338,11 @@
 						case 'response':
 							result.content += data.content;
 							streamingResponse += data.content;
+							// Refresh serverStore once model is loaded (first chunk means model loaded)
+							if (!modelLoadNotified) {
+								modelLoadNotified = true;
+								serverStore.refresh();
+							}
 							break;
 						case 'tool_call': {
 							const tc = data.tool_call;
@@ -520,11 +531,12 @@
 				streamingResponse = assistantContent;
 			}
 
-			// Finalize message
+			// Finalize message - clean the response to remove tool call JSON, special tokens
 			if (streamingResponse || streamingThinking || streamingToolCalls.length > 0) {
+				const cleanedResponse = cleanResponse(streamingResponse);
 				const finalContent = streamingThinking
-					? `<think>${streamingThinking}</think>${streamingResponse}`
-					: streamingResponse;
+					? `<think>${streamingThinking}</think>${cleanedResponse}`
+					: cleanedResponse;
 				messages.push({
 					role: 'assistant',
 					content: finalContent,
@@ -666,6 +678,41 @@
 		}
 
 		return { thinking: null, response: content };
+	}
+
+	// Clean response text by removing tool call JSON, special tokens, etc.
+	// This handles cases where models output raw JSON tool calls inline
+	function cleanResponse(text: string): string {
+		let cleaned = text;
+
+		// Remove raw JSON tool calls: {"name": "...", "arguments": {...}}
+		cleaned = cleaned.replace(
+			/\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^{}]*\}\s*\}/g,
+			''
+		);
+
+		// Remove tagged tool calls: <tool_call>...</tool_call>
+		cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
+
+		// Remove special tokens
+		const specialTokens = [
+			'<|endoftext|>',
+			'<|im_end|>',
+			'<|im_start|>',
+			'<|end|>',
+			'<|eot_id|>',
+			'<|start_header_id|>',
+			'<|end_header_id|>',
+		];
+		for (const token of specialTokens) {
+			cleaned = cleaned.replaceAll(token, '');
+		}
+
+		// Clean up excessive whitespace from removals
+		cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+		cleaned = cleaned.trim();
+
+		return cleaned;
 	}
 </script>
 

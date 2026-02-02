@@ -1,6 +1,19 @@
 """Model adapter base protocol and default implementation."""
 
+import re
 from typing import Any, Protocol, cast, runtime_checkable
+
+# Common special tokens across model families
+COMMON_SPECIAL_TOKENS = [
+    "<|endoftext|>",
+    "<|im_end|>",
+    "<|im_start|>",
+    "<|end|>",
+    "<|eot_id|>",
+    "<|start_header_id|>",
+    "<|end_header_id|>",
+    "assistant",  # Sometimes appears as raw text
+]
 
 
 @runtime_checkable
@@ -121,9 +134,7 @@ class ModelAdapter(Protocol):
 
     # --- Optional Methods: Message Conversion ---
 
-    def convert_messages(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert OpenAI-format messages to model-specific format.
 
         Some models require specific message formats, tool result handling,
@@ -134,6 +145,17 @@ class ModelAdapter(Protocol):
 
         Returns:
             Messages in model-specific format
+        """
+        ...
+
+    def clean_response(self, text: str) -> str:
+        """Clean response text by removing tool calls and special tokens.
+
+        Args:
+            text: Raw model output
+
+        Returns:
+            Cleaned text suitable for display
         """
         ...
 
@@ -201,8 +223,25 @@ class DefaultAdapter:
 
     # --- Optional Methods: Message Conversion ---
 
-    def convert_messages(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Default: Return messages unchanged."""
         return messages
+
+    # --- Optional Methods: Response Cleaning ---
+
+    def clean_response(self, text: str) -> str:
+        """Clean response text by removing special tokens.
+
+        Override in subclasses for model-specific cleaning (e.g., tool call removal).
+        """
+        cleaned = text
+
+        # Remove common special tokens
+        for token in COMMON_SPECIAL_TOKENS:
+            cleaned = cleaned.replace(token, "")
+
+        # Clean up excessive whitespace from removals
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = cleaned.strip()
+
+        return cleaned

@@ -181,13 +181,16 @@ def register_error_handlers(app: FastAPI) -> None:
     # Type ignores needed because FastAPI's type stubs expect generic Exception handlers
     # but specific exception types work correctly at runtime
     app.add_exception_handler(
-        TimeoutHTTPException, timeout_exception_handler  # type: ignore[arg-type]
+        TimeoutHTTPException,
+        timeout_exception_handler,  # type: ignore[arg-type]
     )
     app.add_exception_handler(
-        HTTPException, http_exception_handler  # type: ignore[arg-type]
+        HTTPException,
+        http_exception_handler,  # type: ignore[arg-type]
     )
     app.add_exception_handler(
-        RequestValidationError, validation_exception_handler  # type: ignore[arg-type]
+        RequestValidationError,
+        validation_exception_handler,  # type: ignore[arg-type]
     )
     app.add_exception_handler(Exception, generic_exception_handler)
     logger.info("RFC 7807 error handlers registered")

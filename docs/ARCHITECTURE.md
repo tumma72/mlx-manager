@@ -1,8 +1,8 @@
 # MLX Model Manager - Architecture & Design Document
 
-**Version:** 1.0.0  
-**Date:** January 2026  
-**Status:** Implementation Ready  
+**Version:** 1.2.0-draft
+**Date:** January 2026 (updated 2026-01-27)
+**Status:** v1.2 Planning — MLX Unified Server
 **Target Platform:** macOS with Apple Silicon (M1/M2/M3/M4)
 
 ---
@@ -47,6 +47,106 @@ Developers and power users running local LLMs on Apple Silicon who need to manag
 
 ### Hardware Context
 The primary target is a MacBook Pro M4 Max with 128GB unified memory, capable of running 2-3 large models (30B-70B parameter range) simultaneously.
+
+---
+
+## 1.5 v1.2 Architecture Evolution: MLX Unified Server
+
+> **Status:** Planning phase (2026-01-27)
+> **Reference:** `.planning/research/MLX-SERVER-FEASIBILITY.md`
+
+### v1.2 Vision
+
+v1.2 transforms MLX Manager from a management UI for external servers into a unified inference platform with our own high-performance MLX server.
+
+**Key Change:** Instead of wrapping external servers (mlx-openai-server, vLLM-MLX), we build our own inference engine directly on mlx-lm/mlx-vlm/mlx-embeddings.
+
+### Why Build Our Own Server
+
+| Factor | External Servers | Own Server |
+|--------|-----------------|------------|
+| Control | Limited to exposed APIs | Full stack control |
+| Performance | Single-request only | Continuous batching (2-4x throughput) |
+| Memory | Contiguous KV cache (60-80% waste) | Paged KV cache (<4% waste) |
+| Maintenance | Multiple dependencies | Single codebase |
+| Observability | Varies by server | Native LogFire integration |
+
+### v1.2 High-Level Architecture
+
+```
++----------------------------------------------------------------------+
+|                      MLX UNIFIED SERVER                              |
++----------------------------------------------------------------------+
+|  API Layer (FastAPI + uvloop + Pydantic v2)                          |
+|  +------------------+  +------------------+  +--------------------+  |
+|  | /v1/chat/        |  | /v1/messages     |  | /v1/embeddings     |  |
+|  | completions      |  | (Anthropic)      |  |                    |  |
+|  | (OpenAI)         |  |                  |  |                    |  |
+|  +---------+--------+  +---------+--------+  +-----------+--------+  |
+|            |                     |                       |           |
+|  +---------v---------------------v-----------------------v--------+  |
+|  |                    Protocol Translator                         |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                 Continuous Batching Scheduler                  |  |
+|  |  Priority Queues | Token-level Batching | Dynamic Replacement   |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Model Pool Manager                          |  |
+|  |  Hot Models (LRU) | Memory Pressure Monitor | On-Demand Load   |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Paged KV Cache Manager                      |  |
+|  |  Block Pool | Block Tables | Prefix Sharing | Copy-on-Write    |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    Model Adapters (per family)                 |  |
+|  |  Llama | Qwen | Mistral | Gemma | VisionAddOn                  |  |
+|  +---------------------------+------------------------------------+  |
+|                              |                                       |
+|  +---------------------------v------------------------------------+  |
+|  |                    MLX Libraries                               |  |
+|  |  mlx-lm | mlx-vlm | mlx-embeddings | MLX Core                  |  |
+|  +---------------------------------------------------------------+  |
+|                                                                      |
+|  +---------------------------------------------------------------+  |
+|  |                    Observability (Pydantic LogFire)            |  |
+|  |  Request Tracing | LLM Metrics | SQLite Spans | Alerts         |  |
+|  +---------------------------------------------------------------+  |
++----------------------------------------------------------------------+
+```
+
+### v1.2 Technology Stack
+
+| Layer | Technology | Rationale |
+|-------|------------|-----------|
+| HTTP Server | FastAPI + uvloop | 2-4x perf vs asyncio, async-native |
+| Inference | mlx-lm + mlx-vlm + mlx-embeddings | Apple-maintained, MLX-optimized |
+| Validation | Pydantic v2 (Rust core) | 5-50x faster, native FastAPI |
+| Observability | Pydantic LogFire | Native instrumentation for entire stack |
+| Tokenization | HuggingFace Tokenizers (Rust) | 43x faster than pure Python |
+
+### Performance Targets
+
+| Metric | v1.1 (mlx-openai-server) | v1.2 Target | Technique |
+|--------|--------------------------|-------------|-----------|
+| Single request | 200-400 tok/s | 200-400 tok/s | Same |
+| 5 concurrent | 200-400 tok/s | 800-1200 tok/s | Continuous batching |
+| Memory efficiency | ~40% | >90% | Paged KV cache |
+| TTFT (cached) | 500-1000ms | 50-100ms | Prefix caching |
+
+### v1.2 Phases
+
+1. **Phase 7: Foundation** — Server skeleton, single model inference, OpenAI API
+2. **Phase 8: Multi-Model** — LRU pool, vision/embedding support, model adapters
+3. **Phase 9: Batching** — Continuous batching, paged KV cache, prefix caching
+4. **Phase 10: Dual Protocol** — Anthropic API, cloud fallback routing
+5. **Phase 11: Configuration** — UI for pool, providers, routing rules
+6. **Phase 12: Hardening** — LogFire metrics, error handling, audit logging
 
 ---
 

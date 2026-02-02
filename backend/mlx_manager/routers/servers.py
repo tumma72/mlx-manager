@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
+from mlx_manager.mlx_server.models.pool import get_model_pool
+from mlx_manager.mlx_server.utils.memory import get_memory_usage
 from mlx_manager.models import ServerProfile, User
 
 logger = logging.getLogger(__name__)
@@ -60,21 +62,79 @@ class ServerHealthStatus(BaseModel):
 _server_start_time = time.time()
 
 
-@router.get("")
+class RunningServer(BaseModel):
+    """Running server info for UI compatibility."""
+
+    profile_id: int
+    profile_name: str
+    pid: int
+    port: int
+    health_status: str  # "starting", "healthy", "unhealthy", "stopped"
+    uptime_seconds: float
+    memory_mb: float
+    memory_percent: float
+    cpu_percent: float
+
+
+@router.get("", response_model=list[RunningServer])
 async def list_servers(
     current_user: Annotated[User, Depends(get_current_user)],
-) -> list[dict]:
+    db: AsyncSession = Depends(get_db),
+) -> list[RunningServer]:
     """Return running servers list for UI compatibility.
 
-    With embedded mode, the old profile-based server model is deprecated.
-    This returns an empty list for UI compatibility - the frontend expects
-    RunningServer objects with profile_id, profile_name, pid, port, etc.
-
-    For embedded server status, use the /servers/embedded endpoint instead.
+    In embedded mode, a profile is "running" when its model is loaded in the
+    model pool. Returns RunningServer objects for profiles with loaded models.
     """
-    # Return empty list - no profile-based servers in embedded mode
-    # The UI will show "No servers running" which is acceptable for now
-    return []
+    from sqlalchemy import select
+
+    try:
+        pool = get_model_pool()
+        loaded_models = pool.get_loaded_models()
+
+        if not loaded_models:
+            return []
+
+        # Get all profiles and find which ones have loaded models
+        result = await db.execute(select(ServerProfile))
+        profiles = result.scalars().all()
+
+        memory = get_memory_usage()
+        memory_used_gb = memory.get("active_gb", 0.0)
+        memory_total_gb = pool.max_memory_gb
+
+        running_servers: list[RunningServer] = []
+        for profile in profiles:
+            if profile.id is None:
+                continue  # Skip profiles without IDs (shouldn't happen)
+            if profile.model_path in loaded_models:
+                # Get model info if available
+                loaded_model = pool._models.get(profile.model_path)
+                model_uptime = 0.0
+                if loaded_model:
+                    model_uptime = time.time() - loaded_model.loaded_at
+
+                running_servers.append(
+                    RunningServer(
+                        profile_id=profile.id,
+                        profile_name=profile.name,
+                        pid=os.getpid(),
+                        port=8080,  # Embedded server always on main port
+                        health_status="healthy",
+                        uptime_seconds=model_uptime,
+                        memory_mb=memory_used_gb * 1024 / max(1, len(loaded_models)),
+                        memory_percent=(
+                            (memory_used_gb / memory_total_gb * 100) if memory_total_gb > 0 else 0.0
+                        ),
+                        cpu_percent=0.0,  # Not tracked in embedded mode
+                    )
+                )
+
+        return running_servers
+
+    except RuntimeError:
+        # Model pool not initialized
+        return []
 
 
 @router.get("/embedded", response_model=EmbeddedServerStatus)

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { DropdownMenu } from 'bits-ui';
 	import { systemStore, authStore } from '$stores';
 	import { auth } from '$lib/api/client';
@@ -135,17 +136,17 @@
 										{/if}
 									</div>
 								{/if}
-								<a
-									href={resolve('/settings')}
-									class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								<DropdownMenu.Item
+									class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+									onSelect={() => goto(resolve('/settings'))}
 								>
 									<Sliders class="w-4 h-4" />
 									Settings
-								</a>
+								</DropdownMenu.Item>
 								{#if authStore.isAdmin}
-									<a
-										href={resolve('/users')}
-										class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									<DropdownMenu.Item
+										class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+										onSelect={() => goto(resolve('/users'))}
 									>
 										<Users class="w-4 h-4" />
 										Users
@@ -156,7 +157,7 @@
 												{pendingCount}
 											</span>
 										{/if}
-									</a>
+									</DropdownMenu.Item>
 								{/if}
 								<DropdownMenu.Separator class="my-1 h-px bg-gray-200 dark:bg-gray-700" />
 								<DropdownMenu.Item

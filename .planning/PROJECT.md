@@ -29,20 +29,24 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQU
 - Dark mode support across entire UI
 - Initial chat interface for testing models
 
-## Current Milestone: v1.2 — Unified API Gateway
+## Current Milestone: v1.2 — MLX Unified Server
 
-**Goal:** Transform mlx-manager into a unified API gateway that routes requests to local or cloud backends based on model name.
+**Goal:** Build our own high-performance MLX inference server with multi-model support, continuous batching, and dual API compatibility.
+
+**Pivot:** After feasibility research confirmed viability, we're building our own server instead of adapters for external backends (mlx-openai-server, vLLM-MLX). Benefits: full control, proven 2-4x throughput gains from batching, single codebase.
 
 **Target features:**
-- Backend abstraction layer (adapter pattern for mlx-openai-server, vLLM-MLX, OpenAI cloud, Anthropic cloud)
-- Unified proxy endpoint exposing both OpenAI and Anthropic compatible APIs
-- Model name → backend routing with UI configuration
-- On-demand local model auto-start when requests arrive
-- Secure in-app API key storage for cloud providers
+- FastAPI + uvloop server built on mlx-lm/mlx-vlm/mlx-embeddings
+- Multi-model serving with LRU eviction and memory pressure monitoring
+- Continuous batching scheduler for 2-4x throughput improvement (proven by vLLM-MLX)
+- Paged KV cache for memory efficiency (<4% waste vs 60-80%)
+- OpenAI and Anthropic compatible REST APIs
+- Cloud fallback routing (OpenAI/Anthropic APIs) when local unavailable
+- Pydantic v2 validation + Pydantic LogFire observability
 
 ## Current State
 
-**Status:** Milestone v1.2 active — defining requirements
+**Status:** Milestone v1.2 active — roadmap revised, ready to plan Phase 7
 **Last release:** v1.1.0 (2026-01-26)
 
 ## v2 Requirements (Deferred)
@@ -92,15 +96,21 @@ Tracked for future releases:
 | MCP mock for tool-use testing | Validate tool-capable models without external deps | Shipped v1.1 |
 | Backend-mediated health polling | Eliminates browser console errors | Shipped v1.1 |
 | Three-tier tool-use detection | Tags → family → config fallback chain | Shipped v1.1 |
+| AuthLib for unified auth/crypto | Consolidates JWT, password hashing, API key encryption; OAuth2-ready | v1.2 Phase 7 |
+| Build own MLX server | Full control, proven 2-4x batching gains, single codebase vs adapter sprawl | v1.2 Pivot |
+| mlx-lm/mlx-vlm/mlx-embeddings | Apple-maintained, mature, proven foundation libraries | v1.2 Phase 7 |
+| Pydantic v2 for validation | Rust core (5-50x faster), native FastAPI integration | v1.2 Phase 7 |
+| Pydantic LogFire for observability | Native FastAPI/HTTPX/LLM instrumentation, built on OpenTelemetry | v1.2 Phase 7 |
+| Continuous batching from Phase 9 | vLLM-MLX proved 3.4x throughput (328→1112 tok/s on M4 Max) | v1.2 Phase 9 |
 
 ## Known Tech Debt
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| Throughput metrics unavailable | Info | Requires mlx-openai-server changes |
+| Throughput metrics unavailable | Info | Will be solved by v1.2 server with LogFire metrics |
 | GPU metrics unavailable | Info | psutil limitation on macOS |
 | Download completion UX | Warning | Doesn't auto-refresh local models list |
 
 ---
 
-*Last updated: 2026-01-26 — Milestone v1.2 started*
+*Last updated: 2026-01-27 — Milestone v1.2 pivoted to MLX Unified Server*

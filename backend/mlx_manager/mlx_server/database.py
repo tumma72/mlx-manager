@@ -89,8 +89,7 @@ async def cleanup_old_logs() -> int:
         deleted = result.rowcount
         if deleted > 0:
             logger.info(
-                f"Cleaned up {deleted} audit logs older than "
-                f"{settings.audit_retention_days} days"
+                f"Cleaned up {deleted} audit logs older than {settings.audit_retention_days} days"
             )
         return deleted
 
