@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 13 - MLX Server Integration (Verification)
+**Current focus:** Phase 14 - Model Adapter Enhancements (COMPLETE)
 
 ## Current Position
 
 Phase: 14 of 14 (Model Adapter Enhancements)
-Plan: 8 of 9 (Streaming Pattern Filtering) - COMPLETE
-Status: Executing gap closure plans
-Last activity: 2026-02-02 — Completed 14-08-PLAN.md (StreamingProcessor)
+Plan: 9 of 9 (Generic Provider Support) - COMPLETE
+Status: Phase 14 complete, v1.2 ready for final verification
+Last activity: 2026-02-02 - Completed 14-09-PLAN.md (Generic Providers)
 
-Progress: [███████████░] 96% (14-08 complete, 14-09 pending)
+Progress: [████████████] 100% (All Phase 14 plans complete)
 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** In progress
+**Status:** Complete - ready for final verification
 **Phases:** 8 phases (7-14)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -140,7 +140,6 @@ Recent decisions affecting current work:
 - **Linear percentile interpolation**: calculate_percentile uses linear interpolation for smooth values
 - **BackendType string enum**: Enables direct JSON serialization for LOCAL, OPENAI, ANTHROPIC values
 - **Priority-based pattern matching**: Higher priority patterns checked first for model routing
-- **One credential per backend type**: Unique constraint prevents configuration confusion
 - **Anthropic max_tokens required**: Unlike OpenAI's optional, Anthropic requires max_tokens with Field(ge=1) and no default
 - **System message separate field**: Anthropic stores system in dedicated field, not in messages array
 - **Anthropic temperature 0.0-1.0**: Stricter bounds than OpenAI's 0.0-2.0
@@ -214,6 +213,10 @@ Recent decisions affecting current work:
 - **Partial marker buffering**: StreamingProcessor buffers incomplete markers until next token determines if pattern or content
 - **Recursive after-pattern processing**: StreamingProcessor.feed() recursively processes content after pattern ends when in same token
 - **Python tag pattern in streaming**: Include <|python_tag|>...<|eom_id|> in StreamingProcessor pattern filtering
+- **ApiType enum for protocol selection**: Explicit api_type field (openai/anthropic) on CloudCredential instead of inferring from BackendType
+- **Cache by credential ID**: Cloud backend cache uses credential ID instead of BackendType to support multiple providers of same API type
+- **Backwards compatibility for api_type**: Credentials without api_type fall back to API_TYPE_FOR_BACKEND mapping
+- **Don't pre-populate base_url in UI**: Let placeholder show default URL, send undefined to use server-side default
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -227,7 +230,7 @@ None yet.
 - Plan 01-06: Complete
 - Plan 07: Complete (Unified ResponseProcessor - tool call markers now removed)
 - Plan 08: Complete (StreamingProcessor - patterns filtered during streaming)
-- Plan 09: Pending (Generic OpenAI/Anthropic-compatible providers)
+- Plan 09: Complete (Generic OpenAI/Anthropic-compatible providers)
 
 **Phase 13 MLX Server Integration:**
 - Plans 01-05: Complete (awaiting final verification)
@@ -251,10 +254,11 @@ None yet.
 2. ~~**mlx-openai-server v1.5.0 regression**~~ — Resolved: mlx-openai-server removed
 3. **Download completion UX** — Doesn't auto-refresh local models list after download completes
 4. ~~**RunningInstance and servers router refactoring**~~ — Resolved: Plan 13-02
+5. **Pre-existing mypy errors** — 4 type errors in chat.py, system.py, settings.py (unrelated to recent work)
 
 ## Session Continuity
 
-Last session: 2026-02-02T13:23:53Z
-Stopped at: Completed 14-08-PLAN.md
+Last session: 2026-02-02T14:02:01Z
+Stopped at: Completed 14-09-PLAN.md (Generic Providers)
 Resume file: None
-Next: Execute 14-09-PLAN.md (Generic Providers)
+Next: v1.2 final verification, database migration for new CloudCredential fields (api_type, name)
