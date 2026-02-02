@@ -15,6 +15,8 @@ function createMockCredential(
   return {
     id: 1,
     backend_type: "openai",
+    api_type: "openai",
+    name: "OpenAI",
     base_url: null,
     created_at: "2024-01-01T00:00:00Z",
     ...overrides,

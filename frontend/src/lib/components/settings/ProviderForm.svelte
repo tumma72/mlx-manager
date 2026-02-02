@@ -1,8 +1,69 @@
 <script lang="ts">
 	import { settings } from '$lib/api/client';
-	import type { BackendType, CloudCredential } from '$lib/api/types';
+	import type { ApiType, BackendType, CloudCredential } from '$lib/api/types';
 	import { Button, Input, ConfirmDialog } from '$components/ui';
 	import { Check, X, Loader2, RefreshCw, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
+
+	// Known provider configurations
+	const PROVIDER_CONFIGS: Record<
+		string,
+		{ label: string; backendType: BackendType; apiType: ApiType; defaultBaseUrl: string }
+	> = {
+		openai: {
+			label: 'OpenAI',
+			backendType: 'openai',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.openai.com'
+		},
+		anthropic: {
+			label: 'Anthropic',
+			backendType: 'anthropic',
+			apiType: 'anthropic',
+			defaultBaseUrl: 'https://api.anthropic.com'
+		},
+		together: {
+			label: 'Together AI',
+			backendType: 'together',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.together.xyz'
+		},
+		groq: {
+			label: 'Groq',
+			backendType: 'groq',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.groq.com/openai'
+		},
+		fireworks: {
+			label: 'Fireworks AI',
+			backendType: 'fireworks',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.fireworks.ai/inference'
+		},
+		mistral: {
+			label: 'Mistral AI',
+			backendType: 'mistral',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.mistral.ai'
+		},
+		deepseek: {
+			label: 'DeepSeek',
+			backendType: 'deepseek',
+			apiType: 'openai',
+			defaultBaseUrl: 'https://api.deepseek.com'
+		},
+		openai_compatible: {
+			label: 'Custom (OpenAI-compatible)',
+			backendType: 'openai_compatible',
+			apiType: 'openai',
+			defaultBaseUrl: ''
+		},
+		anthropic_compatible: {
+			label: 'Custom (Anthropic-compatible)',
+			backendType: 'anthropic_compatible',
+			apiType: 'anthropic',
+			defaultBaseUrl: ''
+		}
+	};
 
 	interface Props {
 		backendType: BackendType;
@@ -13,10 +74,26 @@
 
 	let { backendType, existingCredential, onSave, onDelete }: Props = $props();
 
+	// Get provider config for this backend type
+	const providerConfig = $derived(
+		Object.values(PROVIDER_CONFIGS).find((p) => p.backendType === backendType)
+	);
+
 	let apiKey = $state('');
-	let baseUrl = $state(existingCredential?.base_url ?? '');
-	let showAdvanced = $state(!!existingCredential?.base_url);
+	let baseUrl = $state('');
+	let customName = $state('');
+	let showAdvanced = $state(false);
 	let testing = $state(false);
+
+	// Sync state with existingCredential prop when it changes
+	$effect(() => {
+		baseUrl = existingCredential?.base_url ?? providerConfig?.defaultBaseUrl ?? '';
+		customName = existingCredential?.name ?? '';
+		showAdvanced =
+			!!existingCredential?.base_url ||
+			backendType === 'openai_compatible' ||
+			backendType === 'anthropic_compatible';
+	});
 	let saving = $state(false);
 	let deleting = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
@@ -36,6 +113,11 @@
 		hasCredential ? '****...saved (enter new key to update)' : 'Enter API key'
 	);
 
+	// Check if base URL is required (custom providers)
+	const isCustomProvider = $derived(
+		backendType === 'openai_compatible' || backendType === 'anthropic_compatible'
+	);
+
 	// Clear test result when key changes
 	$effect(() => {
 		if (apiKey) {
@@ -50,6 +132,11 @@
 			return;
 		}
 
+		if (isCustomProvider && !baseUrl.trim()) {
+			error = 'Base URL is required for custom providers';
+			return;
+		}
+
 		saving = true;
 		error = null;
 		testResult = null;
@@ -58,6 +145,8 @@
 			// Step 1: Save credentials to database
 			await settings.createProvider({
 				backend_type: backendType,
+				api_type: providerConfig?.apiType ?? 'openai',
+				name: customName.trim() || providerConfig?.label || backendType,
 				api_key: apiKey.trim(),
 				base_url: baseUrl.trim() || undefined
 			});
@@ -122,11 +211,25 @@
 </script>
 
 <div class="space-y-4">
+	<!-- Provider Name (for custom providers) -->
+	{#if isCustomProvider}
+		<div class="space-y-2">
+			<label for="{backendType}-name" class="text-sm font-medium text-foreground">
+				Provider Name
+			</label>
+			<Input
+				id="{backendType}-name"
+				type="text"
+				bind:value={customName}
+				placeholder="e.g., My OpenAI Proxy"
+			/>
+			<p class="text-xs text-muted-foreground">A display name for this provider</p>
+		</div>
+	{/if}
+
 	<!-- API Key Input -->
 	<div class="space-y-2">
-		<label for="{backendType}-api-key" class="text-sm font-medium text-foreground">
-			API Key
-		</label>
+		<label for="{backendType}-api-key" class="text-sm font-medium text-foreground"> API Key </label>
 		<div class="relative">
 			<Input
 				id="{backendType}-api-key"
@@ -145,37 +248,50 @@
 		</div>
 	</div>
 
-	<!-- Advanced Settings Toggle -->
-	<button
-		type="button"
-		class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-		onclick={() => (showAdvanced = !showAdvanced)}
-	>
-		{#if showAdvanced}
-			<ChevronUp class="h-4 w-4" />
-		{:else}
-			<ChevronDown class="h-4 w-4" />
-		{/if}
-		Advanced Settings
-	</button>
+	<!-- Advanced Settings Toggle (not for custom providers - they always show base_url) -->
+	{#if !isCustomProvider}
+		<button
+			type="button"
+			class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+			onclick={() => (showAdvanced = !showAdvanced)}
+		>
+			{#if showAdvanced}
+				<ChevronUp class="h-4 w-4" />
+			{:else}
+				<ChevronDown class="h-4 w-4" />
+			{/if}
+			Advanced Settings
+		</button>
+	{/if}
 
-	<!-- Base URL (Advanced) -->
-	{#if showAdvanced}
+	<!-- Base URL (Advanced or always for custom) -->
+	{#if showAdvanced || isCustomProvider}
 		<div class="space-y-2">
 			<label for="{backendType}-base-url" class="text-sm font-medium text-foreground">
-				Base URL (optional)
+				Base URL {isCustomProvider ? '' : '(optional)'}
 			</label>
 			<Input
 				id="{backendType}-base-url"
 				type="text"
 				bind:value={baseUrl}
-				placeholder={backendType === 'openai'
-					? 'https://api.openai.com/v1'
-					: 'https://api.anthropic.com'}
+				placeholder={providerConfig?.defaultBaseUrl || 'https://api.example.com'}
 			/>
 			<p class="text-xs text-muted-foreground">
-				Override the default API endpoint (useful for proxies or custom deployments)
+				{#if isCustomProvider}
+					The base URL for the API endpoint
+				{:else}
+					Override the default API endpoint (useful for proxies or custom deployments)
+				{/if}
 			</p>
+		</div>
+	{/if}
+
+	<!-- API Type Info (for custom providers) -->
+	{#if isCustomProvider}
+		<div class="text-sm text-muted-foreground">
+			API Protocol: <span class="font-medium text-foreground"
+				>{providerConfig?.apiType === 'anthropic' ? 'Anthropic' : 'OpenAI'}-compatible</span
+			>
 		</div>
 	{/if}
 
@@ -231,7 +347,7 @@
 	<ConfirmDialog
 		bind:open={deleteDialogOpen}
 		title="Delete Provider Credentials"
-		description="Are you sure you want to delete the {backendType === 'openai' ? 'OpenAI' : 'Anthropic'} credentials? You will need to re-enter your API key to use this provider again."
+		description="Are you sure you want to delete the {providerConfig?.label ?? backendType} credentials? You will need to re-enter your API key to use this provider again."
 		confirmLabel="Delete"
 		variant="destructive"
 		onConfirm={confirmDelete}

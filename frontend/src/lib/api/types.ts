@@ -267,8 +267,22 @@ export interface ToolDefinition {
 
 // Settings API Types
 
+// API protocol types for cloud providers
+export type ApiType = "openai" | "anthropic";
+
 // Backend types for routing and providers
-export type BackendType = "local" | "openai" | "anthropic";
+export type BackendType =
+  | "local"
+  | "openai"
+  | "anthropic"
+  | "openai_compatible"
+  | "anthropic_compatible"
+  | "together"
+  | "groq"
+  | "fireworks"
+  | "mistral"
+  | "deepseek";
+
 export type PatternType = "exact" | "prefix" | "regex";
 export type EvictionPolicy = "lru" | "lfu" | "ttl";
 export type MemoryLimitMode = "percent" | "gb";
@@ -277,14 +291,25 @@ export type MemoryLimitMode = "percent" | "gb";
 export interface CloudCredential {
   id: number;
   backend_type: BackendType;
+  api_type: ApiType;
+  name: string;
   base_url: string | null;
   created_at: string;
 }
 
 export interface CloudCredentialCreate {
   backend_type: BackendType;
+  api_type?: ApiType;
+  name?: string;
   api_key: string;
   base_url?: string;
+}
+
+// Provider defaults from API
+export interface ProviderDefault {
+  backend_type: BackendType;
+  base_url: string;
+  api_type: ApiType;
 }
 
 // Backend routing rules

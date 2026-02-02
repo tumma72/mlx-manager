@@ -20,6 +20,8 @@ function createMockCredential(
   return {
     id: 1,
     backend_type: backendType,
+    api_type: backendType === "anthropic" ? "anthropic" : "openai",
+    name: backendType === "openai" ? "OpenAI" : "Anthropic",
     base_url: null,
     created_at: "2024-01-01",
   };
@@ -262,7 +264,7 @@ describe("ProviderForm", () => {
       await user.click(screen.getByText("Advanced Settings"));
 
       expect(
-        screen.getByPlaceholderText("https://api.openai.com/v1"),
+        screen.getByPlaceholderText("https://api.openai.com"),
       ).toBeInTheDocument();
     });
 
@@ -340,6 +342,8 @@ describe("ProviderForm", () => {
       await waitFor(() => {
         expect(settings.createProvider).toHaveBeenCalledWith({
           backend_type: "openai",
+          api_type: "openai",
+          name: "OpenAI",
           api_key: "sk-test123",
           base_url: undefined,
         });
@@ -368,6 +372,8 @@ describe("ProviderForm", () => {
       await waitFor(() => {
         expect(settings.createProvider).toHaveBeenCalledWith({
           backend_type: "openai",
+          api_type: "openai",
+          name: "OpenAI",
           api_key: "sk-test123",
           base_url: "https://custom.com",
         });
@@ -396,6 +402,8 @@ describe("ProviderForm", () => {
       await waitFor(() => {
         expect(settings.createProvider).toHaveBeenCalledWith({
           backend_type: "openai",
+          api_type: "openai",
+          name: "OpenAI",
           api_key: "sk-test123",
           base_url: "https://custom.com",
         });
