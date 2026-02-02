@@ -5,18 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 15 - Code Cleanup & Integration Tests (NOT STARTED)
+**Current focus:** Phase 15 - Code Cleanup & Integration Tests (IN PROGRESS)
 
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 0 of 3 (Not started)
-Status: Phase 14 UAT revealed infrastructure bugs; Phase 15 created for cleanup and tests
-Last activity: 2026-02-02 - Created Phase 15 after UAT halted
+Plan: 2 of 3 (Fix Blocker Bugs complete)
+Status: Phase 15 in progress - Plan 02 complete
+Last activity: 2026-02-02 - Completed 15-02 (Fix Blocker Bugs)
 
-Progress: [░░░░░░░░░░░░] 0% (Phase 15 not started)
+Progress: [████████░░░░] 67% (2 of 3 plans complete in Phase 15)
 
-**Next Phase:** Phase 15 - Remove dead parser code, fix blocker bugs, create integration tests
+**Next Plan:** 15-03 - Integration tests for ResponseProcessor
 
 ## Milestone v1.2 Summary
 
@@ -219,6 +219,10 @@ Recent decisions affecting current work:
 - **Cache by credential ID**: Cloud backend cache uses credential ID instead of BackendType to support multiple providers of same API type
 - **Backwards compatibility for api_type**: Credentials without api_type fall back to API_TYPE_FOR_BACKEND mapping
 - **Don't pre-populate base_url in UI**: Let placeholder show default URL, send undefined to use server-side default
+- **Database migration skips non-existent tables**: PRAGMA table_info returns empty for missing tables; skip migration to avoid ALTER TABLE errors
+- **api_type default 'openai' in migration**: Backward compatibility for existing cloud_credentials rows
+- **Catch multiple exceptions for enable_thinking**: TypeError, ValueError, KeyError, AttributeError all handled for tokenizer compatibility
+- **DEBUG not WARNING for enable_thinking fallback**: Expected behavior for older tokenizers, not a warning condition
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -241,6 +245,10 @@ None yet.
 1. ~~Tool call markers remain in response content~~ - FIXED (ResponseProcessor removes all spans)
 2. ~~Streaming doesn't extract reasoning~~ - FIXED (StreamingProcessor filters and extracts)
 3. ~~Multiple parsing passes inefficient~~ - FIXED (now single-pass)
+4. ~~Database missing api_type/name columns~~ - FIXED (15-02: migration added)
+5. ~~Vision processor attribute access broken~~ - FIXED (15-02: getattr pattern in all adapters)
+6. ~~Qwen enable_thinking crashes~~ - FIXED (15-02: catch all exception types)
+7. ~~Streaming logs every token at INFO~~ - FIXED (15-02: changed to DEBUG)
 
 ## Research Documents
 
@@ -260,10 +268,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-02T16:00:00Z
-Stopped at: Phase 14 UAT halted - infrastructure bugs found
-Resume file: None
-Next: /gsd:discuss-phase 15 then /gsd:plan-phase 15
+Last session: 2026-02-02T17:27:00Z
+Stopped at: Completed 15-02-PLAN.md (Fix Blocker Bugs)
+Resume file: .planning/phases/15-code-cleanup-integration-tests/15-02-SUMMARY.md
+Next: Execute 15-03-PLAN.md (Integration Tests for ResponseProcessor)
 
 ### Roadmap Evolution
 
