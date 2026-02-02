@@ -86,8 +86,9 @@
 	let testing = $state(false);
 
 	// Sync state with existingCredential prop when it changes
+	// Don't pre-populate base_url with default - let placeholder show default, send undefined to use server default
 	$effect(() => {
-		baseUrl = existingCredential?.base_url ?? providerConfig?.defaultBaseUrl ?? '';
+		baseUrl = existingCredential?.base_url ?? '';
 		customName = existingCredential?.name ?? '';
 		showAdvanced =
 			!!existingCredential?.base_url ||
