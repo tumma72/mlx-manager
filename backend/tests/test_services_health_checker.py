@@ -107,9 +107,7 @@ class TestHealthCheckerCheckModelPool:
         mock_pool = MagicMock()
         mock_pool.get_loaded_models.return_value = ["model1", "model2"]
 
-        with patch(
-            "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-        ):
+        with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
             with patch(
                 "mlx_manager.mlx_server.utils.memory.get_memory_usage",
                 return_value={"active_gb": 8.0},
@@ -139,9 +137,7 @@ class TestHealthCheckerIntegration:
         mock_pool = MagicMock()
         mock_pool.get_loaded_models.return_value = []
 
-        with patch(
-            "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-        ):
+        with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
             with patch(
                 "mlx_manager.mlx_server.utils.memory.get_memory_usage",
                 return_value={"active_gb": 0.0},

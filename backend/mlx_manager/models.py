@@ -422,10 +422,10 @@ class CloudCredentialResponse(SQLModel):
 
     id: int
     backend_type: BackendType
-    api_type: ApiType
-    name: str
-    base_url: str | None
-    created_at: datetime
+    api_type: ApiType = ApiType.OPENAI  # Default for backwards compatibility
+    name: str = ""  # Default for backwards compatibility
+    base_url: str | None = None
+    created_at: datetime | None = None
 
 
 # ============================================================================

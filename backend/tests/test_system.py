@@ -217,6 +217,7 @@ class TestGetSystemInfoExceptions:
         # Even if mlx import fails, endpoint should succeed
         assert response.status_code == 200
 
+
 # ============================================================================
 # Tests for get_parser_options endpoint (deprecated)
 # ============================================================================
@@ -574,5 +575,3 @@ class TestAuditLogWebSocketProxy:
                     data = ws.receive_json()
                     assert data["type"] == "error"
                     assert "MLX Server not available" in data["message"]
-
-

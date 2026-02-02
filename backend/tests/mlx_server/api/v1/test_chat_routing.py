@@ -62,9 +62,7 @@ class TestRoutingDisabled:
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
-    async def test_routing_disabled_goes_to_direct(
-        self, mock_direct, mock_settings, basic_request
-    ):
+    async def test_routing_disabled_goes_to_direct(self, mock_direct, mock_settings, basic_request):
         """When enable_cloud_routing=False, requests go to direct inference."""
         # Setup mock settings
         settings = MagicMock()
@@ -160,10 +158,9 @@ class TestStreamingThroughRouter:
     """Tests for streaming responses through router."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
-    async def test_routed_request_streaming(
-        self, mock_get_router, streaming_request
-    ):
+    async def test_routed_request_streaming(self, mock_get_router, streaming_request):
         """Test _handle_routed_request returns EventSourceResponse for streaming."""
+
         # Create async generator for streaming
         async def mock_stream():
             chunks = [

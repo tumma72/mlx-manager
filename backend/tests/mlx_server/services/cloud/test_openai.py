@@ -100,9 +100,7 @@ class TestChatCompletionNonStreaming:
             assert result["id"] == "chatcmpl-123"
             assert result["choices"][0]["message"]["content"] == "Hello!"
 
-    async def test_non_streaming_passes_request_data(
-        self, backend: OpenAICloudBackend
-    ) -> None:
+    async def test_non_streaming_passes_request_data(self, backend: OpenAICloudBackend) -> None:
         """Non-streaming passes correct request data to API."""
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 200
@@ -156,9 +154,7 @@ class TestChatCompletionNonStreaming:
             assert json_data["top_p"] == 0.9
             assert json_data["presence_penalty"] == 0.5
 
-    async def test_non_streaming_propagates_http_error(
-        self, backend: OpenAICloudBackend
-    ) -> None:
+    async def test_non_streaming_propagates_http_error(self, backend: OpenAICloudBackend) -> None:
         """Non-streaming propagates HTTP errors."""
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 401
@@ -186,10 +182,9 @@ class TestChatCompletionStreaming:
         """Create a test backend."""
         return OpenAICloudBackend(api_key="test-key")
 
-    async def test_streaming_returns_async_generator(
-        self, backend: OpenAICloudBackend
-    ) -> None:
+    async def test_streaming_returns_async_generator(self, backend: OpenAICloudBackend) -> None:
         """Streaming chat_completion returns an async generator."""
+
         # Mock the stream context manager
         async def mock_aiter_lines():
             yield 'data: {"id": "chunk-1", "choices": [{"delta": {"content": "Hi"}}]}'
@@ -220,10 +215,9 @@ class TestChatCompletionStreaming:
             assert len(chunks) == 1
             assert chunks[0]["id"] == "chunk-1"
 
-    async def test_streaming_passes_stream_true(
-        self, backend: OpenAICloudBackend
-    ) -> None:
+    async def test_streaming_passes_stream_true(self, backend: OpenAICloudBackend) -> None:
         """Streaming sets stream=True in request data."""
+
         async def mock_aiter_lines():
             yield "data: [DONE]"
 
@@ -358,9 +352,7 @@ class TestStreamChatCompletionSSEParsing:
             # Only 1 chunk before [DONE]
             assert len(chunks) == 1
 
-    async def test_handles_malformed_json_gracefully(
-        self, backend: OpenAICloudBackend
-    ) -> None:
+    async def test_handles_malformed_json_gracefully(self, backend: OpenAICloudBackend) -> None:
         """Skips malformed JSON without crashing."""
         valid_chunk = {"id": "1", "choices": [{"delta": {"content": "Hi"}}]}
 

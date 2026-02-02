@@ -4,30 +4,70 @@ With the embedded MLX Server, this router provides status information
 about the model pool and loaded models. Start/stop/restart endpoints
 return informative messages since the embedded server is always running.
 
-The main /api/servers endpoint returns an empty list for UI compatibility
-(the frontend expects RunningServer objects with profile-based fields).
+The main /api/servers endpoint returns RunningServer objects for profiles
+whose models are loaded in the model pool.
 Use /api/servers/embedded for actual embedded server status.
 """
 
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 @pytest.mark.asyncio
-async def test_list_servers_returns_empty_for_ui_compatibility(auth_client):
-    """Test listing servers returns empty list for UI compatibility.
+async def test_list_servers_returns_empty_when_no_models_loaded(auth_client):
+    """Test listing servers returns empty list when no models are loaded."""
+    mock_pool = MagicMock()
+    mock_pool.get_loaded_models.return_value = []
 
-    The frontend expects RunningServer objects with profile_id, profile_name,
-    pid, port, etc. Since embedded mode doesn't use profiles for server
-    management, we return an empty list.
-    """
-    response = await auth_client.get("/api/servers")
-    assert response.status_code == 200
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        response = await auth_client.get("/api/servers")
+        assert response.status_code == 200
 
-    data = response.json()
-    assert data == []
+        data = response.json()
+        assert data == []
+
+
+@pytest.mark.asyncio
+async def test_list_servers_returns_running_servers_when_models_loaded(auth_client, test_session):
+    """Test listing servers returns RunningServer objects for profiles with loaded models."""
+    from mlx_manager.models import ServerProfile
+
+    # Create a test profile
+    profile = ServerProfile(
+        name="Test Profile",
+        model_path="mlx-community/test-model",
+        port=8080,
+    )
+    test_session.add(profile)
+    await test_session.commit()
+    await test_session.refresh(profile)
+
+    # Mock the model pool to show the model is loaded
+    mock_loaded_model = MagicMock()
+    mock_loaded_model.loaded_at = time.time() - 60  # Loaded 60 seconds ago
+
+    mock_pool = MagicMock()
+    mock_pool.get_loaded_models.return_value = ["mlx-community/test-model"]
+    mock_pool._models = {"mlx-community/test-model": mock_loaded_model}
+    mock_pool.max_memory_gb = 32.0
+
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        with patch(
+            "mlx_manager.routers.servers.get_memory_usage",
+            return_value={"active_gb": 4.0},
+        ):
+            response = await auth_client.get("/api/servers")
+            assert response.status_code == 200
+
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["profile_id"] == profile.id
+            assert data[0]["profile_name"] == "Test Profile"
+            assert data[0]["health_status"] == "healthy"
+            assert data[0]["uptime_seconds"] >= 59  # Approximately 60 seconds
 
 
 @pytest.mark.asyncio
@@ -37,9 +77,7 @@ async def test_get_embedded_status_running(auth_client):
     mock_pool.get_loaded_models.return_value = []
     mock_pool.max_memory_gb = 32.0
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         with patch(
             "mlx_manager.mlx_server.utils.memory.get_memory_usage",
             return_value={"active_gb": 0.0},
@@ -73,9 +111,7 @@ async def test_list_loaded_models_empty(auth_client):
     mock_pool.get_loaded_models.return_value = []
     mock_pool._models = {}
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get("/api/servers/models")
         assert response.status_code == 200
         assert response.json() == []
@@ -96,9 +132,7 @@ async def test_list_loaded_models_with_data(auth_client):
     mock_pool.get_loaded_models.return_value = ["test-model"]
     mock_pool._models = {"test-model": mock_loaded_model}
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get("/api/servers/models")
         assert response.status_code == 200
 
@@ -115,9 +149,7 @@ async def test_check_server_health_healthy(auth_client):
     mock_pool.get_loaded_models.return_value = ["model1"]
     mock_pool.max_memory_gb = 32.0
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         with patch(
             "mlx_manager.mlx_server.utils.memory.get_memory_usage",
             return_value={"active_gb": 8.0},
@@ -138,9 +170,7 @@ async def test_check_server_health_degraded(auth_client):
     mock_pool.get_loaded_models.return_value = ["model1"]
     mock_pool.max_memory_gb = 8.0
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         with patch(
             "mlx_manager.mlx_server.utils.memory.get_memory_usage",
             return_value={"active_gb": 7.5},  # Less than 1GB available
@@ -175,9 +205,7 @@ async def test_get_memory_status(auth_client):
     mock_pool.max_models = 5
     mock_pool.get_loaded_models.return_value = ["model1", "model2"]
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         with patch(
             "mlx_manager.mlx_server.utils.memory.get_memory_usage",
             return_value={
@@ -207,9 +235,7 @@ async def test_start_endpoint_triggers_model_loading(auth_client, sample_profile
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = False
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.post(f"/api/servers/{profile_id}/start")
         assert response.status_code == 200
 
@@ -230,9 +256,7 @@ async def test_start_endpoint_already_loaded(auth_client, sample_profile_data):
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = True
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.post(f"/api/servers/{profile_id}/start")
         assert response.status_code == 200
 
@@ -261,9 +285,7 @@ async def test_start_endpoint_profile_not_found(auth_client):
     """Test start endpoint with non-existent profile."""
     mock_pool = MagicMock()
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.post("/api/servers/99999/start")
         assert response.status_code == 404
 
@@ -328,9 +350,7 @@ async def test_get_server_health_for_profile_model_loaded(auth_client, sample_pr
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = True
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get(f"/api/servers/{profile_id}/health")
         assert response.status_code == 200
 
@@ -350,9 +370,7 @@ async def test_get_server_health_for_profile_model_not_loaded(auth_client, sampl
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = False
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get(f"/api/servers/{profile_id}/health")
         assert response.status_code == 200
 
@@ -363,9 +381,7 @@ async def test_get_server_health_for_profile_model_not_loaded(auth_client, sampl
 
 
 @pytest.mark.asyncio
-async def test_get_server_health_for_profile_pool_not_initialized(
-    auth_client, sample_profile_data
-):
+async def test_get_server_health_for_profile_pool_not_initialized(auth_client, sample_profile_data):
     """Test getting server health when model pool is not initialized."""
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
@@ -389,8 +405,6 @@ async def test_get_server_health_for_profile_not_found(auth_client):
     """Test getting server health for non-existent profile."""
     mock_pool = MagicMock()
 
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get("/api/servers/99999/health")
         assert response.status_code == 404

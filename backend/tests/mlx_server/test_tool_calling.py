@@ -31,7 +31,7 @@ class TestLlamaToolParser:
         parser = LlamaToolParser()
         text = (
             '<function=get_weather>{"city": "SF"}</function>'
-            'Some text in between'
+            "Some text in between"
             '<function=get_time>{"timezone": "PST"}</function>'
         )
 
@@ -65,7 +65,7 @@ class TestLlamaToolParser:
     def test_parse_invalid_json_arguments(self):
         """Handle invalid JSON in arguments gracefully."""
         parser = LlamaToolParser()
-        text = '<function=get_weather>{invalid json}</function>'
+        text = "<function=get_weather>{invalid json}</function>"
 
         calls = parser.parse(text)
 
@@ -148,7 +148,7 @@ class TestQwenToolParser:
     def test_parse_invalid_json(self):
         """Skip invalid JSON tool calls."""
         parser = QwenToolParser()
-        text = '<tool_call>{not valid json}</tool_call>'
+        text = "<tool_call>{not valid json}</tool_call>"
 
         calls = parser.parse(text)
 
@@ -356,10 +356,7 @@ class TestToolCallIdGeneration:
     def test_llama_parser_generates_unique_ids(self):
         """Each parsed tool call gets a unique ID."""
         parser = LlamaToolParser()
-        text = (
-            '<function=func1>{"a": 1}</function>'
-            '<function=func2>{"b": 2}</function>'
-        )
+        text = '<function=func1>{"a": 1}</function><function=func2>{"b": 2}</function>'
 
         calls = parser.parse(text)
 

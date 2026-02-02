@@ -85,9 +85,7 @@ class TestFindMapping:
 
         assert mapping is None
 
-    async def test_returns_exact_match(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_returns_exact_match(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Returns mapping with exact model match."""
         exact_mapping = MagicMock(spec=BackendMapping)
         exact_mapping.model_pattern = "gpt-4"
@@ -101,9 +99,7 @@ class TestFindMapping:
 
         assert mapping == exact_mapping
 
-    async def test_respects_priority_order(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_respects_priority_order(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Higher priority mappings are checked first."""
         # Lower priority wildcard
         low_priority = MagicMock(spec=BackendMapping)
@@ -397,9 +393,7 @@ class TestGetCloudBackend:
         """Create a mock database session."""
         return AsyncMock(spec=AsyncSession)
 
-    async def test_creates_openai_backend(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_creates_openai_backend(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Creates OpenAI backend from credentials."""
         credential = MagicMock(spec=CloudCredential)
         credential.id = 1
@@ -435,9 +429,7 @@ class TestGetCloudBackend:
         assert backend._api_key == "sk-ant-test"
         assert backend.base_url == "https://api.anthropic.com"
 
-    async def test_uses_custom_base_url(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_uses_custom_base_url(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Uses custom base_url from credentials if set."""
         credential = MagicMock(spec=CloudCredential)
         credential.id = 3
@@ -513,9 +505,7 @@ class TestGenericProviderSupport:
         """Create a mock database session."""
         return AsyncMock(spec=AsyncSession)
 
-    async def test_groq_uses_openai_client(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_groq_uses_openai_client(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """GROQ backend type uses OpenAI client (OpenAI-compatible API)."""
         credential = MagicMock(spec=CloudCredential)
         credential.id = 10
@@ -618,9 +608,7 @@ class TestGenericProviderSupport:
 
         assert isinstance(backend, OpenAICloudBackend)
 
-    async def test_caches_by_credential_id(
-        self, router: BackendRouter, mock_db: AsyncMock
-    ) -> None:
+    async def test_caches_by_credential_id(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Backends are cached by credential ID, allowing multiple providers of same type."""
         credential1 = MagicMock(spec=CloudCredential)
         credential1.id = 20

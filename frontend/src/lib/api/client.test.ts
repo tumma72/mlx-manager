@@ -7,6 +7,7 @@ import {
   system,
   mcp,
   settings,
+  auditLogs,
   ApiError,
 } from "./client";
 
@@ -1073,6 +1074,196 @@ describe("settings API", () => {
         body: JSON.stringify(updates),
       });
       expect(result).toEqual(updatedConfig);
+    });
+  });
+
+  describe("getTimeoutSettings", () => {
+    it("gets timeout settings", async () => {
+      const timeoutSettings = {
+        inference_timeout: 120,
+        model_load_timeout: 300,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(timeoutSettings));
+
+      const result = await settings.getTimeoutSettings();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/timeouts",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(timeoutSettings);
+    });
+  });
+
+  describe("updateTimeoutSettings", () => {
+    it("updates timeout settings", async () => {
+      const updates = { inference_timeout: 180 };
+      const updatedSettings = {
+        inference_timeout: 180,
+        model_load_timeout: 300,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(updatedSettings));
+
+      const result = await settings.updateTimeoutSettings(updates);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/timeouts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      expect(result).toEqual(updatedSettings);
+    });
+  });
+});
+
+describe("auditLogs API", () => {
+  describe("list", () => {
+    it("lists audit logs without filters", async () => {
+      const mockLogs = [
+        { id: 1, model: "gpt-4", backend_type: "openai", status: "success" },
+        { id: 2, model: "claude-3", backend_type: "anthropic", status: "success" },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockLogs));
+
+      const result = await auditLogs.list();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/audit-logs?",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockLogs);
+    });
+
+    it("lists audit logs with filters", async () => {
+      const mockLogs = [{ id: 1, model: "gpt-4", backend_type: "openai" }];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockLogs));
+
+      const result = await auditLogs.list({
+        model: "gpt-4",
+        backend_type: "openai",
+        status: "success",
+        start_time: "2024-01-01T00:00:00Z",
+        end_time: "2024-01-31T23:59:59Z",
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/system/audit-logs?"),
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockLogs);
+    });
+  });
+
+  describe("stats", () => {
+    it("gets audit log statistics", async () => {
+      const mockStats = {
+        total_requests: 100,
+        success_count: 95,
+        error_count: 5,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(mockStats));
+
+      const result = await auditLogs.stats();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/system/audit-logs/stats",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockStats);
+    });
+  });
+
+  describe("exportUrl", () => {
+    it("builds export URL with default format", () => {
+      const url = auditLogs.exportUrl();
+
+      expect(url).toBe("/api/system/audit-logs/export?format=jsonl");
+    });
+
+    it("builds export URL with CSV format", () => {
+      const url = auditLogs.exportUrl({}, "csv");
+
+      expect(url).toBe("/api/system/audit-logs/export?format=csv");
+    });
+
+    it("builds export URL with filters", () => {
+      const url = auditLogs.exportUrl({
+        model: "gpt-4",
+        backend_type: "openai",
+        status: "success",
+        start_time: "2024-01-01T00:00:00Z",
+        end_time: "2024-01-31T23:59:59Z",
+      });
+
+      expect(url).toContain("/api/system/audit-logs/export?");
+      expect(url).toContain("model=gpt-4");
+      expect(url).toContain("backend_type=openai");
+      expect(url).toContain("status=success");
+      expect(url).toContain("format=jsonl");
+    });
+  });
+
+  describe("createWebSocket", () => {
+    it("creates WebSocket with correct URL", () => {
+      // Mock window.location
+      const originalLocation = window.location;
+      Object.defineProperty(window, "location", {
+        value: {
+          protocol: "http:",
+          host: "localhost:5173",
+        },
+        writable: true,
+      });
+
+      // Mock WebSocket constructor
+      const mockWebSocket = vi.fn();
+      const originalWebSocket = global.WebSocket;
+      global.WebSocket = mockWebSocket as unknown as typeof WebSocket;
+
+      auditLogs.createWebSocket();
+
+      expect(mockWebSocket).toHaveBeenCalledWith(
+        "ws://localhost:5173/api/system/ws/audit-logs",
+      );
+
+      // Restore
+      global.WebSocket = originalWebSocket;
+      Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+      });
+    });
+
+    it("uses wss protocol for https", () => {
+      // Mock window.location
+      const originalLocation = window.location;
+      Object.defineProperty(window, "location", {
+        value: {
+          protocol: "https:",
+          host: "example.com",
+        },
+        writable: true,
+      });
+
+      // Mock WebSocket constructor
+      const mockWebSocket = vi.fn();
+      const originalWebSocket = global.WebSocket;
+      global.WebSocket = mockWebSocket as unknown as typeof WebSocket;
+
+      auditLogs.createWebSocket();
+
+      expect(mockWebSocket).toHaveBeenCalledWith(
+        "wss://example.com/api/system/ws/audit-logs",
+      );
+
+      // Restore
+      global.WebSocket = originalWebSocket;
+      Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+      });
     });
   });
 });

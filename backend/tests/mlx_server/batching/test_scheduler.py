@@ -1,7 +1,6 @@
 """Tests for ContinuousBatchingScheduler."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -51,24 +50,18 @@ def make_request(
 class TestSchedulerInitialization:
     """Tests for scheduler initialization and state queries."""
 
-    def test_stats_show_zero_running_waiting(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    def test_stats_show_zero_running_waiting(self, scheduler: ContinuousBatchingScheduler) -> None:
         """Fresh scheduler should show zero running and waiting."""
         stats = scheduler.get_stats()
         assert stats["running"] == 0
         assert stats["waiting"] == 0
         assert stats["max_batch"] == 4
 
-    def test_is_running_true_before_shutdown(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    def test_is_running_true_before_shutdown(self, scheduler: ContinuousBatchingScheduler) -> None:
         """is_running() should be True before stop() is called."""
         assert scheduler.is_running() is True
 
-    def test_custom_max_batch_size(
-        self, block_manager: PagedBlockManager
-    ) -> None:
+    def test_custom_max_batch_size(self, block_manager: PagedBlockManager) -> None:
         """Scheduler should respect custom max_batch_size."""
         scheduler = ContinuousBatchingScheduler(
             model_id="test",
@@ -77,9 +70,7 @@ class TestSchedulerInitialization:
         )
         assert scheduler.get_stats()["max_batch"] == 16
 
-    def test_custom_timing_parameters(
-        self, block_manager: PagedBlockManager
-    ) -> None:
+    def test_custom_timing_parameters(self, block_manager: PagedBlockManager) -> None:
         """Scheduler should store custom timing parameters."""
         scheduler = ContinuousBatchingScheduler(
             model_id="test",
@@ -158,9 +149,7 @@ class TestBatchFilling:
         )
 
     @pytest.mark.asyncio
-    async def test_max_batch_size_respected(
-        self, block_manager: PagedBlockManager
-    ) -> None:
+    async def test_max_batch_size_respected(self, block_manager: PagedBlockManager) -> None:
         """Should not exceed max_batch_size running requests."""
         scheduler = ContinuousBatchingScheduler(
             model_id="test",
@@ -269,12 +258,10 @@ class TestCompletionHandling:
         result = None
         try:
             while True:
-                result = await asyncio.wait_for(
-                    request.output_queue.get(), timeout=0.5
-                )
+                result = await asyncio.wait_for(request.output_queue.get(), timeout=0.5)
                 if result is None:
                     break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         await scheduler.stop(timeout=1.0)
@@ -287,9 +274,7 @@ class TestShutdown:
     """Tests for scheduler shutdown."""
 
     @pytest.mark.asyncio
-    async def test_stop_sets_shutdown_flag(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_stop_sets_shutdown_flag(self, scheduler: ContinuousBatchingScheduler) -> None:
         """stop() should set _shutdown flag."""
         await scheduler.start()
         assert scheduler.is_running()
@@ -335,9 +320,7 @@ class TestAdaptiveTiming:
     """Tests for adaptive wait timing."""
 
     @pytest.mark.asyncio
-    async def test_idle_state_uses_idle_wait(
-        self, block_manager: PagedBlockManager
-    ) -> None:
+    async def test_idle_state_uses_idle_wait(self, block_manager: PagedBlockManager) -> None:
         """Idle state (no running, no waiting) should use idle_wait_ms."""
         scheduler = ContinuousBatchingScheduler(
             model_id="test",
@@ -356,9 +339,7 @@ class TestAdaptiveTiming:
         assert scheduler.load_wait_ms == 10.0
 
     @pytest.mark.asyncio
-    async def test_load_state_uses_load_wait(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_load_state_uses_load_wait(self, scheduler: ContinuousBatchingScheduler) -> None:
         """Load state (requests running) should use load_wait_ms."""
         # Add a running request
         request = make_request("test-1", max_tokens=100)
@@ -422,9 +403,7 @@ class TestStartStop:
     """Tests for start/stop lifecycle."""
 
     @pytest.mark.asyncio
-    async def test_start_creates_loop_task(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_start_creates_loop_task(self, scheduler: ContinuousBatchingScheduler) -> None:
         """start() should create the scheduling loop task."""
         assert scheduler._loop_task is None
 
@@ -434,9 +413,7 @@ class TestStartStop:
         await scheduler.stop(timeout=1.0)
 
     @pytest.mark.asyncio
-    async def test_double_start_logs_warning(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_double_start_logs_warning(self, scheduler: ContinuousBatchingScheduler) -> None:
         """Double start() should log warning, not create second task."""
         await scheduler.start()
         first_task = scheduler._loop_task
@@ -447,17 +424,13 @@ class TestStartStop:
         await scheduler.stop(timeout=1.0)
 
     @pytest.mark.asyncio
-    async def test_stop_without_start_is_safe(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_stop_without_start_is_safe(self, scheduler: ContinuousBatchingScheduler) -> None:
         """stop() without start() should be safe."""
         # Should not raise
         await scheduler.stop(timeout=1.0)
 
     @pytest.mark.asyncio
-    async def test_full_lifecycle(
-        self, scheduler: ContinuousBatchingScheduler
-    ) -> None:
+    async def test_full_lifecycle(self, scheduler: ContinuousBatchingScheduler) -> None:
         """Test full start/process/stop lifecycle."""
         # Add request
         request = make_request("test-1", max_tokens=1)

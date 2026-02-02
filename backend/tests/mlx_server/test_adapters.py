@@ -1,12 +1,11 @@
 """Tests for model family adapters."""
 
-import pytest
 from unittest.mock import MagicMock
 
 from mlx_manager.mlx_server.models.adapters import get_adapter, get_supported_families
-from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
-from mlx_manager.mlx_server.models.adapters.mistral import MistralAdapter
 from mlx_manager.mlx_server.models.adapters.gemma import GemmaAdapter
+from mlx_manager.mlx_server.models.adapters.mistral import MistralAdapter
+from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
 
 
 class TestAdapterRegistry:
@@ -79,19 +78,23 @@ class TestQwenAdapter:
         assert stop_tokens == [100]  # Only eos
 
     def test_apply_chat_template(self):
-        """Verify chat template is applied using tokenizer."""
+        """Verify chat template is applied using tokenizer with thinking mode."""
         adapter = QwenAdapter()
-        tokenizer = MagicMock()
+        # Use spec=[] to prevent auto-creation of .tokenizer attribute
+        # This ensures getattr(tokenizer, "tokenizer", tokenizer) returns tokenizer itself
+        tokenizer = MagicMock(spec=["apply_chat_template"])
         tokenizer.apply_chat_template.return_value = "formatted"
 
         messages = [{"role": "user", "content": "Hello"}]
         result = adapter.apply_chat_template(tokenizer, messages)
 
         assert result == "formatted"
+        # Qwen adapter tries enable_thinking=True for Qwen3 thinking mode
         tokenizer.apply_chat_template.assert_called_once_with(
             messages,
             add_generation_prompt=True,
             tokenize=False,
+            enable_thinking=True,
         )
 
     def test_get_stop_tokens_with_processor(self):

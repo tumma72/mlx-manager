@@ -1,7 +1,7 @@
 """Tests for /v1/messages Anthropic Messages API endpoint."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -211,9 +211,7 @@ class TestNonStreamingResponse:
 
     @pytest.mark.asyncio
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
-    async def test_usage_included(
-        self, mock_generate, basic_request, mock_internal_request
-    ):
+    async def test_usage_included(self, mock_generate, basic_request, mock_internal_request):
         """Usage statistics are included in response."""
         mock_generate.return_value = {
             "id": "chatcmpl-abc123",
@@ -243,15 +241,12 @@ class TestStreamingResponse:
 
     @pytest.mark.asyncio
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
-    async def test_returns_event_source_response(
-        self, mock_generate, streaming_request
-    ):
+    async def test_returns_event_source_response(self, mock_generate, streaming_request):
         """Streaming returns EventSourceResponse."""
+
         # Create async generator mock
         async def mock_stream():
-            yield {
-                "choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]
-            }
+            yield {"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}
             yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
 
         mock_generate.return_value = mock_stream()
@@ -274,11 +269,10 @@ class TestStreamingResponse:
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
     async def test_streaming_events_format(self, mock_generate, streaming_request):
         """Streaming events have correct Anthropic format."""
+
         # Create async generator mock
         async def mock_stream():
-            yield {
-                "choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]
-            }
+            yield {"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}
             yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
 
         mock_generate.return_value = mock_stream()
@@ -319,9 +313,7 @@ class TestStreamingResponse:
         assert data["index"] == 0
 
         # Find content_block_delta event
-        delta_events = [
-            e for e in events if e.get("event") == "content_block_delta"
-        ]
+        delta_events = [e for e in events if e.get("event") == "content_block_delta"]
         assert len(delta_events) >= 1
         delta_data = json.loads(delta_events[0]["data"])
         assert delta_data["type"] == "content_block_delta"
@@ -456,9 +448,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
     @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
-    async def test_http_exception_reraises(
-        self, mock_get_translator, mock_generate, basic_request
-    ):
+    async def test_http_exception_reraises(self, mock_get_translator, mock_generate, basic_request):
         """HTTPException is re-raised without wrapping."""
         mock_translator = MagicMock()
         mock_translator.anthropic_to_internal.side_effect = HTTPException(
@@ -501,6 +491,7 @@ class TestCreateMessageEndpoint:
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
     async def test_streaming_path(self, mock_generate, streaming_request):
         """Streaming request returns EventSourceResponse."""
+
         async def mock_stream():
             yield {"choices": [{"delta": {"content": "Hi"}, "finish_reason": None}]}
             yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}

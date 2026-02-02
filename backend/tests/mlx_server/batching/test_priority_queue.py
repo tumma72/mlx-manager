@@ -32,9 +32,7 @@ class TestBasicOperations:
     """Tests for basic queue operations."""
 
     @pytest.mark.asyncio
-    async def test_put_and_get_single_request(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_put_and_get_single_request(self, queue: PriorityQueueWithAging) -> None:
         """Should be able to put and get a single request."""
         request = make_request("test-1")
 
@@ -66,17 +64,13 @@ class TestBasicOperations:
         assert queue.qsize() == 0
 
     @pytest.mark.asyncio
-    async def test_get_empty_raises_index_error(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_get_empty_raises_index_error(self, queue: PriorityQueueWithAging) -> None:
         """get() on empty queue should raise IndexError."""
         with pytest.raises(IndexError, match="Queue is empty"):
             await queue.get()
 
     @pytest.mark.asyncio
-    async def test_peek_returns_top_without_removing(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_peek_returns_top_without_removing(self, queue: PriorityQueueWithAging) -> None:
         """peek() should return top item without removing it."""
         await queue.put(make_request("test-1"))
 
@@ -90,9 +84,7 @@ class TestBasicOperations:
         assert queue.qsize() == 0
 
     @pytest.mark.asyncio
-    async def test_peek_empty_returns_none(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_peek_empty_returns_none(self, queue: PriorityQueueWithAging) -> None:
         """peek() on empty queue should return None."""
         result = await queue.peek()
         assert result is None
@@ -102,9 +94,7 @@ class TestPriorityOrdering:
     """Tests for priority-based ordering."""
 
     @pytest.mark.asyncio
-    async def test_high_priority_returned_first(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_high_priority_returned_first(self, queue: PriorityQueueWithAging) -> None:
         """HIGH priority requests should be returned before LOW."""
         # Add in reverse order to ensure priority, not insertion order, matters
         await queue.put(make_request("low", Priority.LOW))
@@ -121,9 +111,7 @@ class TestPriorityOrdering:
         assert third.request_id == "low"
 
     @pytest.mark.asyncio
-    async def test_fifo_within_same_priority(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_fifo_within_same_priority(self, queue: PriorityQueueWithAging) -> None:
         """Same-priority requests should be FIFO."""
         await queue.put(make_request("first", Priority.NORMAL))
         await queue.put(make_request("second", Priority.NORMAL))
@@ -234,9 +222,7 @@ class TestEdgeCases:
     """Edge case tests."""
 
     @pytest.mark.asyncio
-    async def test_many_requests_ordering(
-        self, queue: PriorityQueueWithAging
-    ) -> None:
+    async def test_many_requests_ordering(self, queue: PriorityQueueWithAging) -> None:
         """Large number of requests should maintain correct ordering."""
         # Add 10 requests with mixed priorities
         for i in range(10):

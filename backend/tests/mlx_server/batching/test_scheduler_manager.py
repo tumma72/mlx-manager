@@ -211,9 +211,7 @@ class TestSchedulerManagerConfigure:
         mock_adapter.get_stop_tokens.return_value = [128001]
 
         # Configure (creates scheduler and wires engine)
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
 
         # Scheduler now exists
         assert "test-model" in mgr._schedulers
@@ -234,14 +232,10 @@ class TestSchedulerManagerConfigure:
         mock_adapter = MagicMock(name="adapter")
         mock_adapter.get_stop_tokens.return_value = [128001]
 
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
         scheduler1 = await mgr.get_scheduler("test-model")
 
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
         scheduler2 = await mgr.get_scheduler("test-model")
 
         # Same scheduler instance
@@ -268,14 +262,10 @@ class TestSchedulerManagerConfigure:
         scheduler.set_model = MagicMock()
 
         # Configure with mock resources
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
 
         # Verify set_model was called with correct arguments
-        scheduler.set_model.assert_called_once_with(
-            mock_model, mock_tokenizer, mock_adapter
-        )
+        scheduler.set_model.assert_called_once_with(mock_model, mock_tokenizer, mock_adapter)
 
         # Restore and cleanup
         scheduler.set_model = original_set_model
@@ -295,9 +285,7 @@ class TestSchedulerManagerConfigure:
         mock_adapter.get_stop_tokens.return_value = [128001]
 
         # Configure the scheduler
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
 
         # Get the scheduler and verify inference engine was set
         scheduler = await mgr.get_scheduler("test-model")
@@ -320,9 +308,7 @@ class TestSchedulerManagerConfigure:
         mock_adapter.get_stop_tokens.return_value = [128001, 128009]
 
         # Configure the scheduler
-        await mgr.configure_scheduler(
-            "test-model", mock_model, mock_tokenizer, mock_adapter
-        )
+        await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)
 
         # Get the scheduler and verify inference engine has correct references
         scheduler = await mgr.get_scheduler("test-model")
@@ -346,9 +332,7 @@ class TestSchedulerManagerConcurrency:
         mgr = init_scheduler_manager()
 
         # Create multiple concurrent requests for same model
-        schedulers = await asyncio.gather(*[
-            mgr.get_scheduler("test-model") for _ in range(10)
-        ])
+        schedulers = await asyncio.gather(*[mgr.get_scheduler("test-model") for _ in range(10)])
 
         # All should be the same instance
         first = schedulers[0]
@@ -365,9 +349,7 @@ class TestSchedulerManagerConcurrency:
 
         # Create concurrent requests for different models
         models = [f"model-{i}" for i in range(5)]
-        schedulers = await asyncio.gather(*[
-            mgr.get_scheduler(model) for model in models
-        ])
+        schedulers = await asyncio.gather(*[mgr.get_scheduler(model) for model in models])
 
         # Each should have correct model_id
         for i, scheduler in enumerate(schedulers):

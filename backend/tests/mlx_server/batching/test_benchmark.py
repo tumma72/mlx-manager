@@ -182,8 +182,8 @@ class TestBenchmarkPrompts:
         """Test that prompts have varying lengths."""
         lengths = [len(p) for p in BENCHMARK_PROMPTS]
         # Should have short (<50 chars) and long (>100 chars) prompts
-        assert any(l < 50 for l in lengths), "Should have short prompts"
-        assert any(l > 100 for l in lengths), "Should have long prompts"
+        assert any(length < 50 for length in lengths), "Should have short prompts"
+        assert any(length > 100 for length in lengths), "Should have long prompts"
 
     def test_prompts_are_strings(self) -> None:
         """Test that all prompts are strings."""

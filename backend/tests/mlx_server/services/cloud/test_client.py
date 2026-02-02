@@ -297,9 +297,7 @@ class TestPostWithCircuitBreaker:
             # Counter resets after success
             assert client._circuit_breaker.fail_counter == 0
 
-    async def test_records_failure_on_http_error(
-        self, client: ConcreteCloudClient
-    ) -> None:
+    async def test_records_failure_on_http_error(self, client: ConcreteCloudClient) -> None:
         """Records failure for circuit breaker on HTTP error."""
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 500
@@ -317,9 +315,7 @@ class TestPostWithCircuitBreaker:
 
             assert client._circuit_breaker.fail_counter == 1
 
-    async def test_records_failure_on_connection_error(
-        self, client: ConcreteCloudClient
-    ) -> None:
+    async def test_records_failure_on_connection_error(self, client: ConcreteCloudClient) -> None:
         """Records failure for circuit breaker on connection error."""
         with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = httpx.ConnectError("Connection failed")

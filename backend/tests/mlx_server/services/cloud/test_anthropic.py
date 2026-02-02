@@ -49,9 +49,7 @@ class TestAnthropicCloudBackendInitialization:
 
     def test_custom_anthropic_version(self) -> None:
         """Client accepts custom anthropic_version."""
-        client = AnthropicCloudBackend(
-            api_key="test-key", anthropic_version="2024-01-01"
-        )
+        client = AnthropicCloudBackend(api_key="test-key", anthropic_version="2024-01-01")
         headers = client._build_headers()
         assert headers["anthropic-version"] == "2024-01-01"
 
@@ -64,9 +62,7 @@ class TestTranslateRequest:
         """Create a test client."""
         return AnthropicCloudBackend(api_key="test-key")
 
-    def test_extracts_system_message_to_separate_field(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_extracts_system_message_to_separate_field(self, client: AnthropicCloudBackend) -> None:
         """System message extracted to separate 'system' field."""
         messages = [
             {"role": "system", "content": "You are helpful"},
@@ -80,9 +76,7 @@ class TestTranslateRequest:
         assert len(result["messages"]) == 1
         assert result["messages"][0]["role"] == "user"
 
-    def test_preserves_user_assistant_messages(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_preserves_user_assistant_messages(self, client: AnthropicCloudBackend) -> None:
         """User and assistant messages preserved in messages array."""
         messages = [
             {"role": "user", "content": "Hello"},
@@ -99,9 +93,7 @@ class TestTranslateRequest:
         assert result["messages"][1] == {"role": "assistant", "content": "Hi there"}
         assert result["messages"][2] == {"role": "user", "content": "How are you?"}
 
-    def test_maps_temperature_and_max_tokens(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_maps_temperature_and_max_tokens(self, client: AnthropicCloudBackend) -> None:
         """Temperature and max_tokens mapped correctly."""
         messages = [{"role": "user", "content": "Hello"}]
         result = client._translate_request(
@@ -121,9 +113,7 @@ class TestTranslateRequest:
         assert result["model"] == "claude-3-opus"
         assert result["stream"] is True
 
-    def test_translates_stop_string_to_stop_sequences(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_translates_stop_string_to_stop_sequences(self, client: AnthropicCloudBackend) -> None:
         """Single stop string translated to stop_sequences list."""
         messages = [{"role": "user", "content": "Hello"}]
         result = client._translate_request(
@@ -137,9 +127,7 @@ class TestTranslateRequest:
 
         assert result["stop_sequences"] == ["END"]
 
-    def test_translates_stop_list_to_stop_sequences(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_translates_stop_list_to_stop_sequences(self, client: AnthropicCloudBackend) -> None:
         """Stop list translated to stop_sequences."""
         messages = [{"role": "user", "content": "Hello"}]
         result = client._translate_request(
@@ -153,9 +141,7 @@ class TestTranslateRequest:
 
         assert result["stop_sequences"] == ["END", "STOP"]
 
-    def test_no_stop_sequences_when_stop_not_provided(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_no_stop_sequences_when_stop_not_provided(self, client: AnthropicCloudBackend) -> None:
         """No stop_sequences when stop not provided."""
         messages = [{"role": "user", "content": "Hello"}]
         result = client._translate_request(
@@ -173,9 +159,7 @@ class TestTranslateResponse:
         """Create a test client."""
         return AnthropicCloudBackend(api_key="test-key")
 
-    def test_concatenates_content_blocks_to_string(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_concatenates_content_blocks_to_string(self, client: AnthropicCloudBackend) -> None:
         """Content blocks concatenated to single string."""
         anthropic_response = {
             "id": "msg_123",
@@ -191,9 +175,7 @@ class TestTranslateResponse:
 
         assert result["choices"][0]["message"]["content"] == "Hello World"
 
-    def test_translates_stop_reason_end_turn(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_translates_stop_reason_end_turn(self, client: AnthropicCloudBackend) -> None:
         """end_turn translated to stop."""
         anthropic_response = {
             "id": "msg_123",
@@ -206,9 +188,7 @@ class TestTranslateResponse:
 
         assert result["choices"][0]["finish_reason"] == "stop"
 
-    def test_translates_stop_reason_max_tokens(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_translates_stop_reason_max_tokens(self, client: AnthropicCloudBackend) -> None:
         """max_tokens translated to length."""
         anthropic_response = {
             "id": "msg_123",
@@ -221,9 +201,7 @@ class TestTranslateResponse:
 
         assert result["choices"][0]["finish_reason"] == "length"
 
-    def test_translates_stop_reason_stop_sequence(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_translates_stop_reason_stop_sequence(self, client: AnthropicCloudBackend) -> None:
         """stop_sequence translated to stop."""
         anthropic_response = {
             "id": "msg_123",
@@ -290,9 +268,7 @@ class TestTranslateResponse:
 
         assert result["model"] == "claude-3-opus-20240229"
 
-    def test_ignores_non_text_content_blocks(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    def test_ignores_non_text_content_blocks(self, client: AnthropicCloudBackend) -> None:
         """Non-text content blocks ignored."""
         anthropic_response = {
             "id": "msg_123",
@@ -315,8 +291,7 @@ class TestStreamWithTranslation:
 
     # Common SSE test data strings (avoid line length issues)
     DELTA_HELLO = (
-        'data: {"type": "content_block_delta", '
-        '"delta": {"type": "text_delta", "text": "Hello"}}'
+        'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
     )
     DELTA_NOT_SHOWN = (
         'data: {"type": "content_block_delta", '
@@ -337,13 +312,9 @@ class TestStreamWithTranslation:
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield delta_hello
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             assert len(chunks) == 1
@@ -351,30 +322,22 @@ class TestStreamWithTranslation:
             assert chunks[0]["choices"][0]["delta"]["content"] == "Hello"
             assert chunks[0]["choices"][0]["finish_reason"] is None
 
-    async def test_message_delta_yields_finish_reason(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    async def test_message_delta_yields_finish_reason(self, client: AnthropicCloudBackend) -> None:
         """message_delta with stop_reason yields finish chunk."""
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield 'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}'
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             assert len(chunks) == 1
             assert chunks[0]["choices"][0]["finish_reason"] == "stop"
             assert chunks[0]["choices"][0]["delta"] == {}
 
-    async def test_message_stop_ends_stream(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    async def test_message_stop_ends_stream(self, client: AnthropicCloudBackend) -> None:
         """message_stop ends stream."""
         delta_hello = self.DELTA_HELLO
         delta_not_shown = self.DELTA_NOT_SHOWN
@@ -384,13 +347,9 @@ class TestStreamWithTranslation:
             yield 'data: {"type": "message_stop"}'
             yield delta_not_shown
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             # Only one chunk before message_stop
@@ -406,13 +365,9 @@ class TestStreamWithTranslation:
             yield "   "
             yield delta_hello
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             assert len(chunks) == 1
@@ -425,13 +380,9 @@ class TestStreamWithTranslation:
             yield "data: not valid json"
             yield delta_hello
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             assert len(chunks) == 1
@@ -446,33 +397,23 @@ class TestStreamWithTranslation:
             yield "event: content_block_start"
             yield delta_hello
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
                 chunks.append(chunk)
 
             assert len(chunks) == 1
 
-    async def test_model_included_in_chunks(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    async def test_model_included_in_chunks(self, client: AnthropicCloudBackend) -> None:
         """Model from request included in chunks."""
         delta_hello = self.DELTA_HELLO
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield delta_hello
 
-        with patch.object(
-            client, "_stream_with_circuit_breaker", return_value=mock_stream()
-        ):
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
             chunks = []
-            async for chunk in client._stream_with_translation(
-                {"model": "claude-3-opus-20240229"}
-            ):
+            async for chunk in client._stream_with_translation({"model": "claude-3-opus-20240229"}):
                 chunks.append(chunk)
 
             assert chunks[0]["model"] == "claude-3-opus-20240229"
@@ -500,9 +441,7 @@ class TestChatCompletionIntegration:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch.object(
-            client._client, "post", new_callable=AsyncMock
-        ) as mock_post:
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = mock_response
 
             result = await client.chat_completion(
@@ -516,9 +455,7 @@ class TestChatCompletionIntegration:
             assert result["object"] == "chat.completion"
             assert result["choices"][0]["message"]["content"] == "Hello, how can I help?"
 
-    async def test_streaming_returns_generator(
-        self, client: AnthropicCloudBackend
-    ) -> None:
+    async def test_streaming_returns_generator(self, client: AnthropicCloudBackend) -> None:
         """Streaming chat_completion returns async generator."""
         result = await client.chat_completion(
             messages=[{"role": "user", "content": "Hello"}],
@@ -547,9 +484,7 @@ class TestFactoryFunction:
 
     def test_creates_backend_with_custom_url(self) -> None:
         """Factory creates backend with custom URL."""
-        backend = create_anthropic_backend(
-            api_key="test-key", base_url="https://custom.api.com"
-        )
+        backend = create_anthropic_backend(api_key="test-key", base_url="https://custom.api.com")
         assert backend.base_url == "https://custom.api.com"
 
     def test_passes_kwargs_to_client(self) -> None:

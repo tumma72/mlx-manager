@@ -1,13 +1,14 @@
 """Tests for embeddings endpoint and service."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
+import pytest
+
+from mlx_manager.mlx_server.api.v1.embeddings import create_embeddings
 from mlx_manager.mlx_server.schemas.openai import (
     EmbeddingRequest,
     EmbeddingResponse,
 )
-from mlx_manager.mlx_server.api.v1.embeddings import create_embeddings
 
 
 class TestEmbeddingsSchemas:
@@ -62,9 +63,7 @@ class TestEmbeddingsEndpoint:
             model="mlx-community/Llama-3.2-3B-Instruct-4bit",  # Text model
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.embeddings.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.embeddings.detect_model_type") as mock_detect:
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.TEXT_GEN
@@ -85,9 +84,7 @@ class TestEmbeddingsEndpoint:
             model="mlx-community/all-MiniLM-L6-v2-4bit",
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.embeddings.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.embeddings.detect_model_type") as mock_detect:
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.EMBEDDINGS
@@ -106,16 +103,12 @@ class TestEmbeddingsEndpoint:
             model="mlx-community/all-MiniLM-L6-v2-4bit",
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.embeddings.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.embeddings.detect_model_type") as mock_detect:
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.EMBEDDINGS
 
-            with patch(
-                "mlx_manager.mlx_server.api.v1.embeddings.generate_embeddings"
-            ) as mock_gen:
+            with patch("mlx_manager.mlx_server.api.v1.embeddings.generate_embeddings") as mock_gen:
                 # Return mock embeddings
                 mock_gen.return_value = (
                     [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],  # embeddings
@@ -136,8 +129,9 @@ class TestEmbeddingsService:
 
     def test_generate_embeddings_function_signature(self):
         """Verify generate_embeddings has correct function signature."""
-        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
         import inspect
+
+        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
         sig = inspect.signature(generate_embeddings)
         params = list(sig.parameters.keys())
@@ -146,15 +140,17 @@ class TestEmbeddingsService:
 
     def test_generate_embeddings_is_async(self):
         """Verify generate_embeddings is an async function."""
-        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
         import inspect
+
+        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
         assert inspect.iscoroutinefunction(generate_embeddings)
 
     def test_service_imports_pool(self):
         """Verify service can import model pool."""
-        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
         import inspect
+
+        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
         source = inspect.getsource(generate_embeddings)
         assert "get_model_pool" in source

@@ -1,7 +1,5 @@
 """Tests for batching types (RequestStatus, Priority, BatchRequest)."""
 
-import pytest
-
 from mlx_manager.mlx_server.services.batching import (
     BatchRequest,
     Priority,

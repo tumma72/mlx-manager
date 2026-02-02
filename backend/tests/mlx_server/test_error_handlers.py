@@ -139,7 +139,5 @@ def test_timeout_http_exception() -> None:
     assert exc.timeout_seconds == 30.0
     assert "30" in exc.detail
 
-    exc_custom = TimeoutHTTPException(
-        timeout_seconds=60.0, detail="Custom timeout message"
-    )
+    exc_custom = TimeoutHTTPException(timeout_seconds=60.0, detail="Custom timeout message")
     assert exc_custom.detail == "Custom timeout message"

@@ -1,16 +1,17 @@
 """Tests for admin API endpoints."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from mlx_manager.mlx_server.api.v1.admin import (
+    ModelLoadResponse,
+    ModelUnloadResponse,
+    PoolStatusResponse,
+    admin_health,
     pool_status,
     preload_model,
     unload_model,
-    admin_health,
-    PoolStatusResponse,
-    ModelLoadResponse,
-    ModelUnloadResponse,
 )
 
 

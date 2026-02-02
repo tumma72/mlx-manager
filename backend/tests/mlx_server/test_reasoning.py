@@ -4,7 +4,6 @@ Tests the ReasoningExtractor for extracting chain-of-thought content
 from model output tags like <think>, <thinking>, etc.
 """
 
-
 from mlx_manager.mlx_server.services.reasoning import (
     THINKING_PATTERNS,
     ReasoningExtractor,

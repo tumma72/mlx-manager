@@ -157,14 +157,14 @@ class TestSaltPersistence:
         salt_path = temp_data_dir / ".encryption_salt"
 
         # First encryption creates salt
-        encrypted1 = encrypt_api_key("test-key")
+        encrypt_api_key("test-key")
         salt1 = salt_path.read_bytes()
 
         # Clear cache to force re-read
         clear_cache()
 
         # Second encryption uses same salt
-        encrypted2 = encrypt_api_key("test-key")
+        encrypt_api_key("test-key")
         salt2 = salt_path.read_bytes()
 
         assert salt1 == salt2

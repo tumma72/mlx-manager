@@ -4,7 +4,6 @@ Tests the StructuredOutputValidator for validating model JSON output
 against user-provided JSON Schema definitions.
 """
 
-
 from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
     ValidationResult,
@@ -71,7 +70,7 @@ class TestStructuredOutputValidator:
         """Validation fails for invalid JSON."""
         validator = StructuredOutputValidator()
         schema = {"type": "object"}
-        output = '{invalid json}'
+        output = "{invalid json}"
 
         result = validator.validate(output, schema)
 

@@ -104,9 +104,7 @@ class TestBatchInferenceEngineInitialization:
         assert engine._stop_token_ids == {128001, 128009}
         mock_adapter.get_stop_tokens.assert_called_once_with(mock_tokenizer)
 
-    def test_get_stop_token_ids_returns_copy(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    def test_get_stop_token_ids_returns_copy(self, batch_engine: BatchInferenceEngine) -> None:
         """get_stop_token_ids should return a copy to prevent modification."""
         ids1 = batch_engine.get_stop_token_ids()
         ids2 = batch_engine.get_stop_token_ids()
@@ -139,12 +137,10 @@ class TestPrepareRequestContext:
         """Should decode prompt tokens to text."""
         request = make_request("test-1", prompt_tokens=[10, 20, 30])
 
-        result = batch_engine._prepare_request_context(request)
+        batch_engine._prepare_request_context(request)
 
         # Should have called decode with prompt tokens
-        mock_tokenizer.decode.assert_called_with(
-            [10, 20, 30], skip_special_tokens=False
-        )
+        mock_tokenizer.decode.assert_called_with([10, 20, 30], skip_special_tokens=False)
 
     def test_includes_generated_tokens(
         self, batch_engine: BatchInferenceEngine, mock_tokenizer: Mock
@@ -156,9 +152,7 @@ class TestPrepareRequestContext:
         batch_engine._prepare_request_context(request)
 
         # Should have called decode with all tokens (prompt + generated)
-        mock_tokenizer.decode.assert_called_with(
-            [10, 20, 30, 40], skip_special_tokens=False
-        )
+        mock_tokenizer.decode.assert_called_with([10, 20, 30, 40], skip_special_tokens=False)
 
     def test_handles_processor_wrapped_tokenizer(
         self, mock_model: Mock, mock_adapter: Mock
@@ -234,9 +228,7 @@ class TestGenerateTokensForBatch:
         assert is_stop is True
         assert token_id == 128001
 
-    def test_handles_generation_error_gracefully(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    def test_handles_generation_error_gracefully(self, batch_engine: BatchInferenceEngine) -> None:
         """Should handle generation errors and mark as stop."""
         request = make_request("test-1")
 
@@ -273,9 +265,7 @@ class TestGenerateBatchStepAsync:
     """Tests for async generate_batch_step method."""
 
     @pytest.mark.asyncio
-    async def test_runs_generation_in_thread(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    async def test_runs_generation_in_thread(self, batch_engine: BatchInferenceEngine) -> None:
         """Should run generation in a dedicated thread."""
         request = make_request("test-1")
         mock_response = Mock(spec=[])
@@ -290,16 +280,14 @@ class TestGenerateBatchStepAsync:
 
         with patch("mlx_lm.stream_generate", side_effect=capture_thread):
             sampler = Mock(spec=[])
-            results = await batch_engine.generate_batch_step([request], sampler)
+            await batch_engine.generate_batch_step([request], sampler)
 
         # Generation should have run in a different thread
         assert len(thread_ids) == 1
         assert thread_ids[0] != threading.get_ident()
 
     @pytest.mark.asyncio
-    async def test_returns_results_from_thread(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    async def test_returns_results_from_thread(self, batch_engine: BatchInferenceEngine) -> None:
         """Should return results from generation thread."""
         request = make_request("test-1")
         mock_response = Mock(spec=[])
@@ -446,9 +434,7 @@ class TestSchedulerIntegration:
         assert 42 in request.generated_tokens
 
         # Output queue should have the token data
-        token_data = await asyncio.wait_for(
-            request.output_queue.get(), timeout=1.0
-        )
+        token_data = await asyncio.wait_for(request.output_queue.get(), timeout=1.0)
         assert token_data["token_id"] == 42
         assert token_data["text"] == " hello"
 
@@ -499,9 +485,7 @@ class TestThreadSafety:
         # The lock should be a threading.Lock
         assert isinstance(batch_engine._generation_lock, type(threading.Lock()))
 
-    def test_queue_based_communication(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    def test_queue_based_communication(self, batch_engine: BatchInferenceEngine) -> None:
         """Should use Queue for thread-to-async communication."""
         import inspect
 
@@ -512,11 +496,9 @@ class TestThreadSafety:
         assert "result_queue" in source
 
     @pytest.mark.asyncio
-    async def test_timeout_on_generation(
-        self, batch_engine: BatchInferenceEngine
-    ) -> None:
+    async def test_timeout_on_generation(self, batch_engine: BatchInferenceEngine) -> None:
         """Should timeout if generation takes too long."""
-        request = make_request("test-1")
+        _request = make_request("test-1")  # noqa: F841 (setup for potential test expansion)
 
         # Make generation hang
         def hang(*args, **kwargs):

@@ -1,6 +1,5 @@
 """Tests for cloud backend routing database models."""
 
-import pytest
 from sqlmodel import SQLModel
 
 from mlx_manager.models import (
@@ -24,8 +23,9 @@ class TestBackendType:
         assert BackendType.ANTHROPIC.value == "anthropic"
 
     def test_backend_type_count(self) -> None:
-        """Ensure we have exactly 3 backend types."""
-        assert len(BackendType) == 3
+        """Ensure we have all expected backend types."""
+        # LOCAL, OPENAI, ANTHROPIC + generic + common providers
+        assert len(BackendType) == 10
 
     def test_backend_type_is_string_enum(self) -> None:
         """BackendType is both str and Enum."""

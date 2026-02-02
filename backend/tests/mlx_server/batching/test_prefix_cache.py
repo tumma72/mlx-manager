@@ -9,8 +9,6 @@ Tests cover:
 - Per-model isolation
 """
 
-import pytest
-
 from mlx_manager.mlx_server.services.batching.block import BLOCK_SIZE
 from mlx_manager.mlx_server.services.batching.block_manager import PagedBlockManager
 from mlx_manager.mlx_server.services.batching.prefix_cache import (
@@ -239,7 +237,6 @@ class TestReferenceCount:
 
         tokens = list(range(BLOCK_SIZE))
         block_id = pm.allocate()
-        initial_ref = pm.get_block(block_id).ref_count
 
         pc.cache_prefix(tokens, [block_id])
         after_cache_ref = pm.get_block(block_id).ref_count

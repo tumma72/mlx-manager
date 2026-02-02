@@ -1,7 +1,8 @@
 """Tests for vision model inference."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from PIL import Image
 
 from mlx_manager.mlx_server.services.vision import (
@@ -42,7 +43,7 @@ class TestVisionService:
                     "choices": [{"message": {"content": "Test response"}}],
                 }
 
-                result = await generate_vision_completion(
+                await generate_vision_completion(
                     model_id="test-vision-model",
                     text_prompt="What is in this image?",
                     images=images,
@@ -85,6 +86,7 @@ class TestVisionService:
 
                 # Result should be an async generator
                 import inspect
+
                 assert inspect.isasyncgen(result), "Stream mode should return async generator"
 
 
@@ -96,11 +98,11 @@ class TestChatVisionIntegration:
         """Verify 400 error when sending images to text-only model."""
         from fastapi import HTTPException
 
+        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
-        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
 
         # Request with images to a text model
         request = ChatCompletionRequest(
@@ -120,9 +122,7 @@ class TestChatVisionIntegration:
         )
 
         # Mock pool and detection
-        with patch(
-            "mlx_manager.mlx_server.api.v1.chat.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type") as mock_detect:
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.TEXT_GEN
@@ -136,22 +136,18 @@ class TestChatVisionIntegration:
     @pytest.mark.asyncio
     async def test_text_only_request_uses_inference_service(self):
         """Verify text-only requests use generate_chat_completion."""
+        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
-        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
 
         request = ChatCompletionRequest(
             model="mlx-community/Llama-3.2-3B-Instruct-4bit",
-            messages=[
-                ChatMessage(role="user", content="Hello, how are you?")
-            ],
+            messages=[ChatMessage(role="user", content="Hello, how are you?")],
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.chat.generate_chat_completion"
-        ) as mock_gen:
+        with patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion") as mock_gen:
             mock_gen.return_value = {
                 "id": "test",
                 "object": "chat.completion",
@@ -180,12 +176,12 @@ class TestChatVisionIntegration:
     @pytest.mark.asyncio
     async def test_vision_request_routes_to_vision_service(self):
         """Verify vision requests use generate_vision_completion."""
+        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
+        from mlx_manager.mlx_server.models.types import ModelType
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
-        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
-        from mlx_manager.mlx_server.models.types import ModelType
 
         # Request with images to a vision model
         request = ChatCompletionRequest(
@@ -204,14 +200,10 @@ class TestChatVisionIntegration:
             ],
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.chat.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type") as mock_detect:
             mock_detect.return_value = ModelType.VISION
 
-            with patch(
-                "mlx_manager.mlx_server.api.v1.chat.preprocess_images"
-            ) as mock_preprocess:
+            with patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images") as mock_preprocess:
                 mock_preprocess.return_value = [create_test_image()]
 
                 with patch(
@@ -225,7 +217,10 @@ class TestChatVisionIntegration:
                         "choices": [
                             {
                                 "index": 0,
-                                "message": {"role": "assistant", "content": "This is a blue image."},
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "This is a blue image.",
+                                },
                                 "finish_reason": "stop",
                             }
                         ],
@@ -245,12 +240,12 @@ class TestChatVisionIntegration:
     @pytest.mark.asyncio
     async def test_multiple_images_in_request(self):
         """Verify multiple images are extracted and passed to vision service."""
+        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
+        from mlx_manager.mlx_server.models.types import ModelType
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
-        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
-        from mlx_manager.mlx_server.models.types import ModelType
 
         # Request with multiple images
         request = ChatCompletionRequest(
@@ -268,14 +263,10 @@ class TestChatVisionIntegration:
             ],
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.chat.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type") as mock_detect:
             mock_detect.return_value = ModelType.VISION
 
-            with patch(
-                "mlx_manager.mlx_server.api.v1.chat.preprocess_images"
-            ) as mock_preprocess:
+            with patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images") as mock_preprocess:
                 # Return 3 images
                 mock_preprocess.return_value = [
                     create_test_image(),
@@ -322,12 +313,12 @@ class TestChatVisionIntegration:
         """Verify 400 error when sending images to embeddings model."""
         from fastapi import HTTPException
 
+        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
+        from mlx_manager.mlx_server.models.types import ModelType
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
-        from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
-        from mlx_manager.mlx_server.models.types import ModelType
 
         request = ChatCompletionRequest(
             model="mlx-community/bge-large",  # Embeddings model
@@ -342,9 +333,7 @@ class TestChatVisionIntegration:
             ],
         )
 
-        with patch(
-            "mlx_manager.mlx_server.api.v1.chat.detect_model_type"
-        ) as mock_detect:
+        with patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type") as mock_detect:
             mock_detect.return_value = ModelType.EMBEDDINGS
 
             with pytest.raises(HTTPException) as exc_info:

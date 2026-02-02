@@ -6,7 +6,7 @@ server process.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -49,18 +49,23 @@ def filter_events(events: list[str], event_type: str) -> list[str]:
 
 
 def create_mock_inference(chunks):
-    """Create an async mock that returns an async generator when called.
+    """Create an async mock that returns an async generator when awaited.
 
     This mimics how generate_chat_completion works: it's an async function
-    that when called with stream=True, returns an async generator.
+    that when called with stream=True and awaited, returns an async generator.
+    The key is that async def functions return coroutines that must be awaited.
     """
-    async def mock_gen(*args, **kwargs):
+
+    async def mock_gen():
         for chunk in chunks:
             yield chunk
 
-    # Create a MagicMock that returns the async generator when called
-    mock = MagicMock(return_value=mock_gen())
-    return mock
+    async def mock_coro(*args, **kwargs):
+        # Return the async generator (not await it)
+        return mock_gen()
+
+    # Use AsyncMock so that mock() returns a coroutine that can be awaited
+    return AsyncMock(side_effect=mock_coro)
 
 
 @pytest.mark.asyncio
@@ -92,7 +97,11 @@ async def test_chat_completions_requires_auth(client):
 
 @pytest.mark.asyncio
 async def test_chat_completions_streaming_response(auth_client, test_profile):
-    """Test successful streaming response with regular content."""
+    """Test successful streaming response with regular content.
+
+    Note: The chat router emits content character-by-character for tag detection,
+    so "Hello world!" becomes 12 separate response events (one per character).
+    """
     chunks = [
         make_chunk(content="Hello"),
         make_chunk(content=" world"),
@@ -122,12 +131,16 @@ async def test_chat_completions_streaming_response(auth_client, test_profile):
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Should have 3 response chunks + 1 done event
-            assert len(events) >= 4
-
-            # Verify response events
+            # Verify we have response events (character-by-character for "Hello world!")
             response_events = filter_events(events, "response")
-            assert len(response_events) == 3
+            assert len(response_events) == 12  # One per character in "Hello world!"
+
+            # Verify combined content matches expected
+            combined_content = ""
+            for event in response_events:
+                data = json.loads(event.replace("data: ", ""))
+                combined_content += data.get("content", "")
+            assert combined_content == "Hello world!"
 
             # Verify done event
             assert any('"type":"done"' in e or '"type": "done"' in e for e in events)
@@ -214,9 +227,16 @@ async def test_chat_completions_reasoning_content_field(auth_client, test_profil
             thinking_done = filter_events(events, "thinking_done")
             assert len(thinking_done) == 1
 
-            # Should have response event
+            # Should have response events (character-by-character for "Final answer")
             response_events = filter_events(events, "response")
-            assert len(response_events) == 1
+            assert len(response_events) == 12  # One per character
+
+            # Verify combined content
+            combined = ""
+            for event in response_events:
+                data = json.loads(event.replace("data: ", ""))
+                combined += data.get("content", "")
+            assert combined == "Final answer"
 
 
 @pytest.mark.asyncio
@@ -342,13 +362,12 @@ async def test_chat_completions_tool_calls_done(auth_client, test_profile):
 async def test_chat_completions_model_not_found(auth_client, test_profile):
     """Test FileNotFoundError when model is not downloaded."""
 
-    async def mock_gen(*args, **kwargs):
+    async def mock_raise(*args, **kwargs):
         raise FileNotFoundError("Model not found: mlx-community/test-model")
-        yield  # Make this an async generator  # noqa: B030
 
     with patch(
         "mlx_manager.mlx_server.services.inference.generate_chat_completion",
-        MagicMock(return_value=mock_gen()),
+        AsyncMock(side_effect=mock_raise),
     ):
         with patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type",
@@ -563,13 +582,12 @@ async def test_chat_completions_reasoning_without_transition(auth_client, test_p
 async def test_chat_completions_general_exception(auth_client, test_profile):
     """Test handling of general exceptions during inference."""
 
-    async def mock_gen(*args, **kwargs):
+    async def mock_raise(*args, **kwargs):
         raise ValueError("Unexpected error")
-        yield  # Make this an async generator  # noqa: B030
 
     with patch(
         "mlx_manager.mlx_server.services.inference.generate_chat_completion",
-        MagicMock(return_value=mock_gen()),
+        AsyncMock(side_effect=mock_raise),
     ):
         with patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type",
@@ -627,18 +645,24 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Should have thinking event from reasoning_content
+            # Should have thinking events:
+            # - 1 from reasoning_content field (chunk-level)
+            # - 12 from content field (character-by-character while in_thinking=True)
             thinking_events = filter_events(events, "thinking")
-            assert len(thinking_events) == 2  # One from reasoning, one from content
+            assert len(thinking_events) == 13  # 1 + 12 characters
 
-            # Verify both chunks were emitted as thinking
-            thinking_contents = [
-                json.loads(e.replace("data: ", ""))["content"] for e in thinking_events
-            ]
-            assert "First thought" in thinking_contents
-            assert "with content" in thinking_contents
+            # Verify reasoning content was emitted
+            first_event = json.loads(thinking_events[0].replace("data: ", ""))
+            assert first_event["content"] == "First thought"
 
-            # Should have thinking_done when stream ends (line 222-228)
+            # Verify content was emitted character-by-character as thinking
+            combined_content = ""
+            for event in thinking_events[1:]:
+                data = json.loads(event.replace("data: ", ""))
+                combined_content += data.get("content", "")
+            assert combined_content == "with content"
+
+            # Should have thinking_done when stream ends
             thinking_done = filter_events(events, "thinking_done")
             assert len(thinking_done) == 1
 
@@ -659,7 +683,7 @@ async def test_chat_completions_vision_model(auth_client, test_profile):
     with patch(
         "mlx_manager.mlx_server.services.vision.generate_vision_completion",
         create_mock_inference(chunks),
-    ) as mock_vision:
+    ):
         with patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type",
             return_value=ModelType.VISION,
@@ -692,6 +716,14 @@ async def test_chat_completions_vision_model(auth_client, test_profile):
                 content = response.text
                 events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-                # Should have response event
+                # Should have response events (character-by-character)
                 response_events = filter_events(events, "response")
-                assert len(response_events) == 1
+                # "I see a cat in the image." = 25 characters
+                assert len(response_events) == 25
+
+                # Verify combined content
+                combined = ""
+                for event in response_events:
+                    data = json.loads(event.replace("data: ", ""))
+                    combined += data.get("content", "")
+                assert combined == "I see a cat in the image."

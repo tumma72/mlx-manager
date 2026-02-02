@@ -196,6 +196,13 @@ async def test_provider_connection(
     For OpenAI: GET /v1/models with Bearer token
     For Anthropic: GET /v1/models with x-api-key header
     """
+    # LOCAL backend doesn't support cloud API testing
+    if backend_type == BackendType.LOCAL:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported backend type for API testing: local uses local inference",
+        )
+
     result = await session.execute(
         select(CloudCredential).where(CloudCredential.backend_type == backend_type)
     )
