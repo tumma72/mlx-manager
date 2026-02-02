@@ -265,12 +265,12 @@ Plans:
 5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
 6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
 
-**Plans**: TBD (run /gsd:plan-phase 15 to break down)
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 15-01-PLAN.md — TBD
-- [ ] 15-02-PLAN.md — TBD
-- [ ] 15-03-PLAN.md — TBD
+- [ ] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
+- [ ] 15-02-PLAN.md — Bug fixes (DB migration, Qwen exception handling, logging levels, vision fix)
+- [ ] 15-03-PLAN.md — Golden file integration tests for ResponseProcessor
 
 ## Progress
 
@@ -286,7 +286,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 0/5 | Planned | - |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 0/3 | Not Started | - |
+| 15. Cleanup & Tests | v1.2 | 0/3 | Planned | - |
 
 ## Technical Architecture
 
@@ -353,5 +353,5 @@ Plans:
 | jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-02-01*
+*Roadmap revised: 2026-02-02*
 *Previous version: adapter/proxy approach (deprecated)*
