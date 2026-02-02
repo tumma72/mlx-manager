@@ -423,3 +423,189 @@ def reset_response_processor() -> None:
     """Reset the singleton instance (for testing)."""
     global _processor
     _processor = None
+
+
+# --- Streaming Processor ---
+
+
+class StreamingProcessor:
+    """Streaming-aware processor that filters patterns during generation.
+
+    Buffers tokens when pattern start markers are detected, processes
+    complete patterns, and yields clean content to client.
+
+    Usage:
+        processor = StreamingProcessor()
+        for token in generation:
+            output, should_yield = processor.feed(token)
+            if should_yield and output:
+                yield output
+        # After generation
+        result = processor.finalize()
+
+    Key behaviors:
+    - Partial marker detection (e.g., "<tool" buffered in case it becomes "<tool_call>")
+    - Pattern content never yielded to client
+    - Final processing extracts tool_calls and reasoning from accumulated text
+    - Content field in result is the clean version
+    """
+
+    # Pattern start markers to detect
+    PATTERN_STARTS = [
+        "<think>",
+        "<thinking>",
+        "<reasoning>",
+        "<reflection>",
+        "<tool_call>",
+        "<function=",
+        "<|python_tag|>",
+    ]
+
+    # Pattern end markers (map start -> end)
+    PATTERN_ENDS = {
+        "<think>": "</think>",
+        "<thinking>": "</thinking>",
+        "<reasoning>": "</reasoning>",
+        "<reflection>": "</reflection>",
+        "<tool_call>": "</tool_call>",
+        "<function=": "</function>",
+        "<|python_tag|>": "<|eom_id|>",
+    }
+
+    def __init__(self, response_processor: ResponseProcessor | None = None) -> None:
+        """Initialize streaming processor.
+
+        Args:
+            response_processor: Optional ResponseProcessor for final parsing.
+                               Uses singleton if not provided.
+        """
+        self._processor = response_processor or get_response_processor()
+        self._buffer = ""  # Buffer for content within a pattern
+        self._pending_buffer = ""  # For partial marker detection
+        self._in_pattern = False
+        self._pattern_start = ""
+        self._accumulated = ""  # Full response for final processing
+        self._yielded_content = ""  # What we've yielded to client
+
+    def feed(self, token: str) -> tuple[str | None, bool]:
+        """Feed a token, get (output_text, should_yield).
+
+        Args:
+            token: Next token from generation
+
+        Returns:
+            (text, True) - Yield this text to client
+            (None, False) - Don't yield, buffering pattern
+            ("", True) - Yield empty (end of clean segment)
+        """
+        self._accumulated += token
+
+        if self._in_pattern:
+            # We're inside a pattern, buffer until end
+            self._buffer += token
+            end_marker = self.PATTERN_ENDS.get(self._pattern_start, "")
+            if end_marker and end_marker in self._buffer:
+                # Pattern complete, process it (but don't yield raw content)
+                self._in_pattern = False
+                # Check if there's content after the end marker
+                end_idx = self._buffer.index(end_marker) + len(end_marker)
+                after_pattern = self._buffer[end_idx:]
+                self._buffer = ""
+                self._pattern_start = ""
+                if after_pattern:
+                    # Recursively process content after pattern
+                    return self.feed(after_pattern)
+                return (None, False)
+            return (None, False)
+
+        # Check if token starts or contains a pattern start
+        combined = self._pending_buffer + token
+        self._pending_buffer = ""
+
+        # Check for complete pattern starts first
+        for start in self.PATTERN_STARTS:
+            if start in combined:
+                # Pattern start found
+                idx = combined.index(start)
+                before = combined[:idx]
+                self._in_pattern = True
+                self._pattern_start = start
+                self._buffer = combined[idx:]
+
+                # Check if pattern already ends in this combined text
+                end_marker = self.PATTERN_ENDS.get(start, "")
+                if end_marker and end_marker in self._buffer:
+                    # Complete pattern in single combined text
+                    end_idx = self._buffer.index(end_marker) + len(end_marker)
+                    after_pattern = self._buffer[end_idx:]
+                    self._buffer = ""
+                    self._pattern_start = ""
+                    self._in_pattern = False
+
+                    if before:
+                        self._yielded_content += before
+                        if after_pattern:
+                            # Process content after pattern
+                            after_out, after_yield = self.feed(after_pattern)
+                            if after_yield and after_out:
+                                return (before + after_out, True)
+                        return (before, True)
+                    elif after_pattern:
+                        return self.feed(after_pattern)
+                    return (None, False)
+
+                if before:
+                    self._yielded_content += before
+                    return (before, True)
+                return (None, False)
+
+        # Check for partial match at end (e.g., "<tool" might become "<tool_call>")
+        for start in self.PATTERN_STARTS:
+            for i in range(1, len(start)):
+                partial = start[:i]
+                if combined.endswith(partial):
+                    # Found partial match - buffer it
+                    self._pending_buffer = combined[-(i):]
+                    to_yield = combined[:-(i)]
+                    if to_yield:
+                        self._yielded_content += to_yield
+                        return (to_yield, True)
+                    return (None, False)
+
+        # No pattern detected, yield token
+        self._yielded_content += combined
+        return (combined, True)
+
+    def finalize(self) -> ParseResult:
+        """Finalize and get complete ParseResult.
+
+        Called after all tokens processed. Uses ResponseProcessor
+        to extract structured data from accumulated text.
+
+        Returns:
+            ParseResult with content, tool_calls, and reasoning
+        """
+        # Flush any pending buffer (incomplete pattern marker)
+        if self._pending_buffer:
+            self._yielded_content += self._pending_buffer
+            self._pending_buffer = ""
+
+        # Process full accumulated text to get structured data
+        result = self._processor.process(self._accumulated)
+        return result
+
+    def get_pending_content(self) -> str:
+        """Get any buffered content not yet yielded.
+
+        Returns:
+            Buffered content (pending marker + pattern buffer)
+        """
+        return self._pending_buffer + self._buffer
+
+    def get_accumulated_text(self) -> str:
+        """Get all accumulated text for logging/metrics.
+
+        Returns:
+            Complete accumulated text including pattern content
+        """
+        return self._accumulated
