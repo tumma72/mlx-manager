@@ -5,11 +5,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mlx_manager.models import BackendMapping, BackendType, CloudCredential
 from mlx_manager.mlx_server.services.cloud.router import (
     BackendRouter,
     get_router,
     reset_router,
+)
+from mlx_manager.models import (
+    API_TYPE_FOR_BACKEND,
+    DEFAULT_BASE_URLS,
+    ApiType,
+    BackendMapping,
+    BackendType,
+    CloudCredential,
 )
 
 
@@ -395,7 +402,9 @@ class TestGetCloudBackend:
     ) -> None:
         """Creates OpenAI backend from credentials."""
         credential = MagicMock(spec=CloudCredential)
+        credential.id = 1
         credential.encrypted_api_key = "sk-test-key"
+        credential.api_type = ApiType.OPENAI
         credential.base_url = None
 
         mock_result = MagicMock()
@@ -412,7 +421,9 @@ class TestGetCloudBackend:
     ) -> None:
         """Creates Anthropic backend from credentials."""
         credential = MagicMock(spec=CloudCredential)
+        credential.id = 2
         credential.encrypted_api_key = "sk-ant-test"
+        credential.api_type = ApiType.ANTHROPIC
         credential.base_url = None
 
         mock_result = MagicMock()
@@ -429,7 +440,9 @@ class TestGetCloudBackend:
     ) -> None:
         """Uses custom base_url from credentials if set."""
         credential = MagicMock(spec=CloudCredential)
+        credential.id = 3
         credential.encrypted_api_key = "sk-test"
+        credential.api_type = ApiType.OPENAI
         credential.base_url = "https://api.azure.openai.com"
 
         mock_result = MagicMock()
@@ -445,7 +458,9 @@ class TestGetCloudBackend:
     ) -> None:
         """Backend is cached and reused on subsequent calls."""
         credential = MagicMock(spec=CloudCredential)
+        credential.id = 4
         credential.encrypted_api_key = "sk-test"
+        credential.api_type = ApiType.OPENAI
         credential.base_url = None
 
         mock_result = MagicMock()
@@ -455,12 +470,12 @@ class TestGetCloudBackend:
         # First call creates backend
         backend1 = await router._get_cloud_backend(mock_db, BackendType.OPENAI)
 
-        # Second call returns same instance
+        # Second call returns same instance (cached by credential ID)
         backend2 = await router._get_cloud_backend(mock_db, BackendType.OPENAI)
 
         assert backend1 is backend2
-        # Only one DB query
-        assert mock_db.execute.call_count == 1
+        # Still need to query DB to get credential ID for cache check
+        assert mock_db.execute.call_count == 2
 
     async def test_raises_when_no_credentials(
         self, router: BackendRouter, mock_db: AsyncMock
@@ -476,17 +491,213 @@ class TestGetCloudBackend:
     async def test_raises_for_local_backend_type(
         self, router: BackendRouter, mock_db: AsyncMock
     ) -> None:
-        """Raises ValueError for LOCAL backend type (not a cloud backend)."""
+        """LOCAL backend type has no credentials, raises when none found."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        with pytest.raises(ValueError, match="No credentials configured for local"):
+            await router._get_cloud_backend(mock_db, BackendType.LOCAL)
+
+
+class TestGenericProviderSupport:
+    """Tests for generic OpenAI-compatible and Anthropic-compatible providers."""
+
+    @pytest.fixture
+    def router(self) -> BackendRouter:
+        """Create a router instance."""
+        return BackendRouter()
+
+    @pytest.fixture
+    def mock_db(self) -> AsyncMock:
+        """Create a mock database session."""
+        return AsyncMock(spec=AsyncSession)
+
+    async def test_groq_uses_openai_client(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """GROQ backend type uses OpenAI client (OpenAI-compatible API)."""
         credential = MagicMock(spec=CloudCredential)
-        credential.encrypted_api_key = "sk-test"
+        credential.id = 10
+        credential.encrypted_api_key = "gsk-test-key"
+        credential.api_type = ApiType.OPENAI
+        credential.base_url = None  # Will use default
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = credential
+        mock_db.execute.return_value = mock_result
+
+        backend = await router._get_cloud_backend(mock_db, BackendType.GROQ)
+
+        # Should use OpenAI client since api_type is OPENAI
+        from mlx_manager.mlx_server.services.cloud.openai import OpenAICloudBackend
+
+        assert isinstance(backend, OpenAICloudBackend)
+        assert backend._api_key == "gsk-test-key"
+        # Should use Groq's default base URL
+        assert backend.base_url == DEFAULT_BASE_URLS[BackendType.GROQ]
+
+    async def test_anthropic_compatible_uses_anthropic_client(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """ANTHROPIC_COMPATIBLE backend type uses Anthropic client."""
+        credential = MagicMock(spec=CloudCredential)
+        credential.id = 11
+        credential.encrypted_api_key = "custom-ant-key"
+        credential.api_type = ApiType.ANTHROPIC
+        credential.base_url = "https://custom-anthropic-proxy.example.com"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = credential
+        mock_db.execute.return_value = mock_result
+
+        backend = await router._get_cloud_backend(mock_db, BackendType.ANTHROPIC_COMPATIBLE)
+
+        from mlx_manager.mlx_server.services.cloud.anthropic import AnthropicCloudBackend
+
+        assert isinstance(backend, AnthropicCloudBackend)
+        assert backend._api_key == "custom-ant-key"
+        # Should use custom base URL
+        assert backend.base_url == "https://custom-anthropic-proxy.example.com"
+
+    async def test_together_uses_default_base_url(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """Together backend uses the correct default base URL."""
+        credential = MagicMock(spec=CloudCredential)
+        credential.id = 12
+        credential.encrypted_api_key = "together-key"
+        credential.api_type = ApiType.OPENAI
         credential.base_url = None
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = credential
         mock_db.execute.return_value = mock_result
 
-        with pytest.raises(ValueError, match="Unknown backend type"):
-            await router._get_cloud_backend(mock_db, BackendType.LOCAL)
+        backend = await router._get_cloud_backend(mock_db, BackendType.TOGETHER)
+
+        assert backend.base_url == "https://api.together.xyz"
+
+    async def test_custom_base_url_overrides_default(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """Custom base_url from credential overrides provider default."""
+        credential = MagicMock(spec=CloudCredential)
+        credential.id = 13
+        credential.encrypted_api_key = "groq-key"
+        credential.api_type = ApiType.OPENAI
+        credential.base_url = "https://my-proxy.example.com"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = credential
+        mock_db.execute.return_value = mock_result
+
+        backend = await router._get_cloud_backend(mock_db, BackendType.GROQ)
+
+        # Custom URL should override default
+        assert backend.base_url == "https://my-proxy.example.com"
+
+    async def test_backwards_compatibility_no_api_type(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """Old credentials without api_type still work via API_TYPE_FOR_BACKEND mapping."""
+        credential = MagicMock(spec=CloudCredential)
+        credential.id = 14
+        credential.encrypted_api_key = "old-key"
+        credential.api_type = None  # Old credential without api_type
+        credential.base_url = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = credential
+        mock_db.execute.return_value = mock_result
+
+        # GROQ should map to OPENAI via API_TYPE_FOR_BACKEND
+        backend = await router._get_cloud_backend(mock_db, BackendType.GROQ)
+
+        from mlx_manager.mlx_server.services.cloud.openai import OpenAICloudBackend
+
+        assert isinstance(backend, OpenAICloudBackend)
+
+    async def test_caches_by_credential_id(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """Backends are cached by credential ID, allowing multiple providers of same type."""
+        credential1 = MagicMock(spec=CloudCredential)
+        credential1.id = 20
+        credential1.encrypted_api_key = "key-1"
+        credential1.api_type = ApiType.OPENAI
+        credential1.base_url = None
+
+        credential2 = MagicMock(spec=CloudCredential)
+        credential2.id = 21
+        credential2.encrypted_api_key = "key-2"
+        credential2.api_type = ApiType.OPENAI
+        credential2.base_url = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.side_effect = [credential1, credential2, credential1]
+        mock_db.execute.return_value = mock_result
+
+        # Get GROQ backend (cred 1)
+        backend1 = await router._get_cloud_backend(mock_db, BackendType.GROQ)
+
+        # Get TOGETHER backend (cred 2) - different credential ID
+        mock_result.scalar_one_or_none.side_effect = [credential2]
+        mock_db.execute.return_value = mock_result
+        backend2 = await router._get_cloud_backend(mock_db, BackendType.TOGETHER)
+
+        # Different backends for different credential IDs
+        assert backend1 is not backend2
+        assert backend1._api_key == "key-1"
+        assert backend2._api_key == "key-2"
+
+
+class TestApiTypeMappings:
+    """Tests for API type and default URL mappings."""
+
+    def test_api_type_mapping_groq_is_openai(self) -> None:
+        """Groq uses OpenAI-compatible API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.GROQ] == ApiType.OPENAI
+
+    def test_api_type_mapping_anthropic_compatible(self) -> None:
+        """Anthropic-compatible uses Anthropic API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.ANTHROPIC_COMPATIBLE] == ApiType.ANTHROPIC
+
+    def test_api_type_mapping_together_is_openai(self) -> None:
+        """Together uses OpenAI-compatible API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.TOGETHER] == ApiType.OPENAI
+
+    def test_api_type_mapping_fireworks_is_openai(self) -> None:
+        """Fireworks uses OpenAI-compatible API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.FIREWORKS] == ApiType.OPENAI
+
+    def test_api_type_mapping_mistral_is_openai(self) -> None:
+        """Mistral uses OpenAI-compatible API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.MISTRAL] == ApiType.OPENAI
+
+    def test_api_type_mapping_deepseek_is_openai(self) -> None:
+        """DeepSeek uses OpenAI-compatible API."""
+        assert API_TYPE_FOR_BACKEND[BackendType.DEEPSEEK] == ApiType.OPENAI
+
+    def test_default_base_url_groq(self) -> None:
+        """Groq has correct default base URL."""
+        assert DEFAULT_BASE_URLS[BackendType.GROQ] == "https://api.groq.com/openai"
+
+    def test_default_base_url_together(self) -> None:
+        """Together has correct default base URL."""
+        assert DEFAULT_BASE_URLS[BackendType.TOGETHER] == "https://api.together.xyz"
+
+    def test_default_base_url_fireworks(self) -> None:
+        """Fireworks has correct default base URL."""
+        assert DEFAULT_BASE_URLS[BackendType.FIREWORKS] == "https://api.fireworks.ai/inference"
+
+    def test_default_base_url_mistral(self) -> None:
+        """Mistral has correct default base URL."""
+        assert DEFAULT_BASE_URLS[BackendType.MISTRAL] == "https://api.mistral.ai"
+
+    def test_default_base_url_deepseek(self) -> None:
+        """DeepSeek has correct default base URL."""
+        assert DEFAULT_BASE_URLS[BackendType.DEEPSEEK] == "https://api.deepseek.com"
 
 
 class TestSingleton:
@@ -516,9 +727,9 @@ class TestSingleton:
         await reset_router()
 
         router = get_router()
-        # Add a mock backend
+        # Add a mock backend (keyed by credential ID)
         mock_backend = AsyncMock()
-        router._cloud_backends[BackendType.OPENAI] = mock_backend
+        router._cloud_backends[1] = mock_backend
 
         await reset_router()
 
@@ -529,7 +740,7 @@ class TestSingleton:
         await reset_router()
 
         router1 = get_router()
-        router1._cloud_backends[BackendType.OPENAI] = AsyncMock()  # Use mock with close()
+        router1._cloud_backends[1] = AsyncMock()  # Use mock with close(), keyed by credential ID
 
         await reset_router()
         router2 = get_router()
@@ -547,8 +758,9 @@ class TestClose:
 
         mock_openai = AsyncMock()
         mock_anthropic = AsyncMock()
-        router._cloud_backends[BackendType.OPENAI] = mock_openai
-        router._cloud_backends[BackendType.ANTHROPIC] = mock_anthropic
+        # Keyed by credential ID
+        router._cloud_backends[1] = mock_openai
+        router._cloud_backends[2] = mock_anthropic
 
         await router.close()
 
@@ -559,7 +771,7 @@ class TestClose:
     async def test_close_clears_cache(self) -> None:
         """close() clears the backend cache."""
         router = BackendRouter()
-        router._cloud_backends[BackendType.OPENAI] = AsyncMock()
+        router._cloud_backends[1] = AsyncMock()  # Keyed by credential ID
 
         await router.close()
 
