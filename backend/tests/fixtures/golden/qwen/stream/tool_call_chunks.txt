@@ -1,0 +1,5 @@
+I'll search for
+ that. <tool_call>{"name":
+ "search", "arguments": {"query":
+ "test"}}</tool_call> Done
+ searching.

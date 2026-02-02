@@ -1,0 +1,4 @@
+<think>Let me
+ think about
+ this problem</think> The
+ answer is 42.
