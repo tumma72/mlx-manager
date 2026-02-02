@@ -290,12 +290,53 @@ class ServerStatus(SQLModel):
 # ============================================================================
 
 
+class ApiType(str, Enum):
+    """API protocol type for cloud providers."""
+
+    OPENAI = "openai"  # OpenAI-compatible API
+    ANTHROPIC = "anthropic"  # Anthropic-compatible API
+
+
 class BackendType(str, Enum):
     """Backend types for routing."""
 
     LOCAL = "local"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    # Generic providers
+    OPENAI_COMPATIBLE = "openai_compatible"
+    ANTHROPIC_COMPATIBLE = "anthropic_compatible"
+    # Common providers (convenience)
+    TOGETHER = "together"
+    GROQ = "groq"
+    FIREWORKS = "fireworks"
+    MISTRAL = "mistral"
+    DEEPSEEK = "deepseek"
+
+
+# Default base URLs for known providers
+DEFAULT_BASE_URLS: dict[BackendType, str] = {
+    BackendType.OPENAI: "https://api.openai.com",
+    BackendType.ANTHROPIC: "https://api.anthropic.com",
+    BackendType.TOGETHER: "https://api.together.xyz",
+    BackendType.GROQ: "https://api.groq.com/openai",
+    BackendType.FIREWORKS: "https://api.fireworks.ai/inference",
+    BackendType.MISTRAL: "https://api.mistral.ai",
+    BackendType.DEEPSEEK: "https://api.deepseek.com",
+}
+
+# API type mapping for each backend type
+API_TYPE_FOR_BACKEND: dict[BackendType, ApiType] = {
+    BackendType.OPENAI: ApiType.OPENAI,
+    BackendType.ANTHROPIC: ApiType.ANTHROPIC,
+    BackendType.TOGETHER: ApiType.OPENAI,
+    BackendType.GROQ: ApiType.OPENAI,
+    BackendType.FIREWORKS: ApiType.OPENAI,
+    BackendType.MISTRAL: ApiType.OPENAI,
+    BackendType.DEEPSEEK: ApiType.OPENAI,
+    BackendType.OPENAI_COMPATIBLE: ApiType.OPENAI,
+    BackendType.ANTHROPIC_COMPATIBLE: ApiType.ANTHROPIC,
+}
 
 
 class BackendMapping(SQLModel, table=True):
@@ -321,8 +362,10 @@ class CloudCredential(SQLModel, table=True):
     __tablename__ = "cloud_credentials"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
-    backend_type: BackendType = Field(unique=True)  # One credential per backend type
-    encrypted_api_key: str  # Encrypted with AuthLib (Phase 11 will add encryption)
+    backend_type: BackendType  # No longer unique - allows multiple providers of same API type
+    api_type: ApiType = Field(default=ApiType.OPENAI)  # Which API protocol to use
+    name: str = Field(default="")  # Display name (e.g., "Groq", "Together", "My Custom API")
+    encrypted_api_key: str  # Encrypted with AuthLib
     base_url: str | None = None  # Override default API URL (Azure OpenAI, proxies)
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
@@ -368,6 +411,8 @@ class CloudCredentialCreate(SQLModel):
     """Schema for creating cloud credentials."""
 
     backend_type: BackendType
+    api_type: ApiType = ApiType.OPENAI
+    name: str = ""
     api_key: str  # Plain text - will be encrypted before storage
     base_url: str | None = None
 
@@ -377,6 +422,8 @@ class CloudCredentialResponse(SQLModel):
 
     id: int
     backend_type: BackendType
+    api_type: ApiType
+    name: str
     base_url: str | None
     created_at: datetime
 
