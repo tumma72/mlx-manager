@@ -3,10 +3,12 @@
 Qwen models use ChatML format with <|im_start|> and <|im_end|> tokens.
 Qwen3-thinking variants output chain-of-thought content in <think> tags.
 
-Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
-This adapter provides chat template formatting and stop token configuration.
+Tool call parsing and reasoning extraction are handled by ResponseProcessor.
+This adapter provides chat template formatting, stop token configuration,
+and tool prompt formatting for Hermes-style tool calls.
 """
 
+import json
 import logging
 from typing import Any, cast
 
@@ -57,10 +59,6 @@ class QwenAdapter(DefaultAdapter):
             return result
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             # Older tokenizers don't support enable_thinking parameter
-            # - TypeError: unexpected keyword argument
-            # - ValueError: invalid parameter value
-            # - KeyError: template lookup fails
-            # - AttributeError: tokenizer missing method
             logger.debug(f"Tokenizer doesn't support enable_thinking, falling back: {e}")
             result = cast(
                 str,
@@ -105,22 +103,11 @@ class QwenAdapter(DefaultAdapter):
         """
         return True
 
-    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
-        """Parse tool calls from model output text.
-
-        Qwen uses Hermes-style format: <tool_call>{"name": ..., "arguments": ...}</tool_call>
-
-        Args:
-            text: Model output text that may contain tool calls
-
-        Returns:
-            List of tool call dicts in OpenAI format, or None if no calls found.
-        """
-        calls = _tool_parser.parse(text)
-        return calls if calls else None
-
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
+
+        Qwen uses Hermes-style tool call format:
+        <tool_call>{"name": "func", "arguments": {...}}</tool_call>
 
         Args:
             tools: List of tool definitions in OpenAI format
@@ -128,7 +115,31 @@ class QwenAdapter(DefaultAdapter):
         Returns:
             Formatted string to append to system prompt
         """
-        return _tool_parser.format_tools(tools)
+        if not tools:
+            return ""
+
+        tool_docs: list[str] = []
+        for tool in tools:
+            func = tool.get("function", {})
+            name = func.get("name", "unknown")
+            description = func.get("description", "")
+            parameters = func.get("parameters", {})
+
+            doc = f"""{{
+  "name": "{name}",
+  "description": "{description}",
+  "parameters": {json.dumps(parameters)}
+}}"""
+            tool_docs.append(doc)
+
+        return f"""<tools>
+{chr(10).join(tool_docs)}
+</tools>
+
+When you need to call a tool, respond with:
+<tool_call>{{"name": "function_name", "arguments": {{"param": "value"}}}}</tool_call>
+
+Only call tools when necessary. If no tool call is needed, respond normally."""
 
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get additional stop tokens to use when tools are enabled.
@@ -143,7 +154,7 @@ class QwenAdapter(DefaultAdapter):
         """
         # </tool_call> is typically tokenized as multiple tokens
         # We rely on the regular stop tokens for now
-        # The parser will detect tool calls in the output
+        # ResponseProcessor will detect tool calls in the output
         return []
 
     # --- Reasoning Mode Support ---
@@ -160,29 +171,3 @@ class QwenAdapter(DefaultAdapter):
             True - Qwen family supports reasoning mode
         """
         return True
-
-    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
-        """Extract reasoning content from response.
-
-        Qwen3-thinking variants output chain-of-thought in <think> tags.
-        Delegates to ReasoningExtractor for pattern matching.
-
-        Args:
-            text: Model output text that may contain reasoning tags
-
-        Returns:
-            Tuple of (reasoning_content, final_content).
-            reasoning_content is None if no reasoning tags found.
-        """
-        return _reasoning_extractor.extract(text)
-
-    def clean_response(self, text: str) -> str:
-        """Clean response by removing tool calls, special tokens, and reasoning tags.
-
-        Args:
-            text: Raw model output
-
-        Returns:
-            Cleaned text suitable for display
-        """
-        return _tool_parser.clean_response(text)

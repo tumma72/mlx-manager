@@ -12,10 +12,12 @@ Critical: Llama 3 requires TWO stop tokens for proper chat completion:
 
 Without both, the model continues generating past the assistant's response.
 
-Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
-This adapter provides chat template formatting and stop token configuration.
+Tool call parsing and reasoning extraction are handled by ResponseProcessor.
+This adapter provides chat template formatting, stop token configuration,
+and tool prompt formatting for Llama XML-style tool calls.
 """
 
+import json
 import logging
 from typing import Any, cast
 
@@ -48,10 +50,14 @@ class LlamaAdapter(DefaultAdapter):
         - <|begin_of_text|> prefix
         - <|start_header_id|>{role}<|end_header_id|> markers
         - <|eot_id|> after each message
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         result: str = cast(
             str,
-            tokenizer.apply_chat_template(
+            actual_tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=add_generation_prompt,
                 tokenize=False,
@@ -112,22 +118,11 @@ class LlamaAdapter(DefaultAdapter):
         """
         return True
 
-    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
-        """Parse tool calls from model output text.
-
-        Llama 3.x uses XML-style format: <function=name>{"args": ...}</function>
-
-        Args:
-            text: Model output text that may contain tool calls
-
-        Returns:
-            List of tool call dicts in OpenAI format, or None if no calls found.
-        """
-        calls = _tool_parser.parse(text)
-        return calls if calls else None
-
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
+
+        Llama 3.x uses XML-style tool call format:
+        <function=name>{"param": "value"}</function>
 
         Args:
             tools: List of tool definitions in OpenAI format
@@ -135,7 +130,29 @@ class LlamaAdapter(DefaultAdapter):
         Returns:
             Formatted string to append to system prompt
         """
-        return _tool_parser.format_tools(tools)
+        if not tools:
+            return ""
+
+        tool_docs: list[str] = []
+        for tool in tools:
+            func = tool.get("function", {})
+            name = func.get("name", "unknown")
+            description = func.get("description", "")
+            parameters = func.get("parameters", {})
+
+            doc = f"""{name}:
+  description: {description}
+  parameters: {json.dumps(parameters, indent=2)}"""
+            tool_docs.append(doc)
+
+        return f"""You have access to the following functions:
+
+{chr(10).join(tool_docs)}
+
+To call a function, respond with:
+<function=function_name>{{"param": "value"}}</function>
+
+Only call functions when necessary. If no function call is needed, respond normally."""
 
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get additional stop tokens to use when tools are enabled.
@@ -178,18 +195,3 @@ class LlamaAdapter(DefaultAdapter):
             True - Llama family supports reasoning mode
         """
         return True
-
-    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
-        """Extract reasoning content from response.
-
-        Llama-thinking variants output chain-of-thought in <think> tags.
-        Delegates to ReasoningExtractor for pattern matching.
-
-        Args:
-            text: Model output text that may contain reasoning tags
-
-        Returns:
-            Tuple of (reasoning_content, final_content).
-            reasoning_content is None if no reasoning tags found.
-        """
-        return _reasoning_extractor.extract(text)

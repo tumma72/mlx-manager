@@ -22,10 +22,15 @@ class GemmaAdapter(DefaultAdapter):
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
     ) -> str:
-        """Apply Gemma chat template using tokenizer's built-in template."""
+        """Apply Gemma chat template using tokenizer's built-in template.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
+        """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         result: str = cast(
             str,
-            tokenizer.apply_chat_template(
+            actual_tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=add_generation_prompt,
                 tokenize=False,

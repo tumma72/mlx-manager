@@ -2,10 +2,12 @@
 
 GLM4 models use ChatML-like format with special token handling.
 
-Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
-This adapter provides chat template formatting and stop token configuration.
+Tool call parsing and reasoning extraction are handled by ResponseProcessor.
+This adapter provides chat template formatting, stop token configuration,
+and tool prompt formatting for GLM4 XML-style tool calls.
 """
 
+import json
 import logging
 from typing import Any, cast
 
@@ -38,13 +40,18 @@ class GLM4Adapter(DefaultAdapter):
 
         GLM4 uses ChatML-like format. The tokenizer should have a built-in template.
         Falls back to manual formatting if no template is available.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
         """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+
         # Try using tokenizer's built-in template first
-        if hasattr(tokenizer, "apply_chat_template"):
+        if hasattr(actual_tokenizer, "apply_chat_template"):
             try:
                 result: str = cast(
                     str,
-                    tokenizer.apply_chat_template(
+                    actual_tokenizer.apply_chat_template(
                         messages,
                         add_generation_prompt=add_generation_prompt,
                         tokenize=False,
@@ -99,22 +106,11 @@ class GLM4Adapter(DefaultAdapter):
         """
         return True
 
-    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
-        """Parse tool calls from model output text.
-
-        GLM4 uses XML format: <tool_call><name>func</name><arguments>{...}</arguments>
-
-        Args:
-            text: Model output text that may contain tool calls
-
-        Returns:
-            List of tool call dicts in OpenAI format, or None if no calls found.
-        """
-        calls = _tool_parser.parse(text)
-        return calls if calls else None
-
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
+
+        GLM4 uses XML-style tool call format:
+        <tool_call><name>func</name><arguments>{...}</arguments></tool_call>
 
         Args:
             tools: List of tool definitions in OpenAI format
@@ -122,7 +118,34 @@ class GLM4Adapter(DefaultAdapter):
         Returns:
             Formatted string to append to system prompt
         """
-        return _tool_parser.format_tools(tools)
+        if not tools:
+            return ""
+
+        tool_docs: list[str] = []
+        for tool in tools:
+            func = tool.get("function", {})
+            name = func.get("name", "unknown")
+            description = func.get("description", "")
+            parameters = func.get("parameters", {})
+
+            doc = f"""<tool>
+<name>{name}</name>
+<description>{description}</description>
+<parameters>{json.dumps(parameters)}</parameters>
+</tool>"""
+            tool_docs.append(doc)
+
+        return f"""You have access to the following tools:
+
+{chr(10).join(tool_docs)}
+
+When you need to call a tool, use this format:
+<tool_call>
+<name>tool_name</name>
+<arguments>{{"param": "value"}}</arguments>
+</tool_call>
+
+Only call tools when necessary."""
 
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get additional stop tokens to use when tools are enabled.
@@ -134,6 +157,7 @@ class GLM4Adapter(DefaultAdapter):
             List of token IDs that indicate tool call completion
         """
         # GLM4 tool call markers are multi-token, rely on regular stop tokens
+        # ResponseProcessor will detect tool calls in the output
         return []
 
     # --- Reasoning Mode Support ---
@@ -145,15 +169,3 @@ class GLM4Adapter(DefaultAdapter):
             True - GLM4 may support reasoning mode via <think> tags
         """
         return True
-
-    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
-        """Extract reasoning content from response.
-
-        Args:
-            text: Model output text that may contain reasoning tags
-
-        Returns:
-            Tuple of (reasoning_content, final_content).
-            reasoning_content is None if no reasoning tags found.
-        """
-        return _reasoning_extractor.extract(text)

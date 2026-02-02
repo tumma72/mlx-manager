@@ -46,10 +46,12 @@ class MistralAdapter(DefaultAdapter):
                     "content": f"{system_content}\n\n{user_content}",
                 }
 
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         # Use tokenizer's built-in template (works for v3+, fallback for v1/v2)
         result: str = cast(
             str,
-            tokenizer.apply_chat_template(
+            actual_tokenizer.apply_chat_template(
                 processed,
                 add_generation_prompt=add_generation_prompt,
                 tokenize=False,

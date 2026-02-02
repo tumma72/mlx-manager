@@ -75,19 +75,6 @@ class ModelAdapter(Protocol):
         """
         ...
 
-    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
-        """Parse tool calls from model output text.
-
-        Args:
-            text: Model output text that may contain tool calls
-
-        Returns:
-            List of tool call dicts with format:
-            [{"id": str, "type": "function", "function": {"name": str, "arguments": str}}]
-            Returns None if no tool calls found.
-        """
-        ...
-
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
 
@@ -117,18 +104,6 @@ class ModelAdapter(Protocol):
 
         Returns:
             True if the model supports reasoning mode (e.g., <think> tags)
-        """
-        ...
-
-    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
-        """Extract reasoning content from response.
-
-        Args:
-            text: Model output text that may contain reasoning tags
-
-        Returns:
-            Tuple of (reasoning_content, final_content).
-            reasoning_content is None if no reasoning found.
         """
         ...
 
@@ -178,10 +153,15 @@ class DefaultAdapter:
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
     ) -> str:
-        """Use tokenizer's built-in chat template."""
+        """Use tokenizer's built-in chat template.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
+        """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         result: str = cast(
             str,
-            tokenizer.apply_chat_template(
+            actual_tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=add_generation_prompt,
                 tokenize=False,
@@ -190,18 +170,19 @@ class DefaultAdapter:
         return result
 
     def get_stop_tokens(self, tokenizer: Any) -> list[int]:
-        """Return only the standard EOS token."""
-        return [tokenizer.eos_token_id]
+        """Return only the standard EOS token.
+
+        Handles both Tokenizer and Processor objects (vision models use Processor).
+        """
+        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        return [actual_tokenizer.eos_token_id]
 
     # --- Optional Methods: Tool Calling Support ---
 
     def supports_tool_calling(self) -> bool:
         """Default: Tool calling not supported."""
         return False
-
-    def parse_tool_calls(self, text: str) -> list[dict[str, Any]] | None:
-        """Default: No tool calls parsed."""
-        return None
 
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Default: No tool formatting."""
@@ -216,10 +197,6 @@ class DefaultAdapter:
     def supports_reasoning_mode(self) -> bool:
         """Default: Reasoning mode not supported."""
         return False
-
-    def extract_reasoning(self, text: str) -> tuple[str | None, str]:
-        """Default: Return text unchanged with no reasoning."""
-        return None, text
 
     # --- Optional Methods: Message Conversion ---
 
