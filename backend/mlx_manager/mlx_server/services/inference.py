@@ -329,15 +329,22 @@ async def _stream_chat_generate(
         # Wait for thread to finish
         gen_thread.join(timeout=1.0)
 
-        # Post-process: Check for tool calls in accumulated text
+        # Post-process: Single-pass extraction with ResponseProcessor
+        # This replaces multi-pass adapter.parse_tool_calls()
+        from mlx_manager.mlx_server.services.response_processor import get_response_processor
+
+        processor = get_response_processor()
+        result_parsed = processor.process(accumulated_text)
+
+        # Extract tool calls from ParseResult
         tool_calls = None
-        if tools and adapter and adapter.supports_tool_calling():
-            tool_calls = adapter.parse_tool_calls(accumulated_text)
-            if tool_calls:
-                finish_reason = "tool_calls"
-                logger.debug(
-                    f"Detected {len(tool_calls)} tool calls in streaming response"
-                )
+        if result_parsed.tool_calls:
+            # Convert Pydantic models to dicts for response
+            tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+            finish_reason = "tool_calls"
+            logger.debug(
+                f"Detected {len(tool_calls)} tool calls in streaming response"
+            )
 
         # Build final chunk with finish_reason and optional tool_calls
         final_delta: dict[str, Any] = {}
@@ -474,21 +481,27 @@ async def _generate_chat_complete(
         response_text, finish_reason = result
         completion_tokens = len(tokenizer.encode(response_text))
 
-        # Post-process: Parse tool calls
-        tool_calls = None
-        if tools and adapter and adapter.supports_tool_calling():
-            tool_calls = adapter.parse_tool_calls(response_text)
-            if tool_calls:
-                finish_reason = "tool_calls"
-                logger.debug(f"Detected {len(tool_calls)} tool calls in response")
+        # Post-process: Single-pass extraction with ResponseProcessor
+        # This replaces multi-pass adapter.parse_tool_calls() and adapter.extract_reasoning()
+        from mlx_manager.mlx_server.services.response_processor import get_response_processor
 
-        # Post-process: Extract reasoning content
-        reasoning_content = None
-        final_content = response_text
-        if adapter and adapter.supports_reasoning_mode():
-            reasoning_content, final_content = adapter.extract_reasoning(response_text)
-            if reasoning_content:
-                logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
+        processor = get_response_processor()
+        result_parsed = processor.process(response_text)
+
+        # Extract results from ParseResult
+        tool_calls = None
+        if result_parsed.tool_calls:
+            # Convert Pydantic models to dicts for response
+            tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+            finish_reason = "tool_calls"
+            logger.debug(f"Detected {len(tool_calls)} tool calls in response")
+
+        reasoning_content = result_parsed.reasoning
+        if reasoning_content:
+            logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
+
+        # Use cleaned content (tool markers and thinking tags removed)
+        final_content = result_parsed.content
 
         logger.info(
             f"Chat complete: {completion_id}, tokens={completion_tokens}, "

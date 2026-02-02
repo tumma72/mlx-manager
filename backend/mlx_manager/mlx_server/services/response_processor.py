@@ -193,7 +193,9 @@ class ResponseProcessor:
     def __init__(self) -> None:
         """Initialize processor with empty pattern lists."""
         self._thinking_patterns: list[re.Pattern[str]] = []
-        self._tool_patterns: list[tuple[re.Pattern[str], Callable[[re.Match[str]], ToolCall | None]]] = []
+        self._tool_patterns: list[
+            tuple[re.Pattern[str], Callable[[re.Match[str]], ToolCall | None]]
+        ] = []
         self._cleanup_patterns: list[str] = []
 
     def register_thinking_tags(self, tags: list[str]) -> None:
