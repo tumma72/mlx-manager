@@ -258,9 +258,11 @@ class ResponseProcessor:
         for pattern in self._thinking_patterns:
             for match in pattern.finditer(text):
                 content = match.group(1).strip()
+                # Always record span for removal, even if empty
+                matches.append((match.start(), match.end(), "thinking", content))
+                # Only add to reasoning if there's actual content
                 if content:
                     reasoning_parts.append(content)
-                    matches.append((match.start(), match.end(), "thinking", content))
 
         # Find tool calls
         tool_calls: list[ToolCall] = []
