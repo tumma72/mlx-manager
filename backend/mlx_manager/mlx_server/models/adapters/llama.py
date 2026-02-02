@@ -11,20 +11,17 @@ Critical: Llama 3 requires TWO stop tokens for proper chat completion:
 2. <|eot_id|> (end of turn)
 
 Without both, the model continues generating past the assistant's response.
+
+Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
+This adapter provides chat template formatting and stop token configuration.
 """
 
 import logging
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
-from mlx_manager.mlx_server.models.adapters.parsers.llama import LlamaToolParser
-from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
 
 logger = logging.getLogger(__name__)
-
-# Module-level instances
-_reasoning_extractor = ReasoningExtractor()
-_tool_parser = LlamaToolParser()
 
 
 class LlamaAdapter(DefaultAdapter):

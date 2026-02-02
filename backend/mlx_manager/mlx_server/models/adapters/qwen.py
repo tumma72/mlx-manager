@@ -2,20 +2,17 @@
 
 Qwen models use ChatML format with <|im_start|> and <|im_end|> tokens.
 Qwen3-thinking variants output chain-of-thought content in <think> tags.
+
+Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
+This adapter provides chat template formatting and stop token configuration.
 """
 
 import logging
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
-from mlx_manager.mlx_server.models.adapters.parsers.qwen import QwenToolParser
-from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
 
 logger = logging.getLogger(__name__)
-
-# Module-level instances
-_reasoning_extractor = ReasoningExtractor()
-_tool_parser = QwenToolParser()
 
 
 class QwenAdapter(DefaultAdapter):

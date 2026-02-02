@@ -1,21 +1,17 @@
 """GLM4 model family adapter (GLM-4, ChatGLM-4).
 
 GLM4 models use ChatML-like format with special token handling.
-Supports tool calling via XML-style format.
+
+Tool call parsing and reasoning extraction are now handled by ResponseProcessor.
+This adapter provides chat template formatting and stop token configuration.
 """
 
 import logging
 from typing import Any, cast
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
-from mlx_manager.mlx_server.models.adapters.parsers.glm4 import GLM4ToolParser
-from mlx_manager.mlx_server.services.reasoning import ReasoningExtractor
 
 logger = logging.getLogger(__name__)
-
-# Module-level instances
-_reasoning_extractor = ReasoningExtractor()
-_tool_parser = GLM4ToolParser()
 
 
 class GLM4Adapter(DefaultAdapter):
