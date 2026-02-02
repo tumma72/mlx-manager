@@ -1,0 +1,3 @@
+Checking that now.
+<tool_call>{"name": "check_status", "arguments": {"id": 123}}</tool_call>
+Status retrieved.

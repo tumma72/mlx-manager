@@ -1,0 +1,4 @@
+Running search.
+<tool_call><name>search</name><arguments>{"query": "test"}</arguments></tool_call>
+<tool_call><name>search</name><arguments>{"query": "test"}</arguments></tool_call>
+Done (should deduplicate to 1 tool call).

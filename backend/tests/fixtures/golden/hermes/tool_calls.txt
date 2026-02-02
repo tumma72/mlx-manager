@@ -1,0 +1,3 @@
+Let me help.
+<tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>
+Done.

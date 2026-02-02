@@ -1,0 +1,3 @@
+I can help you with that calculation.
+<function=calculate>{"expression": "2 + 2"}</function>
+The answer is ready.

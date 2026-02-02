@@ -1,0 +1,3 @@
+I'll help you search for that information.
+<tool_call>{"name": "search", "arguments": {"query": "weather in London"}}</tool_call>
+Let me check that for you.

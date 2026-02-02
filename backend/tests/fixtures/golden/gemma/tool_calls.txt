@@ -1,0 +1,3 @@
+I'll fetch that data.
+<tool_call>{"name": "fetch_data", "arguments": {"endpoint": "/api/users"}}</tool_call>
+Data fetched.
