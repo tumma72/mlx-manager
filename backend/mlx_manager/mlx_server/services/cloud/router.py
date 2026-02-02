@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mlx_manager.database import get_db
 from mlx_manager.mlx_server.services.cloud.anthropic import AnthropicCloudBackend
 from mlx_manager.mlx_server.services.cloud.openai import OpenAICloudBackend
-from mlx_manager.models import BackendMapping, BackendType, CloudCredential
+from mlx_manager.models import (
+    API_TYPE_FOR_BACKEND,
+    DEFAULT_BASE_URLS,
+    ApiType,
+    BackendMapping,
+    BackendType,
+    CloudCredential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +32,8 @@ class BackendRouter:
 
     def __init__(self) -> None:
         """Initialize router."""
-        self._cloud_backends: dict[BackendType, OpenAICloudBackend | AnthropicCloudBackend] = {}
+        # Cache by credential ID for multiple providers of same type
+        self._cloud_backends: dict[int, OpenAICloudBackend | AnthropicCloudBackend] = {}
 
     async def route_request(
         self,
@@ -209,10 +217,11 @@ class BackendRouter:
         db: AsyncSession,
         backend_type: BackendType,
     ) -> OpenAICloudBackend | AnthropicCloudBackend:
-        """Get or create cloud backend client."""
-        if backend_type in self._cloud_backends:
-            return self._cloud_backends[backend_type]
+        """Get or create cloud backend client based on API type.
 
+        Uses credential's api_type to determine which client to create.
+        Falls back to API_TYPE_FOR_BACKEND mapping for backwards compatibility.
+        """
         # Load credentials from database
         result = await db.execute(
             select(CloudCredential).where(
@@ -224,25 +233,40 @@ class BackendRouter:
         if credential is None:
             raise ValueError(f"No credentials configured for {backend_type.value}")
 
-        # Create backend client
-        # Note: In Phase 11, encrypted_api_key will be decrypted here
-        api_key = credential.encrypted_api_key  # TODO: Decrypt in Phase 11
+        # Check cache by credential ID
+        credential_id = credential.id
+        if credential_id is not None and credential_id in self._cloud_backends:
+            return self._cloud_backends[credential_id]
+
+        # Determine API type from credential or fall back to mapping
+        api_type = credential.api_type
+        if api_type is None:
+            # Backwards compatibility: use mapping for older credentials
+            api_type = API_TYPE_FOR_BACKEND.get(backend_type, ApiType.OPENAI)
+
+        # Determine base URL from credential or fall back to default
         base_url = credential.base_url
+        if not base_url:
+            base_url = DEFAULT_BASE_URLS.get(backend_type, "https://api.openai.com")
 
-        if backend_type == BackendType.OPENAI:
-            backend: OpenAICloudBackend | AnthropicCloudBackend = OpenAICloudBackend(
-                api_key=api_key,
-                base_url=base_url or "https://api.openai.com",
-            )
-        elif backend_type == BackendType.ANTHROPIC:
-            backend = AnthropicCloudBackend(
-                api_key=api_key,
-                base_url=base_url or "https://api.anthropic.com",
-            )
-        else:
-            raise ValueError(f"Unknown backend type: {backend_type}")
+        # Get API key (already decrypted by encryption_service)
+        api_key = credential.encrypted_api_key
 
-        self._cloud_backends[backend_type] = backend
+        # Create appropriate client based on API type
+        if api_type == ApiType.ANTHROPIC:
+            backend: OpenAICloudBackend | AnthropicCloudBackend = AnthropicCloudBackend(
+                api_key=api_key,
+                base_url=base_url,
+            )
+        else:  # OPENAI or default
+            backend = OpenAICloudBackend(
+                api_key=api_key,
+                base_url=base_url,
+            )
+
+        # Cache by credential ID
+        if credential_id is not None:
+            self._cloud_backends[credential_id] = backend
         return backend
 
     async def refresh_rules(self) -> None:
