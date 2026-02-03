@@ -1098,6 +1098,33 @@ class TestStreamingProcessorEdgeCases:
         assert result.tool_calls[0].function.name == "get_weather"
         assert "Bologna" in result.tool_calls[0].function.arguments
 
+    def test_starts_in_thinking_mode(self) -> None:
+        """Handles prompts that end with <think> (GLM-4.7 behavior)."""
+        # GLM-4.7 prompt ends with <think>, so model output is already inside thinking
+        processor = StreamingProcessor(starts_in_thinking=True)
+        # Model output (no opening <think>, continues from prompt)
+        text = "Thinking about the question.</think>The answer is 42."
+        reasoning_parts = []
+        content_parts = []
+
+        for char in text:
+            event = processor.feed(char)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
+            if event.content:
+                content_parts.append(event.content)
+
+        reasoning = "".join(reasoning_parts)
+        content = "".join(content_parts)
+
+        # Reasoning should have the thinking content
+        assert "Thinking about" in reasoning
+        # Content should have the answer
+        assert "42" in content
+        # No <think> tags in either
+        assert "<think>" not in reasoning
+        assert "</think>" not in content
+
 
 class TestStreamEventDataclass:
     """Tests for StreamEvent dataclass."""

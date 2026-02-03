@@ -518,19 +518,26 @@ class StreamingProcessor:
     # Buffer size for incremental reasoning yield (avoid partial tokens)
     REASONING_BUFFER_SIZE = 10
 
-    def __init__(self, response_processor: ResponseProcessor | None = None) -> None:
+    def __init__(
+        self,
+        response_processor: ResponseProcessor | None = None,
+        starts_in_thinking: bool = False,
+    ) -> None:
         """Initialize streaming processor.
 
         Args:
             response_processor: Optional ResponseProcessor for final parsing.
                                Uses singleton if not provided.
+            starts_in_thinking: If True, treat initial content as reasoning
+                               until </think> is found. Used when the prompt
+                               already ends with <think> (e.g., GLM-4.7).
         """
         self._processor = response_processor or get_response_processor()
         self._buffer = ""  # Buffer for content within a pattern
         self._pending_buffer = ""  # For partial marker detection
-        self._in_pattern = False
-        self._pattern_start = ""
-        self._is_thinking_pattern = False  # True if current pattern is thinking
+        self._in_pattern = starts_in_thinking
+        self._pattern_start = "<think>" if starts_in_thinking else ""
+        self._is_thinking_pattern = starts_in_thinking
         self._accumulated = ""  # Full response for final processing
         self._yielded_content = ""  # What we've yielded as content to client
 

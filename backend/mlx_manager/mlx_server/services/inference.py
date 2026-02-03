@@ -221,7 +221,17 @@ async def _stream_chat_generate(
     from mlx_manager.mlx_server.utils.memory import clear_cache
 
     completion_tokens = 0
-    stream_processor = StreamingProcessor()  # Filters patterns during streaming
+
+    # Check if prompt already ends with a thinking start tag (e.g., GLM-4.7)
+    # In this case, the model's output continues inside the thinking pattern
+    thinking_starts = ["<think>", "<thinking>", "<reasoning>", "<reflection>"]
+    starts_in_thinking = any(prompt.rstrip().endswith(tag) for tag in thinking_starts)
+    if starts_in_thinking:
+        logger.debug("Prompt ends with thinking tag, starting in thinking mode")
+
+    stream_processor = StreamingProcessor(
+        starts_in_thinking=starts_in_thinking
+    )  # Filters patterns during streaming
 
     # Queue for passing tokens from generation thread to async generator
     # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
