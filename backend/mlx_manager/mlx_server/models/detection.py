@@ -67,7 +67,16 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
     name_lower = model_id.lower()
 
     # Vision patterns
-    vision_patterns = ("-vl", "vlm", "vision", "qwen2-vl", "qwen2.5-vl", "llava", "pixtral")
+    vision_patterns = (
+        "-vl",
+        "vlm",
+        "vision",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "llava",
+        "pixtral",
+        "gemma-3",  # Gemma 3 multimodal (gemma-3-*-it models)
+    )
     if any(pattern in name_lower for pattern in vision_patterns):
         logger.debug(f"Detected VISION model from name pattern: {model_id}")
         return ModelType.VISION
