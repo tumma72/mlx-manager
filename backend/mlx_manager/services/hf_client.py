@@ -148,6 +148,16 @@ class HuggingFaceClient:
             )
             return
 
+        # Yield immediate status so SSE connection gets a response before dry_run
+        # This prevents the frontend from showing a hung connection
+        yield DownloadStatus(
+            status="starting",
+            model_id=model_id,
+            total_bytes=0,
+            downloaded_bytes=0,
+            progress=0,
+        )
+
         loop = asyncio.get_event_loop()
 
         # Suppress deprecation warnings
@@ -184,7 +194,8 @@ class HuggingFaceClient:
         # Estimate size for backward compatibility
         total_size_gb = total_bytes / (1024**3) if total_bytes else 0.0
 
-        logger.info(f"Yielding starting status for {model_id}")
+        # Yield status with size information (this is the second yield after dry_run)
+        logger.info(f"Size check complete for {model_id}: {total_size_gb:.2f} GB")
         yield DownloadStatus(
             status="starting",
             model_id=model_id,
