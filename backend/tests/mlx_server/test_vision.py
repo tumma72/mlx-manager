@@ -21,11 +21,14 @@ class TestVisionService:
     @pytest.mark.asyncio
     async def test_generate_vision_completion_calls_pool(self):
         """Verify vision completion fetches model from pool."""
+        from mlx_manager.mlx_server.models.types import ModelType
+
         # Setup mock
         mock_pool = MagicMock()
         mock_loaded = MagicMock()
         mock_loaded.model = MagicMock()
         mock_loaded.tokenizer = MagicMock()  # processor
+        mock_loaded.model_type = ModelType.VISION.value  # Set model type for type check
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
         images = [create_test_image()]
@@ -55,11 +58,14 @@ class TestVisionService:
     @pytest.mark.asyncio
     async def test_generate_vision_completion_stream_mode(self):
         """Verify streaming returns async generator."""
+        from mlx_manager.mlx_server.models.types import ModelType
+
         # Setup mock
         mock_pool = MagicMock()
         mock_loaded = MagicMock()
         mock_loaded.model = MagicMock()
         mock_loaded.tokenizer = MagicMock()
+        mock_loaded.model_type = ModelType.VISION.value  # Set model type for type check
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
         images = [create_test_image()]

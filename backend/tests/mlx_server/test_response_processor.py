@@ -1046,6 +1046,58 @@ class TestStreamingProcessorEdgeCases:
         assert "Result:" in content
         assert "done" in content
 
+    def test_nested_think_tags_filtered(self) -> None:
+        """Filters nested <think> tags from reasoning content (Qwen3 with tools bug)."""
+        processor = StreamingProcessor()
+        # Real-world case: Qwen3 outputs <think><think> when tools are present
+        tokens = [
+            "<think>",
+            "\n",
+            "<think>",
+            "\n",
+            "Thinking about tools...",
+            "\n",
+            "</think>",
+            "\n",
+            "Response",
+        ]
+        reasoning_parts = []
+        content_parts = []
+
+        for token in tokens:
+            event = processor.feed(token)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
+            if event.content:
+                content_parts.append(event.content)
+
+        reasoning = "".join(reasoning_parts)
+        content = "".join(content_parts)
+
+        # Nested <think> should be filtered from reasoning
+        assert "<think>" not in reasoning
+        # Actual thinking content preserved
+        assert "Thinking about tools" in reasoning
+        # Content after </think> preserved
+        assert "Response" in content
+
+    def test_unclosed_tool_call_extracted(self) -> None:
+        """Extracts tool calls without closing </tool_call> tag (Qwen3 behavior)."""
+        processor = StreamingProcessor()
+        # Real-world case: Qwen3 outputs tool call without closing tag
+        text = '<tool_call>{"name": "get_weather", "arguments": {"location": "Bologna"}}'
+        tokens = text.split()  # Simple tokenization
+
+        for token in tokens:
+            processor.feed(token)
+
+        result = processor.finalize()
+
+        # Tool call should be extracted even without closing tag
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "get_weather"
+        assert "Bologna" in result.tool_calls[0].function.arguments
+
 
 class TestStreamEventDataclass:
     """Tests for StreamEvent dataclass."""

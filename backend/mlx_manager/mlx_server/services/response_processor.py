@@ -393,6 +393,14 @@ def create_default_processor() -> ResponseProcessor:
         parse_hermes_tool,
     )
 
+    # Hermes/Qwen unclosed format: <tool_call>{"name": ..., "arguments": ...}$
+    # Some models (e.g., Qwen3 0.6B) don't output closing </tool_call> tag
+    # Use greedy matching with lookahead to capture nested braces
+    processor.register_tool_pattern(
+        r"<tool_call>\s*(\{.+\})\s*$",
+        parse_hermes_tool,
+    )
+
     # Llama XML format: <function=name>{...}</function>
     processor.register_tool_pattern(
         r"<function=(\w+)>(.*?)</function>",
@@ -609,6 +617,12 @@ class StreamingProcessor:
 
         # Still inside pattern
         if self._is_thinking_pattern:
+            # Filter out nested thinking tags from buffer (some models output <think><think>)
+            # This handles cases where the model incorrectly outputs duplicate start tags
+            for nested_start in self.THINKING_STARTS:
+                while nested_start in self._buffer:
+                    self._buffer = self._buffer.replace(nested_start, "", 1)
+
             # Yield reasoning content incrementally, keeping small buffer
             # to avoid partial end markers
             if len(self._buffer) > self.REASONING_BUFFER_SIZE:
