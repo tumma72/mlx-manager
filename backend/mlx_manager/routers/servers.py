@@ -73,6 +73,7 @@ class RunningServer(BaseModel):
     uptime_seconds: float
     memory_mb: float
     memory_percent: float
+    memory_limit_percent: float = 0.0  # Memory as % of configured limit
     cpu_percent: float
 
 
@@ -122,9 +123,16 @@ async def list_servers(
                         port=8080,  # Embedded server always on main port
                         health_status="healthy",
                         uptime_seconds=model_uptime,
-                        memory_mb=memory_used_gb * 1024 / max(1, len(loaded_models)),
+                        memory_mb=loaded_model.size_gb * 1024 if loaded_model else 0.0,
                         memory_percent=(
-                            (memory_used_gb / memory_total_gb * 100) if memory_total_gb > 0 else 0.0
+                            (loaded_model.size_gb / memory_total_gb * 100)
+                            if memory_total_gb > 0 and loaded_model
+                            else 0.0
+                        ),
+                        memory_limit_percent=(
+                            (loaded_model.size_gb / pool.max_memory_gb * 100)
+                            if pool.max_memory_gb > 0 and loaded_model
+                            else 0.0
                         ),
                         cpu_percent=0.0,  # Not tracked in embedded mode
                     )
