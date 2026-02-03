@@ -34,12 +34,21 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
             from mlx_manager.utils.model_detection import read_model_config
 
             config = read_model_config(model_id)
-        except Exception:
+            if config:
+                logger.debug(
+                    f"Loaded config for {model_id}: keys={list(config.keys())}"
+                )
+            else:
+                logger.debug(f"No config found for {model_id} (model not downloaded)")
+        except Exception as e:
+            logger.warning(f"Could not load config for {model_id}: {e}")
             config = None
 
     if config:
-        # Vision: has vision_config or image_token_id
-        if "vision_config" in config or "image_token_id" in config:
+        # Vision: has vision_config, image_token_id, or image_token_index
+        # (Gemma 3 uses image_token_index instead of image_token_id)
+        vision_keys = ("vision_config", "image_token_id", "image_token_index")
+        if any(key in config for key in vision_keys):
             logger.debug(f"Detected VISION model from config: {model_id}")
             return ModelType.VISION
 

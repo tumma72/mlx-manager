@@ -609,6 +609,13 @@ class TestDetectMultimodal:
         assert is_mm is True
         assert mm_type == "vision"
 
+    def test_detects_image_token_index_as_multimodal(self):
+        """Test image_token_index key indicates multimodal (Gemma 3 style)."""
+        config = {"model_type": "gemma3", "image_token_index": 262144}
+        is_mm, mm_type = detect_multimodal(config)
+        assert is_mm is True
+        assert mm_type == "vision"
+
     def test_detects_vl_in_model_type(self):
         """Test 'vl' in model_type indicates multimodal."""
         config = {"model_type": "qwen2_vl"}

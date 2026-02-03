@@ -405,7 +405,7 @@ def detect_multimodal(config: dict[str, Any]) -> tuple[bool, str | None]:
 
     Checks for common multimodal indicators in config.json:
     - vision_config key (most reliable)
-    - image_token_id or video_token_id keys
+    - image_token_id, image_token_index, or video_token_id keys
     - "vl", "vision", or "multimodal" in model_type or architectures
 
     Args:
@@ -420,7 +420,8 @@ def detect_multimodal(config: dict[str, Any]) -> tuple[bool, str | None]:
         return (True, "vision")
 
     # Check for image/video token IDs
-    if "image_token_id" in config or "video_token_id" in config:
+    # (Gemma 3 uses image_token_index instead of image_token_id)
+    if any(key in config for key in ("image_token_id", "image_token_index", "video_token_id")):
         return (True, "vision")
 
     # Check model_type for multimodal indicators
