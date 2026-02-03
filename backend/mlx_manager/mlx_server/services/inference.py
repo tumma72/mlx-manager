@@ -310,10 +310,15 @@ async def _stream_chat_generate(
                 stream_processor.feed(token_text)
                 break
 
-            # Filter token through StreamingProcessor
-            # This filters out tool call markers and thinking tags
-            filtered_output, should_yield = stream_processor.feed(token_text)
-            if should_yield and filtered_output:
+            # Process token through StreamingProcessor
+            # Returns StreamEvent with reasoning_content or content
+            event = stream_processor.feed(token_text)
+            if event.reasoning_content or event.content:
+                delta: dict[str, Any] = {}
+                if event.reasoning_content:
+                    delta["reasoning_content"] = event.reasoning_content
+                if event.content:
+                    delta["content"] = event.content
                 yield {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
@@ -322,7 +327,7 @@ async def _stream_chat_generate(
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"content": filtered_output},
+                            "delta": delta,
                             "finish_reason": None,
                         }
                     ],
