@@ -214,6 +214,46 @@ async def test_get_download_progress_with_error(auth_client):
 
 
 @pytest.mark.asyncio
+async def test_get_download_status_valid_task(auth_client):
+    """Test getting download status for a valid task."""
+    from mlx_manager.routers import models
+
+    # Create a download task
+    task_id = "test-status-task"
+    models.download_tasks[task_id] = {
+        "model_id": "mlx-community/test-model",
+        "status": "downloading",
+        "progress": 45,
+        "downloaded_bytes": 450000,
+        "total_bytes": 1000000,
+    }
+
+    try:
+        response = await auth_client.get(f"/api/models/download/{task_id}/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["task_id"] == task_id
+        assert data["model_id"] == "mlx-community/test-model"
+        assert data["status"] == "downloading"
+        assert data["progress"] == 45
+        assert data["downloaded_bytes"] == 450000
+        assert data["total_bytes"] == 1000000
+        assert data["error"] is None
+    finally:
+        # Clean up
+        models.download_tasks.pop(task_id, None)
+
+
+@pytest.mark.asyncio
+async def test_get_download_status_not_found(auth_client):
+    """Test getting download status for non-existent task returns 404."""
+    response = await auth_client.get("/api/models/download/nonexistent-task/status")
+    assert response.status_code == 404
+    assert "Task not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_start_download_creates_task(auth_client):
     """Test that start_download creates a task entry."""
     from mlx_manager.routers import models

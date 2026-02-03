@@ -169,6 +169,31 @@ async def get_download_progress(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@router.get("/download/{task_id}/status")
+async def get_download_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    task_id: str,
+) -> dict:
+    """Get download status without SSE (polling fallback).
+
+    Use this endpoint for debugging or as a fallback when SSE is not available.
+    Returns the current status from the in-memory task store.
+    """
+    if task_id not in download_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = download_tasks[task_id]
+    return {
+        "task_id": task_id,
+        "model_id": task.get("model_id"),
+        "status": task.get("status"),
+        "progress": task.get("progress", 0),
+        "downloaded_bytes": task.get("downloaded_bytes", 0),
+        "total_bytes": task.get("total_bytes", 0),
+        "error": task.get("error"),
+    }
+
+
 async def _update_download_record(
     download_id: int,
     status: str,
