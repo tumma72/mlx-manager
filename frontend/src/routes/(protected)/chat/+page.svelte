@@ -42,6 +42,7 @@
 		role: 'user' | 'assistant';
 		content: string | ContentPart[];
 		toolCalls?: ToolCallData[];
+		thinkingDuration?: number;
 	}
 
 	let messages = $state<Message[]>([]);
@@ -540,7 +541,8 @@
 				messages.push({
 					role: 'assistant',
 					content: finalContent,
-					toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined
+					toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
+					thinkingDuration: thinkingDuration
 				});
 			}
 
@@ -814,7 +816,7 @@
 								{#if message.role === 'assistant'}
 									{@const parsed = parseThinking(message.content)}
 									{#if parsed.thinking}
-										<ThinkingBubble content={parsed.thinking} />
+										<ThinkingBubble content={parsed.thinking} duration={message.thinkingDuration} />
 									{/if}
 									{#if message.toolCalls && message.toolCalls.length > 0}
 										<ToolCallBubble calls={message.toolCalls} />
