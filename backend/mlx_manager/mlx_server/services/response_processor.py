@@ -453,37 +453,48 @@ def reset_response_processor() -> None:
 
 
 class StreamingProcessor:
-    """Streaming-aware processor that filters patterns during generation.
+    """Streaming-aware processor that yields OpenAI-compatible StreamEvents.
 
-    Buffers tokens when pattern start markers are detected, processes
-    complete patterns, and yields clean content to client.
+    Returns StreamEvent objects with either:
+    - reasoning_content: Content inside thinking tags (for thinking models)
+    - content: Regular response content
+
+    This follows OpenAI o1/o3 reasoning model API spec where thinking
+    content goes in delta.reasoning_content and regular content in delta.content.
 
     Usage:
         processor = StreamingProcessor()
         for token in generation:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                yield output
+            event = processor.feed(token)
+            if event.reasoning_content or event.content:
+                yield event
         # After generation
         result = processor.finalize()
 
     Key behaviors:
-    - Partial marker detection (e.g., "<tool" buffered in case it becomes "<tool_call>")
-    - Pattern content never yielded to client
-    - Final processing extracts tool_calls and reasoning from accumulated text
-    - Content field in result is the clean version
+    - Thinking content (<think>, etc.) streamed as reasoning_content
+    - Tool call markers filtered (only in finalize())
+    - Regular content streamed as content
+    - Final processing extracts tool_calls from accumulated text
     """
 
-    # Pattern start markers to detect
-    PATTERN_STARTS = [
+    # Thinking pattern markers (content streamed as reasoning_content)
+    THINKING_STARTS = [
         "<think>",
         "<thinking>",
         "<reasoning>",
         "<reflection>",
+    ]
+
+    # Tool pattern markers (content filtered, extracted in finalize)
+    TOOL_STARTS = [
         "<tool_call>",
         "<function=",
         "<|python_tag|>",
     ]
+
+    # All pattern start markers
+    PATTERN_STARTS = THINKING_STARTS + TOOL_STARTS
 
     # Pattern end markers (map start -> end)
     PATTERN_ENDS = {
@@ -495,6 +506,9 @@ class StreamingProcessor:
         "<function=": "</function>",
         "<|python_tag|>": "<|eom_id|>",
     }
+
+    # Buffer size for incremental reasoning yield (avoid partial tokens)
+    REASONING_BUFFER_SIZE = 10
 
     def __init__(self, response_processor: ResponseProcessor | None = None) -> None:
         """Initialize streaming processor.
@@ -508,39 +522,24 @@ class StreamingProcessor:
         self._pending_buffer = ""  # For partial marker detection
         self._in_pattern = False
         self._pattern_start = ""
+        self._is_thinking_pattern = False  # True if current pattern is thinking
         self._accumulated = ""  # Full response for final processing
-        self._yielded_content = ""  # What we've yielded to client
+        self._yielded_content = ""  # What we've yielded as content to client
 
-    def feed(self, token: str) -> tuple[str | None, bool]:
-        """Feed a token, get (output_text, should_yield).
+    def feed(self, token: str) -> StreamEvent:
+        """Feed a token, get StreamEvent.
 
         Args:
             token: Next token from generation
 
         Returns:
-            (text, True) - Yield this text to client
-            (None, False) - Don't yield, buffering pattern
-            ("", True) - Yield empty (end of clean segment)
+            StreamEvent with reasoning_content (inside thinking tags)
+            or content (regular text), or empty if buffering
         """
         self._accumulated += token
 
         if self._in_pattern:
-            # We're inside a pattern, buffer until end
-            self._buffer += token
-            end_marker = self.PATTERN_ENDS.get(self._pattern_start, "")
-            if end_marker and end_marker in self._buffer:
-                # Pattern complete, process it (but don't yield raw content)
-                self._in_pattern = False
-                # Check if there's content after the end marker
-                end_idx = self._buffer.index(end_marker) + len(end_marker)
-                after_pattern = self._buffer[end_idx:]
-                self._buffer = ""
-                self._pattern_start = ""
-                if after_pattern:
-                    # Recursively process content after pattern
-                    return self.feed(after_pattern)
-                return (None, False)
-            return (None, False)
+            return self._handle_in_pattern(token)
 
         # Check if token starts or contains a pattern start
         combined = self._pending_buffer + token
@@ -549,39 +548,7 @@ class StreamingProcessor:
         # Check for complete pattern starts first
         for start in self.PATTERN_STARTS:
             if start in combined:
-                # Pattern start found
-                idx = combined.index(start)
-                before = combined[:idx]
-                self._in_pattern = True
-                self._pattern_start = start
-                self._buffer = combined[idx:]
-
-                # Check if pattern already ends in this combined text
-                end_marker = self.PATTERN_ENDS.get(start, "")
-                if end_marker and end_marker in self._buffer:
-                    # Complete pattern in single combined text
-                    end_idx = self._buffer.index(end_marker) + len(end_marker)
-                    after_pattern = self._buffer[end_idx:]
-                    self._buffer = ""
-                    self._pattern_start = ""
-                    self._in_pattern = False
-
-                    if before:
-                        self._yielded_content += before
-                        if after_pattern:
-                            # Process content after pattern
-                            after_out, after_yield = self.feed(after_pattern)
-                            if after_yield and after_out:
-                                return (before + after_out, True)
-                        return (before, True)
-                    elif after_pattern:
-                        return self.feed(after_pattern)
-                    return (None, False)
-
-                if before:
-                    self._yielded_content += before
-                    return (before, True)
-                return (None, False)
+                return self._handle_pattern_start(combined, start)
 
         # Check for partial match at end (e.g., "<tool" might become "<tool_call>")
         for start in self.PATTERN_STARTS:
@@ -589,16 +556,129 @@ class StreamingProcessor:
                 partial = start[:i]
                 if combined.endswith(partial):
                     # Found partial match - buffer it
-                    self._pending_buffer = combined[-(i):]
-                    to_yield = combined[:-(i)]
+                    self._pending_buffer = combined[-i:]
+                    to_yield = combined[:-i]
                     if to_yield:
                         self._yielded_content += to_yield
-                        return (to_yield, True)
-                    return (None, False)
+                        return StreamEvent(content=to_yield)
+                    return StreamEvent()
 
-        # No pattern detected, yield token
+        # No pattern detected, yield token as content
         self._yielded_content += combined
-        return (combined, True)
+        return StreamEvent(content=combined)
+
+    def _handle_in_pattern(self, token: str) -> StreamEvent:
+        """Handle token while inside a pattern.
+
+        For thinking patterns: yield content as reasoning_content incrementally
+        For tool patterns: buffer silently (extracted in finalize)
+        """
+        self._buffer += token
+        end_marker = self.PATTERN_ENDS.get(self._pattern_start, "")
+
+        if end_marker and end_marker in self._buffer:
+            # Pattern complete
+            self._in_pattern = False
+            end_idx = self._buffer.index(end_marker)
+            pattern_content = self._buffer[:end_idx]
+            after_pattern = self._buffer[end_idx + len(end_marker) :]
+            self._buffer = ""
+            self._pattern_start = ""
+            was_thinking = self._is_thinking_pattern
+            self._is_thinking_pattern = False
+
+            if after_pattern:
+                # Content after pattern - recurse
+                subsequent = self.feed(after_pattern)
+                if was_thinking and pattern_content:
+                    # Return final reasoning chunk + any subsequent content
+                    return StreamEvent(
+                        reasoning_content=pattern_content,
+                        content=subsequent.content,
+                        is_complete=True,
+                    )
+                return subsequent
+
+            if was_thinking:
+                # Return final reasoning chunk
+                return StreamEvent(
+                    reasoning_content=pattern_content if pattern_content else None,
+                    is_complete=True,
+                )
+            return StreamEvent()
+
+        # Still inside pattern
+        if self._is_thinking_pattern:
+            # Yield reasoning content incrementally, keeping small buffer
+            # to avoid partial end markers
+            if len(self._buffer) > self.REASONING_BUFFER_SIZE:
+                to_yield = self._buffer[: -self.REASONING_BUFFER_SIZE]
+                self._buffer = self._buffer[-self.REASONING_BUFFER_SIZE :]
+                return StreamEvent(reasoning_content=to_yield)
+
+        # Buffering (tool pattern or small reasoning buffer)
+        return StreamEvent()
+
+    def _handle_pattern_start(self, combined: str, start: str) -> StreamEvent:
+        """Handle detection of a pattern start marker."""
+        idx = combined.index(start)
+        before = combined[:idx]
+        self._in_pattern = True
+        self._pattern_start = start
+        self._is_thinking_pattern = start in self.THINKING_STARTS
+        # Buffer starts AFTER the start marker (we don't want the marker in output)
+        self._buffer = combined[idx + len(start) :]
+
+        # Check if pattern already ends in this combined text
+        end_marker = self.PATTERN_ENDS.get(start, "")
+        if end_marker and end_marker in self._buffer:
+            # Complete pattern in single combined text
+            end_idx = self._buffer.index(end_marker)
+            pattern_content = self._buffer[:end_idx]
+            after_pattern = self._buffer[end_idx + len(end_marker) :]
+            self._buffer = ""
+            self._pattern_start = ""
+            was_thinking = self._is_thinking_pattern
+            self._is_thinking_pattern = False
+            self._in_pattern = False
+
+            if before:
+                self._yielded_content += before
+                if after_pattern:
+                    subsequent = self.feed(after_pattern)
+                    if was_thinking:
+                        return StreamEvent(
+                            content=before,
+                            reasoning_content=pattern_content if pattern_content else None,
+                        )
+                    return StreamEvent(content=before + (subsequent.content or ""))
+                if was_thinking:
+                    return StreamEvent(
+                        content=before,
+                        reasoning_content=pattern_content if pattern_content else None,
+                        is_complete=True,
+                    )
+                return StreamEvent(content=before)
+            elif after_pattern:
+                if was_thinking:
+                    subsequent = self.feed(after_pattern)
+                    return StreamEvent(
+                        reasoning_content=pattern_content if pattern_content else None,
+                        content=subsequent.content,
+                        is_complete=True,
+                    )
+                return self.feed(after_pattern)
+            if was_thinking:
+                return StreamEvent(
+                    reasoning_content=pattern_content if pattern_content else None,
+                    is_complete=True,
+                )
+            return StreamEvent()
+
+        if before:
+            self._yielded_content += before
+            return StreamEvent(content=before)
+        return StreamEvent()
 
     def finalize(self) -> ParseResult:
         """Finalize and get complete ParseResult.
