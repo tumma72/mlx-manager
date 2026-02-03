@@ -17,6 +17,7 @@ import pytest
 from mlx_manager.mlx_server.services.response_processor import (
     ParseResult,
     ResponseProcessor,
+    StreamEvent,
     StreamingProcessor,
     ToolCall,
     ToolCallFunction,
@@ -618,7 +619,7 @@ class TestCustomProcessor:
 
 
 class TestStreamingProcessorBasic:
-    """Basic tests for StreamingProcessor filtering."""
+    """Basic tests for StreamingProcessor with StreamEvent return type."""
 
     @pytest.fixture(autouse=True)
     def setup(self) -> None:
@@ -626,37 +627,44 @@ class TestStreamingProcessorBasic:
         reset_response_processor()
 
     def test_streaming_passthrough_no_patterns(self) -> None:
-        """Normal text passes through without modification."""
+        """Normal text passes through as content."""
         processor = StreamingProcessor()
         tokens = ["Hello", " ", "world", "!"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        assert "".join(outputs) == "Hello world!"
+        assert "".join(content_parts) == "Hello world!"
 
-    def test_streaming_filters_think_tags(self) -> None:
-        """Think tags are filtered from stream."""
+    def test_streaming_think_tags_as_reasoning(self) -> None:
+        """Think tags yield reasoning_content, not content."""
         processor = StreamingProcessor()
         tokens = ["Hello", "<think>", "analyzing", "</think>", " world"]
-        outputs = []
+        content_parts = []
+        reasoning_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
 
-        yielded = "".join(outputs)
-        assert "<think>" not in yielded
-        assert "analyzing" not in yielded
-        assert "Hello" in yielded
-        assert "world" in yielded
+        # Thinking content goes to reasoning_content
+        assert "analyzing" in "".join(reasoning_parts)
+        # Regular content goes to content
+        content = "".join(content_parts)
+        assert "Hello" in content
+        assert "world" in content
+        # No thinking tags in content
+        assert "<think>" not in content
+        assert "analyzing" not in content
 
     def test_streaming_filters_tool_call_tags(self) -> None:
-        """Tool call tags are filtered from stream."""
+        """Tool call tags are filtered (not in content or reasoning)."""
         processor = StreamingProcessor()
         tokens = [
             "Result: ",
@@ -665,35 +673,41 @@ class TestStreamingProcessorBasic:
             "</tool_call>",
             " Done",
         ]
-        outputs = []
+        content_parts = []
+        reasoning_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
 
-        yielded = "".join(outputs)
-        assert "<tool_call>" not in yielded
-        assert "</tool_call>" not in yielded
-        assert "Result:" in yielded
-        assert "Done" in yielded
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts)
+        assert "<tool_call>" not in content
+        assert "</tool_call>" not in content
+        assert "Result:" in content
+        assert "Done" in content
+        # Tool content not in reasoning either
+        assert "search" not in reasoning
 
     def test_streaming_filters_function_tags(self) -> None:
         """Llama function tags are filtered from stream."""
         processor = StreamingProcessor()
         tokens = ["OK ", "<function=test>", '{"x": 1}', "</function>", " bye"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "<function=" not in yielded
-        assert "</function>" not in yielded
-        assert "OK" in yielded
-        assert "bye" in yielded
+        content = "".join(content_parts)
+        assert "<function=" not in content
+        assert "</function>" not in content
+        assert "OK" in content
+        assert "bye" in content
 
 
 class TestStreamingProcessorPartialMarkers:
@@ -708,69 +722,75 @@ class TestStreamingProcessorPartialMarkers:
         """Handles <think> split across multiple tokens."""
         processor = StreamingProcessor()
         tokens = ["Hello ", "<", "think", ">", "thought", "</think>", " end"]
-        outputs = []
+        content_parts = []
+        reasoning_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
 
-        yielded = "".join(outputs)
-        assert "<think>" not in yielded
-        assert "thought" not in yielded
-        assert "Hello" in yielded
-        assert "end" in yielded
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts)
+        # Content should have surrounding text
+        assert "Hello" in content
+        assert "end" in content
+        # Thinking content goes to reasoning
+        assert "thought" in reasoning
+        # No tags in content
+        assert "<think>" not in content
 
     def test_partial_tool_call_across_tokens(self) -> None:
         """Handles <tool_call> split across tokens."""
         processor = StreamingProcessor()
         tokens = ["Start ", "<tool", "_call>", '{"name": "f", "arguments": {}}', "</tool_call>"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "<tool" not in yielded
-        assert "_call>" not in yielded
-        assert "Start" in yielded
+        content = "".join(content_parts)
+        assert "<tool" not in content
+        assert "_call>" not in content
+        assert "Start" in content
 
     def test_partial_function_across_tokens(self) -> None:
         """Handles <function= split across tokens."""
         processor = StreamingProcessor()
         tokens = ["Hi ", "<func", "tion=", "test>", "{}", "</function>", " bye"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "<function" not in yielded
-        assert "Hi" in yielded
-        assert "bye" in yielded
+        content = "".join(content_parts)
+        assert "<function" not in content
+        assert "Hi" in content
+        assert "bye" in content
 
     def test_false_partial_marker(self) -> None:
         """Tokens that look like partial markers but aren't are yielded."""
         processor = StreamingProcessor()
         # '<' followed by something that isn't a pattern start
         tokens = ["Compare ", "<", "5", " ", ">", " 3"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
         # After finalize, pending buffer should be flushed
         processor.finalize()
-        # The '<' and partial content should eventually be yielded
-        yielded = "".join(outputs)
+        content = "".join(content_parts)
         # Should include 'Compare ' and eventually the comparison
-        assert "Compare" in yielded
+        assert "Compare" in content
 
 
 class TestStreamingProcessorMultiplePatterns:
@@ -782,7 +802,7 @@ class TestStreamingProcessorMultiplePatterns:
         reset_response_processor()
 
     def test_multiple_think_tags(self) -> None:
-        """Handles multiple thinking sections."""
+        """Handles multiple thinking sections with reasoning_content."""
         processor = StreamingProcessor()
         tokens = [
             "<think>",
@@ -794,18 +814,27 @@ class TestStreamingProcessorMultiplePatterns:
             "</think>",
             "B",
         ]
-        outputs = []
+        content_parts = []
+        reasoning_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
 
-        yielded = "".join(outputs)
-        assert "first" not in yielded
-        assert "second" not in yielded
-        assert "A" in yielded
-        assert "B" in yielded
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts)
+        # Thinking content in reasoning
+        assert "first" in reasoning
+        assert "second" in reasoning
+        # Regular content in content
+        assert "A" in content
+        assert "B" in content
+        # No thinking in content
+        assert "first" not in content
+        assert "second" not in content
 
     def test_thinking_and_tool_call(self) -> None:
         """Handles both thinking and tool call in same response."""
@@ -820,18 +849,25 @@ class TestStreamingProcessorMultiplePatterns:
             "</tool_call>",
             " done",
         ]
-        outputs = []
+        content_parts = []
+        reasoning_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
+            if event.reasoning_content:
+                reasoning_parts.append(event.reasoning_content)
 
-        yielded = "".join(outputs)
-        assert "planning" not in yielded
-        assert "<tool_call>" not in yielded
-        assert "Calling:" in yielded
-        assert "done" in yielded
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts)
+        # Planning goes to reasoning
+        assert "planning" in reasoning
+        # Tool call tags filtered from content
+        assert "<tool_call>" not in content
+        # Regular content preserved
+        assert "Calling:" in content
+        assert "done" in content
 
 
 class TestStreamingProcessorFinalize:
@@ -919,16 +955,16 @@ class TestStreamingProcessorEdgeCases:
         """Handles empty token strings."""
         processor = StreamingProcessor()
         tokens = ["Hello", "", " ", "", "world"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "Hello" in yielded
-        assert "world" in yielded
+        content = "".join(content_parts)
+        assert "Hello" in content
+        assert "world" in content
 
     def test_pattern_split_many_tokens(self) -> None:
         """Handles pattern split across many tokens."""
@@ -936,30 +972,30 @@ class TestStreamingProcessorEdgeCases:
         # <tool_call> split char by char
         tokens = ["Start ", "<", "t", "o", "o", "l", "_", "c", "a", "l", "l", ">"]
         tokens += ['{"name": "f", "arguments": {}}', "</tool_call>", " end"]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "Start" in yielded
-        assert "end" in yielded
-        assert "<tool_call>" not in yielded
+        content = "".join(content_parts)
+        assert "Start" in content
+        assert "end" in content
+        assert "<tool_call>" not in content
 
     def test_no_patterns_passthrough(self) -> None:
         """Text without patterns passes through completely."""
         processor = StreamingProcessor()
         tokens = ["Just", " normal", " text", " here", "."]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        assert "".join(outputs) == "Just normal text here."
+        assert "".join(content_parts) == "Just normal text here."
 
     def test_get_accumulated_text(self) -> None:
         """get_accumulated_text() returns all text including patterns."""
@@ -997,15 +1033,57 @@ class TestStreamingProcessorEdgeCases:
             "<|eom_id|>",
             " done",
         ]
-        outputs = []
+        content_parts = []
 
         for token in tokens:
-            output, should_yield = processor.feed(token)
-            if should_yield and output:
-                outputs.append(output)
+            event = processor.feed(token)
+            if event.content:
+                content_parts.append(event.content)
 
-        yielded = "".join(outputs)
-        assert "<|python_tag|>" not in yielded
-        assert "<|eom_id|>" not in yielded
-        assert "Result:" in yielded
-        assert "done" in yielded
+        content = "".join(content_parts)
+        assert "<|python_tag|>" not in content
+        assert "<|eom_id|>" not in content
+        assert "Result:" in content
+        assert "done" in content
+
+
+class TestStreamEventDataclass:
+    """Tests for StreamEvent dataclass."""
+
+    def test_stream_event_defaults(self) -> None:
+        """StreamEvent has correct default values."""
+        event = StreamEvent()
+
+        assert event.content is None
+        assert event.reasoning_content is None
+        assert event.is_complete is False
+
+    def test_stream_event_with_content(self) -> None:
+        """StreamEvent with content only."""
+        event = StreamEvent(content="Hello")
+
+        assert event.content == "Hello"
+        assert event.reasoning_content is None
+        assert event.is_complete is False
+
+    def test_stream_event_with_reasoning(self) -> None:
+        """StreamEvent with reasoning_content only."""
+        event = StreamEvent(reasoning_content="Thinking...")
+
+        assert event.content is None
+        assert event.reasoning_content == "Thinking..."
+        assert event.is_complete is False
+
+    def test_stream_event_complete(self) -> None:
+        """StreamEvent with is_complete flag."""
+        event = StreamEvent(reasoning_content="Final thought", is_complete=True)
+
+        assert event.reasoning_content == "Final thought"
+        assert event.is_complete is True
+
+    def test_stream_event_both_fields(self) -> None:
+        """StreamEvent can have both content and reasoning_content."""
+        event = StreamEvent(content="Result", reasoning_content="Thought")
+
+        assert event.content == "Result"
+        assert event.reasoning_content == "Thought"

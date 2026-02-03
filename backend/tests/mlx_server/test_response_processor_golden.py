@@ -161,31 +161,32 @@ class TestResponseProcessorThinking:
 
 
 class TestStreamingProcessor:
-    """Test streaming processor filters patterns correctly."""
+    """Test streaming processor with StreamEvent return type."""
 
     @pytest.mark.parametrize("family,format_name,chunk_file", collect_streaming_files())
-    def test_streaming_filters_patterns(
-        self, family: str, format_name: str, chunk_file: Path
-    ):
-        """Verify streaming filters patterns correctly."""
+    def test_streaming_filters_patterns(self, family: str, format_name: str, chunk_file: Path):
+        """Verify streaming filters tool patterns correctly."""
         chunks = chunk_file.read_text().splitlines()
         processor = StreamingProcessor()
 
-        yielded: list[str] = []
+        content_parts: list[str] = []
         for chunk in chunks:
-            output, should_yield = processor.feed(chunk)
-            if should_yield and output:
-                yielded.append(output)
+            event = processor.feed(chunk)
+            if event.content:
+                content_parts.append(event.content)
 
-        full_streamed = "".join(yielded)
+        full_content = "".join(content_parts)
 
-        # Markers should not appear in streamed output
-        assert "<think>" not in full_streamed
-        assert "</think>" not in full_streamed
-        assert "<tool_call>" not in full_streamed
-        assert "</tool_call>" not in full_streamed
-        assert "<function=" not in full_streamed
-        assert "<|python_tag|>" not in full_streamed
+        # Tool markers should not appear in content
+        assert "<tool_call>" not in full_content
+        assert "</tool_call>" not in full_content
+        assert "<function=" not in full_content
+        assert "<|python_tag|>" not in full_content
+
+        # Thinking markers should not appear in content
+        # (thinking content goes to reasoning_content instead)
+        assert "<think>" not in full_content
+        assert "</think>" not in full_content
 
     def test_streaming_extracts_on_finalize(self):
         """Verify finalize() returns complete ParseResult."""
@@ -215,8 +216,11 @@ class TestStreamingProcessor:
         chunks = chunk_file.read_text().splitlines()
         processor = StreamingProcessor()
 
+        reasoning_from_events: list[str] = []
         for chunk in chunks:
-            processor.feed(chunk)
+            event = processor.feed(chunk)
+            if event.reasoning_content:
+                reasoning_from_events.append(event.reasoning_content)
 
         result = processor.finalize()
 
@@ -225,3 +229,5 @@ class TestStreamingProcessor:
         # Content should not have thinking tags
         assert "<think>" not in result.content
         assert "</think>" not in result.content
+        # Reasoning should have been streamed via events
+        assert len(reasoning_from_events) > 0 or result.reasoning is not None

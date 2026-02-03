@@ -153,7 +153,8 @@ async def chat_completions(
                     # Transitioned from reasoning to content - thinking done
                     in_thinking = False
                     duration = time.time() - thinking_start if thinking_start else 0
-                    yield f"data: {json.dumps({'type': 'thinking_done', 'duration': round(duration, 1)})}\n\n"
+                    done_data = {"type": "thinking_done", "duration": round(duration, 1)}
+                    yield f"data: {json.dumps(done_data)}\n\n"
 
                 # Handle regular content
                 if content:
@@ -167,7 +168,8 @@ async def chat_completions(
             # If still in thinking when stream ends, emit thinking_done
             if in_thinking:
                 duration = time.time() - thinking_start if thinking_start else 0
-                yield f"data: {json.dumps({'type': 'thinking_done', 'duration': round(duration, 1)})}\n\n"
+                done_data = {"type": "thinking_done", "duration": round(duration, 1)}
+                yield f"data: {json.dumps(done_data)}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

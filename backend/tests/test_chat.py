@@ -3,6 +3,10 @@
 With the embedded MLX Server, the chat router calls generate_chat_completion()
 and generate_vision_completion() directly instead of proxying to an external
 server process.
+
+Note: The inference service now handles thinking tag extraction and returns
+OpenAI-compatible deltas with reasoning_content. The chat router forwards
+these structured events without character-by-character parsing.
 """
 
 import json
@@ -99,8 +103,8 @@ async def test_chat_completions_requires_auth(client):
 async def test_chat_completions_streaming_response(auth_client, test_profile):
     """Test successful streaming response with regular content.
 
-    Note: The chat router emits content character-by-character for tag detection,
-    so "Hello world!" becomes 12 separate response events (one per character).
+    The chat router forwards content token-by-token from the inference service.
+    Each chunk from inference becomes one response event.
     """
     chunks = [
         make_chunk(content="Hello"),
@@ -131,9 +135,9 @@ async def test_chat_completions_streaming_response(auth_client, test_profile):
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Verify we have response events (character-by-character for "Hello world!")
+            # Verify we have response events (one per chunk from inference)
             response_events = filter_events(events, "response")
-            assert len(response_events) == 12  # One per character in "Hello world!"
+            assert len(response_events) == 3  # One per chunk
 
             # Verify combined content matches expected
             combined_content = ""
@@ -147,10 +151,15 @@ async def test_chat_completions_streaming_response(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_thinking_tags_parsing(auth_client, test_profile):
-    """Test parsing of <think> tags in content - character by character."""
+async def test_chat_completions_thinking_via_reasoning_content(auth_client, test_profile):
+    """Test thinking content via reasoning_content field from inference.
+
+    The inference service extracts thinking content and sends it in the
+    reasoning_content field. Chat router forwards this as thinking events.
+    """
     chunks = [
-        make_chunk(content="<think>Let me consider</think>Answer"),
+        make_chunk(reasoning="Let me consider"),
+        make_chunk(content="Answer"),  # Transition to content
     ]
 
     with patch(
@@ -173,11 +182,15 @@ async def test_chat_completions_thinking_tags_parsing(auth_client, test_profile)
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Should have thinking events (character by character for "Let me consider")
+            # Should have thinking event from reasoning_content
             thinking_events = filter_events(events, "thinking")
-            assert len(thinking_events) == 15  # "Let me consider" = 15 chars
+            assert len(thinking_events) == 1
 
-            # Should have thinking_done event
+            # Verify thinking content
+            thinking_data = json.loads(thinking_events[0].replace("data: ", ""))
+            assert thinking_data["content"] == "Let me consider"
+
+            # Should have thinking_done event (transition to content)
             thinking_done = filter_events(events, "thinking_done")
             assert len(thinking_done) == 1
 
@@ -185,9 +198,9 @@ async def test_chat_completions_thinking_tags_parsing(auth_client, test_profile)
             thinking_done_data = json.loads(thinking_done[0].replace("data: ", ""))
             assert "duration" in thinking_done_data
 
-            # Should have response events (character by character for "Answer")
+            # Should have response event for "Answer"
             response_events = filter_events(events, "response")
-            assert len(response_events) == 6  # "Answer" = 6 chars
+            assert len(response_events) == 1
 
 
 @pytest.mark.asyncio
@@ -219,7 +232,7 @@ async def test_chat_completions_reasoning_content_field(auth_client, test_profil
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Should have thinking events from reasoning_content
+            # Should have thinking events from reasoning_content (one per chunk)
             thinking_events = filter_events(events, "thinking")
             assert len(thinking_events) == 2
 
@@ -227,23 +240,24 @@ async def test_chat_completions_reasoning_content_field(auth_client, test_profil
             thinking_done = filter_events(events, "thinking_done")
             assert len(thinking_done) == 1
 
-            # Should have response events (character-by-character for "Final answer")
+            # Should have response event (one per chunk)
             response_events = filter_events(events, "response")
-            assert len(response_events) == 12  # One per character
+            assert len(response_events) == 1
 
-            # Verify combined content
-            combined = ""
-            for event in response_events:
-                data = json.loads(event.replace("data: ", ""))
-                combined += data.get("content", "")
-            assert combined == "Final answer"
+            # Verify content
+            response_data = json.loads(response_events[0].replace("data: ", ""))
+            assert response_data["content"] == "Final answer"
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_reasoning_content_with_tags(auth_client, test_profile):
-    """Test that thinking tags are stripped from reasoning_content field."""
+async def test_chat_completions_reasoning_content_forwarded(auth_client, test_profile):
+    """Test that reasoning_content is forwarded as-is to thinking events.
+
+    The inference service now handles tag extraction, so chat router
+    just forwards reasoning_content directly.
+    """
     chunks = [
-        make_chunk(reasoning="<think>actual reasoning</think>"),
+        make_chunk(reasoning="actual reasoning"),
         make_chunk(content="Answer"),
     ]
 
@@ -271,11 +285,9 @@ async def test_chat_completions_reasoning_content_with_tags(auth_client, test_pr
             thinking_events = filter_events(events, "thinking")
             assert len(thinking_events) == 1
 
-            # Verify tags are stripped
+            # Verify reasoning content is forwarded
             thinking_data = json.loads(thinking_events[0].replace("data: ", ""))
-            assert "<think>" not in thinking_data["content"]
-            assert "</think>" not in thinking_data["content"]
-            assert "actual reasoning" in thinking_data["content"]
+            assert thinking_data["content"] == "actual reasoning"
 
 
 @pytest.mark.asyncio
@@ -470,9 +482,15 @@ async def test_chat_completions_with_tools_parameters(auth_client, test_profile)
 
 @pytest.mark.asyncio
 async def test_chat_completions_mixed_thinking_and_response(auth_client, test_profile):
-    """Test handling of content both inside and outside thinking tags."""
+    """Test handling of interleaved reasoning and content.
+
+    The inference service handles tag extraction and sends separate events
+    for reasoning_content and content.
+    """
     chunks = [
-        make_chunk(content="Before <think>thinking content</think> after"),
+        make_chunk(content="Before"),
+        make_chunk(reasoning="thinking content"),
+        make_chunk(content="after"),
     ]
 
     with patch(
@@ -497,10 +515,10 @@ async def test_chat_completions_mixed_thinking_and_response(auth_client, test_pr
 
             # Should have both thinking and response events
             thinking_events = filter_events(events, "thinking")
-            assert len(thinking_events) > 0
+            assert len(thinking_events) == 1
 
             response_events = filter_events(events, "response")
-            assert len(response_events) > 0
+            assert len(response_events) == 2  # "Before" and "after"
 
             # Should have thinking_done
             thinking_done = filter_events(events, "thinking_done")
@@ -618,8 +636,9 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
     """Test chunk with both reasoning_content and content fields.
 
     When a chunk has BOTH reasoning_content and content:
-    - reasoning is processed first (keeps in_thinking=True)
-    - Then content is processed while in_thinking=True
+    - reasoning is emitted as thinking event
+    - content is emitted as response event
+    - thinking_done is NOT emitted (no transition, simultaneous)
     """
     chunks = [
         make_chunk(reasoning="First thought", content="with content"),
@@ -645,24 +664,22 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
             content = response.text
             events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-            # Should have thinking events:
-            # - 1 from reasoning_content field (chunk-level)
-            # - 12 from content field (character-by-character while in_thinking=True)
+            # Should have thinking event from reasoning_content
             thinking_events = filter_events(events, "thinking")
-            assert len(thinking_events) == 13  # 1 + 12 characters
+            assert len(thinking_events) == 1
 
             # Verify reasoning content was emitted
-            first_event = json.loads(thinking_events[0].replace("data: ", ""))
-            assert first_event["content"] == "First thought"
+            thinking_data = json.loads(thinking_events[0].replace("data: ", ""))
+            assert thinking_data["content"] == "First thought"
 
-            # Verify content was emitted character-by-character as thinking
-            combined_content = ""
-            for event in thinking_events[1:]:
-                data = json.loads(event.replace("data: ", ""))
-                combined_content += data.get("content", "")
-            assert combined_content == "with content"
+            # Should have response event from content
+            response_events = filter_events(events, "response")
+            assert len(response_events) == 1
 
-            # Should have thinking_done when stream ends
+            response_data = json.loads(response_events[0].replace("data: ", ""))
+            assert response_data["content"] == "with content"
+
+            # Should have thinking_done when stream ends (still in thinking mode)
             thinking_done = filter_events(events, "thinking_done")
             assert len(thinking_done) == 1
 
@@ -716,14 +733,10 @@ async def test_chat_completions_vision_model(auth_client, test_profile):
                 content = response.text
                 events = [line for line in content.split("\n") if line.startswith("data: ")]
 
-                # Should have response events (character-by-character)
+                # Should have response event (one per chunk)
                 response_events = filter_events(events, "response")
-                # "I see a cat in the image." = 25 characters
-                assert len(response_events) == 25
+                assert len(response_events) == 1
 
-                # Verify combined content
-                combined = ""
-                for event in response_events:
-                    data = json.loads(event.replace("data: ", ""))
-                    combined += data.get("content", "")
-                assert combined == "I see a cat in the image."
+                # Verify content
+                response_data = json.loads(response_events[0].replace("data: ", ""))
+                assert response_data["content"] == "I see a cat in the image."
