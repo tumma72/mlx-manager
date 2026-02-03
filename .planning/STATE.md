@@ -10,13 +10,19 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 3 of 3 (Integration Tests complete)
-Status: Phase 15 COMPLETE - All plans executed
-Last activity: 2026-02-02 - Completed 15-03 (Integration Tests for ResponseProcessor)
+Plan: 7 of 7 (UAT gaps fixed)
+Status: Phase 15 complete
+Last activity: 2026-02-03 - Completed 15-07 (fix hanging model downloads)
 
-Progress: [████████████] 100% (3 of 3 plans complete in Phase 15)
+Progress: [████████████] 100% (7 of 7 plans complete in Phase 15)
 
-**Phase 15 Complete:** All code cleanup and integration tests delivered
+**UAT Gaps Fixed:**
+1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
+2. ~~Thinking content not streamed~~ - FIXED (15-04: now yields reasoning chunks)
+3. ~~All servers show same memory values~~ - FIXED (15-05: per-model memory calculation)
+4. ~~Stop button does nothing~~ - FIXED (15-05: calls model.unload endpoint)
+5. ~~Gemma vision model crashes~~ - FIXED (15-06: detection uses config-based approach)
+6. ~~Model downloads hanging~~ - FIXED (15-07: immediate SSE yield + timeout)
 
 ## Milestone v1.2 Summary
 
@@ -224,6 +230,8 @@ Recent decisions affecting current work:
 - **Catch multiple exceptions for enable_thinking**: TypeError, ValueError, KeyError, AttributeError all handled for tokenizer compatibility
 - **DEBUG not WARNING for enable_thinking fallback**: Expected behavior for older tokenizers, not a warning condition
 - **Golden file testing pattern**: Use fixtures/golden/{family}/*.txt for model output validation; parametrized tests auto-discover files
+- **Immediate SSE yield pattern**: Yield initial status before blocking operations in async generators to prevent hang appearance
+- **30s timeout for HF dry_run**: Wrap snapshot_download dry_run in asyncio.wait_for to prevent indefinite blocking
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -250,6 +258,7 @@ None yet.
 5. ~~Vision processor attribute access broken~~ - FIXED (15-02: getattr pattern in all adapters)
 6. ~~Qwen enable_thinking crashes~~ - FIXED (15-02: catch all exception types)
 7. ~~Streaming logs every token at INFO~~ - FIXED (15-02: changed to DEBUG)
+8. ~~Model downloads hang~~ - FIXED (15-07: immediate SSE yield + 30s timeout)
 
 ## Research Documents
 
@@ -269,10 +278,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-02T17:33:00Z
-Stopped at: Completed 15-03-PLAN.md (Integration Tests for ResponseProcessor)
-Resume file: .planning/phases/15-code-cleanup-integration-tests/15-03-SUMMARY.md
-Next: Phase 15 complete - v1.2 ready for final verification
+Last session: 2026-02-03T12:47:03Z
+Stopped at: Completed 15-07 (fix hanging model downloads)
+Resume file: None - Phase 15 complete
+Next: Final UAT verification or v1.2 release
 
 ### Roadmap Evolution
 
