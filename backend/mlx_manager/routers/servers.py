@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
-from mlx_manager.mlx_server.utils.memory import get_memory_usage
 from mlx_manager.models import ServerProfile, User
 
 logger = logging.getLogger(__name__)
@@ -100,8 +99,6 @@ async def list_servers(
         result = await db.execute(select(ServerProfile))
         profiles = result.scalars().all()
 
-        memory = get_memory_usage()
-        memory_used_gb = memory.get("active_gb", 0.0)
         memory_total_gb = pool.max_memory_gb
 
         running_servers: list[RunningServer] = []
@@ -338,16 +335,49 @@ async def start_server(
 async def stop_server(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Legacy endpoint - embedded server cannot be stopped.
+    """Unload model associated with profile from memory.
 
-    Individual models can be unloaded via the model pool management endpoints.
+    In embedded mode, "stopping" a profile means unloading its model from the pool.
+    Preloaded models are protected and cannot be unloaded.
     """
-    return {
-        "message": "Embedded server cannot be stopped. "
-        "Use /v1/admin/models to manage loaded models.",
-        "profile_id": profile_id,
-    }
+    # Get the profile to find which model it uses
+    profile = await db.get(ServerProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    try:
+        pool = get_model_pool()
+        model_id = profile.model_path
+
+        # Check if model is loaded
+        if not pool.is_loaded(model_id):
+            return {
+                "success": True,
+                "message": f"Model {model_id} is not currently loaded",
+            }
+
+        # Check if model is preloaded (protected)
+        loaded = pool._models.get(model_id)
+        if loaded and loaded.preloaded:
+            return {
+                "success": False,
+                "message": f"Model {model_id} is preloaded and protected from unload",
+            }
+
+        # Unload the model
+        await pool.unload_model(model_id)
+
+        return {
+            "success": True,
+            "message": f"Model {model_id} unloaded successfully",
+        }
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Model pool not initialized. Server may still be starting.",
+        )
 
 
 @router.post("/{profile_id}/restart")

@@ -48,6 +48,7 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
     # Mock the model pool to show the model is loaded
     mock_loaded_model = MagicMock()
     mock_loaded_model.loaded_at = time.time() - 60  # Loaded 60 seconds ago
+    mock_loaded_model.size_gb = 4.0  # Per-model memory size
 
     mock_pool = MagicMock()
     mock_pool.get_loaded_models.return_value = ["mlx-community/test-model"]
@@ -55,19 +56,19 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
     mock_pool.max_memory_gb = 32.0
 
     with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
-        with patch(
-            "mlx_manager.routers.servers.get_memory_usage",
-            return_value={"active_gb": 4.0},
-        ):
-            response = await auth_client.get("/api/servers")
-            assert response.status_code == 200
+        response = await auth_client.get("/api/servers")
+        assert response.status_code == 200
 
-            data = response.json()
-            assert len(data) == 1
-            assert data[0]["profile_id"] == profile.id
-            assert data[0]["profile_name"] == "Test Profile"
-            assert data[0]["health_status"] == "healthy"
-            assert data[0]["uptime_seconds"] >= 59  # Approximately 60 seconds
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["profile_id"] == profile.id
+        assert data[0]["profile_name"] == "Test Profile"
+        assert data[0]["health_status"] == "healthy"
+        assert data[0]["uptime_seconds"] >= 59  # Approximately 60 seconds
+        # Verify per-model memory metrics
+        assert data[0]["memory_mb"] == 4096.0  # 4 GB in MB
+        assert data[0]["memory_percent"] == 12.5  # 4 / 32 * 100
+        assert data[0]["memory_limit_percent"] == 12.5  # 4 / 32 * 100
 
 
 @pytest.mark.asyncio
@@ -291,17 +292,101 @@ async def test_start_endpoint_profile_not_found(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_legacy_stop_endpoint(auth_client, sample_profile_data):
-    """Test legacy stop endpoint returns informative message."""
+async def test_stop_endpoint_unloads_model(auth_client, sample_profile_data):
+    """Test stop endpoint unloads the model from memory."""
+    from unittest.mock import AsyncMock
+
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+    model_path = sample_profile_data["model_path"]
+
+    # Mock loaded model
+    mock_loaded_model = MagicMock()
+    mock_loaded_model.preloaded = False
+
+    # Mock the model pool
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = True
+    mock_pool._models = {model_path: mock_loaded_model}
+    mock_pool.unload_model = AsyncMock(return_value=True)
+
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        response = await auth_client.post(f"/api/servers/{profile_id}/stop")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert "unloaded successfully" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_stop_endpoint_model_not_loaded(auth_client, sample_profile_data):
+    """Test stop endpoint when model is not loaded."""
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
 
-    response = await auth_client.post(f"/api/servers/{profile_id}/stop")
-    assert response.status_code == 200
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = False
 
-    data = response.json()
-    assert "embedded" in data["message"].lower() or "cannot be stopped" in data["message"].lower()
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        response = await auth_client.post(f"/api/servers/{profile_id}/stop")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        assert "not currently loaded" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_stop_endpoint_preloaded_model(auth_client, sample_profile_data):
+    """Test stop endpoint returns error for preloaded models."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+    model_path = sample_profile_data["model_path"]
+
+    # Mock preloaded model
+    mock_loaded_model = MagicMock()
+    mock_loaded_model.preloaded = True
+
+    mock_pool = MagicMock()
+    mock_pool.is_loaded.return_value = True
+    mock_pool._models = {model_path: mock_loaded_model}
+
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        response = await auth_client.post(f"/api/servers/{profile_id}/stop")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is False
+        assert "preloaded and protected" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_stop_endpoint_profile_not_found(auth_client):
+    """Test stop endpoint with non-existent profile."""
+    mock_pool = MagicMock()
+
+    with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
+        response = await auth_client.post("/api/servers/99999/stop")
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stop_endpoint_pool_not_initialized(auth_client, sample_profile_data):
+    """Test stop endpoint when model pool is not initialized."""
+    # Create a profile first
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    with patch(
+        "mlx_manager.routers.servers.get_model_pool",
+        side_effect=RuntimeError("Pool not initialized"),
+    ):
+        response = await auth_client.post(f"/api/servers/{profile_id}/stop")
+        assert response.status_code == 503
 
 
 @pytest.mark.asyncio
