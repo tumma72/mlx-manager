@@ -147,6 +147,32 @@ def parse_glm4_tool(match: re.Match[str]) -> ToolCall | None:
         return None
 
 
+def parse_glm4_compact_tool(match: re.Match[str]) -> ToolCall | None:
+    """Parse GLM4.7 compact style: <tool_call>func_name<param>value</param>..."""
+    try:
+        content = match.group(1).strip()
+
+        # Extract function name (first word before any tag)
+        name_match = re.match(r"(\w+)", content)
+        if not name_match:
+            return None
+        name = name_match.group(1)
+
+        # Extract parameters from individual tags like <location>Rome</location>
+        param_pattern = r"<(\w+)>([^<]*)</\1>"
+        params = dict(re.findall(param_pattern, content))
+
+        args_str = json.dumps(params) if params else "{}"
+
+        return ToolCall(
+            id=f"call_{uuid.uuid4().hex[:8]}",
+            function=ToolCallFunction(name=name, arguments=args_str),
+        )
+    except (IndexError, AttributeError) as e:
+        logger.warning("Invalid GLM4.7 compact tool call: %s", e)
+        return None
+
+
 def parse_llama_python_tool(match: re.Match[str]) -> ToolCall | None:
     """Parse Llama Python style: <|python_tag|>module.method(args)<|eom_id|>"""
     try:
@@ -411,6 +437,13 @@ def create_default_processor() -> ResponseProcessor:
     processor.register_tool_pattern(
         r"<tool_call>\s*<name>(.*?)</name>\s*<arguments>(.*?)</arguments>\s*</tool_call>",
         parse_glm4_tool,
+    )
+
+    # GLM4.7 compact format: <tool_call>func_name<param>value</param>...
+    # Also handles unclosed variant at end of string
+    processor.register_tool_pattern(
+        r"<tool_call>([^{<][^<]*(?:<\w+>[^<]*</\w+>)+)(?:</tool_call>|$)",
+        parse_glm4_compact_tool,
     )
 
     # Llama Python format: <|python_tag|>module.method(args)<|eom_id|>

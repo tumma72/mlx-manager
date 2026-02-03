@@ -1125,6 +1125,22 @@ class TestStreamingProcessorEdgeCases:
         assert "<think>" not in reasoning
         assert "</think>" not in content
 
+    def test_glm4_compact_tool_call(self) -> None:
+        """Extracts GLM-4.7 compact tool format: <tool_call>func<param>val</param>"""
+        processor = StreamingProcessor(starts_in_thinking=True)
+        # GLM-4.7 output format (prompt ends with <think>)
+        text = "Thinking.</think><tool_call>get_weather<location>Rome</location>"
+
+        for char in text:
+            processor.feed(char)
+
+        result = processor.finalize()
+
+        # Tool call should be extracted
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "get_weather"
+        assert "Rome" in result.tool_calls[0].function.arguments
+
 
 class TestStreamEventDataclass:
     """Tests for StreamEvent dataclass."""
