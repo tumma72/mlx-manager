@@ -265,12 +265,16 @@ Plans:
 5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
 6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
 
-**Plans**: 3 plans in 2 waves
+**Plans**: 7 plans in 4 waves
 
 Plans:
 - [x] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
 - [x] 15-02-PLAN.md — Bug fixes (DB migration, Qwen exception handling, logging levels, vision fix)
 - [x] 15-03-PLAN.md — Golden file integration tests for ResponseProcessor
+- [x] 15-04-PLAN.md — StreamingProcessor redesign for OpenAI-compatible reasoning (UAT Gap 1 & 2)
+- [x] 15-05-PLAN.md — Fix memory metrics & stop button (UAT Gap 3 & 4)
+- [x] 15-06-PLAN.md — Fix vision model detection & loading (UAT Gap 5)
+- [x] 15-07-PLAN.md — Fix hanging model downloads (UAT Gap 6)
 
 ## Progress
 
@@ -286,7 +290,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 3/3 | Complete | 2026-02-02 |
+| 15. Cleanup & Tests | v1.2 | 7/7 | Complete | 2026-02-03 |
 
 ## Technical Architecture
 
@@ -353,5 +357,5 @@ Plans:
 | jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-02-02*
+*Roadmap revised: 2026-02-03*
 *Previous version: adapter/proxy approach (deprecated)*
