@@ -232,6 +232,7 @@ Recent decisions affecting current work:
 - **Golden file testing pattern**: Use fixtures/golden/{family}/*.txt for model output validation; parametrized tests auto-discover files
 - **Immediate SSE yield pattern**: Yield initial status before blocking operations in async generators to prevent hang appearance
 - **30s timeout for HF dry_run**: Wrap snapshot_download dry_run in asyncio.wait_for to prevent indefinite blocking
+- **StreamEvent dataclass for OpenAI-compatible streaming**: Return StreamEvent with reasoning_content and content fields instead of tuple, following o1/o3 API spec
 
 See PROJECT.md Key Decisions table for full history.
 
