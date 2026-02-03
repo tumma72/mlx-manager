@@ -52,10 +52,21 @@ async def generate_vision_completion(
         RuntimeError: If model loading or generation fails
     """
     from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.models.types import ModelType
 
     # Get model from pool
     pool = get_model_pool()
     loaded = await pool.get_model(model_id)
+
+    # Check if model was actually loaded as vision type
+    # This can happen if detection was wrong at load time (e.g., config not available)
+    if loaded.model_type != ModelType.VISION.value:
+        raise RuntimeError(
+            f"Model {model_id} was loaded as {loaded.model_type}, "
+            f"but image input requires a vision model. "
+            f"Please unload and reload the model, or use a vision-capable model."
+        )
+
     model = loaded.model
     processor = loaded.tokenizer  # VLM stores processor in tokenizer field
 
