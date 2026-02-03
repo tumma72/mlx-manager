@@ -7,6 +7,11 @@ This module provides single-pass extraction and cleaning of model responses:
 
 CRITICAL: The processor extracts ALL matches in one scan and removes their spans
 from the content, fixing the bug where tool call markers remained in output.
+
+StreamingProcessor returns OpenAI-compatible StreamEvents with:
+- reasoning_content: Content inside <think> tags (for thinking models)
+- content: Regular response content
+Following OpenAI o1/o3 reasoning model API spec.
 """
 
 import hashlib
@@ -15,11 +20,30 @@ import logging
 import re
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+# --- Stream Event Dataclass ---
+
+
+@dataclass
+class StreamEvent:
+    """Event from streaming processor for OpenAI-compatible streaming.
+
+    Follows OpenAI o1/o3 reasoning model API spec:
+    - reasoning_content: Content inside <think> tags (thinking phase)
+    - content: Regular response content
+    - is_complete: True when a thinking pattern ends (transition point)
+    """
+
+    content: str | None = None
+    reasoning_content: str | None = None
+    is_complete: bool = False
 
 
 # --- Pydantic Models ---
