@@ -207,9 +207,12 @@ class TestHuggingFaceClientDownloadModel:
             async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
-        # First event is starting, then completed (progress events may or may not appear)
+        # First event is immediate starting (without size), second has size after dry_run
         assert events[0]["status"] == "starting"
-        assert events[0]["total_bytes"] == 1_000_000_000
+        assert events[0]["total_bytes"] == 0  # Immediate yield before dry_run
+        # Second event has size info after dry_run completes
+        assert events[1]["status"] == "starting"
+        assert events[1]["total_bytes"] == 1_000_000_000
         assert events[-1]["status"] == "completed"
         assert events[-1]["progress"] == 100
 
@@ -252,9 +255,13 @@ class TestHuggingFaceClientDownloadModel:
             async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
+        # First event is immediate starting (without size)
         assert events[0]["status"] == "starting"
+        assert events[0]["total_bytes"] == 0  # Immediate yield before dry_run
+        # Second event has estimated size after dry_run failure falls back to estimation
         # Size estimated from name: 8B * 0.5 bytes * 1.1 ≈ 4.1 GiB
-        assert events[0]["total_size_gb"] > 3.5
+        assert events[1]["status"] == "starting"
+        assert events[1]["total_size_gb"] > 3.5
         assert events[-1]["status"] == "completed"
 
 
