@@ -108,6 +108,7 @@ function createMockServer(
     uptime_seconds: 3600,
     memory_mb: 512,
     memory_percent: 25,
+    memory_limit_percent: 30,
     cpu_percent: 10,
     ...overrides,
   };

@@ -91,6 +91,7 @@ export interface RunningServer {
   uptime_seconds: number;
   memory_mb: number;
   memory_percent: number;
+  memory_limit_percent: number;
   cpu_percent: number;
 }
 

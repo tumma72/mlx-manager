@@ -59,6 +59,7 @@ function createMockServer(
     uptime_seconds: 3600,
     memory_mb: 512,
     memory_percent: 25,
+    memory_limit_percent: 30,
     cpu_percent: 10,
     ...overrides,
   };
@@ -135,33 +136,38 @@ describe("ServerTile", () => {
   });
 
   describe("metric gauges", () => {
-    it("renders memory gauge with correct percentage", () => {
+    it("renders system memory gauge with correct percentage", () => {
       render(ServerTile, {
         props: { server: createMockServer({ memory_percent: 75 }) },
       });
 
       expect(screen.getByText("75%")).toBeInTheDocument();
-      expect(screen.getByText("Memory")).toBeInTheDocument();
+      expect(screen.getByText("System")).toBeInTheDocument();
     });
 
-    it("renders CPU gauge with correct percentage", () => {
+    it("renders memory limit gauge with correct percentage", () => {
       render(ServerTile, {
-        props: { server: createMockServer({ cpu_percent: 50 }) },
+        props: { server: createMockServer({ memory_limit_percent: 50 }) },
       });
 
       expect(screen.getByText("50%")).toBeInTheDocument();
-      expect(screen.getByText("CPU")).toBeInTheDocument();
+      expect(screen.getByText("Limit")).toBeInTheDocument();
     });
 
-    it("renders both memory and CPU gauges", () => {
+    it("renders both system memory and limit gauges", () => {
       render(ServerTile, {
         props: {
-          server: createMockServer({ memory_percent: 30, cpu_percent: 20 }),
+          server: createMockServer({
+            memory_percent: 30,
+            memory_limit_percent: 45,
+          }),
         },
       });
 
       expect(screen.getByText("30%")).toBeInTheDocument();
-      expect(screen.getByText("20%")).toBeInTheDocument();
+      expect(screen.getByText("45%")).toBeInTheDocument();
+      expect(screen.getByText("System")).toBeInTheDocument();
+      expect(screen.getByText("Limit")).toBeInTheDocument();
     });
   });
 
@@ -344,17 +350,17 @@ describe("ServerTile", () => {
       expect(screen.getByText("0%")).toBeInTheDocument();
     });
 
-    it("handles zero CPU values", () => {
+    it("handles zero limit values", () => {
       render(ServerTile, {
-        props: { server: createMockServer({ cpu_percent: 0 }) },
+        props: { server: createMockServer({ memory_limit_percent: 0 }) },
       });
 
-      expect(screen.getByText("CPU")).toBeInTheDocument();
+      expect(screen.getByText("Limit")).toBeInTheDocument();
     });
 
-    it("handles high CPU values", () => {
+    it("handles high limit values", () => {
       render(ServerTile, {
-        props: { server: createMockServer({ cpu_percent: 100 }) },
+        props: { server: createMockServer({ memory_limit_percent: 100 }) },
       });
 
       expect(screen.getByText("100%")).toBeInTheDocument();

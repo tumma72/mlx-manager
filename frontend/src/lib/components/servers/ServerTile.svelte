@@ -102,8 +102,8 @@
 	<div class="flex items-center gap-6">
 		<!-- Metrics Gauges -->
 		<div class="flex gap-3">
-			<MetricGauge value={server.memory_percent} label="Memory" size="md" />
-			<MetricGauge value={server.cpu_percent} label="CPU" size="md" />
+			<MetricGauge value={server.memory_percent} label="System" size="md" />
+			<MetricGauge value={server.memory_limit_percent} label="Limit" size="md" />
 		</div>
 
 		<!-- Text Stats -->
