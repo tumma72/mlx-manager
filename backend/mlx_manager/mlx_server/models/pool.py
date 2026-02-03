@@ -550,6 +550,108 @@ class ModelPoolManager:
         """Check if a model is currently loaded."""
         return model_id in self._models
 
+    async def reload_as_type(self, model_id: str, model_type: ModelType) -> LoadedModel:
+        """Unload and reload a model with a specific type.
+
+        Useful when detection was wrong at initial load (e.g., config not available)
+        and the model needs to be reloaded as a different type (e.g., vision
+        instead of text-gen).
+
+        Args:
+            model_id: Model to reload
+            model_type: Desired ModelType for loading
+
+        Returns:
+            LoadedModel with the specified type
+
+        Raises:
+            RuntimeError: If reloading fails
+        """
+        logger.info(f"Reloading model {model_id} as {model_type.value}")
+
+        # Unload if currently loaded
+        await self.unload_model(model_id)
+
+        # Force reload with specified type by passing model_type to _load_model_as_type
+        return await self._load_model_as_type(model_id, model_type)
+
+    async def _load_model_as_type(self, model_id: str, model_type: ModelType) -> LoadedModel:
+        """Load a model with a specific type (bypassing detection).
+
+        Args:
+            model_id: Model to load
+            model_type: Type to load as
+
+        Returns:
+            LoadedModel instance
+        """
+        async with self._lock:
+            # Double-check after acquiring lock
+            if model_id in self._models:
+                return self._models[model_id]
+
+            # Mark as loading
+            self._loading[model_id] = asyncio.Event()
+
+        logger.info(f"Loading model as {model_type.value}: {model_id}")
+        start_time = time.time()
+
+        try:
+            # Load based on specified type (no detection)
+            if model_type == ModelType.VISION:
+                # Vision models use mlx-vlm (returns model, processor)
+                from mlx_vlm import load as load_vlm  # type: ignore[import-untyped]
+
+                result = await asyncio.to_thread(load_vlm, model_id)
+                model, tokenizer = result[0], result[1]  # processor stored as tokenizer
+            elif model_type == ModelType.EMBEDDINGS:
+                # Embedding models use mlx-embeddings
+                from mlx_embeddings.utils import (
+                    load as load_embeddings,  # type: ignore[import-untyped]
+                )
+
+                result = await asyncio.to_thread(load_embeddings, model_id)
+                model, tokenizer = result[0], result[1]
+            else:
+                # Text-gen models use mlx-lm
+                from mlx_lm import load
+
+                result = await asyncio.to_thread(load, model_id)
+                model, tokenizer = result[0], result[1]
+
+            # Get memory after loading
+            from mlx_manager.mlx_server.utils.memory import get_memory_usage
+
+            memory = get_memory_usage()
+
+            loaded = LoadedModel(
+                model_id=model_id,
+                model=model,
+                tokenizer=tokenizer,
+                model_type=model_type.value,
+                size_gb=memory["active_gb"],
+            )
+
+            async with self._lock:
+                self._models[model_id] = loaded
+                self._loading[model_id].set()
+                del self._loading[model_id]
+
+            elapsed = time.time() - start_time
+            logger.info(
+                f"Model loaded as {model_type.value}: {model_id} "
+                f"({elapsed:.1f}s, {loaded.size_gb:.1f}GB)"
+            )
+            return loaded
+
+        except Exception as e:
+            async with self._lock:
+                if model_id in self._loading:
+                    self._loading[model_id].set()
+                    del self._loading[model_id]
+            logger.error(f"Failed to load model {model_id} as {model_type.value}: {e}")
+            raise RuntimeError(f"Failed to load model as {model_type.value}: {e}") from e
+
     # =========================================================================
     # Dynamic Configuration Methods
     # =========================================================================
