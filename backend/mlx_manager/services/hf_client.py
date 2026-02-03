@@ -137,7 +137,10 @@ class HuggingFaceClient:
         model_id: str,
     ) -> AsyncGenerator[DownloadStatus, None]:
         """Download a model with progress updates."""
+        logger.info(f"Starting download process for {model_id}")
+
         if settings.offline_mode:
+            logger.warning(f"Download blocked for {model_id} - offline mode enabled")
             yield DownloadStatus(
                 status="failed",
                 model_id=model_id,
@@ -153,23 +156,35 @@ class HuggingFaceClient:
             warnings.filterwarnings("ignore", category=FutureWarning)
 
             # Get total size via dry_run first
+            logger.info(f"Getting total size for {model_id} via dry_run")
             try:
-                dry_run_result = await loop.run_in_executor(
-                    None,
-                    lambda: snapshot_download(
-                        repo_id=model_id, dry_run=True, tqdm_class=SilentProgress
+                dry_run_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: snapshot_download(
+                            repo_id=model_id, dry_run=True, tqdm_class=SilentProgress
+                        ),
                     ),
+                    timeout=30.0,  # 30 second timeout for size check
                 )
                 total_bytes = sum(f.file_size for f in dry_run_result if f.file_size)
+                logger.info(f"Dry run complete for {model_id}: {total_bytes} bytes")
+            except TimeoutError:
+                logger.warning(
+                    f"Dry run timed out for {model_id}, proceeding without size estimate"
+                )
+                total_bytes = 0
             except Exception as e:
                 # Fall back to estimation if dry_run fails
-                logger.debug(f"Dry run failed for {model_id}, using size estimation: {e}")
+                logger.warning(f"Dry run failed for {model_id}: {e}")
                 estimated_gb = estimate_size_from_name(model_id) or 0.0
                 total_bytes = int(estimated_gb * 1024**3)
+                logger.info(f"Using estimated size for {model_id}: {total_bytes} bytes")
 
         # Estimate size for backward compatibility
         total_size_gb = total_bytes / (1024**3) if total_bytes else 0.0
 
+        logger.info(f"Yielding starting status for {model_id}")
         yield DownloadStatus(
             status="starting",
             model_id=model_id,
@@ -180,6 +195,7 @@ class HuggingFaceClient:
         )
 
         # Start download as a background task
+        logger.info(f"Starting actual download for {model_id}")
         download_task = loop.run_in_executor(
             None,
             lambda: self._download_with_progress(model_id),
@@ -188,14 +204,24 @@ class HuggingFaceClient:
         # Calculate directory path for progress polling
         cache_name = f"models--{model_id.replace('/', '--')}"
         download_dir = self.cache_dir / cache_name
+        logger.debug(f"Polling download directory: {download_dir}")
 
         # Poll directory size while downloading
+        poll_count = 0
         try:
             while not download_task.done():
                 await asyncio.sleep(1.0)  # Poll every second
+                poll_count += 1
 
                 current_bytes = self._get_directory_size(download_dir)
                 progress = int((current_bytes / total_bytes) * 100) if total_bytes > 0 else 0
+
+                # Log progress every 10 polls (10 seconds)
+                if poll_count % 10 == 0:
+                    logger.debug(
+                        f"Download progress for {model_id}: "
+                        f"{current_bytes}/{total_bytes} bytes ({progress}%)"
+                    )
 
                 yield DownloadStatus(
                     status="downloading",
@@ -208,6 +234,7 @@ class HuggingFaceClient:
 
             # Get the result (may raise exception)
             local_dir = await download_task
+            logger.info(f"Download completed for {model_id}: {local_dir}")
 
             yield DownloadStatus(
                 status="completed",
@@ -219,6 +246,7 @@ class HuggingFaceClient:
             )
 
         except Exception as e:
+            logger.error(f"Download failed for {model_id}: {e}")
             yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
 
     def _download_with_progress(self, model_id: str) -> str:
