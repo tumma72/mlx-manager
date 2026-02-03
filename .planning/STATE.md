@@ -233,6 +233,9 @@ Recent decisions affecting current work:
 - **Immediate SSE yield pattern**: Yield initial status before blocking operations in async generators to prevent hang appearance
 - **30s timeout for HF dry_run**: Wrap snapshot_download dry_run in asyncio.wait_for to prevent indefinite blocking
 - **StreamEvent dataclass for OpenAI-compatible streaming**: Return StreamEvent with reasoning_content and content fields instead of tuple, following o1/o3 API spec
+- **image_token_index detection**: Gemma 3 uses image_token_index instead of image_token_id for vision detection
+- **Shared detect_multimodal()**: MLX server detection calls shared utility for badge/loading consistency
+- **Model type mismatch error**: Clear message in vision.py guides user to unload/reload when detection was wrong
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -279,8 +282,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-03T12:47:03Z
-Stopped at: Completed 15-07 (fix hanging model downloads)
+Last session: 2026-02-03T12:55:46Z
+Stopped at: Completed 15-06 (vision model detection fix)
 Resume file: None - Phase 15 complete
 Next: Final UAT verification or v1.2 release
 
