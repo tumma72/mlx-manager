@@ -43,29 +43,21 @@ async def chat_completions(
     Stream chat completions from embedded MLX Server.
 
     Uses the embedded inference service directly without external server proxy.
-    Parses thinking tags and emits typed chunks for frontend rendering.
+    Server handles thinking tag extraction and sends OpenAI-compatible deltas.
 
     SSE Event Types:
-    - thinking: Content inside <think>...</think> tags
-    - thinking_done: Emitted when </think> is encountered, includes duration
-    - response: Regular response content (outside thinking tags)
+    - thinking: Reasoning content from thinking models (from delta.reasoning_content)
+    - thinking_done: Emitted when thinking phase ends, includes duration
+    - response: Regular response content (from delta.content)
+    - tool_call: Tool call from model
+    - tool_calls_done: All tool calls complete
     - error: Error message (model loading failure, inference error)
     - done: Stream complete
 
     Thinking Detection:
-    This endpoint supports two thinking extraction mechanisms:
-    1. Server-side reasoning_parser (e.g., reasoning_parser=glm4_moe in profile config)
-       - Server extracts thinking into delta.reasoning_content field
-       - We detect transition when reasoning_content stops and content begins
-    2. Raw <think> tags in delta.content field (fallback for models without parser)
-       - We parse tags character-by-character and emit thinking/thinking_done events
-
-    For GLM-4 models:
-    - If the model's chat template outputs <think> tags, they'll be parsed (method 2)
-    - If reasoning_parser=glm4_moe is configured, thinking goes to reasoning_content
-      (method 1)
-    - If neither mechanism activates, thinking appears as regular response text
-      (acceptable fallback)
+    The inference server extracts <think> tags and streams content via
+    delta.reasoning_content field (following OpenAI o1/o3 API spec).
+    This endpoint simply forwards the structured data without tag parsing.
     """
     # Get profile
     profile = await db.get(ServerProfile, request.profile_id)
@@ -81,8 +73,6 @@ async def chat_completions(
         thinking_start: float | None = None
         in_thinking = False
         first_chunk_logged = False
-        # Buffer for detecting tags split across chunks
-        tag_buffer = ""
 
         try:
             # Import inference services
@@ -124,6 +114,8 @@ async def chat_completions(
             async_gen = cast(AsyncGenerator[dict, None], gen)
 
             # Consume the async generator directly
+            # Server now sends OpenAI-compatible deltas with reasoning_content
+            # No tag parsing needed here - server handles it
             async for chunk in async_gen:
                 delta = chunk.get("choices", [{}])[0].get("delta", {})
                 content = delta.get("content", "")
@@ -148,104 +140,34 @@ async def chat_completions(
                         }
                         yield f"data: {json.dumps(tool_data)}\n\n"
 
-                # Handle server-extracted reasoning content
-                # (when reasoning_parser is configured, server puts
-                # thinking in reasoning_content field)
+                # Handle reasoning content (thinking models)
+                # Server sends thinking content in delta.reasoning_content field
                 if reasoning:
-                    # Strip thinking tags — server may include them
-                    clean = reasoning.replace("<think>", "").replace("</think>", "")
                     if not in_thinking:
                         in_thinking = True
                         thinking_start = time.time()
-                    if clean:
-                        thinking_data = {
-                            "type": "thinking",
-                            "content": clean,
-                        }
-                        yield f"data: {json.dumps(thinking_data)}\n\n"
-                elif in_thinking and not reasoning and content:
-                    # Transitioned from reasoning to content — thinking done
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': reasoning})}\n\n"
+
+                # Handle transition from thinking to content
+                if in_thinking and content and not reasoning:
+                    # Transitioned from reasoning to content - thinking done
                     in_thinking = False
                     duration = time.time() - thinking_start if thinking_start else 0
-                    done_data = {
-                        "type": "thinking_done",
-                        "duration": round(duration, 1),
-                    }
-                    yield f"data: {json.dumps(done_data)}\n\n"
+                    yield f"data: {json.dumps({'type': 'thinking_done', 'duration': round(duration, 1)})}\n\n"
 
-                # Handle content field with buffered tag detection
-                # Tags like <think> may be split across chunks when streaming token-by-token
+                # Handle regular content
                 if content:
-                    # Debug: Log when we first see content
-                    if len(tag_buffer) == 0:
-                        preview = content[:50] if len(content) > 50 else content
-                        logger.debug(f"First content starts with: {repr(preview)}")
-                    tag_buffer += content
-
-                    # Process buffered content, looking for complete tags
-                    while tag_buffer:
-                        # Check for opening tag
-                        if tag_buffer.startswith("<think>"):
-                            in_thinking = True
-                            thinking_start = time.time()
-                            tag_buffer = tag_buffer[7:]
-                            continue
-
-                        # Check for closing tag
-                        if tag_buffer.startswith("</think>"):
-                            in_thinking = False
-                            duration = time.time() - thinking_start if thinking_start else 0
-                            done_data = {
-                                "type": "thinking_done",
-                                "duration": round(duration, 1),
-                            }
-                            yield f"data: {json.dumps(done_data)}\n\n"
-                            tag_buffer = tag_buffer[8:]
-                            continue
-
-                        # Check for partial tag at start - need more data
-                        if tag_buffer.startswith("<"):
-                            # Could be start of <think> or </think>
-                            # Check if we have enough chars to determine
-                            if len(tag_buffer) < 8:
-                                # Not enough data yet - wait for more
-                                # (8 = len("</think>"), longest tag)
-                                break
-                            # Have enough data but doesn't match - not a tag
-                            # Fall through to emit the '<' char
-
-                        # Emit first character and continue processing
-                        char = tag_buffer[0]
-                        tag_buffer = tag_buffer[1:]
-                        chunk_type = "thinking" if in_thinking else "response"
-                        chunk_data = {
-                            "type": chunk_type,
-                            "content": char,
-                        }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                    yield f"data: {json.dumps({'type': 'response', 'content': content})}\n\n"
 
                 # Check finish_reason for tool_calls completion
                 finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
                 if finish_reason == "tool_calls":
                     yield f"data: {json.dumps({'type': 'tool_calls_done'})}\n\n"
 
-            # Flush any remaining buffered content at end of stream
-            if tag_buffer:
-                chunk_type = "thinking" if in_thinking else "response"
-                chunk_data = {
-                    "type": chunk_type,
-                    "content": tag_buffer,
-                }
-                yield f"data: {json.dumps(chunk_data)}\n\n"
-
             # If still in thinking when stream ends, emit thinking_done
             if in_thinking:
                 duration = time.time() - thinking_start if thinking_start else 0
-                done_data = {
-                    "type": "thinking_done",
-                    "duration": round(duration, 1),
-                }
-                yield f"data: {json.dumps(done_data)}\n\n"
+                yield f"data: {json.dumps({'type': 'thinking_done', 'duration': round(duration, 1)})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
