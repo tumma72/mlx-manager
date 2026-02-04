@@ -30,7 +30,6 @@ function serversEqual(a: RunningServer, b: RunningServer): boolean {
     a.profile_id === b.profile_id &&
     a.profile_name === b.profile_name &&
     a.pid === b.pid &&
-    a.port === b.port &&
     a.health_status === b.health_status &&
     // Allow 2-second drift in uptime to reduce update frequency
     Math.abs(a.uptime_seconds - b.uptime_seconds) < 2 &&

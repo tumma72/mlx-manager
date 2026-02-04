@@ -54,7 +54,6 @@ function createMockServer(
     profile_id: 1,
     profile_name: "Test Server",
     pid: 12345,
-    port: 10240,
     health_status: "healthy",
     uptime_seconds: 3600,
     memory_mb: 512,
@@ -85,20 +84,12 @@ describe("ServerTile", () => {
       expect(screen.getByText("Running")).toBeInTheDocument();
     });
 
-    it("renders port number", () => {
-      render(ServerTile, {
-        props: { server: createMockServer({ port: 8080 }) },
-      });
-
-      expect(screen.getByText("Port 8080")).toBeInTheDocument();
-    });
-
     it("renders PID", () => {
       render(ServerTile, {
         props: { server: createMockServer({ pid: 54321 }) },
       });
 
-      expect(screen.getByText("PID: 54321")).toBeInTheDocument();
+      expect(screen.getByText("PID 54321")).toBeInTheDocument();
     });
 
     it("renders memory with formatBytes", () => {

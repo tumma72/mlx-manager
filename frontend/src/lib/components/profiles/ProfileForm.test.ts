@@ -2,18 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import ProfileForm from "./ProfileForm.svelte";
-import type { ServerProfile, ParserOptions, ServerProfileCreate, ServerProfileUpdate } from "$api";
-import { models as modelsApi, system as systemApi } from "$api";
-
-// Mock API modules
-vi.mock("$api", () => ({
-  models: {
-    detectOptions: vi.fn(),
-  },
-  system: {
-    parserOptions: vi.fn(),
-  },
-}));
+import type {
+  ServerProfile,
+  ServerProfileCreate,
+  ServerProfileUpdate,
+} from "$api";
 
 // Helper to create mock profile
 function createMockProfile(
@@ -25,23 +18,12 @@ function createMockProfile(
     description: null,
     model_path: "mlx-community/test-model",
     model_type: "lm",
-    port: 10240,
-    host: "127.0.0.1",
     context_length: null,
-    max_concurrency: 1,
-    queue_timeout: 300,
-    queue_size: 100,
-    tool_call_parser: null,
-    reasoning_parser: null,
-    message_converter: null,
-    enable_auto_tool_choice: false,
-    trust_remote_code: false,
-    chat_template_file: null,
-    log_level: "INFO",
-    log_file: null,
-    no_log_file: false,
     auto_start: false,
     system_prompt: null,
+    temperature: 0.7,
+    max_tokens: 4096,
+    top_p: 1.0,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
@@ -49,49 +31,26 @@ function createMockProfile(
   };
 }
 
-// Helper to create mock parser options
-function createMockParserOptions(): ParserOptions {
-  return {
-    tool_call_parsers: ["qwen3", "minimax", "glm"],
-    reasoning_parsers: ["deepseek-r1"],
-    message_converters: ["qwen3", "glm"],
-  };
-}
-
 describe("ProfileForm", () => {
-  let mockOnSubmit: (data: ServerProfileCreate | ServerProfileUpdate) => Promise<void>;
+  let mockOnSubmit: (
+    data: ServerProfileCreate | ServerProfileUpdate,
+  ) => Promise<void>;
   let mockOnCancel: () => void;
 
   beforeEach(() => {
     mockOnSubmit = vi.fn().mockResolvedValue(undefined);
     mockOnCancel = vi.fn();
-
-    // Setup default API mock responses
-    vi.mocked(systemApi.parserOptions).mockResolvedValue(
-      createMockParserOptions(),
-    );
-    vi.mocked(modelsApi.detectOptions).mockResolvedValue({
-      model_family: "qwen",
-      recommended_options: {
-        tool_call_parser: "qwen3",
-        reasoning_parser: undefined,
-        message_converter: "qwen3",
-      },
-      is_downloaded: true,
-    });
   });
 
   describe("create mode rendering", () => {
     it("renders create profile title", async () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
       });
 
-      // Wait for parser options to load, then verify title exists
       await waitFor(() => {
         const titles = screen.getAllByText("Create Profile");
         expect(titles.length).toBeGreaterThan(0);
@@ -101,7 +60,6 @@ describe("ProfileForm", () => {
     it("renders all required fields", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -114,7 +72,6 @@ describe("ProfileForm", () => {
     it("renders optional fields", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -125,10 +82,23 @@ describe("ProfileForm", () => {
       expect(screen.getByLabelText(/Model Type/)).toBeInTheDocument();
     });
 
+    it("renders generation settings", () => {
+      render(ProfileForm, {
+        props: {
+          onSubmit: mockOnSubmit,
+          onCancel: mockOnCancel,
+        },
+      });
+
+      expect(screen.getByText("Generation Settings")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Temperature/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Max Tokens/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Top P/)).toBeInTheDocument();
+    });
+
     it("renders submit button with Create Profile text", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -142,7 +112,6 @@ describe("ProfileForm", () => {
     it("renders cancel button", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -156,7 +125,6 @@ describe("ProfileForm", () => {
     it("initializes model path with initialModelPath prop", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           initialModelPath: "mlx-community/initial-model",
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
@@ -175,7 +143,6 @@ describe("ProfileForm", () => {
       render(ProfileForm, {
         props: {
           profile: createMockProfile(),
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -188,7 +155,6 @@ describe("ProfileForm", () => {
       render(ProfileForm, {
         props: {
           profile: createMockProfile(),
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -209,15 +175,14 @@ describe("ProfileForm", () => {
       render(ProfileForm, {
         props: {
           profile,
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
       });
 
-      expect(
-        (screen.getByLabelText(/Name/) as HTMLInputElement).value,
-      ).toBe("Existing Profile");
+      expect((screen.getByLabelText(/Name/) as HTMLInputElement).value).toBe(
+        "Existing Profile",
+      );
       expect(
         (screen.getByLabelText(/Description/) as HTMLTextAreaElement).value,
       ).toBe("Test description");
@@ -234,7 +199,6 @@ describe("ProfileForm", () => {
       render(ProfileForm, {
         props: {
           profile,
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -244,21 +208,39 @@ describe("ProfileForm", () => {
         (screen.getByLabelText(/System Prompt/) as HTMLTextAreaElement).value,
       ).toBe("You are a helpful assistant");
     });
+
+    it("populates generation settings", () => {
+      const profile = createMockProfile({
+        temperature: 0.5,
+        max_tokens: 2048,
+        top_p: 0.9,
+      });
+
+      render(ProfileForm, {
+        props: {
+          profile,
+          onSubmit: mockOnSubmit,
+          onCancel: mockOnCancel,
+        },
+      });
+
+      expect(
+        (screen.getByLabelText(/Max Tokens/) as HTMLInputElement).value,
+      ).toBe("2048");
+    });
   });
 
   describe("advanced options", () => {
     it("hides advanced options by default", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
       });
 
-      expect(screen.queryByLabelText(/Host/)).not.toBeInTheDocument();
       expect(
-        screen.queryByLabelText(/Max Concurrency/),
+        screen.queryByLabelText(/Auto-load on startup/),
       ).not.toBeInTheDocument();
     });
 
@@ -266,7 +248,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -275,17 +256,15 @@ describe("ProfileForm", () => {
       const toggleButton = screen.getByText("Show Advanced Options");
       await user.click(toggleButton);
 
-      expect(screen.getByLabelText(/Host/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Max Concurrency/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Queue Timeout/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Queue Size/)).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/Auto-load on startup/),
+      ).toBeInTheDocument();
     });
 
     it("hides advanced options when toggle clicked again", async () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -295,49 +274,9 @@ describe("ProfileForm", () => {
       await user.click(toggleButton);
       await user.click(screen.getByText("Hide Advanced Options"));
 
-      expect(screen.queryByLabelText(/Host/)).not.toBeInTheDocument();
-    });
-
-    it("renders parser options in advanced section", async () => {
-      const user = userEvent.setup();
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.click(screen.getByText("Show Advanced Options"));
-
-      await waitFor(() => {
-        expect(
-          screen.getByLabelText(/Tool Call Parser/),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByLabelText(/Reasoning Parser/),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByLabelText(/Message Converter/),
-        ).toBeInTheDocument();
-      });
-    });
-
-    it("renders auto-start checkbox in advanced section", async () => {
-      const user = userEvent.setup();
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.click(screen.getByText("Show Advanced Options"));
-
       expect(
-        screen.getByLabelText(/Start on Login/),
-      ).toBeInTheDocument();
+        screen.queryByLabelText(/Auto-load on startup/),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -346,7 +285,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -366,16 +304,11 @@ describe("ProfileForm", () => {
           description: undefined,
           model_path: "mlx-community/model",
           model_type: "lm",
-          port: 10240,
-          host: "127.0.0.1",
-          max_concurrency: 1,
-          queue_timeout: 300,
-          queue_size: 100,
           auto_start: false,
-          tool_call_parser: undefined,
-          reasoning_parser: undefined,
-          message_converter: undefined,
           system_prompt: undefined,
+          temperature: 0.7,
+          max_tokens: 4096,
+          top_p: 1.0,
         });
       });
     });
@@ -384,7 +317,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -401,10 +333,6 @@ describe("ProfileForm", () => {
         "mlx-community/model",
       );
 
-      await user.click(screen.getByText("Show Advanced Options"));
-      await user.clear(screen.getByLabelText(/Host/));
-      await user.type(screen.getByLabelText(/Host/), "0.0.0.0");
-
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
       await waitFor(() => {
@@ -414,7 +342,6 @@ describe("ProfileForm", () => {
             description: "A description",
             system_prompt: "Be helpful",
             model_path: "mlx-community/model",
-            host: "0.0.0.0",
           }),
         );
       });
@@ -430,7 +357,6 @@ describe("ProfileForm", () => {
 
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: slowSubmit,
           onCancel: mockOnCancel,
         },
@@ -459,7 +385,6 @@ describe("ProfileForm", () => {
 
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: slowSubmit,
           onCancel: mockOnCancel,
         },
@@ -487,7 +412,6 @@ describe("ProfileForm", () => {
 
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: failingSubmit,
           onCancel: mockOnCancel,
         },
@@ -511,7 +435,6 @@ describe("ProfileForm", () => {
 
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: failingSubmit,
           onCancel: mockOnCancel,
         },
@@ -535,7 +458,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -552,7 +474,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -568,7 +489,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -583,169 +503,10 @@ describe("ProfileForm", () => {
     });
   });
 
-  describe("model detection", () => {
-    it("auto-detects model options for new profiles", async () => {
-      const user = userEvent.setup();
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/qwen-model",
-      );
-
-      // Wait for debounced detection
-      await waitFor(
-        () => {
-          expect(modelsApi.detectOptions).toHaveBeenCalledWith(
-            "mlx-community/qwen-model",
-          );
-        },
-        { timeout: 1000 },
-      );
-    });
-
-    it("displays detected model family", async () => {
-      const user = userEvent.setup();
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.click(screen.getByText("Show Advanced Options"));
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/qwen-model",
-      );
-
-      await waitFor(
-        () => {
-          expect(screen.getByText(/Detected: qwen/)).toBeInTheDocument();
-        },
-        { timeout: 1000 },
-      );
-    });
-
-    it("does not auto-detect for existing profiles", async () => {
-      render(ProfileForm, {
-        props: {
-          profile: createMockProfile({
-            model_path: "mlx-community/existing",
-          }),
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      // Should not trigger detection on mount
-      expect(modelsApi.detectOptions).not.toHaveBeenCalled();
-    });
-
-    it("handles detection failure gracefully", async () => {
-      const user = userEvent.setup();
-      vi.mocked(modelsApi.detectOptions).mockRejectedValue(
-        new Error("Detection failed"),
-      );
-
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/unknown",
-      );
-
-      // Should not crash - user can still fill form manually
-      await waitFor(() => {
-        expect(screen.getByLabelText(/Model Path/)).toHaveValue(
-          "mlx-community/unknown",
-        );
-      });
-    });
-  });
-
-  describe("parser options loading", () => {
-    it("loads parser options on mount", async () => {
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await waitFor(() => {
-        expect(systemApi.parserOptions).toHaveBeenCalled();
-      });
-    });
-
-    it("shows loading state for parser dropdowns", async () => {
-      const user = userEvent.setup();
-      vi.mocked(systemApi.parserOptions).mockImplementation(
-        () => new Promise(() => {}), // Never resolves
-      );
-
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.click(screen.getByText("Show Advanced Options"));
-
-      const toolCallSelect = screen.getByLabelText(/Tool Call Parser/);
-      expect(toolCallSelect).toBeDisabled();
-    });
-
-    it("handles parser options load failure gracefully", async () => {
-      // Suppress expected console.error output
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      const user = userEvent.setup();
-      vi.mocked(systemApi.parserOptions).mockRejectedValue(
-        new Error("API error"),
-      );
-
-      render(ProfileForm, {
-        props: {
-          nextPort: 10240,
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      await user.click(screen.getByText("Show Advanced Options"));
-
-      // Should still render form, just with default parser option
-      await waitFor(() => {
-        expect(screen.getByLabelText(/Tool Call Parser/)).toBeInTheDocument();
-      });
-
-      consoleSpy.mockRestore();
-    });
-  });
-
   describe("model type selection", () => {
     it("defaults to lm model type", () => {
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -759,7 +520,6 @@ describe("ProfileForm", () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
@@ -780,7 +540,6 @@ describe("ProfileForm", () => {
       render(ProfileForm, {
         props: {
           profile,
-          nextPort: 10240,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },

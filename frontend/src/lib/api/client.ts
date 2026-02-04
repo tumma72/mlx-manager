@@ -230,13 +230,6 @@ export const profiles = {
     );
     return handleResponse(res);
   },
-
-  getNextPort: async (): Promise<{ port: number }> => {
-    const res = await fetch(`${API_BASE}/profiles/next-port`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse(res);
-  },
 };
 
 // Active download info from backend
@@ -339,7 +332,7 @@ export const servers = {
     return handleResponse(res);
   },
 
-  start: async (profileId: number): Promise<{ pid: number; port: number }> => {
+  start: async (profileId: number): Promise<{ pid: number }> => {
     const res = await fetch(`${API_BASE}/servers/${profileId}/start`, {
       method: "POST",
       headers: getAuthHeaders(),

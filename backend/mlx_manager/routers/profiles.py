@@ -1,4 +1,8 @@
-"""Server profiles API router."""
+"""Server profiles API router.
+
+With the embedded MLX server, profiles no longer need port/host configuration.
+Profiles are now primarily for storing model configuration and generation parameters.
+"""
 
 from datetime import UTC, datetime
 from typing import Annotated
@@ -7,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from mlx_manager.config import settings
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import (
@@ -32,32 +35,6 @@ async def list_profiles(
     return profiles
 
 
-@router.get("/next-port")
-async def get_next_port(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: AsyncSession = Depends(get_db),
-):
-    """Get the next available port."""
-    from sqlalchemy import desc
-
-    # SQLModel types port as int, but it's a Column at runtime
-    result = await session.execute(
-        select(ServerProfile.port).order_by(desc(ServerProfile.port))  # type: ignore[arg-type]
-    )
-    ports = result.scalars().all()
-
-    if not ports:
-        return {"port": settings.default_port_start}
-
-    # Find the next available port
-    next_port = settings.default_port_start
-    for port in sorted(ports):
-        if port >= next_port:
-            next_port = port + 1
-
-    return {"port": next_port}
-
-
 @router.get("/{profile_id}", response_model=ServerProfileResponse)
 async def get_profile(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -80,13 +57,6 @@ async def create_profile(
     )
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Profile name already exists")
-
-    # Check for unique port
-    result = await session.execute(
-        select(ServerProfile).where(ServerProfile.port == profile_data.port)
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Port already in use by another profile")
 
     profile = ServerProfile.model_validate(profile_data)
     session.add(profile)
@@ -117,14 +87,6 @@ async def update_profile(
         )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Profile name already exists")
-
-    # Check for port conflict
-    if profile_data.port and profile_data.port != profile.port:
-        result = await session.execute(
-            select(ServerProfile).where(ServerProfile.port == profile_data.port)
-        )
-        if result.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Port already in use by another profile")
 
     # Update fields
     update_data = profile_data.model_dump(exclude_unset=True)
@@ -163,39 +125,19 @@ async def duplicate_profile(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Profile name already exists")
 
-    # Get next available port
-    from sqlalchemy import desc
-
-    # SQLModel types port as int, but it's a Column at runtime
-    port_result = await session.execute(
-        select(ServerProfile.port).order_by(desc(ServerProfile.port))  # type: ignore[arg-type]
-    )
-    ports: list[int] = list(port_result.scalars().all())
-    next_port = ports[0] + 1 if ports else settings.default_port_start
-
-    # Create new profile
+    # Create new profile with simplified fields (embedded server)
     new_profile = ServerProfile(
         name=new_name,
         description=profile.description,
         model_path=profile.model_path,
         model_type=profile.model_type,
-        port=next_port,
-        host=profile.host,
         context_length=profile.context_length,
-        max_concurrency=profile.max_concurrency,
-        queue_timeout=profile.queue_timeout,
-        queue_size=profile.queue_size,
-        tool_call_parser=profile.tool_call_parser,
-        reasoning_parser=profile.reasoning_parser,
-        message_converter=profile.message_converter,
-        enable_auto_tool_choice=profile.enable_auto_tool_choice,
-        trust_remote_code=profile.trust_remote_code,
-        chat_template_file=profile.chat_template_file,
-        log_level=profile.log_level,
-        log_file=profile.log_file,
-        no_log_file=profile.no_log_file,
         auto_start=False,  # Don't copy auto_start
         system_prompt=profile.system_prompt,
+        # Generation parameters
+        temperature=profile.temperature,
+        max_tokens=profile.max_tokens,
+        top_p=profile.top_p,
     )
 
     session.add(new_profile)

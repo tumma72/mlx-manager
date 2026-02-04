@@ -62,7 +62,7 @@
 				{/if}
 				<h3 class="truncate font-semibold">{displayName}</h3>
 			</div>
-			<p class="truncate text-sm text-muted-foreground">Port {server.port}</p>
+			<p class="truncate text-sm text-muted-foreground">PID {server.pid}</p>
 		</div>
 
 		<div class="flex shrink-0 gap-1">

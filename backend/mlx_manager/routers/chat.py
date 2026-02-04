@@ -31,6 +31,10 @@ class ChatRequest(BaseModel):
     messages: list[dict]  # OpenAI-compatible message format
     tools: list[dict] | None = None  # OpenAI function definitions array
     tool_choice: str | None = None  # "auto", "none", or specific function
+    # Generation parameters - override profile defaults if provided
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
 
 
 @router.post("/completions")
@@ -85,6 +89,16 @@ async def chat_completions(
             # Detect model type
             model_type = detect_model_type(model_id)
 
+            # Get generation parameters: request overrides profile defaults
+            temp = request.temperature if request.temperature is not None else profile.temperature
+            max_tok = request.max_tokens if request.max_tokens is not None else profile.max_tokens
+            top_p_val = request.top_p if request.top_p is not None else profile.top_p
+
+            # Lower temperature when tools are enabled for more reliable tool calling
+            # Some models (like GLM-4.7) are verbose at higher temps and may not call tools
+            if request.tools and request.temperature is None:
+                temp = min(temp, 0.3)
+
             # Determine which inference service to use
             if has_images or model_type == ModelType.VISION:
                 # Vision model inference
@@ -95,20 +109,18 @@ async def chat_completions(
                     model_id=model_id,
                     text_prompt=text_prompt,
                     images=images,
-                    max_tokens=4096,
-                    temperature=0.7,
+                    max_tokens=max_tok,
+                    temperature=temp,
                     stream=True,
                 )
             else:
                 # Text model inference
-                # Lower temperature when tools are enabled for more reliable tool calling
-                # Some models (like GLM-4.7) are verbose at higher temps and may not call tools
-                temp = 0.3 if request.tools else 0.7
                 gen = await generate_chat_completion(
                     model_id=model_id,
                     messages=request.messages,
-                    max_tokens=4096,
+                    max_tokens=max_tok,
                     temperature=temp,
+                    top_p=top_p_val,
                     stream=True,
                     tools=request.tools,  # Pass tools for tool calling support
                 )

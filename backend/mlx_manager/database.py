@@ -40,10 +40,19 @@ async def migrate_schema() -> None:
         ("server_profiles", "reasoning_parser", "TEXT", None),
         ("server_profiles", "message_converter", "TEXT", None),
         ("server_profiles", "system_prompt", "TEXT", None),
+        # Generation parameters (Phase 15-08: Profile model cleanup)
+        ("server_profiles", "temperature", "REAL", "0.7"),
+        ("server_profiles", "max_tokens", "INTEGER", "4096"),
+        ("server_profiles", "top_p", "REAL", "1.0"),
         # CloudCredential columns for provider configuration (Phase 14 bug fix)
         ("cloud_credentials", "api_type", "TEXT", "'openai'"),
         ("cloud_credentials", "name", "TEXT", "''"),
     ]
+    # NOTE: Obsolete columns in server_profiles are NOT dropped - SQLite limitations
+    # and backward compatibility. They will be ignored by the new model:
+    # port, host, max_concurrency, queue_timeout, queue_size, tool_call_parser,
+    # reasoning_parser, message_converter, enable_auto_tool_choice,
+    # trust_remote_code, chat_template_file, log_level, log_file, no_log_file
 
     async with engine.begin() as conn:
         for table, column, col_type, default in migrations:

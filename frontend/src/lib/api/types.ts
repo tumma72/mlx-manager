@@ -12,23 +12,14 @@ export interface ServerProfile {
     | "embeddings"
     | "image-generation"
     | "image-edit";
-  port: number;
-  host: string;
   context_length: number | null;
-  max_concurrency: number;
-  queue_timeout: number;
-  queue_size: number;
-  tool_call_parser: string | null;
-  reasoning_parser: string | null;
-  message_converter: string | null;
-  enable_auto_tool_choice: boolean;
-  trust_remote_code: boolean;
-  chat_template_file: string | null;
-  log_level: "DEBUG" | "INFO" | "WARNING" | "ERROR";
-  log_file: string | null;
-  no_log_file: boolean;
   auto_start: boolean;
   system_prompt: string | null;
+  // Generation parameters
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  // Metadata
   launchd_installed: boolean;
   created_at: string;
   updated_at: string;
@@ -39,23 +30,13 @@ export interface ServerProfileCreate {
   description?: string;
   model_path: string;
   model_type?: string;
-  port: number;
-  host?: string;
   context_length?: number;
-  max_concurrency?: number;
-  queue_timeout?: number;
-  queue_size?: number;
-  tool_call_parser?: string;
-  reasoning_parser?: string;
-  message_converter?: string;
-  enable_auto_tool_choice?: boolean;
-  trust_remote_code?: boolean;
-  chat_template_file?: string;
-  log_level?: string;
-  log_file?: string;
-  no_log_file?: boolean;
   auto_start?: boolean;
   system_prompt?: string;
+  // Generation parameters
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
 }
 
 export interface ServerProfileUpdate {
@@ -63,30 +44,19 @@ export interface ServerProfileUpdate {
   description?: string;
   model_path?: string;
   model_type?: string;
-  port?: number;
-  host?: string;
   context_length?: number | null;
-  max_concurrency?: number;
-  queue_timeout?: number;
-  queue_size?: number;
-  tool_call_parser?: string | null;
-  reasoning_parser?: string | null;
-  message_converter?: string | null;
-  enable_auto_tool_choice?: boolean;
-  trust_remote_code?: boolean;
-  chat_template_file?: string | null;
-  log_level?: string;
-  log_file?: string | null;
-  no_log_file?: boolean;
   auto_start?: boolean;
   system_prompt?: string | null;
+  // Generation parameters
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
 }
 
 export interface RunningServer {
   profile_id: number;
   profile_name: string;
   pid: number;
-  port: number;
   health_status: "starting" | "healthy" | "unhealthy" | "stopped";
   uptime_seconds: number;
   memory_mb: number;

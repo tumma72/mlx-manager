@@ -7,13 +7,9 @@
 	import type { ServerProfileCreate, ServerProfileUpdate } from '$api';
 	import { ProfileForm } from '$components/profiles';
 
-	let nextPort = $state(10240);
 	let initialModelPath = $state('');
 
-	onMount(async () => {
-		// Get next available port
-		nextPort = await profileStore.getNextPort();
-
+	onMount(() => {
 		// Check for model query param
 		const modelParam = $page.url.searchParams.get('model');
 		if (modelParam) {
@@ -36,6 +32,6 @@
 
 	<!-- Use keyed block to prevent ProfileForm recreation during polling updates -->
 	{#key 'new-profile'}
-		<ProfileForm {nextPort} initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
+		<ProfileForm initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
 	{/key}
 </div>

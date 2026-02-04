@@ -26,21 +26,12 @@ function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
     a.description === b.description &&
     a.model_path === b.model_path &&
     a.model_type === b.model_type &&
-    a.port === b.port &&
-    a.host === b.host &&
     a.context_length === b.context_length &&
-    a.max_concurrency === b.max_concurrency &&
-    a.queue_timeout === b.queue_timeout &&
-    a.queue_size === b.queue_size &&
-    a.tool_call_parser === b.tool_call_parser &&
-    a.reasoning_parser === b.reasoning_parser &&
-    a.enable_auto_tool_choice === b.enable_auto_tool_choice &&
-    a.trust_remote_code === b.trust_remote_code &&
-    a.chat_template_file === b.chat_template_file &&
-    a.log_level === b.log_level &&
-    a.log_file === b.log_file &&
-    a.no_log_file === b.no_log_file &&
     a.auto_start === b.auto_start &&
+    a.system_prompt === b.system_prompt &&
+    a.temperature === b.temperature &&
+    a.max_tokens === b.max_tokens &&
+    a.top_p === b.top_p &&
     a.launchd_installed === b.launchd_installed &&
     a.created_at === b.created_at &&
     a.updated_at === b.updated_at
@@ -154,11 +145,6 @@ class ProfileStore {
     const profile = await profilesApi.duplicate(id, newName);
     await this.refresh();
     return profile;
-  }
-
-  async getNextPort(): Promise<number> {
-    const result = await profilesApi.getNextPort();
-    return result.port;
   }
 
   getProfile(id: number): ServerProfile | undefined {

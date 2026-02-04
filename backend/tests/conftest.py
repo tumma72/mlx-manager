@@ -90,12 +90,9 @@ def sample_profile_data():
         "description": "A test profile",
         "model_path": "mlx-community/test-model-4bit",
         "model_type": "lm",
-        "port": 10240,
-        "host": "127.0.0.1",
-        "max_concurrency": 1,
-        "queue_timeout": 300,
-        "queue_size": 100,
-        "log_level": "INFO",
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "top_p": 1.0,
     }
 
 
@@ -107,12 +104,9 @@ def sample_profile_data_alt():
         "description": "Another test profile",
         "model_path": "mlx-community/another-model-4bit",
         "model_type": "lm",
-        "port": 10241,
-        "host": "127.0.0.1",
-        "max_concurrency": 2,
-        "queue_timeout": 600,
-        "queue_size": 200,
-        "log_level": "DEBUG",
+        "temperature": 0.5,
+        "max_tokens": 2048,
+        "top_p": 0.9,
     }
 
 

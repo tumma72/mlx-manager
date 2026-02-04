@@ -79,29 +79,28 @@ class PasswordReset(SQLModel):
 
 
 class ServerProfileBase(SQLModel):
-    """Base model for server profiles."""
+    """Base model for server profiles.
+
+    With the embedded MLX server, many previous fields are no longer needed:
+    - port, host: No longer running separate servers
+    - max_concurrency, queue_timeout, queue_size: Handled by model pool
+    - tool_call_parser, reasoning_parser, message_converter: Handled by adapters
+    - enable_auto_tool_choice, trust_remote_code: Not applicable
+    - chat_template_file: Handled by tokenizer
+    - log_level, log_file, no_log_file: Server-level settings
+    """
 
     name: str = Field(index=True)
     description: str | None = None
     model_path: str
     model_type: str = Field(default="lm")
-    port: int
-    host: str = Field(default="127.0.0.1")
     context_length: int | None = None
-    max_concurrency: int = Field(default=1)
-    queue_timeout: int = Field(default=300)
-    queue_size: int = Field(default=100)
-    tool_call_parser: str | None = None
-    reasoning_parser: str | None = None
-    message_converter: str | None = None
-    enable_auto_tool_choice: bool = Field(default=False)
-    trust_remote_code: bool = Field(default=False)
-    chat_template_file: str | None = None
-    log_level: str = Field(default="INFO")
-    log_file: str | None = None
-    no_log_file: bool = Field(default=False)
     auto_start: bool = Field(default=False)
     system_prompt: str | None = None
+    # Generation parameters
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=4096, ge=1, le=128000)
+    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class ServerProfile(ServerProfileBase, table=True):
@@ -128,23 +127,13 @@ class ServerProfileUpdate(SQLModel):
     description: str | None = None
     model_path: str | None = None
     model_type: str | None = None
-    port: int | None = None
-    host: str | None = None
     context_length: int | None = None
-    max_concurrency: int | None = None
-    queue_timeout: int | None = None
-    queue_size: int | None = None
-    tool_call_parser: str | None = None
-    reasoning_parser: str | None = None
-    message_converter: str | None = None
-    enable_auto_tool_choice: bool | None = None
-    trust_remote_code: bool | None = None
-    chat_template_file: str | None = None
-    log_level: str | None = None
-    log_file: str | None = None
-    no_log_file: bool | None = None
     auto_start: bool | None = None
     system_prompt: str | None = None
+    # Generation parameters
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=1, le=128000)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 # NOTE: RunningInstance model removed - no longer needed with embedded MLX Server.
@@ -205,7 +194,6 @@ class RunningServerResponse(SQLModel):
     profile_id: int
     profile_name: str
     pid: int
-    port: int
     health_status: str
     uptime_seconds: float
     memory_mb: float

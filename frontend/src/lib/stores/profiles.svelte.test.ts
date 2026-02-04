@@ -9,7 +9,6 @@ vi.mock("$api", () => ({
     update: vi.fn(),
     delete: vi.fn(),
     duplicate: vi.fn(),
-    getNextPort: vi.fn(),
   },
 }));
 
@@ -33,23 +32,12 @@ function createMockProfile(
     description: "A test profile",
     model_path: "mlx-community/test-model",
     model_type: "lm",
-    port: 10240,
-    host: "127.0.0.1",
     context_length: 4096,
-    max_concurrency: 4,
-    queue_timeout: 300,
-    queue_size: 10,
-    tool_call_parser: null,
-    reasoning_parser: null,
-    message_converter: null,
-    enable_auto_tool_choice: false,
-    trust_remote_code: false,
-    chat_template_file: null,
-    log_level: "INFO",
-    log_file: null,
-    no_log_file: false,
     auto_start: false,
     system_prompt: null,
+    temperature: 0.7,
+    max_tokens: 4096,
+    top_p: 1.0,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00",
     updated_at: "2024-01-01T00:00:00",
@@ -65,7 +53,6 @@ describe("ProfileStore", () => {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
     duplicate: ReturnType<typeof vi.fn>;
-    getNextPort: ReturnType<typeof vi.fn>;
   };
   let mockPollingCoordinator: {
     register: ReturnType<typeof vi.fn>;
@@ -87,7 +74,6 @@ describe("ProfileStore", () => {
       update: vi.fn(),
       delete: vi.fn(),
       duplicate: vi.fn(),
-      getNextPort: vi.fn(),
     };
 
     mockPollingCoordinator = {
@@ -188,14 +174,12 @@ describe("ProfileStore", () => {
         name: "New Profile",
         model_path: "mlx-community/test-model",
         model_type: "lm",
-        port: 10241,
       });
 
       expect(mockProfilesApi.create).toHaveBeenCalledWith({
         name: "New Profile",
         model_path: "mlx-community/test-model",
         model_type: "lm",
-        port: 10241,
       });
       expect(mockPollingCoordinator.refresh).toHaveBeenCalledWith("profiles");
       expect(result).toEqual(newProfile);
@@ -241,17 +225,6 @@ describe("ProfileStore", () => {
       expect(mockProfilesApi.duplicate).toHaveBeenCalledWith(1, "Profile Copy");
       expect(mockPollingCoordinator.refresh).toHaveBeenCalledWith("profiles");
       expect(result).toEqual(duplicatedProfile);
-    });
-  });
-
-  describe("getNextPort", () => {
-    it("returns port from API", async () => {
-      mockProfilesApi.getNextPort.mockResolvedValue({ port: 10245 });
-
-      const port = await profileStore.getNextPort();
-
-      expect(mockProfilesApi.getNextPort).toHaveBeenCalled();
-      expect(port).toBe(10245);
     });
   });
 
@@ -433,9 +406,9 @@ describe("ProfileStore", () => {
       expect(profileStore.profiles[0].description).toBe("Changed");
     });
 
-    it("updates profile when port changes", async () => {
+    it("updates profile when temperature changes", async () => {
       mockProfilesApi.list.mockResolvedValue([
-        createMockProfile({ id: 1, port: 10240 }),
+        createMockProfile({ id: 1, temperature: 0.7 }),
       ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
@@ -444,11 +417,11 @@ describe("ProfileStore", () => {
       await refreshFn();
 
       mockProfilesApi.list.mockResolvedValue([
-        createMockProfile({ id: 1, port: 10241 }),
+        createMockProfile({ id: 1, temperature: 0.5 }),
       ]);
       await refreshFn();
 
-      expect(profileStore.profiles[0].port).toBe(10241);
+      expect(profileStore.profiles[0].temperature).toBe(0.5);
     });
 
     it("updates profile when model_type changes", async () => {

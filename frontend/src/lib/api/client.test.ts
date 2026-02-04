@@ -387,23 +387,9 @@ describe("profiles API", () => {
     });
   });
 
-  describe("getNextPort", () => {
-    it("returns next available port", async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse({ port: 10242 }));
-
-      const result = await profiles.getNextPort();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "/api/profiles/next-port",
-        expect.objectContaining(defaultHeaders),
-      );
-      expect(result).toEqual({ port: 10242 });
-    });
-  });
-
   describe("duplicate", () => {
     it("duplicates a profile with new name", async () => {
-      const duplicatedProfile = { id: 2, name: "Copy of Profile", port: 10241 };
+      const duplicatedProfile = { id: 2, name: "Copy of Profile" };
       mockFetch.mockResolvedValueOnce(mockResponse(duplicatedProfile, 201));
 
       const result = await profiles.duplicate(1, "Copy of Profile");
@@ -1097,10 +1083,11 @@ describe("settings API", () => {
 
   describe("updateTimeoutSettings", () => {
     it("updates timeout settings", async () => {
-      const updates = { inference_timeout: 180 };
+      const updates = { chat_seconds: 180 };
       const updatedSettings = {
-        inference_timeout: 180,
-        model_load_timeout: 300,
+        chat_seconds: 180,
+        completions_seconds: 300,
+        embeddings_seconds: 120,
       };
       mockFetch.mockResolvedValueOnce(mockResponse(updatedSettings));
 
@@ -1287,7 +1274,7 @@ describe("ApiError", () => {
     const validationErrors = {
       detail: [
         { loc: ["body", "name"], msg: "field required" },
-        { loc: ["body", "port"], msg: "value is not a valid integer" },
+        { loc: ["body", "temperature"], msg: "value is not a valid number" },
       ],
     };
     mockFetch.mockResolvedValueOnce({
@@ -1298,12 +1285,12 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test", port: 0 });
+      await profiles.create({ name: "", model_path: "test" });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(422);
       expect((error as ApiError).message).toBe(
-        "name: field required, port: value is not a valid integer",
+        "name: field required, temperature: value is not a valid number",
       );
     }
   });
@@ -1320,7 +1307,7 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test", port: 0 });
+      await profiles.create({ name: "", model_path: "test" });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).toBe("field: some error");
@@ -1339,7 +1326,7 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test", port: 0 });
+      await profiles.create({ name: "", model_path: "test" });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).toBe("name: validation error");

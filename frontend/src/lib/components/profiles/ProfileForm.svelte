@@ -1,23 +1,18 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate, ParserOptions } from '$api';
-	import { models as modelsApi, system as systemApi } from '$api';
+	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate } from '$api';
 	import { Card, Button, Input, Select } from '$components/ui';
 
 	interface Props {
 		profile?: ServerProfile;
-		nextPort?: number;
 		initialModelPath?: string;
 		onSubmit: (data: ServerProfileCreate | ServerProfileUpdate) => Promise<void>;
 		onCancel: () => void;
 	}
 
-	let { profile, nextPort = 10240, initialModelPath = '', onSubmit, onCancel }: Props = $props();
+	let { profile, initialModelPath = '', onSubmit, onCancel }: Props = $props();
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let detectingOptions = $state(false);
-	let detectedFamily = $state<string | null>(null);
 
 	// Form state - profile configuration fields
 	let name = $state('');
@@ -25,54 +20,16 @@
 	let systemPrompt = $state('');
 	let modelPath = $state('');
 	let modelType = $state('lm');
-	let port = $state(10240);
-	let host = $state('127.0.0.1');
-	let maxConcurrency = $state(1);
-	let queueTimeout = $state(300);
-	let queueSize = $state(100);
 	let autoStart = $state(false);
-	let toolCallParser = $state('');
-	let reasoningParser = $state('');
-	let messageConverter = $state('');
+
+	// Generation parameters
+	let temperature = $state(0.7);
+	let maxTokens = $state(4096);
+	let topP = $state(1.0);
 
 	let showAdvanced = $state(false);
 
-	// Parser options loaded dynamically from API
-	let parserOptionsData = $state<ParserOptions | null>(null);
-	let parserOptionsLoading = $state(true);
-
-	// Derive dropdown options from loaded data
-	const toolCallParserOptions = $derived(
-		parserOptionsData
-			? [{ value: '', label: 'Default' }, ...parserOptionsData.tool_call_parsers.map(p => ({ value: p, label: p }))]
-			: [{ value: '', label: 'Loading...' }]
-	);
-
-	const reasoningParserOptions = $derived(
-		parserOptionsData
-			? [{ value: '', label: 'Default' }, ...parserOptionsData.reasoning_parsers.map(p => ({ value: p, label: p }))]
-			: [{ value: '', label: 'Loading...' }]
-	);
-
-	const messageConverterOptions = $derived(
-		parserOptionsData
-			? [{ value: '', label: 'Default' }, ...parserOptionsData.message_converters.map(p => ({ value: p, label: p }))]
-			: [{ value: '', label: 'Loading...' }]
-	);
-
-	// Load parser options from API on mount
-	onMount(async () => {
-		try {
-			parserOptionsData = await systemApi.parserOptions();
-		} catch (e) {
-			console.error('Failed to load parser options:', e);
-			// Use empty fallback - dropdowns will show "Default" only
-		} finally {
-			parserOptionsLoading = false;
-		}
-	});
-
-	// Reset form when profile, nextPort, or initialModelPath changes
+	// Reset form when profile or initialModelPath changes
 	$effect(() => {
 		name = profile?.name ?? '';
 		description = profile?.description ?? '';
@@ -81,57 +38,11 @@
 		// Map unsupported model types to 'lm'
 		const profileModelType = profile?.model_type ?? 'lm';
 		modelType = ['lm', 'multimodal'].includes(profileModelType) ? profileModelType : 'lm';
-		port = profile?.port ?? nextPort;
-		host = profile?.host ?? '127.0.0.1';
-		maxConcurrency = profile?.max_concurrency ?? 1;
-		queueTimeout = profile?.queue_timeout ?? 300;
-		queueSize = profile?.queue_size ?? 100;
 		autoStart = profile?.auto_start ?? false;
-		toolCallParser = profile?.tool_call_parser ?? '';
-		reasoningParser = profile?.reasoning_parser ?? '';
-		messageConverter = profile?.message_converter ?? '';
-	});
-
-	// Auto-detect model family when model path changes
-	async function detectModelOptions(path: string) {
-		if (!path) {
-			detectedFamily = null;
-			return;
-		}
-
-		detectingOptions = true;
-		try {
-			const info = await modelsApi.detectOptions(path);
-			detectedFamily = info.model_family;
-
-			// Only auto-fill if no values are already set
-			if (info.recommended_options) {
-				if (!toolCallParser && info.recommended_options.tool_call_parser) {
-					toolCallParser = info.recommended_options.tool_call_parser;
-				}
-				if (!reasoningParser && info.recommended_options.reasoning_parser) {
-					reasoningParser = info.recommended_options.reasoning_parser;
-				}
-				if (!messageConverter && info.recommended_options.message_converter) {
-					messageConverter = info.recommended_options.message_converter;
-				}
-			}
-		} catch {
-			// Detection failed - not critical, user can still set manually
-			detectedFamily = null;
-		} finally {
-			detectingOptions = false;
-		}
-	}
-
-	// Detect options when model path changes (with debounce)
-	let detectTimeout: ReturnType<typeof setTimeout> | null = null;
-	$effect(() => {
-		if (modelPath && !profile) {
-			// Only auto-detect for new profiles
-			if (detectTimeout) clearTimeout(detectTimeout);
-			detectTimeout = setTimeout(() => detectModelOptions(modelPath), 500);
-		}
+		// Generation parameters
+		temperature = profile?.temperature ?? 0.7;
+		maxTokens = profile?.max_tokens ?? 4096;
+		topP = profile?.top_p ?? 1.0;
 	});
 
 	async function handleSubmit(e: Event) {
@@ -145,16 +56,12 @@
 				description: description || undefined,
 				model_path: modelPath,
 				model_type: modelType,
-				port,
-				host,
-				max_concurrency: maxConcurrency,
-				queue_timeout: queueTimeout,
-				queue_size: queueSize,
 				auto_start: autoStart,
-				tool_call_parser: toolCallParser || undefined,
-				reasoning_parser: reasoningParser || undefined,
-				message_converter: messageConverter || undefined,
-				system_prompt: systemPrompt || undefined
+				system_prompt: systemPrompt || undefined,
+				// Generation parameters
+				temperature,
+				max_tokens: maxTokens,
+				top_p: topP
 			};
 
 			await onSubmit(data);
@@ -232,6 +139,70 @@
 				</Select>
 			</div>
 
+			<!-- Generation Settings -->
+			<div class="pt-4 border-t">
+				<h3 class="text-sm font-medium mb-3">Generation Settings</h3>
+				<p class="text-xs text-muted-foreground mb-4">
+					Control how the model generates responses. These can be overridden per-request.
+				</p>
+
+				<div class="space-y-4">
+					<div>
+						<label for="temperature" class="block text-sm font-medium mb-1">
+							Temperature: {temperature.toFixed(1)}
+						</label>
+						<input
+							id="temperature"
+							type="range"
+							min="0"
+							max="2"
+							step="0.1"
+							bind:value={temperature}
+							class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
+						/>
+						<div class="flex justify-between text-xs text-muted-foreground mt-1">
+							<span>Deterministic (0)</span>
+							<span>Creative (2)</span>
+						</div>
+					</div>
+
+					<div>
+						<label for="maxTokens" class="block text-sm font-medium mb-1">Max Tokens</label>
+						<input
+							id="maxTokens"
+							type="number"
+							bind:value={maxTokens}
+							min="1"
+							max="128000"
+							placeholder="4096"
+							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+						/>
+						<p class="text-xs text-muted-foreground mt-1">
+							Maximum number of tokens to generate (1-128,000).
+						</p>
+					</div>
+
+					<div>
+						<label for="topP" class="block text-sm font-medium mb-1">
+							Top P (Nucleus Sampling): {topP.toFixed(2)}
+						</label>
+						<input
+							id="topP"
+							type="range"
+							min="0"
+							max="1"
+							step="0.05"
+							bind:value={topP}
+							class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
+						/>
+						<div class="flex justify-between text-xs text-muted-foreground mt-1">
+							<span>Focused (0)</span>
+							<span>Diverse (1)</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
 			<!-- Advanced Options -->
 			<div class="pt-4">
 				<button
@@ -245,91 +216,14 @@
 
 			{#if showAdvanced}
 				<div class="space-y-4 pt-4 border-t">
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div>
-							<label for="host" class="block text-sm font-medium mb-1">Host</label>
-							<Input id="host" bind:value={host} />
-						</div>
-
-						<div>
-							<label for="maxConcurrency" class="block text-sm font-medium mb-1"
-								>Max Concurrency</label
-							>
-							<Input id="maxConcurrency" type="number" bind:value={maxConcurrency} />
-						</div>
-					</div>
-
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div>
-							<label for="queueTimeout" class="block text-sm font-medium mb-1"
-								>Queue Timeout (seconds)</label
-							>
-							<Input id="queueTimeout" type="number" bind:value={queueTimeout} />
-						</div>
-
-						<div>
-							<label for="queueSize" class="block text-sm font-medium mb-1"
-								>Queue Size</label
-							>
-							<Input id="queueSize" type="number" bind:value={queueSize} />
-						</div>
-					</div>
-
-					<!-- Parser Options for MiniMax, Qwen, GLM models -->
-					<div class="pt-4 border-t">
-						<div class="flex items-center gap-2 mb-3">
-							<h3 class="text-sm font-medium">Model-Specific Parsers</h3>
-							{#if detectingOptions}
-								<span class="text-xs text-muted-foreground">Detecting...</span>
-							{:else if detectedFamily}
-								<span class="text-xs text-green-600 dark:text-green-400">Detected: {detectedFamily}</span>
-							{/if}
-						</div>
-						<p class="text-xs text-muted-foreground mb-3">
-							Required for MiniMax, Qwen3, and GLM models to enable tool calling and reasoning.
-						</p>
-
-						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-							<div>
-								<label for="toolCallParser" class="block text-sm font-medium mb-1"
-									>Tool Call Parser</label
-								>
-								<Select id="toolCallParser" bind:value={toolCallParser} disabled={parserOptionsLoading}>
-									{#each toolCallParserOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</Select>
-							</div>
-
-							<div>
-								<label for="reasoningParser" class="block text-sm font-medium mb-1"
-									>Reasoning Parser</label
-								>
-								<Select id="reasoningParser" bind:value={reasoningParser} disabled={parserOptionsLoading}>
-									{#each reasoningParserOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</Select>
-							</div>
-
-							<div>
-								<label for="messageConverter" class="block text-sm font-medium mb-1"
-									>Message Converter</label
-								>
-								<Select id="messageConverter" bind:value={messageConverter} disabled={parserOptionsLoading}>
-									{#each messageConverterOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</Select>
-							</div>
-						</div>
-					</div>
-
 					<div class="space-y-2">
 						<label class="flex items-center gap-2">
 							<input type="checkbox" bind:checked={autoStart} class="rounded" />
-							<span class="text-sm">Start on Login (launchd)</span>
+							<span class="text-sm">Auto-load on startup</span>
 						</label>
+						<p class="text-xs text-muted-foreground ml-6">
+							Preload this model when the server starts for faster first response.
+						</p>
 					</div>
 				</div>
 			{/if}
