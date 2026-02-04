@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 7 of 7 (UAT gaps fixed)
+Plan: 8 of 8 (Profile model cleanup)
 Status: Phase 15 complete
-Last activity: 2026-02-03 - Completed 15-07 (fix hanging model downloads)
+Last activity: 2026-02-04 - Completed 15-08 (profile model cleanup)
 
-Progress: [████████████] 100% (7 of 7 plans complete in Phase 15)
+Progress: [████████████] 100% (8 of 8 plans complete in Phase 15)
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -23,6 +23,7 @@ Progress: [████████████] 100% (7 of 7 plans complete in 
 4. ~~Stop button does nothing~~ - FIXED (15-05: calls model.unload endpoint)
 5. ~~Gemma vision model crashes~~ - FIXED (15-06: detection uses config-based approach)
 6. ~~Model downloads hanging~~ - FIXED (15-07: immediate SSE yield + timeout)
+7. ~~Obsolete profile fields clutter~~ - FIXED (15-08: removed 14 obsolete fields, added generation params)
 
 ## Milestone v1.2 Summary
 
@@ -282,8 +283,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-03T12:55:46Z
-Stopped at: Completed 15-06 (vision model detection fix)
+Last session: 2026-02-04T13:12:45Z
+Stopped at: Completed 15-08 (profile model cleanup)
 Resume file: None - Phase 15 complete
 Next: Final UAT verification or v1.2 release
 
