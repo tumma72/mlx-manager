@@ -318,8 +318,16 @@ class ResponseProcessor:
         tool_calls: list[ToolCall] = []
         seen_hashes: set[str] = set()  # For GLM4 deduplication
 
+        # Debug: Log tool pattern matching
+        if "<tool_call>" in text or "<function=" in text:
+            logger.debug(
+                f"ResponseProcessor.process(): found potential tool markers in text "
+                f"(len={len(text)}), checking {len(self._tool_patterns)} patterns"
+            )
+
         for pattern, parser in self._tool_patterns:
             for match in pattern.finditer(text):
+                logger.debug(f"Tool pattern matched: {pattern.pattern[:50]}... at pos {match.start()}")
                 tool_call = parser(match)
                 if tool_call:
                     # Deduplicate by (name, arguments) hash
@@ -748,8 +756,21 @@ class StreamingProcessor:
             self._yielded_content += self._pending_buffer
             self._pending_buffer = ""
 
+        # Debug: Log accumulated text for tool call analysis
+        logger.debug(
+            f"StreamingProcessor.finalize(): accumulated={len(self._accumulated)} chars, "
+            f"contains_tool_call_marker={'<tool_call>' in self._accumulated}"
+        )
+
         # Process full accumulated text to get structured data
         result = self._processor.process(self._accumulated)
+
+        # Debug: Log extraction results
+        logger.debug(
+            f"StreamingProcessor.finalize(): extracted tool_calls={len(result.tool_calls) if result.tool_calls else 0}, "
+            f"has_reasoning={bool(result.reasoning)}, content_len={len(result.content)}"
+        )
+
         return result
 
     def get_pending_content(self) -> str:
