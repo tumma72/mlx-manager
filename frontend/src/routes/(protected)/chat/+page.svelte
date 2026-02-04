@@ -514,10 +514,24 @@
 					body: JSON.stringify(followUpBody),
 				});
 
-				if (!followUpRes.ok) break;
+				if (!followUpRes.ok) {
+					console.error('Follow-up request failed:', followUpRes.status, followUpRes.statusText);
+					chatError = { summary: 'Tool follow-up failed', details: `Status: ${followUpRes.status}` };
+					break;
+				}
 
 				// Process follow-up stream (may contain more tool calls)
 				currentResult = await processSSEStream(followUpRes);
+
+				// Debug: log what we got from follow-up
+				console.log('Follow-up result:', {
+					content: currentResult.content?.slice(0, 100),
+					thinking: currentResult.thinking?.slice(0, 100),
+					toolCalls: currentResult.toolCalls.length,
+					error: currentResult.error
+				});
+
+				// Accumulate both content and any additional thinking from follow-up
 				assistantContent += currentResult.content;
 				streamingResponse = assistantContent;
 

@@ -69,13 +69,16 @@ async def generate_chat_completion(
     # Get adapter for model family
     adapter = get_adapter(model_id)
 
+    # Convert messages to model-specific format (handles tool messages, etc.)
+    converted_messages = adapter.convert_messages(messages)
+
     # Build messages with tool definitions if provided
-    effective_messages = messages
+    effective_messages = converted_messages
     if tools and adapter.supports_tool_calling():
         # Inject tool definitions into system prompt
         tool_prompt = adapter.format_tools_for_prompt(tools)
         if tool_prompt:
-            effective_messages = _inject_tools_into_messages(messages, tool_prompt)
+            effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
             logger.debug(f"Injected tools into prompt for {model_id}")
 
     # Apply chat template

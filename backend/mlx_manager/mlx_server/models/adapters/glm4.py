@@ -167,6 +167,51 @@ If you don't need to call a tool, respond normally with text."""
         # ResponseProcessor will detect tool calls in the output
         return []
 
+    # --- Message Conversion ---
+
+    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert messages to GLM4-compatible format.
+
+        GLM4 tokenizers may not handle 'tool' role messages directly.
+        Convert tool results to a format the model understands.
+
+        Args:
+            messages: Messages in OpenAI format (may include tool role)
+
+        Returns:
+            Messages with tool results converted to user messages
+        """
+        converted: list[dict[str, Any]] = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "tool":
+                # Convert tool result to a user message with clear formatting
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                content = msg.get("content", "")
+                converted.append({
+                    "role": "user",
+                    "content": f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]\n\nPlease provide your response based on this tool result."
+                })
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Include assistant message but convert tool_calls to text format
+                tool_calls = msg.get("tool_calls", [])
+                tool_text = ""
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    tool_text += f"\n<tool_call>{json.dumps({'name': func.get('name'), 'arguments': json.loads(func.get('arguments', '{}'))})}</tool_call>"
+                content = msg.get("content", "") + tool_text
+                converted.append({
+                    "role": "assistant",
+                    "content": content
+                })
+            else:
+                # Keep other messages as-is
+                converted.append(msg)
+
+        return converted
+
     # --- Reasoning Mode Support ---
 
     def supports_reasoning_mode(self) -> bool:
