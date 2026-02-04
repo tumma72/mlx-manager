@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
 	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage, ToolCallBubble } from '$components/ui';
-	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench } from 'lucide-svelte';
+	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench, Copy } from 'lucide-svelte';
 	import { mcp } from '$lib/api/client';
 	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
 
@@ -66,6 +66,7 @@
 	let toolsEnabled = $state(false);
 	let availableTools = $state<ToolDefinition[]>([]);
 	let toolsLoaded = $state(false);
+	let copyFeedback = $state(false);
 
 	// With embedded server, all profiles can be used for chat
 	// The model will be loaded on-demand by the embedded MLX Server
@@ -633,6 +634,54 @@
 		chatError = null;
 	}
 
+	async function handleCopyChat() {
+		if (messages.length === 0) return;
+
+		const parts: string[] = [];
+		parts.push(`# Chat Transcript`);
+		parts.push(`Model: ${selectedProfile?.model_path || 'Unknown'}`);
+		parts.push(`Date: ${new Date().toISOString()}`);
+		parts.push('');
+
+		for (const message of messages) {
+			if (message.role === 'user') {
+				parts.push(`## User`);
+				parts.push(typeof message.content === 'string' ? message.content : '[multipart content]');
+			} else {
+				parts.push(`## Assistant`);
+				const parsed = parseThinking(message.content);
+				if (parsed.thinking) {
+					parts.push(`### Thinking${message.thinkingDuration ? ` (${message.thinkingDuration.toFixed(1)}s)` : ''}`);
+					parts.push(parsed.thinking);
+					parts.push('');
+				}
+				if (message.toolCalls && message.toolCalls.length > 0) {
+					parts.push(`### Tool Calls`);
+					for (const tc of message.toolCalls) {
+						parts.push(`**${tc.name}**(${tc.arguments})`);
+						if (tc.result) {
+							parts.push(`Result: ${tc.result}`);
+						}
+						if (tc.error) {
+							parts.push(`Error: ${tc.error}`);
+						}
+					}
+					parts.push('');
+				}
+				if (parsed.response) {
+					parts.push(`### Response`);
+					parts.push(parsed.response);
+				}
+			}
+			parts.push('');
+		}
+
+		const transcript = parts.join('\n');
+		await navigator.clipboard.writeText(transcript);
+		copyFeedback = true;
+		setTimeout(() => copyFeedback = false, 2000);
+	}
+
 	function handleProfileChange(e: Event) {
 		const target = e.target as HTMLSelectElement;
 		selectedProfileId = target.value ? parseInt(target.value, 10) : null;
@@ -731,6 +780,10 @@
 				{/each}
 			</Select>
 			{#if messages.length > 0}
+				<Button variant="outline" onclick={handleCopyChat} title="Copy chat transcript to clipboard">
+					<Copy class="w-4 h-4 mr-2" />
+					{copyFeedback ? 'Copied!' : 'Copy'}
+				</Button>
 				<Button variant="outline" onclick={handleClear}>
 					Clear Chat
 				</Button>
