@@ -152,7 +152,7 @@ class BatchInferenceEngine:
                         logger.warning(f"No token generated for request {request.request_id}")
 
                 except Exception as e:
-                    logger.error(f"Generation error for request {request.request_id}: {e}")
+                    logger.exception(f"Generation error for request {request.request_id}: {e}")
                     # Mark as stop on error
                     results[request.request_id] = ("", 0, True)
 

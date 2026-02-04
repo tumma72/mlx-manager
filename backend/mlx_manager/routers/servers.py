@@ -317,7 +317,7 @@ async def start_server(
                 await pool.get_model(model_id)
                 logger.info(f"Model loaded successfully: {model_id}")
             except Exception as e:
-                logger.error(f"Failed to load model {model_id}: {e}")
+                logger.exception(f"Failed to load model {model_id}: {e}")
 
         background_tasks.add_task(load_model)
         return {"status": "loading", "model": model_id, "pid": os.getpid()}

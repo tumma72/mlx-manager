@@ -298,7 +298,7 @@ class ContinuousBatchingScheduler:
         try:
             results = await self._inference_engine.generate_batch_step(self.running, sampler)
         except Exception as e:
-            logger.error(f"Batch generation error: {e}")
+            logger.exception(f"Batch generation error: {e}")
             # Mark all requests as completed on error to avoid infinite loop
             for request in self.running:
                 request.status = RequestStatus.COMPLETED

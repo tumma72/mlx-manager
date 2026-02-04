@@ -171,7 +171,7 @@ class AuditService:
                     logger.warning(f"Subscriber callback error: {e}")
 
         except Exception as e:
-            logger.error(f"Failed to write audit log: {e}")
+            logger.exception(f"Failed to write audit log: {e}")
 
     def subscribe(self, callback: Callable[[dict[str, Any]], None]) -> None:
         """Subscribe to new log entries for live updates."""

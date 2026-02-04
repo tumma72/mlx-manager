@@ -153,7 +153,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             from fastapi import HTTPException
 
             if not isinstance(e, HTTPException):
-                logger.error(f"Database session error, rolling back: {e}")
+                logger.exception(f"Database session error, rolling back: {e}")
             await session.rollback()
             raise
         finally:
@@ -171,6 +171,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             from fastapi import HTTPException
 
             if not isinstance(e, HTTPException):
-                logger.error(f"Database session error, rolling back: {e}")
+                logger.exception(f"Database session error, rolling back: {e}")
             await session.rollback()
             raise

@@ -132,7 +132,7 @@ async def preload_model(model_id: str) -> ModelLoadResponse:
         )
 
     except Exception as e:
-        logger.error(f"Admin: Failed to preload {model_id}: {e}")
+        logger.exception(f"Admin: Failed to preload {model_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

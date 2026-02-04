@@ -60,7 +60,7 @@ async def create_completion(
                     audit_ctx.total_tokens = result.usage.total_tokens
                 return result
         except RuntimeError as e:
-            logger.error(f"Generation error: {e}")
+            logger.exception(f"Generation error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
         except Exception as e:
             logger.exception(f"Unexpected error: {e}")

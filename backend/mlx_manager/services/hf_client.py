@@ -256,7 +256,7 @@ class HuggingFaceClient:
             )
 
         except Exception as e:
-            logger.error(f"Download failed for {model_id}: {e}")
+            logger.exception(f"Download failed for {model_id}: {e}")
             yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
 
     def _download_with_progress(self, model_id: str) -> str:

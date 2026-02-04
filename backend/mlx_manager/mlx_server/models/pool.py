@@ -311,7 +311,7 @@ class ModelPoolManager:
                 if model_id in self._loading:
                     self._loading[model_id].set()
                     del self._loading[model_id]
-            logger.error(f"Failed to load model {model_id}: {e}")
+            logger.exception(f"Failed to load model {model_id}: {e}")
             raise RuntimeError(f"Failed to load model: {e}") from e
 
     async def preload_model(self, model_id: str) -> LoadedModel:
@@ -514,7 +514,7 @@ class ModelPoolManager:
                 if cache_key in self._loading:
                     self._loading[cache_key].set()
                     del self._loading[cache_key]
-            logger.error(f"Failed to load model with adapter {cache_key}: {e}")
+            logger.exception(f"Failed to load model with adapter {cache_key}: {e}")
             raise RuntimeError(f"Failed to load model with adapter: {e}") from e
 
     async def unload_model(self, model_id: str) -> bool:
@@ -647,7 +647,7 @@ class ModelPoolManager:
                 if model_id in self._loading:
                     self._loading[model_id].set()
                     del self._loading[model_id]
-            logger.error(f"Failed to load model {model_id} as {model_type.value}: {e}")
+            logger.exception(f"Failed to load model {model_id} as {model_type.value}: {e}")
             raise RuntimeError(f"Failed to load model as {model_type.value}: {e}") from e
 
     # =========================================================================
@@ -709,7 +709,7 @@ class ModelPoolManager:
                     await self.preload_model(model_id)
                     results[model_id] = "loaded"
                 except Exception as e:
-                    logger.error(f"Failed to preload {model_id}: {e}")
+                    logger.exception(f"Failed to preload {model_id}: {e}")
                     results[model_id] = f"failed: {e}"
 
         # Mark models not in preload list as evictable

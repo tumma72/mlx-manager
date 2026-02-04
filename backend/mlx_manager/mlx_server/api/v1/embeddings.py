@@ -93,5 +93,5 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
                 f"Consider reducing batch size or using a smaller model.",
             )
         except Exception as e:
-            logger.error(f"Embeddings generation failed: {e}")
+            logger.exception(f"Embeddings generation failed: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e

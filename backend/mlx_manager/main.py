@@ -128,7 +128,7 @@ async def _run_download_task(task_id: str, download_id: int, model_id: str) -> N
         logger.info(f"Download task cancelled for {model_id}")
         raise  # Re-raise to properly mark task as cancelled
     except Exception as e:
-        logger.error(f"Download failed for {model_id}: {e}")
+        logger.exception(f"Download failed for {model_id}: {e}")
         await _update_download_record(download_id, status="failed", error=str(e))
 
 
