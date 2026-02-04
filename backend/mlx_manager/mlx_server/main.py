@@ -1,11 +1,10 @@
 """MLX Inference Server - FastAPI Application."""
 
-import logging
-import sys
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from loguru import logger
 
 from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
@@ -14,15 +13,6 @@ from mlx_manager.mlx_server.errors import register_error_handlers
 from mlx_manager.mlx_server.models import pool
 from mlx_manager.mlx_server.models.pool import ModelPoolManager
 from mlx_manager.mlx_server.utils.memory import get_memory_usage, set_memory_limit
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-    force=True,
-)
-logger = logging.getLogger(__name__)
 
 __all__ = ["create_app"]
 
