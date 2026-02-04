@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 8 of 8 (Profile model cleanup)
+Plan: 9 of 9 (Loguru migration)
 Status: Phase 15 complete
-Last activity: 2026-02-04 - Completed 15-08 (profile model cleanup)
+Last activity: 2026-02-04 - Completed 15-09 (Loguru migration)
 
-Progress: [████████████] 100% (8 of 8 plans complete in Phase 15)
+Progress: [████████████] 100% (9 of 9 plans complete in Phase 15)
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -237,6 +237,9 @@ Recent decisions affecting current work:
 - **image_token_index detection**: Gemma 3 uses image_token_index instead of image_token_id for vision detection
 - **Shared detect_multimodal()**: MLX server detection calls shared utility for badge/loading consistency
 - **Model type mismatch error**: Clear message in vision.py guides user to unload/reload when detection was wrong
+- **Loguru for structured logging**: Replace standard logging with Loguru for efficiency, auto-stacktraces via .exception(), simpler configuration
+- **Separate log files by component**: mlx-server.log for inference, mlx-manager.log for app — easier debugging of distinct components
+- **InterceptHandler for third-party compatibility**: Redirect standard logging to Loguru to capture third-party library logs
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -283,8 +286,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-04T13:12:45Z
-Stopped at: Completed 15-08 (profile model cleanup)
+Last session: 2026-02-04
+Stopped at: Completed 15-09 (Loguru migration)
 Resume file: None - Phase 15 complete
 Next: Final UAT verification or v1.2 release
 
