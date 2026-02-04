@@ -16,16 +16,14 @@ Following OpenAI o1/o3 reasoning model API spec.
 
 import hashlib
 import json
-import logging
 import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
 
 
 # --- Stream Event Dataclass ---

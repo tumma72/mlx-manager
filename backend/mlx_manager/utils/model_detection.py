@@ -7,15 +7,14 @@ the HuggingFace cache filesystem without any network calls.
 """
 
 import json
-import logging
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from mlx_manager.config import settings
 from mlx_manager.types import ModelCharacteristics
-
-logger = logging.getLogger(__name__)
 
 # Mapping from model_type patterns to normalized architecture family names
 ARCHITECTURE_FAMILIES: dict[str, str] = {

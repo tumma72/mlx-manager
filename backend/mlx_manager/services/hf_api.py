@@ -12,13 +12,11 @@ download logic (resumable, LFS, caching, etc.).
 """
 
 import asyncio
-import logging
 import re
 from dataclasses import dataclass
 
 import httpx
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 # HuggingFace API base URL
 HF_API_BASE = "https://huggingface.co/api"

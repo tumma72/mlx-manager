@@ -18,12 +18,11 @@ and tool prompt formatting for Llama XML-style tool calls.
 """
 
 import json
-import logging
 from typing import Any, cast
 
-from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
 
 class LlamaAdapter(DefaultAdapter):

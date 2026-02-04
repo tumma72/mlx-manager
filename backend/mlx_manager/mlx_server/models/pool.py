@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -13,11 +12,10 @@ from typing import Any
 
 import psutil
 from fastapi import HTTPException
+from loguru import logger
 
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import AdapterInfo, ModelType
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass

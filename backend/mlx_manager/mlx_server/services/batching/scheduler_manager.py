@@ -8,8 +8,9 @@ priority, and handles lifecycle.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any
+
+from loguru import logger
 
 from mlx_manager.mlx_server.services.batching.block_manager import PagedBlockManager
 from mlx_manager.mlx_server.services.batching.scheduler import (
@@ -19,8 +20,6 @@ from mlx_manager.mlx_server.services.batching.types import Priority
 
 if TYPE_CHECKING:
     pass
-
-logger = logging.getLogger(__name__)
 
 
 class SchedulerManager:

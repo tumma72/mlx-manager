@@ -2,12 +2,12 @@
 
 import asyncio
 import json
-import logging
 import time
 import uuid
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
@@ -38,8 +38,6 @@ from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
 )
 from mlx_manager.mlx_server.services.vision import generate_vision_completion
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 

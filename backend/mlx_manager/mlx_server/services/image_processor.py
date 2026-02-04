@@ -9,15 +9,13 @@ Handles:
 
 import asyncio
 import base64
-import logging
 from io import BytesIO
 from typing import Any
 
 import httpx
+from loguru import logger
 from PIL import Image
 from PIL.Image import Resampling
-
-logger = logging.getLogger(__name__)
 
 # Configuration
 MAX_IMAGE_DIMENSION = 2048  # Max width or height in pixels

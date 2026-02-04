@@ -4,17 +4,15 @@ Configures observability with reduced verbosity for normal operation.
 Set LOGFIRE_CONSOLE_VERBOSE=true to enable verbose console output.
 """
 
-import logging
 import os
 from typing import TYPE_CHECKING
 
 import logfire
+from loguru import logger
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
     from sqlalchemy.ext.asyncio import AsyncEngine
-
-logger = logging.getLogger(__name__)
 
 _configured = False
 

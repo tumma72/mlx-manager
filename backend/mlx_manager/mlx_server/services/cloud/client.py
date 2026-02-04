@@ -1,6 +1,5 @@
 """Base cloud backend client with retry and circuit breaker support."""
 
-import logging
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
@@ -8,8 +7,7 @@ from typing import Any
 
 import httpx
 from httpx_retries import Retry, RetryTransport
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class CircuitBreakerError(Exception):

@@ -6,14 +6,13 @@ Same timeouts apply to both local and cloud backends.
 """
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import ParamSpec, TypeVar
 
-from mlx_manager.mlx_server.errors.problem_details import TimeoutHTTPException
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from mlx_manager.mlx_server.errors.problem_details import TimeoutHTTPException
 
 P = ParamSpec("P")
 T = TypeVar("T")

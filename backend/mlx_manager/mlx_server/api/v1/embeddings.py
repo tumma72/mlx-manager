@@ -5,10 +5,10 @@ Reference: https://platform.openai.com/docs/api-reference/embeddings
 """
 
 import asyncio
-import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 
 from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.errors import TimeoutHTTPException
@@ -22,8 +22,6 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.embeddings import generate_embeddings
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["embeddings"])
 

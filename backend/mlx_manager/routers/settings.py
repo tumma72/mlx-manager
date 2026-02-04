@@ -1,13 +1,13 @@
 """Settings API router for providers, routing rules, model pool, and timeout configuration."""
 
 import json
-import logging
 import re
 from datetime import UTC, datetime
 from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -41,8 +41,6 @@ from mlx_manager.services.encryption_service import (
     decrypt_api_key,
     encrypt_api_key,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 

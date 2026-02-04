@@ -7,14 +7,12 @@ Measures throughput (tokens/second) for:
 """
 
 import json
-import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @dataclass

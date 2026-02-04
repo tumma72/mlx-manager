@@ -1,16 +1,14 @@
 """Database setup and session management."""
 
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
 from mlx_manager.config import ensure_data_dir, settings
-
-logger = logging.getLogger(__name__)
 
 # Create async engine
 engine = create_async_engine(

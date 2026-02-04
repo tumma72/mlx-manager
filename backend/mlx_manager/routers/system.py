@@ -1,7 +1,6 @@
 """System API router."""
 
 import asyncio
-import logging
 import platform
 import subprocess
 import sys
@@ -12,6 +11,7 @@ import httpx
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.config import settings
@@ -19,8 +19,6 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory, User
 from mlx_manager.services.launchd import launchd_manager
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 

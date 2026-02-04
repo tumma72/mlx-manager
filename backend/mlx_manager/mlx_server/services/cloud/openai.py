@@ -1,13 +1,12 @@
 """OpenAI cloud backend client."""
 
 import json
-import logging
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from mlx_manager.mlx_server.services.cloud.client import CloudBackendClient
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from mlx_manager.mlx_server.services.cloud.client import CloudBackendClient
 
 # Default OpenAI API URL
 OPENAI_API_URL = "https://api.openai.com"

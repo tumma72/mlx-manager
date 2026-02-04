@@ -1,14 +1,13 @@
 """Anthropic cloud backend client with format translation."""
 
 import json
-import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from loguru import logger
+
 from mlx_manager.mlx_server.services.cloud.client import CloudBackendClient
 from mlx_manager.mlx_server.services.protocol import get_translator
-
-logger = logging.getLogger(__name__)
 
 # Default Anthropic API URL
 ANTHROPIC_API_URL = "https://api.anthropic.com"

@@ -5,9 +5,8 @@ instead of external subprocess instances.
 """
 
 import asyncio
-import logging
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class HealthChecker:

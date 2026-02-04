@@ -1,6 +1,5 @@
 """MLX Manager Status Bar App."""
 
-import logging
 import subprocess
 import sys
 import time
@@ -9,10 +8,9 @@ from typing import Any
 
 import httpx
 import rumps  # type: ignore[import-untyped,import-not-found]
+from loguru import logger
 
 from mlx_manager import __version__
-
-logger = logging.getLogger(__name__)
 
 
 class MLXManagerApp(rumps.App):

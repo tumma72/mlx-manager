@@ -15,11 +15,12 @@ Key features:
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 import time
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
+
+from loguru import logger
 
 from mlx_manager.mlx_server.services.batching.block import BLOCK_SIZE, BlockTable
 from mlx_manager.mlx_server.services.batching.block_manager import PagedBlockManager
@@ -35,8 +36,6 @@ if TYPE_CHECKING:
         BatchInferenceEngine,
     )
     from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
-
-logger = logging.getLogger(__name__)
 
 
 class ContinuousBatchingScheduler:

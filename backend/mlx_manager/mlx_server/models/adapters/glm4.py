@@ -11,12 +11,11 @@ For older GLM4 models, falls back to XML-style prompt injection.
 """
 
 import json
-import logging
 from typing import Any, cast
 
-from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
 # Store native tool support status per tokenizer to avoid repeated attempts
 _native_tools_cache: dict[int, bool] = {}

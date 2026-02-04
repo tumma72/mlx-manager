@@ -12,12 +12,12 @@ import asyncio
 import csv
 import io
 import json
-import logging
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import select
@@ -27,8 +27,6 @@ from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.utils.memory import get_memory_usage
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

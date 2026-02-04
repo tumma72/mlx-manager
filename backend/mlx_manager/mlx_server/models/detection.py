@@ -5,12 +5,11 @@ the correct loading strategy. It reuses detection utilities from the existing
 model_detection module to ensure consistency between badge display and loading.
 """
 
-import logging
 from typing import Any
 
-from mlx_manager.mlx_server.models.types import ModelType
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from mlx_manager.mlx_server.models.types import ModelType
 
 
 def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> ModelType:

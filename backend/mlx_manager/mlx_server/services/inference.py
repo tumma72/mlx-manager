@@ -12,7 +12,6 @@ Extended capabilities:
 """
 
 import asyncio
-import logging
 import threading
 import time
 import uuid
@@ -20,14 +19,14 @@ from collections.abc import AsyncGenerator
 from queue import Empty, Queue
 from typing import Any
 
+from loguru import logger
+
 try:
     import logfire
 
     LOGFIRE_AVAILABLE = True
 except ImportError:
     LOGFIRE_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 async def generate_chat_completion(

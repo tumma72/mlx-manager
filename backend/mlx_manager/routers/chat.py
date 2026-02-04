@@ -6,21 +6,19 @@ directly rather than proxying to an external server process.
 """
 
 import json
-import logging
 import time
 from collections.abc import AsyncGenerator
 from typing import cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import ServerProfile
-
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 

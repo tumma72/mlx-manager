@@ -1,18 +1,16 @@
 """Database setup for MLX Server audit logging."""
 
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from loguru import logger
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
 from mlx_manager.mlx_server.config import get_settings
-
-logger = logging.getLogger(__name__)
 
 # Lazily initialized engine and session factory
 _engine = None

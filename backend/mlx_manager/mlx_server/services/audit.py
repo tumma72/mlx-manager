@@ -5,7 +5,6 @@ Only request metadata is logged: model, backend, duration, status, tokens.
 """
 
 import asyncio
-import logging
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -13,10 +12,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from loguru import logger
+
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass

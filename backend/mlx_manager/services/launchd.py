@@ -6,16 +6,15 @@ a launchd service instead. This module is kept for backwards compatibility
 and builds commands for mlx-manager serve.
 """
 
-import logging
 import plistlib
 import subprocess
 import sys
 from pathlib import Path
 
+from loguru import logger
+
 from mlx_manager.models import ServerProfile
 from mlx_manager.types import LaunchdStatus
-
-logger = logging.getLogger(__name__)
 
 
 class LaunchdManager:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from huggingface_hub import snapshot_download
+from loguru import logger
 from tqdm.auto import tqdm  # type: ignore[import-untyped]
 
 from mlx_manager.config import settings
@@ -21,8 +22,6 @@ from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-
-logger = logging.getLogger(__name__)
 
 
 class SilentProgress(tqdm):

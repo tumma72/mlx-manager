@@ -1,9 +1,8 @@
 """MLX memory management utilities."""
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 # Lazy import to allow testing without MLX

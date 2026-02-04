@@ -4,21 +4,19 @@ Registers handlers that convert all exceptions to Problem Details format.
 Generates request_id for every error for log correlation.
 """
 
-import logging
 import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from mlx_manager.mlx_server.errors.problem_details import (
     ProblemDetail,
     TimeoutHTTPException,
     TimeoutProblem,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def generate_request_id() -> str:

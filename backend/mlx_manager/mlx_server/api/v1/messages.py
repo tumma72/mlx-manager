@@ -1,12 +1,12 @@
 """Anthropic Messages API endpoint."""
 
 import json
-import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.schemas.anthropic import (
@@ -21,8 +21,6 @@ from mlx_manager.mlx_server.services.protocol import get_translator
 
 # Type alias for Anthropic stop reasons
 AnthropicStopReason = Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"]
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["messages"])
 

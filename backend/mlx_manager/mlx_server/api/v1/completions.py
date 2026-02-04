@@ -2,11 +2,11 @@
 
 import asyncio
 import json
-import logging
 import uuid
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
+from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
@@ -19,8 +19,6 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.inference import generate_completion
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["completions"])
 

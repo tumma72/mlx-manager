@@ -16,17 +16,16 @@ supports it.
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from queue import Empty, Queue
 from typing import TYPE_CHECKING, Any
+
+from loguru import logger
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
     from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
     from mlx_manager.mlx_server.services.batching.request import BatchRequest
-
-logger = logging.getLogger(__name__)
 
 
 class BatchInferenceEngine:

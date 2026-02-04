@@ -7,13 +7,13 @@ to respect MLX Metal thread affinity requirements.
 """
 
 import asyncio
-import logging
 import threading
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from queue import Queue
 
+from loguru import logger
 from PIL import Image
 
 try:
@@ -22,8 +22,6 @@ try:
     LOGFIRE_AVAILABLE = True
 except ImportError:
     LOGFIRE_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 async def generate_vision_completion(

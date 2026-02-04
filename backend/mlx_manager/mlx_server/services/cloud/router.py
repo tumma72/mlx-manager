@@ -1,10 +1,10 @@
 """Backend router with failover logic."""
 
 import fnmatch
-import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,6 @@ from mlx_manager.models import (
     BackendType,
     CloudCredential,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class BackendRouter:

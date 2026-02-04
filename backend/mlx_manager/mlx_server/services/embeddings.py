@@ -5,9 +5,10 @@ to respect MLX Metal thread affinity requirements.
 """
 
 import asyncio
-import logging
 import threading
 from queue import Queue
+
+from loguru import logger
 
 try:
     import logfire
@@ -15,8 +16,6 @@ try:
     LOGFIRE_AVAILABLE = True
 except ImportError:
     LOGFIRE_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 async def generate_embeddings(

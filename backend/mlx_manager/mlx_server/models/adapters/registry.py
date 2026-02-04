@@ -1,6 +1,6 @@
 """Model adapter registry and family detection."""
 
-import logging
+from loguru import logger
 
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter, ModelAdapter
 from mlx_manager.mlx_server.models.adapters.gemma import GemmaAdapter
@@ -8,8 +8,6 @@ from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
 from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
 from mlx_manager.mlx_server.models.adapters.mistral import MistralAdapter
 from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
-
-logger = logging.getLogger(__name__)
 
 # Adapter instances (singletons)
 _ADAPTERS: dict[str, ModelAdapter] = {

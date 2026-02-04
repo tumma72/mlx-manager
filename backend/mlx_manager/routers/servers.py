@@ -6,12 +6,12 @@ while stop/restart endpoints return informative messages since the server
 is always running.
 """
 
-import logging
 import os
 import time
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,6 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.models import ServerProfile, User
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 

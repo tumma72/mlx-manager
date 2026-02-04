@@ -1,15 +1,13 @@
 """Authentication service for password hashing and JWT token management."""
 
-import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+from loguru import logger
 from pwdlib import PasswordHash
 
 from mlx_manager.config import settings
-
-logger = logging.getLogger(__name__)
 
 # Create module-level password hash instance (Argon2 by default)
 password_hash = PasswordHash.recommended()
