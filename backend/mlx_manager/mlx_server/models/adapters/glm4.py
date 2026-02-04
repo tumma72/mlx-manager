@@ -1,10 +1,13 @@
-"""GLM4 model family adapter (GLM-4, ChatGLM-4).
+"""GLM4 model family adapter (GLM-4, ChatGLM-4, GLM-4.7).
 
 GLM4 models use ChatML-like format with special token handling.
 
 Tool call parsing and reasoning extraction are handled by ResponseProcessor.
 This adapter provides chat template formatting, stop token configuration,
-and tool prompt formatting for GLM4 XML-style tool calls.
+and tool prompt formatting for GLM4 models.
+
+GLM-4.7 models may support native tool calling via tokenizer's apply_chat_template.
+For older GLM4 models, falls back to XML-style prompt injection.
 """
 
 import json
@@ -14,6 +17,9 @@ from typing import Any, cast
 from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 
 logger = logging.getLogger(__name__)
+
+# Store native tool support status per tokenizer to avoid repeated attempts
+_native_tools_cache: dict[int, bool] = {}
 
 
 class GLM4Adapter(DefaultAdapter):
@@ -109,8 +115,8 @@ class GLM4Adapter(DefaultAdapter):
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
 
-        GLM4 uses XML-style tool call format:
-        <tool_call><name>func</name><arguments>{...}</arguments></tool_call>
+        GLM-4.7 works best with JSON-style tool call format similar to Qwen/Hermes:
+        <tool_call>{"name": "func", "arguments": {...}}</tool_call>
 
         Args:
             tools: List of tool definitions in OpenAI format
@@ -128,24 +134,25 @@ class GLM4Adapter(DefaultAdapter):
             description = func.get("description", "")
             parameters = func.get("parameters", {})
 
-            doc = f"""<tool>
-<name>{name}</name>
-<description>{description}</description>
-<parameters>{json.dumps(parameters)}</parameters>
-</tool>"""
+            # Use JSON format like Qwen/Hermes - more compatible with modern models
+            doc = f"""{{
+  "name": "{name}",
+  "description": "{description}",
+  "parameters": {json.dumps(parameters)}
+}}"""
             tool_docs.append(doc)
 
         return f"""You have access to the following tools:
 
+<tools>
 {chr(10).join(tool_docs)}
+</tools>
 
-When you need to call a tool, use this format:
-<tool_call>
-<name>tool_name</name>
-<arguments>{{"param": "value"}}</arguments>
-</tool_call>
+When you decide to call a tool, you MUST respond with ONLY the tool call in this exact format:
+<tool_call>{{"name": "function_name", "arguments": {{"param": "value"}}}}</tool_call>
 
-Only call tools when necessary."""
+IMPORTANT: When calling a tool, output ONLY the <tool_call>...</tool_call> block, nothing else.
+If you don't need to call a tool, respond normally with text."""
 
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get additional stop tokens to use when tools are enabled.
