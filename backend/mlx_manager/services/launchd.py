@@ -51,7 +51,8 @@ class LaunchdManager:
         mlx_manager_path = python_dir / "mlx-manager"
 
         # Build command for mlx-manager serve
-        program_args = [str(mlx_manager_path), "serve", "--port", str(profile.port)]
+        # With embedded server, we use a default port (8080)
+        program_args = [str(mlx_manager_path), "serve", "--port", "8080"]
 
         # Build plist dictionary
         plist = {

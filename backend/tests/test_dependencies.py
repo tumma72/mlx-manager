@@ -25,11 +25,6 @@ class TestGetProfileOr404:
             name="Test Profile",
             model_path="mlx-community/test-model",
             model_type="lm",
-            port=10240,
-            host="127.0.0.1",
-            max_concurrency=1,
-            queue_timeout=300,
-            queue_size=100,
         )
         test_session.add(profile)
         await test_session.commit()
@@ -62,11 +57,6 @@ class TestGetProfileOr404:
                 name=f"Profile {i}",
                 model_path=f"mlx-community/model-{i}",
                 model_type="lm",
-                port=10240 + i,
-                host="127.0.0.1",
-                max_concurrency=1,
-                queue_timeout=300,
-                queue_size=100,
             )
             test_session.add(profile)
             profiles.append(profile)
@@ -83,7 +73,6 @@ class TestGetProfileOr404:
 
         assert result.id == target_profile.id
         assert result.name == "Profile 2"
-        assert result.port == 10242
 
     @pytest.mark.asyncio
     async def test_raises_404_for_zero_id(self, test_session):
@@ -104,27 +93,19 @@ class TestGetProfileOr404:
     @pytest.mark.asyncio
     async def test_returns_all_profile_fields(self, test_session):
         """Test returns profile with all fields populated."""
-        # Create a profile with all fields
+        # Create a profile with all current fields
         profile = ServerProfile(
             name="Complete Profile",
             description="A complete test profile",
             model_path="mlx-community/complete-model",
             model_type="multimodal",
-            port=11000,
-            host="0.0.0.0",
             context_length=4096,
-            max_concurrency=4,
-            queue_timeout=600,
-            queue_size=200,
-            tool_call_parser="default",
-            reasoning_parser="cot",
-            enable_auto_tool_choice=True,
-            trust_remote_code=False,
-            chat_template_file="/path/to/template",
-            log_level="DEBUG",
-            log_file="/path/to/log",
-            no_log_file=False,
             auto_start=True,
+            system_prompt="You are a helpful assistant.",
+            # Generation parameters
+            temperature=0.8,
+            max_tokens=8192,
+            top_p=0.9,
         )
         test_session.add(profile)
         await test_session.commit()
@@ -138,21 +119,13 @@ class TestGetProfileOr404:
         assert result.description == "A complete test profile"
         assert result.model_path == "mlx-community/complete-model"
         assert result.model_type == "multimodal"
-        assert result.port == 11000
-        assert result.host == "0.0.0.0"
         assert result.context_length == 4096
-        assert result.max_concurrency == 4
-        assert result.queue_timeout == 600
-        assert result.queue_size == 200
-        assert result.tool_call_parser == "default"
-        assert result.reasoning_parser == "cot"
-        assert result.enable_auto_tool_choice is True
-        assert result.trust_remote_code is False
-        assert result.chat_template_file == "/path/to/template"
-        assert result.log_level == "DEBUG"
-        assert result.log_file == "/path/to/log"
-        assert result.no_log_file is False
         assert result.auto_start is True
+        assert result.system_prompt == "You are a helpful assistant."
+        # Generation parameters
+        assert result.temperature == 0.8
+        assert result.max_tokens == 8192
+        assert result.top_p == 0.9
 
     @pytest.mark.asyncio
     async def test_profile_after_deletion_raises_404(self, test_session):
@@ -162,11 +135,6 @@ class TestGetProfileOr404:
             name="Deleted Profile",
             model_path="mlx-community/deleted-model",
             model_type="lm",
-            port=10240,
-            host="127.0.0.1",
-            max_concurrency=1,
-            queue_timeout=300,
-            queue_size=100,
         )
         test_session.add(profile)
         await test_session.commit()

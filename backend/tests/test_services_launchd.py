@@ -18,18 +18,15 @@ def launchd_manager(tmp_path):
 
 @pytest.fixture
 def sample_profile():
-    """Create a sample ServerProfile for testing."""
+    """Create a sample ServerProfile for testing.
+
+    With the embedded MLX server, profiles no longer have port/host fields.
+    """
     return ServerProfile(
         id=1,
         name="Test Profile",
         model_path="mlx-community/test-model",
         model_type="lm",
-        port=10240,
-        host="127.0.0.1",
-        max_concurrency=1,
-        queue_timeout=300,
-        queue_size=100,
-        log_level="INFO",
         auto_start=True,
     )
 
@@ -75,6 +72,7 @@ class TestLaunchdManagerGeneratePlist:
     """Tests for the generate_plist method.
 
     Note: With the embedded MLX Server, launchd now runs mlx-manager serve.
+    The server uses a default port (8080) since profiles no longer have ports.
     """
 
     def test_basic_plist(self, launchd_manager, sample_profile):
@@ -93,10 +91,10 @@ class TestLaunchdManagerGeneratePlist:
         plist = launchd_manager.generate_plist(sample_profile)
         args = plist["ProgramArguments"]
 
-        # With embedded server, we just launch mlx-manager serve with port
+        # With embedded server, we just launch mlx-manager serve with default port
         assert "serve" in args
         assert "--port" in args
-        assert "10240" in args
+        assert "8080" in args  # Default port for embedded server
 
     def test_plist_keepalive_settings(self, launchd_manager, sample_profile):
         """Test plist has correct KeepAlive settings."""

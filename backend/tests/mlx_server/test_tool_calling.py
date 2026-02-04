@@ -112,7 +112,7 @@ class TestAdapterToolFormatting:
         assert result == ""
 
     def test_glm4_adapter_format_tools(self):
-        """GLM4 adapter formats tools using XML style."""
+        """GLM4 adapter formats tools using JSON style (similar to Qwen/Hermes)."""
         from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
 
         adapter = GLM4Adapter()
@@ -131,8 +131,9 @@ class TestAdapterToolFormatting:
 
         result = adapter.format_tools_for_prompt(tools)
 
-        assert "<tool>" in result
-        assert "<name>send_email</name>" in result
+        # GLM-4 now uses JSON format like Qwen/Hermes
+        assert "<tools>" in result
+        assert '"name": "send_email"' in result
         assert "Send an email" in result
         assert "<tool_call>" in result
 
