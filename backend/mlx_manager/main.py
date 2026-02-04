@@ -1,6 +1,14 @@
 """MLX Model Manager - FastAPI Application."""
 
-# Configure LogFire FIRST (before any instrumented imports)
+# Configure Loguru FIRST (before any other imports)
+from mlx_manager.logging_config import intercept_standard_logging, setup_logging
+
+setup_logging()
+intercept_standard_logging()
+
+from loguru import logger
+
+# Configure LogFire (after logging, before instrumented imports)
 from mlx_manager import __version__
 from mlx_manager.observability.logfire_config import (
     configure_logfire,
@@ -13,30 +21,10 @@ configure_logfire(service_version=__version__)
 instrument_httpx()
 
 import asyncio
-import logging
-import os
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
-
-# Configure logging to output to console
-# force=True ensures our config takes effect even if uvicorn configured logging first
-# Use MLX_MANAGER_LOG_LEVEL env var to set log level (default: INFO)
-log_level = os.environ.get("MLX_MANAGER_LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-    force=True,
-)
-# Reduce noise from third-party libraries
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
