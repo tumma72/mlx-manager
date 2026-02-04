@@ -115,8 +115,8 @@ class GLM4Adapter(DefaultAdapter):
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tool definitions for inclusion in system prompt.
 
-        GLM-4.7 works best with JSON-style tool call format similar to Qwen/Hermes:
-        <tool_call>{"name": "func", "arguments": {...}}</tool_call>
+        GLM4 uses XML-style tool call format:
+        <tool_call><name>func</name><arguments>{...}</arguments></tool_call>
 
         Args:
             tools: List of tool definitions in OpenAI format
@@ -134,25 +134,24 @@ class GLM4Adapter(DefaultAdapter):
             description = func.get("description", "")
             parameters = func.get("parameters", {})
 
-            # Use JSON format like Qwen/Hermes - more compatible with modern models
-            doc = f"""{{
-  "name": "{name}",
-  "description": "{description}",
-  "parameters": {json.dumps(parameters)}
-}}"""
+            doc = f"""<tool>
+<name>{name}</name>
+<description>{description}</description>
+<parameters>{json.dumps(parameters)}</parameters>
+</tool>"""
             tool_docs.append(doc)
 
         return f"""You have access to the following tools:
 
-<tools>
 {chr(10).join(tool_docs)}
-</tools>
 
-When you decide to call a tool, you MUST respond with ONLY the tool call in this exact format:
-<tool_call>{{"name": "function_name", "arguments": {{"param": "value"}}}}</tool_call>
+When you need to call a tool, use this format:
+<tool_call>
+<name>tool_name</name>
+<arguments>{{"param": "value"}}</arguments>
+</tool_call>
 
-IMPORTANT: When calling a tool, output ONLY the <tool_call>...</tool_call> block, nothing else.
-If you don't need to call a tool, respond normally with text."""
+Only call tools when necessary."""
 
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get additional stop tokens to use when tools are enabled.
