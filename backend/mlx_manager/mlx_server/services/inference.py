@@ -81,6 +81,10 @@ async def generate_chat_completion(
     # Apply chat template
     prompt = adapter.apply_chat_template(tokenizer, effective_messages, add_generation_prompt=True)
 
+    # Debug: Log the final prompt when tools are present
+    if tools:
+        logger.debug(f"=== PROMPT WITH TOOLS (last 1500 chars) ===\n{prompt[-1500:]}")
+
     # CRITICAL: Get stop token IDs from adapter
     # Llama 3.x requires BOTH eos_token_id AND <|eot_id|> (end of turn)
     # Without this, models will generate past the assistant's response
@@ -345,6 +349,11 @@ async def _stream_chat_generate(
 
         # Wait for thread to finish
         gen_thread.join(timeout=1.0)
+
+        # Debug: Log raw accumulated text before finalization
+        raw_text = stream_processor._buffer  # Access internal buffer for debug
+        if tools:
+            logger.debug(f"=== RAW MODEL OUTPUT ===\n{raw_text}")
 
         # Finalize StreamingProcessor - extracts tool calls and reasoning
         result_parsed = stream_processor.finalize()
