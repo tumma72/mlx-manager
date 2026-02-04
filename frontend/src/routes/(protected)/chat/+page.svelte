@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
 	import { Card, Button, Select, Markdown, ThinkingBubble, ErrorMessage, ToolCallBubble } from '$components/ui';
-	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench, Copy } from 'lucide-svelte';
+	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench, Copy, Square } from 'lucide-svelte';
 	import { mcp } from '$lib/api/client';
 	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
 
@@ -67,6 +67,7 @@
 	let availableTools = $state<ToolDefinition[]>([]);
 	let toolsLoaded = $state(false);
 	let copyFeedback = $state(false);
+	let abortController = $state<AbortController | null>(null);
 
 	// With embedded server, all profiles can be used for chat
 	// The model will be loaded on-demand by the embedded MLX Server
@@ -408,6 +409,9 @@
 		apiMessages.push({ role: 'user', content: userContent });
 
 		try {
+			// Create abort controller for this request
+			abortController = new AbortController();
+
 			const requestBody: Record<string, unknown> = {
 				profile_id: selectedProfile.id,
 				messages: apiMessages,
@@ -424,6 +428,7 @@
 					'Authorization': `Bearer ${authStore.token}`,
 				},
 				body: JSON.stringify(requestBody),
+				signal: abortController.signal,
 			});
 
 			if (!response.ok) {
@@ -568,6 +573,12 @@
 			return true;
 
 		} catch (error) {
+			// Check if request was aborted (user clicked Stop)
+			if (error instanceof DOMException && error.name === 'AbortError') {
+				// User stopped generation - not an error
+				return true; // Don't remove user message, handleStop already added partial response
+			}
+
 			// Check for connection/network errors (TypeError for network issues)
 			const isNetworkError = error instanceof TypeError;
 			const errorMsg = error instanceof Error ? error.message : 'Failed to send message';
@@ -640,6 +651,7 @@
 			}
 		} finally {
 			loading = false;
+			abortController = null;
 		}
 	}
 
@@ -694,6 +706,32 @@
 		await navigator.clipboard.writeText(transcript);
 		copyFeedback = true;
 		setTimeout(() => copyFeedback = false, 2000);
+	}
+
+	function handleStop() {
+		if (abortController) {
+			abortController.abort();
+			abortController = null;
+		}
+		loading = false;
+		// Keep any partial response that was streamed
+		if (streamingResponse || streamingThinking) {
+			const cleanedResponse = cleanResponse(streamingResponse);
+			const finalContent = streamingThinking
+				? `<think>${streamingThinking}</think>${cleanedResponse}\n\n*[Generation stopped by user]*`
+				: cleanedResponse + '\n\n*[Generation stopped by user]*';
+			messages.push({
+				role: 'assistant',
+				content: finalContent,
+				toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
+				thinkingDuration: thinkingDuration
+			});
+		}
+		// Reset streaming state
+		streamingThinking = '';
+		streamingResponse = '';
+		thinkingDuration = undefined;
+		streamingToolCalls = [];
 	}
 
 	function handleProfileChange(e: Event) {
@@ -1064,13 +1102,15 @@
 							}
 						}}
 					></textarea>
-					<Button type="submit" disabled={loading || !input.trim()}>
-						{#if loading}
-							<Loader2 class="w-4 h-4 animate-spin" />
-						{:else}
+					{#if loading}
+						<Button type="button" variant="destructive" onclick={handleStop} title="Stop generation">
+							<Square class="w-4 h-4" />
+						</Button>
+					{:else}
+						<Button type="submit" disabled={!input.trim()}>
 							<Send class="w-4 h-4" />
-						{/if}
-					</Button>
+						</Button>
+					{/if}
 				</div>
 				<input
 					type="file"
