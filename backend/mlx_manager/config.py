@@ -1,4 +1,13 @@
-"""Application configuration."""
+"""Application configuration.
+
+Environment Variables:
+    MLX_MANAGER_JWT_SECRET: JWT signing secret (required for production)
+    MLX_MANAGER_DATABASE_PATH: SQLite database location (default: ~/.mlx-manager/mlx-manager.db)
+    MLX_MANAGER_HF_CACHE_PATH: HuggingFace cache directory
+    MLX_MANAGER_OFFLINE_MODE: Disable HuggingFace API calls (default: false)
+    MLX_MANAGER_LOG_LEVEL: Log level (DEBUG, INFO, WARNING, ERROR). Default: INFO
+    MLX_MANAGER_LOG_DIR: Log directory path (default: logs/)
+"""
 
 from pathlib import Path
 
@@ -7,7 +16,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings."""
+    """Application settings.
+
+    All settings can be configured via environment variables with the
+    MLX_MANAGER_ prefix. For example, MLX_MANAGER_DEBUG=true enables debug mode.
+
+    Logging is configured separately via MLX_MANAGER_LOG_LEVEL and
+    MLX_MANAGER_LOG_DIR environment variables (see logging_config.py).
+    """
 
     model_config = SettingsConfigDict(env_prefix="MLX_MANAGER_")
 
