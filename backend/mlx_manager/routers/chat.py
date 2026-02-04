@@ -101,11 +101,14 @@ async def chat_completions(
                 )
             else:
                 # Text model inference
+                # Lower temperature when tools are enabled for more reliable tool calling
+                # Some models (like GLM-4.7) are verbose at higher temps and may not call tools
+                temp = 0.3 if request.tools else 0.7
                 gen = await generate_chat_completion(
                     model_id=model_id,
                     messages=request.messages,
                     max_tokens=4096,
-                    temperature=0.7,
+                    temperature=temp,
                     stream=True,
                     tools=request.tools,  # Pass tools for tool calling support
                 )
