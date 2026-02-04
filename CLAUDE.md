@@ -213,3 +213,20 @@ Backend settings can be configured via environment variables with `MLX_MANAGER_`
 - `MLX_MANAGER_DATABASE_PATH`: SQLite database location (default: `~/.mlx-manager/mlx-manager.db`)
 - `MLX_MANAGER_HF_CACHE_PATH`: HuggingFace cache directory
 - `MLX_MANAGER_DEFAULT_PORT_START`: Starting port for new profiles (default: 10240)
+- `MLX_MANAGER_LOG_LEVEL`: Log level (default: INFO, use DEBUG for verbose output)
+
+## Testing Models
+
+When testing inference features, use these recommended models from mlx-community:
+
+| Model | Type | Features | Notes |
+|-------|------|----------|-------|
+| `mlx-community/Qwen3-0.6B-4bit-DWQ` | Text (LM) | Thinking, Tools | Small and fast, good for quick tests |
+| `mlx-community/GLM-4.7-Flash-4bit` | Text (LM) | Thinking, Tools | Very powerful, reliable tool calling |
+| `mlx-community/gemma-3-27b-it-4bit-DWQ` | Vision | Images, Videos | Multimodal input support |
+| `mlx-community/all-MiniLM-L6-v2-4bit` | Embeddings | — | Requires mlx-embeddings (not yet in Profile UI) |
+| `mlx-community/Kokoro-82M-4bit` | Audio | TTS, STT | Text-to-speech/Speech-to-text (not yet supported) |
+
+**Current limitations:**
+- Profile model_type only supports "lm" (text) and "multimodal" (vision), not "embeddings" or "audio"
+- Audio models (TTS/STT) are not yet integrated
