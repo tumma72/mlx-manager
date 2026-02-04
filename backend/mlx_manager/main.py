@@ -14,6 +14,7 @@ instrument_httpx()
 
 import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,8 +23,10 @@ from fastapi import FastAPI, Request, Response
 
 # Configure logging to output to console
 # force=True ensures our config takes effect even if uvicorn configured logging first
+# Use MLX_MANAGER_LOG_LEVEL env var to set log level (default: INFO)
+log_level = os.environ.get("MLX_MANAGER_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
     force=True,
