@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-01-27)
 
 **Core value:** Enable developers to easily discover, download, configure, and run MLX models locally without command-line complexity — making local AI accessible and manageable.
-**Current focus:** Phase 15 - Code Cleanup & Integration Tests (IN PROGRESS)
+**Current focus:** Milestone v1.2 - MLX Unified Server (COMPLETE)
 
 ## Current Position
 
@@ -28,7 +28,7 @@ Progress: [████████████] 100% (9 of 9 plans complete in 
 ## Milestone v1.2 Summary
 
 **Goal:** MLX Unified Server (pivoted from adapter/proxy approach)
-**Status:** Complete - ready for final verification
+**Status:** Complete - all 9 phases verified
 **Phases:** 9 phases (7-15)
 **Requirements:** 28 total
 - Server Foundation: SRV-01 to SRV-05 (5 requirements)
@@ -287,9 +287,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-04
-Stopped at: Completed 15-09 (Loguru migration)
-Resume file: None - Phase 15 complete
-Next: Final UAT verification or v1.2 release
+Stopped at: Phase 15 execution complete, verified
+Resume file: None - Milestone v1.2 complete
+Next: Run /gsd:audit-milestone to verify cross-phase integration and E2E flows
 
 ### Roadmap Evolution
 

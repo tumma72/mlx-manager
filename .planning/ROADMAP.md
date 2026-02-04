@@ -9,7 +9,7 @@ Transform MLX Manager from a management UI for external servers (mlx-openai-serv
 ## Milestones
 
 - v1.1 UX & Auth - Phases 1-6 (shipped 2026-01-26)
-- v1.2 MLX Unified Server - Phases 7-15 (in progress)
+- v1.2 MLX Unified Server - Phases 7-15 (complete)
 
 ## Phases
 
@@ -27,7 +27,7 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
-### v1.2 MLX Unified Server (In Progress)
+### v1.2 MLX Unified Server (Complete)
 
 **Milestone Goal:** Build our own high-performance MLX inference server with multi-model support, continuous batching, and dual API compatibility.
 
@@ -265,7 +265,7 @@ Plans:
 5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
 6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
 
-**Plans**: 7 plans in 4 waves
+**Plans**: 9 plans in 4 waves
 
 Plans:
 - [x] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
@@ -275,6 +275,8 @@ Plans:
 - [x] 15-05-PLAN.md — Fix memory metrics & stop button (UAT Gap 3 & 4)
 - [x] 15-06-PLAN.md — Fix vision model detection & loading (UAT Gap 5)
 - [x] 15-07-PLAN.md — Fix hanging model downloads (UAT Gap 6)
+- [x] 15-08-PLAN.md — Profile model cleanup (remove obsolete fields, add generation params)
+- [x] 15-09-PLAN.md — Loguru migration (structured logging with separate log files)
 
 ## Progress
 
@@ -290,7 +292,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 7/7 | Complete | 2026-02-03 |
+| 15. Cleanup & Tests | v1.2 | 9/9 | Complete | 2026-02-04 |
 
 ## Technical Architecture
 
@@ -357,5 +359,5 @@ Plans:
 | jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-02-03*
+*Roadmap revised: 2026-02-04*
 *Previous version: adapter/proxy approach (deprecated)*
