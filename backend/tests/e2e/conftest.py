@@ -36,6 +36,30 @@ VISION_MODELS_FULL = [
     "mlx-community/gemma-3-27b-it-4bit-DWQ",
 ]
 
+# Reference model for cross-protocol text testing
+TEXT_MODEL_QUICK = "mlx-community/Qwen3-0.6B-4bit-DWQ"
+
+PROMPTS_DIR = GOLDEN_DIR / "prompts"
+
+# Shared tool definition for tool call tests (OpenAI function calling format)
+WEATHER_TOOL_OPENAI = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get the current weather in a given location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name, e.g. 'Tokyo'",
+                }
+            },
+            "required": ["location"],
+        },
+    },
+}
+
 
 def is_model_available(model_id: str) -> bool:
     """Check if a model is downloaded in HuggingFace cache."""
@@ -81,6 +105,14 @@ def vision_model_full():
             f"Need one of: {', '.join(VISION_MODELS_FULL)}"
         )
     return model
+
+
+@pytest.fixture(scope="session")
+def text_model_quick():
+    """Return quick text model ID, skip if not downloaded."""
+    if not is_model_available(TEXT_MODEL_QUICK):
+        pytest.skip(f"Model {TEXT_MODEL_QUICK} not downloaded")
+    return TEXT_MODEL_QUICK
 
 
 @pytest.fixture(scope="session")
