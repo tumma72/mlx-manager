@@ -44,6 +44,40 @@ router = APIRouter(tags=["chat"])
 _structured_output_validator = StructuredOutputValidator()
 
 
+def _convert_messages_to_dicts(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Convert ChatMessage objects to dicts preserving ALL fields.
+
+    This is the single conversion point for ChatMessage -> dict format.
+    Preserves tool_calls, tool_call_id, and name fields per P3 (no data loss).
+
+    Args:
+        messages: List of ChatMessage Pydantic objects
+
+    Returns:
+        List of dicts with role, content, and optional tool fields
+    """
+    result: list[dict[str, Any]] = []
+    for m in messages:
+        # Extract text from content blocks (for multimodal support)
+        if isinstance(m.content, str):
+            text: str | None = m.content
+        elif m.content is not None:
+            text, _ = extract_content_parts(m.content)
+        else:
+            text = m.content  # None for assistant messages with only tool_calls
+
+        msg: dict[str, Any] = {"role": m.role, "content": text}
+
+        # Preserve tool calling fields (P3: no data loss through layers)
+        if m.tool_calls:
+            msg["tool_calls"] = [tc.model_dump() for tc in m.tool_calls]
+        if m.tool_call_id is not None:
+            msg["tool_call_id"] = m.tool_call_id
+
+        result.append(msg)
+    return result
+
+
 @router.post("/chat/completions", response_model=None)
 async def create_chat_completion(
     request: ChatCompletionRequest,
@@ -237,14 +271,8 @@ async def _handle_routed_request(
     Uses BackendRouter to lookup model-to-backend mapping and route
     appropriately. Handles cloud failover when local inference fails.
     """
-    # Convert messages to dict format
-    messages: list[dict[str, Any]] = []
-    for m in request.messages:
-        if isinstance(m.content, str):
-            text = m.content
-        else:
-            text, _ = extract_content_parts(m.content)
-        messages.append({"role": m.role, "content": text})
+    # Convert messages preserving all fields (tool_calls, tool_call_id)
+    messages = _convert_messages_to_dicts(request.messages)
 
     # Get router singleton and route request with timeout
     settings = get_settings()
@@ -314,14 +342,8 @@ async def _handle_direct_request(
     - Tool calling: Passes tools to inference service
     - Structured output: Validates response against JSON schema
     """
-    # Convert messages to dict format, extracting text from content blocks
-    messages: list[dict[str, Any]] = []
-    for m in request.messages:
-        if isinstance(m.content, str):
-            text = m.content
-        else:
-            text, _ = extract_content_parts(m.content)
-        messages.append({"role": m.role, "content": text})
+    # Convert messages preserving all fields (tool_calls, tool_call_id)
+    messages = _convert_messages_to_dicts(request.messages)
 
     # Handle stop parameter (can be string or list)
     stop: list[str] | None = (
@@ -521,14 +543,8 @@ async def _handle_batched_request(
     # Get actual tokenizer (handle Processor wrapper for vision models)
     actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)
 
-    # Build messages for chat template
-    messages: list[dict[str, str]] = []
-    for m in request.messages:
-        if isinstance(m.content, str):
-            text = m.content
-        else:
-            text, _ = extract_content_parts(m.content)
-        messages.append({"role": m.role, "content": text})
+    # Build messages for chat template (preserving all fields)
+    messages = _convert_messages_to_dicts(request.messages)
 
     # Apply chat template to get prompt string
     prompt = adapter.apply_chat_template(loaded.tokenizer, messages, add_generation_prompt=True)
