@@ -15,6 +15,7 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mlx_manager.config import settings
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -115,7 +116,7 @@ async def list_servers(
                         profile_id=profile.id,
                         profile_name=profile.name,
                         pid=os.getpid(),
-                        port=8080,  # Embedded server always on main port
+                        port=settings.port,  # Embedded server always on main port
                         health_status="healthy",
                         uptime_seconds=model_uptime,
                         memory_mb=loaded_model.size_gb * 1024 if loaded_model else 0.0,

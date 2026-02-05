@@ -11,6 +11,7 @@ import rumps  # type: ignore[import-untyped,import-not-found]
 from loguru import logger
 
 from mlx_manager import __version__
+from mlx_manager.config import DEFAULT_PORT
 
 
 class MLXManagerApp(rumps.App):
@@ -25,7 +26,7 @@ class MLXManagerApp(rumps.App):
 
         self.server_process: subprocess.Popen | None = None
         self.server_host = "127.0.0.1"
-        self.server_port = 8080
+        self.server_port = DEFAULT_PORT
         self.health_check_interval = 5
 
         # Build menu

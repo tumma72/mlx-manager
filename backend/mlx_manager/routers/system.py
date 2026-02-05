@@ -185,8 +185,8 @@ async def get_launchd_status(
 # Audit Log Proxy Endpoints
 # ============================================================================
 
-# MLX Server base URL - embedded server runs on same port (8080) at /v1 prefix
-MLX_SERVER_URL = "http://localhost:8080/v1"
+# MLX Server base URL - embedded server runs on same port at /v1 prefix
+MLX_SERVER_URL = f"http://localhost:{settings.port}/v1"
 
 
 @router.get("/audit-logs")
@@ -298,13 +298,13 @@ async def export_audit_logs(
 async def proxy_audit_log_stream(websocket: WebSocket) -> None:
     """Proxy WebSocket connection to MLX Server for audit log streaming.
 
-    The frontend connects to the manager API (port 8080). The embedded MLX
-    Server runs on the same port at /v1 prefix.
+    The frontend connects to the manager API. The embedded MLX Server runs
+    on the same port at /v1 prefix.
     """
     await websocket.accept()
 
     # MLX Server WebSocket URL - embedded server at /v1 prefix on same port
-    mlx_server_ws_url = "ws://localhost:8080/v1/admin/ws/audit-logs"
+    mlx_server_ws_url = f"ws://localhost:{settings.port}/v1/admin/ws/audit-logs"
 
     try:
         import websockets

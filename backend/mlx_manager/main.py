@@ -38,6 +38,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from mlx_manager.config import settings as manager_settings
 from mlx_manager.database import engine, init_db, recover_incomplete_downloads
 from mlx_manager.mlx_server.config import mlx_server_settings
 
@@ -218,8 +219,8 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:4173",  # SvelteKit preview
         "http://127.0.0.1:4173",
-        "http://localhost:8080",  # Production
-        "http://127.0.0.1:8080",
+        f"http://localhost:{manager_settings.port}",  # Current port
+        f"http://127.0.0.1:{manager_settings.port}",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -295,4 +296,4 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8080)
+    uvicorn.run(app, host="127.0.0.1", port=manager_settings.port)

@@ -14,6 +14,10 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Port constants — single source of truth
+DEFAULT_PORT = 10242  # Production / installed version
+DEV_PORT = 10241  # Development / testing (make dev)
+
 
 class Settings(BaseSettings):
     """Application settings.
@@ -38,7 +42,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "127.0.0.1"
-    port: int = 8080
+    port: int = DEFAULT_PORT
     debug: bool = False
 
     # HuggingFace

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from mlx_manager.config import DEFAULT_PORT
 from mlx_manager.models import ServerProfile
 from mlx_manager.types import LaunchdStatus
 
@@ -36,7 +37,7 @@ class LaunchdManager:
         """Get the plist file path for a profile."""
         return self.launch_agents_dir / f"{self.get_label(profile)}.plist"
 
-    def generate_plist(self, profile: ServerProfile) -> dict:
+    def generate_plist(self, profile: ServerProfile, port: int = DEFAULT_PORT) -> dict:
         """Generate a launchd plist dictionary for a profile.
 
         NOTE: With the embedded MLX Server, this generates a plist
@@ -50,8 +51,7 @@ class LaunchdManager:
         mlx_manager_path = python_dir / "mlx-manager"
 
         # Build command for mlx-manager serve
-        # With embedded server, we use a default port (8080)
-        program_args = [str(mlx_manager_path), "serve", "--port", "8080"]
+        program_args = [str(mlx_manager_path), "serve", "--port", str(port)]
 
         # Build plist dictionary
         plist = {

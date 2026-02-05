@@ -19,6 +19,9 @@ NC='\033[0m' # No Color
 OFFLINE=false
 SKIP_DEPS=false
 
+# Ports — development uses 10241 to avoid conflicting with installed production (10242)
+DEV_PORT=10241
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -117,8 +120,8 @@ cleanup() {
         echo "$pids" | xargs kill 2>/dev/null
     fi
 
-    # Also kill any uvicorn processes we started on port 8080
-    pkill -f "uvicorn mlx_manager.*8080" 2>/dev/null
+    # Also kill any uvicorn processes we started on the dev port
+    pkill -f "uvicorn mlx_manager.*${DEV_PORT}" 2>/dev/null
 
     exit 0
 }
@@ -212,7 +215,7 @@ fi
 
 # Start uvicorn in background with debug logging
 echo "Starting backend server (DEBUG mode)..."
-MLX_MANAGER_LOG_LEVEL=DEBUG uvicorn mlx_manager.main:app --reload --host 127.0.0.1 --port 8080 &
+MLX_MANAGER_LOG_LEVEL=DEBUG MLX_MANAGER_PORT=${DEV_PORT} uvicorn mlx_manager.main:app --reload --host 127.0.0.1 --port ${DEV_PORT} &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -250,9 +253,9 @@ if [ ! -f ".svelte-kit/tsconfig.json" ]; then
     npx svelte-kit sync
 fi
 
-# Start Vite dev server in background
+# Start Vite dev server in background (proxy to dev backend port)
 echo "Starting frontend server..."
-npm run dev &
+VITE_API_PORT=${DEV_PORT} npm run dev &
 FRONTEND_PID=$!
 
 # ============================================================================
@@ -265,8 +268,8 @@ echo -e "${GREEN}MLX Model Manager is running!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "Frontend: ${YELLOW}http://localhost:5173${NC}"
-echo -e "Backend:  ${YELLOW}http://localhost:8080${NC}"
-echo -e "API Docs: ${YELLOW}http://localhost:8080/docs${NC}"
+echo -e "Backend:  ${YELLOW}http://localhost:${DEV_PORT}${NC}"
+echo -e "API Docs: ${YELLOW}http://localhost:${DEV_PORT}/docs${NC}"
 echo ""
 if [ "$OFFLINE" = true ]; then
     echo -e "Mode:     ${BLUE}Offline${NC}"

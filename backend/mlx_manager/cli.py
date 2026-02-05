@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mlx_manager import __version__
+from mlx_manager.config import DEFAULT_PORT
 
 app = typer.Typer(
     name="mlx-manager",
@@ -20,7 +21,7 @@ console = Console()
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
-    port: int = typer.Option(8080, "--port", "-p", help="Port to bind to"),
+    port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="Port to bind to"),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload (dev)"),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser on start"),
 ):
@@ -50,7 +51,7 @@ def serve(
 @app.command()
 def install_service(
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
-    port: int = typer.Option(8080, "--port", help="Port to bind to"),
+    port: int = typer.Option(DEFAULT_PORT, "--port", help="Port to bind to"),
 ):
     """Install MLX Manager as a launchd service (runs at login)."""
     from mlx_manager.services.manager_launchd import install_manager_service
@@ -77,7 +78,7 @@ def status():
     import httpx
 
     try:
-        response = httpx.get("http://127.0.0.1:8080/api/servers", timeout=5.0)
+        response = httpx.get(f"http://127.0.0.1:{DEFAULT_PORT}/api/servers", timeout=5.0)
         servers = response.json()
 
         if not servers:

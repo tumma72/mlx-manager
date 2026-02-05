@@ -15,6 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mlx_manager.config import DEFAULT_PORT
+
 
 @pytest.mark.asyncio
 async def test_list_servers_returns_empty_when_no_models_loaded(auth_client):
@@ -39,7 +41,7 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
     profile = ServerProfile(
         name="Test Profile",
         model_path="mlx-community/test-model",
-        port=8080,
+        port=DEFAULT_PORT,
     )
     test_session.add(profile)
     await test_session.commit()

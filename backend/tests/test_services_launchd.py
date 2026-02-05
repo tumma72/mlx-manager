@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mlx_manager.config import DEFAULT_PORT
 from mlx_manager.models import ServerProfile
 from mlx_manager.services.launchd import LaunchdManager
 
@@ -72,7 +73,7 @@ class TestLaunchdManagerGeneratePlist:
     """Tests for the generate_plist method.
 
     Note: With the embedded MLX Server, launchd now runs mlx-manager serve.
-    The server uses a default port (8080) since profiles no longer have ports.
+    The server uses a default port (10242) since profiles no longer have ports.
     """
 
     def test_basic_plist(self, launchd_manager, sample_profile):
@@ -94,7 +95,7 @@ class TestLaunchdManagerGeneratePlist:
         # With embedded server, we just launch mlx-manager serve with default port
         assert "serve" in args
         assert "--port" in args
-        assert "8080" in args  # Default port for embedded server
+        assert str(DEFAULT_PORT) in args  # Default port for embedded server
 
     def test_plist_keepalive_settings(self, launchd_manager, sample_profile):
         """Test plist has correct KeepAlive settings."""

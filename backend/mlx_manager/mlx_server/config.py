@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from mlx_manager.config import DEFAULT_PORT
+
 # Default database paths
 DEFAULT_MLX_MANAGER_DB = "~/.mlx-manager/mlx-manager.db"
 DEFAULT_MLX_SERVER_DB = "~/.mlx-manager/mlx-server.db"
@@ -37,7 +39,7 @@ class MLXServerSettings(BaseSettings):
 
     # Server binding (standalone mode only)
     host: str = Field(default="127.0.0.1", description="Host to bind the server to")
-    port: int = Field(default=10242, description="Port to bind the server to")
+    port: int = Field(default=DEFAULT_PORT, description="Port to bind the server to")
 
     # Available models (loadable via /v1/chat/completions)
     # These are model IDs that the server is configured to serve.

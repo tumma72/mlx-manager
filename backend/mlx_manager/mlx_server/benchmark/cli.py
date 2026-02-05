@@ -10,6 +10,7 @@ import asyncio
 
 import typer
 
+from mlx_manager.config import DEFAULT_PORT
 from mlx_manager.mlx_server.benchmark.runner import BenchmarkRunner, BenchmarkSummary
 
 app = typer.Typer(
@@ -94,7 +95,7 @@ def run(
         help="Use streaming mode",
     ),
     base_url: str = typer.Option(
-        "http://localhost:10242",
+        f"http://localhost:{DEFAULT_PORT}",
         "--url",
         help="MLX Server base URL",
     ),
@@ -125,7 +126,7 @@ def run(
 @app.command()
 def suite(
     base_url: str = typer.Option(
-        "http://localhost:10242",
+        f"http://localhost:{DEFAULT_PORT}",
         "--url",
         help="MLX Server base URL",
     ),

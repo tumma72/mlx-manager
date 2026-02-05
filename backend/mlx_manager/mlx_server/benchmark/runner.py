@@ -14,6 +14,8 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from mlx_manager.config import DEFAULT_PORT
+
 
 @dataclass
 class BenchmarkResult:
@@ -76,7 +78,7 @@ class BenchmarkRunner:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:10242",
+        base_url: str = f"http://localhost:{DEFAULT_PORT}",
         timeout: float = 300.0,
     ) -> None:
         self.base_url = base_url
