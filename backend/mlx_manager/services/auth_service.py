@@ -6,7 +6,8 @@ Uses AuthLib jose for JWT encoding/decoding and pwdlib[argon2] for password hash
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from authlib.jose import JoseError, jwt as authlib_jwt
+from authlib.jose import JoseError
+from authlib.jose import jwt as authlib_jwt
 from loguru import logger
 from pwdlib import PasswordHash
 
