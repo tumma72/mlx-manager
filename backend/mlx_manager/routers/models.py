@@ -389,6 +389,9 @@ async def resume_download(
         "task_id": task_id,
         "model_id": download.model_id,
         "download_id": download.id,
+        "progress": download_tasks[task_id]["progress"],
+        "downloaded_bytes": download.downloaded_bytes,
+        "total_bytes": download.total_bytes or 0,
     }
 
 

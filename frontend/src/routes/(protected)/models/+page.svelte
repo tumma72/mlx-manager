@@ -204,7 +204,7 @@
 
 <div class="space-y-6">
 	<!-- Sticky Header and Search Section -->
-	<div class="sticky top-0 z-20 bg-background pt-2 pb-4 -mx-4 px-4">
+	<div class="sticky top-0 z-20 bg-gray-50 dark:bg-gray-900 pt-2 pb-4 -mx-4 px-4">
 		<div class="flex items-center justify-between mb-4">
 			<h1 class="text-2xl font-bold">Model Browser</h1>
 			{#if systemStore.memory}
@@ -272,7 +272,7 @@
 
 	<!-- Active Downloads Section (below sticky search) -->
 	{#if activeDownloads().length > 0}
-		<div class="bg-background pb-4 border-b mb-2">
+		<div class="pb-4 border-b mb-2">
 			<h2 class="text-sm font-medium text-muted-foreground mb-2">
 				Downloading ({activeDownloads().length})
 			</h2>

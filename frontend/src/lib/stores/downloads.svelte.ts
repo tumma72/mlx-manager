@@ -97,10 +97,17 @@ class DownloadsStore {
     const state = this.downloads.get(modelId);
     if (!state?.download_id) return;
 
-    const { task_id } = await modelsApi.resumeDownload(state.download_id);
+    const { task_id, progress, downloaded_bytes, total_bytes } =
+      await modelsApi.resumeDownload(state.download_id);
 
-    // Update state and reconnect SSE with new task_id
-    this.updateDownload(modelId, { status: "downloading", task_id });
+    // Update state with current progress and reconnect SSE with new task_id
+    this.updateDownload(modelId, {
+      status: "downloading",
+      task_id,
+      progress,
+      downloaded_bytes,
+      total_bytes,
+    });
     this.connectSSE(modelId, task_id);
   }
 

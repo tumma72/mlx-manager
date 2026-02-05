@@ -4,6 +4,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockModelsApi = {
   startDownload: vi.fn(),
   getActiveDownloads: vi.fn(),
+  pauseDownload: vi.fn(),
+  resumeDownload: vi.fn(),
+  cancelDownload: vi.fn(),
 };
 
 vi.mock("$api", () => ({
@@ -58,6 +61,14 @@ describe("DownloadsStore", () => {
     // Reset mocks
     mockModelsApi.startDownload.mockResolvedValue({ task_id: "test-task-123" });
     mockModelsApi.getActiveDownloads.mockResolvedValue([]);
+    mockModelsApi.pauseDownload.mockResolvedValue(undefined);
+    mockModelsApi.resumeDownload.mockResolvedValue({
+      task_id: "resumed-task",
+      progress: 0,
+      downloaded_bytes: 0,
+      total_bytes: 0,
+    });
+    mockModelsApi.cancelDownload.mockResolvedValue(undefined);
 
     // Reset modules to get a fresh store instance
     vi.resetModules();
@@ -553,6 +564,240 @@ describe("DownloadsStore", () => {
       await downloadsStore.loadActiveDownloads();
 
       expect(mockEventSources).toHaveLength(0);
+    });
+  });
+
+  describe("pauseDownload", () => {
+    it("calls API with download_id and closes SSE", async () => {
+      // Use reconnect to set up a download with download_id and SSE
+      downloadsStore.reconnect("mlx-community/test-model", "task-1", {
+        download_id: 42,
+        status: "downloading",
+        progress: 30,
+      });
+      const eventSource = mockEventSources[0];
+
+      await downloadsStore.pauseDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.pauseDownload).toHaveBeenCalledWith(42);
+      expect(eventSource.close).toHaveBeenCalled();
+
+      const download = downloadsStore.getProgress("mlx-community/test-model");
+      expect(download?.status).toBe("paused");
+    });
+
+    it("does nothing if model has no download_id", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+
+      // No download_id set (initial state has no download_id)
+      await downloadsStore.pauseDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.pauseDownload).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for unknown model", async () => {
+      await downloadsStore.pauseDownload("mlx-community/unknown");
+
+      expect(mockModelsApi.pauseDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resumeDownload", () => {
+    it("calls API and reconnects SSE with new task_id", async () => {
+      // Set up a paused download with download_id
+      downloadsStore.reconnect("mlx-community/test-model", "task-1", {
+        download_id: 42,
+        status: "downloading",
+        progress: 30,
+      });
+      // Pause it first
+      await downloadsStore.pauseDownload("mlx-community/test-model");
+
+      mockModelsApi.resumeDownload.mockResolvedValue({
+        task_id: "new-task-789",
+        progress: 45,
+        downloaded_bytes: 4500000,
+        total_bytes: 10000000,
+      });
+
+      await downloadsStore.resumeDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.resumeDownload).toHaveBeenCalledWith(42);
+
+      const download = downloadsStore.getProgress("mlx-community/test-model");
+      expect(download?.status).toBe("downloading");
+      expect(download?.task_id).toBe("new-task-789");
+      expect(download?.progress).toBe(45);
+      expect(download?.downloaded_bytes).toBe(4500000);
+      expect(download?.total_bytes).toBe(10000000);
+
+      // New SSE connection created
+      const lastEventSource = mockEventSources[mockEventSources.length - 1];
+      expect(lastEventSource.url).toBe(
+        "/api/models/download/new-task-789/progress",
+      );
+    });
+
+    it("does nothing if model has no download_id", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+
+      await downloadsStore.resumeDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.resumeDownload).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for unknown model", async () => {
+      await downloadsStore.resumeDownload("mlx-community/unknown");
+
+      expect(mockModelsApi.resumeDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancelDownload", () => {
+    it("calls API, closes SSE, and removes from store", async () => {
+      // Use reconnect to set up a download with download_id and SSE
+      downloadsStore.reconnect("mlx-community/test-model", "task-1", {
+        download_id: 42,
+        status: "downloading",
+        progress: 30,
+      });
+      const eventSource = mockEventSources[0];
+
+      await downloadsStore.cancelDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.cancelDownload).toHaveBeenCalledWith(42);
+      expect(eventSource.close).toHaveBeenCalled();
+      expect(
+        downloadsStore.getProgress("mlx-community/test-model"),
+      ).toBeUndefined();
+    });
+
+    it("does nothing if model has no download_id", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+
+      await downloadsStore.cancelDownload("mlx-community/test-model");
+
+      expect(mockModelsApi.cancelDownload).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for unknown model", async () => {
+      await downloadsStore.cancelDownload("mlx-community/unknown");
+
+      expect(mockModelsApi.cancelDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("isPaused", () => {
+    it("returns false for unknown model", () => {
+      expect(downloadsStore.isPaused("mlx-community/unknown")).toBe(false);
+    });
+
+    it("returns false for downloading model", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+      mockEventSources[0].simulateMessage({ status: "downloading" });
+
+      expect(downloadsStore.isPaused("mlx-community/test-model")).toBe(false);
+    });
+
+    it("returns true for paused model", async () => {
+      // Use reconnect + pause to set up paused state with download_id
+      downloadsStore.reconnect("mlx-community/test-model", "task-1", {
+        download_id: 42,
+        status: "downloading",
+      });
+      await downloadsStore.pauseDownload("mlx-community/test-model");
+
+      expect(downloadsStore.isPaused("mlx-community/test-model")).toBe(true);
+    });
+  });
+
+  describe("loadActiveDownloads with paused downloads", () => {
+    it("loads paused downloads without SSE connection", async () => {
+      mockModelsApi.getActiveDownloads.mockResolvedValue([
+        {
+          model_id: "mlx-community/paused-model",
+          task_id: "task-paused",
+          download_id: 99,
+          status: "paused",
+          progress: 50,
+          downloaded_bytes: 500000,
+          total_bytes: 1000000,
+        },
+      ]);
+
+      await downloadsStore.loadActiveDownloads();
+
+      // No SSE connection for paused downloads
+      expect(mockEventSources).toHaveLength(0);
+
+      // But state is tracked in the store
+      const download = downloadsStore.getProgress(
+        "mlx-community/paused-model",
+      );
+      expect(download).toBeDefined();
+      expect(download?.status).toBe("paused");
+      expect(download?.download_id).toBe(99);
+      expect(download?.progress).toBe(50);
+      expect(download?.downloaded_bytes).toBe(500000);
+      expect(download?.total_bytes).toBe(1000000);
+    });
+
+    it("loads mix of paused and active downloads", async () => {
+      mockModelsApi.getActiveDownloads.mockResolvedValue([
+        {
+          model_id: "mlx-community/paused-model",
+          task_id: "task-paused",
+          download_id: 99,
+          status: "paused",
+          progress: 50,
+          downloaded_bytes: 500000,
+          total_bytes: 1000000,
+        },
+        {
+          model_id: "mlx-community/active-model",
+          task_id: "task-active",
+          download_id: 100,
+          status: "downloading",
+          progress: 30,
+          downloaded_bytes: 300000,
+          total_bytes: 1000000,
+        },
+      ]);
+
+      await downloadsStore.loadActiveDownloads();
+
+      // Only active download gets SSE connection
+      expect(mockEventSources).toHaveLength(1);
+      expect(mockEventSources[0].url).toBe(
+        "/api/models/download/task-active/progress",
+      );
+
+      // Both are in the store
+      expect(
+        downloadsStore.getProgress("mlx-community/paused-model"),
+      ).toBeDefined();
+      expect(
+        downloadsStore.getProgress("mlx-community/active-model"),
+      ).toBeDefined();
+    });
+  });
+
+  describe("clearCompleted with cancelled downloads", () => {
+    it("removes cancelled downloads", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+      mockEventSources[0].simulateMessage({
+        status: "cancelled",
+      });
+
+      expect(
+        downloadsStore.getProgress("mlx-community/test-model"),
+      ).toBeDefined();
+
+      downloadsStore.clearCompleted();
+
+      expect(
+        downloadsStore.getProgress("mlx-community/test-model"),
+      ).toBeUndefined();
     });
   });
 

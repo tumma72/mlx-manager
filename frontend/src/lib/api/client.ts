@@ -297,7 +297,14 @@ export const models = {
 
   resumeDownload: async (
     downloadId: number,
-  ): Promise<{ task_id: string; model_id: string; download_id: number }> => {
+  ): Promise<{
+    task_id: string;
+    model_id: string;
+    download_id: number;
+    progress: number;
+    downloaded_bytes: number;
+    total_bytes: number;
+  }> => {
     const res = await fetch(
       `${API_BASE}/models/download/${downloadId}/resume`,
       {
