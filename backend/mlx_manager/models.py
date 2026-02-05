@@ -170,7 +170,10 @@ class Download(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     model_id: str = Field(index=True)
-    status: str = Field(default="pending")  # pending, downloading, paused, completed, failed, cancelled
+    # Status flow: pending -> downloading -> completed/failed
+    #              downloading -> paused -> downloading (resume)
+    #              downloading/paused/pending -> cancelled
+    status: str = Field(default="pending")
     total_bytes: int | None = None
     downloaded_bytes: int = Field(default=0)
     error: str | None = None

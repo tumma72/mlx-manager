@@ -163,7 +163,7 @@ async def test_get_download_progress_with_valid_task(auth_client):
         "progress": 0,
     }
 
-    async def mock_download_model(model_id):
+    async def mock_download_model(model_id, cancel_event=None):
         yield {"status": "downloading", "progress": 50}
         yield {"status": "completed", "progress": 100}
 
@@ -194,7 +194,7 @@ async def test_get_download_progress_with_error(auth_client):
         "progress": 0,
     }
 
-    async def mock_download_model(model_id):
+    async def mock_download_model(model_id, cancel_event=None):
         raise Exception("Download failed: network error")
         yield  # Make it a generator (unreachable)
 
@@ -866,7 +866,7 @@ async def test_download_progress_sse_updates_db_periodically(auth_client):
     # Track calls to _update_download_record
     update_calls = []
 
-    async def mock_download_model(model_id):
+    async def mock_download_model(model_id, cancel_event=None):
         yield {
             "status": "downloading",
             "progress": 50,
@@ -924,7 +924,7 @@ async def test_download_progress_sse_error_updates_db(auth_client):
 
     update_calls = []
 
-    async def mock_download_model_error(model_id):
+    async def mock_download_model_error(model_id, cancel_event=None):
         raise Exception("Simulated network error")
         yield  # Make it a generator
 
@@ -967,7 +967,7 @@ async def test_download_progress_sse_without_download_id(auth_client):
         "progress": 0,
     }
 
-    async def mock_download_model(model_id):
+    async def mock_download_model(model_id, cancel_event=None):
         yield {"status": "completed", "progress": 100}
 
     with (
