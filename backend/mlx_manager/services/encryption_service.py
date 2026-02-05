@@ -1,105 +1,95 @@
-"""API key encryption service using Fernet symmetric encryption."""
+"""API key encryption service using AuthLib JWE (A256KW + A256GCM).
 
-import base64
-import os
+Replaces the previous Fernet-based implementation with AuthLib's JWE for
+symmetric encryption. Uses the jwt_secret (SHA-256 hashed to 256 bits) as
+the encryption key. No salt file needed — the key is deterministic from
+the jwt_secret alone.
+"""
+
+import hashlib
 from functools import lru_cache
-from pathlib import Path
 
-from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from authlib.jose import JsonWebEncryption, OctKey
+from loguru import logger
 
-from mlx_manager.config import ensure_data_dir, settings
+from mlx_manager.config import settings
 
 
-def _get_salt_path() -> Path:
-    """Get the path to the encryption salt file."""
-    return settings.database_path.parent / ".encryption_salt"
-
-
-def _get_or_create_salt() -> bytes:
-    """Get or create persistent salt for key derivation.
-
-    The salt is stored alongside the database in ~/.mlx-manager/.encryption_salt.
-    If the salt file doesn't exist, a new 16-byte random salt is generated and persisted.
-    """
-    ensure_data_dir()
-    salt_path = _get_salt_path()
-
-    if salt_path.exists():
-        return salt_path.read_bytes()
-
-    # Generate new salt
-    salt = os.urandom(16)
-    salt_path.write_bytes(salt)
-    return salt
+class DecryptionError(Exception):
+    """Raised when decryption fails (wrong key, tampered data, or invalid format)."""
 
 
 @lru_cache(maxsize=1)
-def _get_fernet_cached(jwt_secret: str, salt_hex: str) -> Fernet:
-    """Get cached Fernet instance with derived key.
+def _get_jwe_key_cached(jwt_secret: str) -> OctKey:
+    """Get cached OctKey derived from jwt_secret via SHA-256.
 
     Args:
-        jwt_secret: The JWT secret used as password for key derivation.
-        salt_hex: Hex-encoded salt (for cache key stability).
+        jwt_secret: The JWT secret used to derive the encryption key.
 
     Returns:
-        Fernet instance for encryption/decryption.
+        OctKey instance for JWE encryption/decryption.
     """
-    salt = bytes.fromhex(salt_hex)
-
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=1_200_000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(jwt_secret.encode()))
-    return Fernet(key)
+    key_bytes = hashlib.sha256(jwt_secret.encode()).digest()
+    return OctKey.import_key(key_bytes)
 
 
-def _get_fernet() -> Fernet:
-    """Get Fernet instance with derived key from jwt_secret + salt."""
-    salt = _get_or_create_salt()
-    return _get_fernet_cached(settings.jwt_secret, salt.hex())
+def _get_jwe_key() -> OctKey:
+    """Get OctKey instance derived from jwt_secret."""
+    return _get_jwe_key_cached(settings.jwt_secret)
 
 
 def encrypt_api_key(plain_key: str) -> str:
-    """Encrypt an API key for secure storage.
+    """Encrypt an API key for secure storage using JWE (A256KW + A256GCM).
 
     Args:
         plain_key: The plaintext API key to encrypt.
 
     Returns:
-        Base64-encoded encrypted string suitable for database storage.
+        JWE compact serialization string suitable for database storage.
     """
-    f = _get_fernet()
-    return f.encrypt(plain_key.encode()).decode()
+    jwe = JsonWebEncryption()
+    header = {"alg": "A256KW", "enc": "A256GCM"}
+    key = _get_jwe_key()
+    token: bytes = jwe.serialize_compact(header, plain_key.encode(), key)
+    return token.decode("ascii")
 
 
 def decrypt_api_key(encrypted_key: str) -> str:
     """Decrypt an API key from storage.
 
     Args:
-        encrypted_key: The encrypted API key from database.
+        encrypted_key: The JWE compact serialization string from database.
 
     Returns:
         The original plaintext API key.
 
     Raises:
-        InvalidToken: If the encrypted key is invalid or tampered with.
+        DecryptionError: If the encrypted key is invalid, tampered with,
+            or was encrypted with a different key.
     """
-    f = _get_fernet()
-    return f.decrypt(encrypted_key.encode()).decode()
+    try:
+        jwe = JsonWebEncryption()
+        key = _get_jwe_key()
+        data = jwe.deserialize_compact(encrypted_key.encode("ascii"), key)
+        payload: bytes = data["payload"]
+        return payload.decode("utf-8")
+    except Exception as e:
+        logger.error(
+            f"Failed to decrypt API key. If this was encrypted with a previous version, "
+            f"please re-enter the API key in Settings. Error: {e}"
+        )
+        raise DecryptionError(str(e)) from e
 
 
 def clear_cache() -> None:
-    """Clear the cached Fernet instance.
+    """Clear the cached JWE key instance.
 
-    Useful for testing when jwt_secret or salt changes.
+    Useful for testing when jwt_secret changes.
     """
-    _get_fernet_cached.cache_clear()
+    _get_jwe_key_cached.cache_clear()
 
 
-# Re-export InvalidToken for consumers
-__all__ = ["encrypt_api_key", "decrypt_api_key", "clear_cache", "InvalidToken"]
+# Re-export DecryptionError as InvalidToken for backward compatibility with consumers
+InvalidToken = DecryptionError
+
+__all__ = ["encrypt_api_key", "decrypt_api_key", "clear_cache", "InvalidToken", "DecryptionError"]
