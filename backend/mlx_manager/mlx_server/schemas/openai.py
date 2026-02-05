@@ -338,3 +338,28 @@ class EmbeddingResponse(BaseModel):
     model: str
     object: Literal["list"] = "list"
     usage: EmbeddingUsage
+
+
+# --- Audio API (TTS / STT) ---
+
+
+class SpeechRequest(BaseModel):
+    """OpenAI TTS (text-to-speech) request.
+
+    Reference: https://platform.openai.com/docs/api-reference/audio/createSpeech
+    """
+
+    model: str
+    input: str = Field(..., min_length=1, max_length=4096)
+    voice: str = "af_heart"
+    response_format: Literal["wav", "flac", "mp3"] = "wav"
+    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+
+
+class TranscriptionResponse(BaseModel):
+    """OpenAI STT (speech-to-text) transcription response.
+
+    Reference: https://platform.openai.com/docs/api-reference/audio/createTranscription
+    """
+
+    text: str
