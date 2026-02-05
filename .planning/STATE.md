@@ -248,6 +248,10 @@ Recent decisions affecting current work:
 - **Manual pool init in ASGI tests**: httpx ASGITransport does not trigger FastAPI lifespan; initialize ModelPoolManager explicitly in fixture
 - **Cleanup models after each E2E test**: Unload all loaded models between tests to prevent 7-16GB vision model memory accumulation
 
+- **threading.Event for download cancellation**: Use threading.Event for cross-task cancellation signaling between async endpoints and executor-based downloads
+- **Paused downloads not auto-resumed**: Paused downloads stay paused on server restart — user must explicitly click Resume
+- **Inline cancel confirmation**: Cancel confirmation uses inline Confirm/Keep buttons rather than a modal dialog
+
 See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
