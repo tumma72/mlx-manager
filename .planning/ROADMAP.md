@@ -265,7 +265,7 @@ Plans:
 5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
 6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
 
-**Plans**: 15 plans in 6 waves
+**Plans**: 16 plans in 6 waves
 
 Plans:
 - [x] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
@@ -283,6 +283,7 @@ Plans:
 - [x] 15-13-PLAN.md — Audio integration (ModelType.AUDIO, detection, TTS/STT endpoints, E2E)
 - [x] 15-14-PLAN.md — Download management (pause/resume/cancel with HF cache cleanup)
 - [x] 15-15-PLAN.md — AuthLib consolidation (JWE encryption + jose JWT)
+- [x] 15-16-PLAN.md — MLX Server architecture compliance (dead code, ToolCall unification, message fidelity, adapter contracts, family-aware streaming)
 
 ## Progress
 
@@ -298,7 +299,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 15/15 | Complete | 2026-02-05 |
+| 15. Cleanup & Tests | v1.2 | 16/16 | Complete | 2026-02-05 |
 
 ## Technical Architecture
 
