@@ -159,6 +159,18 @@ def embeddings_model():
     return EMBEDDINGS_MODEL
 
 
+# Reference model for audio TTS testing
+AUDIO_TTS_MODEL = "mlx-community/Kokoro-82M-4bit"
+
+
+@pytest.fixture(scope="session")
+def audio_tts_model():
+    """Return audio TTS model ID, skip if not downloaded."""
+    if not is_model_available(AUDIO_TTS_MODEL):
+        pytest.skip(f"Model {AUDIO_TTS_MODEL} not downloaded")
+    return AUDIO_TTS_MODEL
+
+
 @pytest.fixture(autouse=True)
 async def cleanup_pool():
     """Reset model pool after each test to free memory."""
