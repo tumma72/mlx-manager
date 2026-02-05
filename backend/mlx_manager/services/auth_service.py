@@ -1,9 +1,12 @@
-"""Authentication service for password hashing and JWT token management."""
+"""Authentication service for password hashing and JWT token management.
+
+Uses AuthLib jose for JWT encoding/decoding and pwdlib[argon2] for password hashing.
+"""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
+from authlib.jose import JoseError, jwt as authlib_jwt
 from loguru import logger
 from pwdlib import PasswordHash
 
@@ -38,8 +41,10 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
         expire = datetime.now(tz=UTC) + expires_delta
     else:
         expire = datetime.now(tz=UTC) + timedelta(days=settings.jwt_expire_days)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    to_encode["exp"] = expire
+    header = {"alg": settings.jwt_algorithm}
+    token: bytes = authlib_jwt.encode(header, to_encode, settings.jwt_secret)
+    return token.decode("utf-8")
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
@@ -52,10 +57,12 @@ def decode_token(token: str) -> dict[str, Any] | None:
         Decoded payload dict, or None if invalid/expired.
     """
     try:
-        payload: dict[str, Any] = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-        )
-        return payload
-    except jwt.InvalidTokenError as e:
+        payload = authlib_jwt.decode(token, settings.jwt_secret)
+        payload.validate()
+        return dict(payload)
+    except JoseError as e:
         logger.debug(f"Invalid JWT token: {e}")
+        return None
+    except Exception as e:
+        logger.debug(f"JWT decode error: {e}")
         return None
