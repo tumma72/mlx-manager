@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import shutil
+import threading
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -22,6 +23,83 @@ from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+# ============================================================================
+# Download Cancellation Infrastructure
+# ============================================================================
+
+# Track cancellation events per download (keyed by download_id as string)
+_cancel_events: dict[str, threading.Event] = {}
+
+
+def register_cancel_event(download_id: str) -> threading.Event:
+    """Register a cancellation event for a download.
+
+    Returns the event so the download loop can check it.
+    """
+    event = threading.Event()
+    _cancel_events[download_id] = event
+    return event
+
+
+def request_cancel(download_id: str) -> bool:
+    """Signal a download to cancel.
+
+    Returns True if the event was found and set.
+    """
+    event = _cancel_events.get(download_id)
+    if event:
+        event.set()
+        return True
+    return False
+
+
+def cleanup_cancel_event(download_id: str) -> None:
+    """Remove cancel event after download completes/cancels."""
+    _cancel_events.pop(download_id, None)
+
+
+def cleanup_partial_download(model_id: str) -> bool:
+    """Remove all partial download files for a model from HF cache.
+
+    Uses huggingface_hub's cache management to safely delete partial data.
+    Falls back to manual directory deletion if the cache API fails.
+    """
+    try:
+        from huggingface_hub import scan_cache_dir
+
+        cache = scan_cache_dir()
+        for repo in cache.repos:
+            if repo.repo_id == model_id:
+                delete_strategy = cache.delete_revisions(
+                    [rev.commit_hash for rev in repo.revisions]
+                )
+                delete_strategy.execute()
+                logger.info(
+                    f"Cleaned up {delete_strategy.expected_freed_size_str} for {model_id}"
+                )
+                return True
+        # Model not found in cache via API - try manual cleanup
+        return _manual_cleanup(model_id)
+    except Exception as e:
+        logger.error(f"Cache API cleanup failed for {model_id}: {e}")
+        return _manual_cleanup(model_id)
+
+
+def _manual_cleanup(model_id: str) -> bool:
+    """Fallback: manually delete the HF cache directory for a model."""
+    cache_dir = (
+        Path.home()
+        / ".cache"
+        / "huggingface"
+        / "hub"
+        / f"models--{model_id.replace('/', '--')}"
+    )
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+        logger.info(f"Manually cleaned up {cache_dir}")
+        return True
+    return False
 
 
 class SilentProgress(tqdm):
@@ -134,8 +212,16 @@ class HuggingFaceClient:
     async def download_model(
         self,
         model_id: str,
+        cancel_event: threading.Event | None = None,
     ) -> AsyncGenerator[DownloadStatus, None]:
-        """Download a model with progress updates."""
+        """Download a model with progress updates.
+
+        Args:
+            model_id: HuggingFace model ID to download.
+            cancel_event: Optional threading.Event to signal cancellation.
+                          When set, the download loop will stop and yield
+                          a "cancelled" status.
+        """
         logger.info(f"Starting download process for {model_id}")
 
         if settings.offline_mode:
@@ -222,6 +308,23 @@ class HuggingFaceClient:
             while not download_task.done():
                 await asyncio.sleep(1.0)  # Poll every second
                 poll_count += 1
+
+                # Check for cancellation
+                if cancel_event and cancel_event.is_set():
+                    logger.info(f"Download cancelled for {model_id}")
+                    download_task.cancel()
+                    try:
+                        await download_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                    yield DownloadStatus(
+                        status="cancelled",
+                        model_id=model_id,
+                        total_bytes=total_bytes,
+                        downloaded_bytes=self._get_directory_size(download_dir),
+                        progress=0,
+                    )
+                    return
 
                 current_bytes = self._get_directory_size(download_dir)
                 progress = int((current_bytes / total_bytes) * 100) if total_bytes > 0 else 0
