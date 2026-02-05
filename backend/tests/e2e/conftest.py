@@ -8,19 +8,33 @@ Run with: pytest -m e2e_vision_quick
 Run all:  pytest -m e2e
 """
 
-import pytest
+import os
+
 import httpx
+import pytest
 from pathlib import Path
 
+# Set test database to in-memory before importing app modules
+os.environ.setdefault("MLX_MANAGER_DATABASE_PATH", ":memory:")
+
 from mlx_manager.mlx_server.models import pool as pool_module
+from mlx_manager.mlx_server.models.pool import ModelPoolManager
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 GOLDEN_DIR = FIXTURES_DIR / "golden"
 IMAGES_DIR = FIXTURES_DIR / "images"
 
-# Reference models for E2E testing
-VISION_MODEL_QUICK = "mlx-community/Qwen2-VL-2B-Instruct-4bit"
-VISION_MODEL_FULL = "mlx-community/gemma-3-27b-it-4bit-DWQ"
+# Reference models for E2E testing.
+# Order matters: first available model is selected.
+# Prefer qat variants over DWQ for Gemma due to VisionConfig compatibility.
+VISION_MODELS_QUICK = [
+    "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+    "mlx-community/gemma-3-12b-it-qat-4bit",
+]
+VISION_MODELS_FULL = [
+    "mlx-community/gemma-3-27b-it-qat-4bit",
+    "mlx-community/gemma-3-27b-it-4bit-DWQ",
+]
 
 
 def is_model_available(model_id: str) -> bool:
@@ -37,20 +51,36 @@ def is_model_available(model_id: str) -> bool:
     return False
 
 
+def _find_available_model(candidates: list[str]) -> str | None:
+    """Find the first available model from a list of candidates."""
+    for model_id in candidates:
+        if is_model_available(model_id):
+            return model_id
+    return None
+
+
 @pytest.fixture(scope="session")
 def vision_model_quick():
-    """Return quick vision model ID, skip if not downloaded."""
-    if not is_model_available(VISION_MODEL_QUICK):
-        pytest.skip(f"Model {VISION_MODEL_QUICK} not downloaded")
-    return VISION_MODEL_QUICK
+    """Return quick vision model ID, skip if none available."""
+    model = _find_available_model(VISION_MODELS_QUICK)
+    if model is None:
+        pytest.skip(
+            f"No quick vision model available. "
+            f"Need one of: {', '.join(VISION_MODELS_QUICK)}"
+        )
+    return model
 
 
 @pytest.fixture(scope="session")
 def vision_model_full():
-    """Return full vision model ID, skip if not downloaded."""
-    if not is_model_available(VISION_MODEL_FULL):
-        pytest.skip(f"Model {VISION_MODEL_FULL} not downloaded")
-    return VISION_MODEL_FULL
+    """Return full vision model ID, skip if none available."""
+    model = _find_available_model(VISION_MODELS_FULL)
+    if model is None:
+        pytest.skip(
+            f"No full vision model available. "
+            f"Need one of: {', '.join(VISION_MODELS_FULL)}"
+        )
+    return model
 
 
 @pytest.fixture(scope="session")
@@ -62,11 +92,23 @@ def anyio_backend():
 async def app_client():
     """Async HTTP client for the FastAPI app.
 
-    Uses ASGI transport to call the FastAPI app directly.
-    The app lifespan initializes the model pool automatically.
+    Initializes the model pool and database before creating the client,
+    since httpx ASGITransport does not trigger FastAPI lifespan handlers.
     """
     from mlx_manager.main import app
+    from mlx_manager.database import init_db
     from httpx import ASGITransport
+
+    # Initialize database (creates tables in memory)
+    await init_db()
+
+    # Initialize model pool if not already set.
+    # Use generous memory limit to support large models like Gemma-3-27b.
+    if pool_module.model_pool is None:
+        pool_module.model_pool = ModelPoolManager(
+            max_memory_gb=48.0,
+            max_models=4,
+        )
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app),
