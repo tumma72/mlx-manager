@@ -4,7 +4,7 @@ POST /v1/audio/speech - Generate audio from text.
 OpenAI-compatible: https://platform.openai.com/docs/api-reference/audio/createSpeech
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from loguru import logger
 
@@ -37,13 +37,22 @@ async def create_speech(request: SpeechRequest) -> Response:
         f"TTS request: model={request.model}, text_len={len(request.input)}, voice={request.voice}"
     )
 
-    audio_bytes, _sample_rate = await generate_speech(
-        model_id=request.model,
-        text=request.input,
-        voice=request.voice,
-        speed=request.speed,
-        response_format=request.response_format,
-    )
+    try:
+        audio_bytes, _sample_rate = await generate_speech(
+            model_id=request.model,
+            text=request.input,
+            voice=request.voice,
+            speed=request.speed,
+            response_format=request.response_format,
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.exception(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Unexpected TTS error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     content_type = AUDIO_CONTENT_TYPES.get(request.response_format, "application/octet-stream")
 

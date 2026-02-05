@@ -50,6 +50,7 @@ dependencies = [
     "jsonschema>=4.0.0",
     "loguru>=0.7.3",
     "mlx-audio>=0.3.1",
+    "misaki[en]>=0.9.0",
 ]
 
 [project.optional-dependencies]

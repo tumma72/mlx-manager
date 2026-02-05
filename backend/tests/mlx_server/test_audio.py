@@ -147,6 +147,49 @@ class TestSpeechEndpoint:
             assert response.media_type == "audio/mpeg"
 
 
+    @pytest.mark.asyncio
+    async def test_speech_endpoint_runtime_error_returns_500(self):
+        """RuntimeError from service should become HTTP 500."""
+        from fastapi import HTTPException
+
+        from mlx_manager.mlx_server.api.v1.speech import create_speech
+
+        request = SpeechRequest(model="bad-model", input="Hello")
+
+        with patch(
+            "mlx_manager.mlx_server.api.v1.speech.generate_speech",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.side_effect = RuntimeError("Failed to load model: not found")
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_speech(request)
+
+            assert exc_info.value.status_code == 500
+            assert "Failed to load model" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_speech_endpoint_unexpected_error_returns_500(self):
+        """Unexpected exceptions should become HTTP 500 with generic message."""
+        from fastapi import HTTPException
+
+        from mlx_manager.mlx_server.api.v1.speech import create_speech
+
+        request = SpeechRequest(model="bad-model", input="Hello")
+
+        with patch(
+            "mlx_manager.mlx_server.api.v1.speech.generate_speech",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.side_effect = ValueError("something unexpected")
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_speech(request)
+
+            assert exc_info.value.status_code == 500
+            assert exc_info.value.detail == "Internal server error"
+
+
 class TestTranscriptionsEndpoint:
     """Tests for POST /v1/audio/transcriptions."""
 
@@ -221,6 +264,29 @@ class TestTranscriptionsEndpoint:
 
         assert exc_info.value.status_code == 400
         assert "empty" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_transcription_runtime_error_returns_500(self):
+        """RuntimeError from service should become HTTP 500."""
+        from fastapi import HTTPException
+
+        from mlx_manager.mlx_server.api.v1.transcriptions import create_transcription
+
+        mock_file = MagicMock()
+        mock_file.filename = "test.wav"
+        mock_file.read = AsyncMock(return_value=b"fake audio data")
+
+        with patch(
+            "mlx_manager.mlx_server.api.v1.transcriptions.transcribe_audio",
+            new_callable=AsyncMock,
+        ) as mock_transcribe:
+            mock_transcribe.side_effect = RuntimeError("Failed to load model")
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_transcription(file=mock_file, model="bad-model")
+
+            assert exc_info.value.status_code == 500
+            assert "Failed to load model" in exc_info.value.detail
 
 
 class TestAudioService:

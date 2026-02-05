@@ -80,9 +80,9 @@ Console shows repeated warnings: `Failed to fetch audit logs: All connection att
 
 **Actual:** Connection attempts fail.
 
-**Root Cause:** `system.py` was proxying audit logs to `localhost:10242` but the embedded MLX Server runs on port 8080 at `/v1` prefix.
+**Root Cause:** `system.py` was proxying audit logs to `localhost:10242` but the embedded MLX Server runs on port 10242 at `/v1` prefix.
 
-**Fix:** Updated `MLX_SERVER_URL` and WebSocket URL in `backend/mlx_manager/routers/system.py` to use `http://localhost:8080/v1` and `ws://localhost:8080/v1` respectively.
+**Fix:** Updated `MLX_SERVER_URL` and WebSocket URL in `backend/mlx_manager/routers/system.py` to use `http://localhost:10242/v1` and `ws://localhost:10242/v1` respectively.
 
 ---
 

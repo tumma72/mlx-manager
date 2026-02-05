@@ -75,9 +75,7 @@ def cleanup_partial_download(model_id: str) -> bool:
                     [rev.commit_hash for rev in repo.revisions]
                 )
                 delete_strategy.execute()
-                logger.info(
-                    f"Cleaned up {delete_strategy.expected_freed_size_str} for {model_id}"
-                )
+                logger.info(f"Cleaned up {delete_strategy.expected_freed_size_str} for {model_id}")
                 return True
         # Model not found in cache via API - try manual cleanup
         return _manual_cleanup(model_id)
@@ -89,11 +87,7 @@ def cleanup_partial_download(model_id: str) -> bool:
 def _manual_cleanup(model_id: str) -> bool:
     """Fallback: manually delete the HF cache directory for a model."""
     cache_dir = (
-        Path.home()
-        / ".cache"
-        / "huggingface"
-        / "hub"
-        / f"models--{model_id.replace('/', '--')}"
+        Path.home() / ".cache" / "huggingface" / "hub" / f"models--{model_id.replace('/', '--')}"
     )
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
@@ -108,6 +102,35 @@ class SilentProgress(tqdm):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs["disable"] = True  # Disable console output
         super().__init__(*args, **kwargs)
+
+
+class DownloadCancelledError(Exception):
+    """Raised when a download is cancelled via cancel event."""
+
+
+def make_cancellable_progress(
+    cancel_event: threading.Event | None = None,
+) -> type[tqdm]:
+    """Create a tqdm subclass that checks for cancellation on each chunk update.
+
+    Each call creates a unique class with its own cancel_event closure,
+    so concurrent downloads each get independent cancellation.
+    """
+
+    class CancellableProgress(tqdm):
+        """tqdm subclass that suppresses output and supports cancellation."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs["disable"] = True
+            super().__init__(*args, **kwargs)
+
+        def update(self, n: int = 1) -> bool | None:
+            result: bool | None = super().update(n)
+            if cancel_event and cancel_event.is_set():
+                raise DownloadCancelledError("Download cancelled by user")
+            return result
+
+    return CancellableProgress
 
 
 class HuggingFaceClient:
@@ -219,8 +242,8 @@ class HuggingFaceClient:
         Args:
             model_id: HuggingFace model ID to download.
             cancel_event: Optional threading.Event to signal cancellation.
-                          When set, the download loop will stop and yield
-                          a "cancelled" status.
+                          When set, the download thread is interrupted via
+                          DownloadCancelledError raised inside the tqdm callback.
         """
         logger.info(f"Starting download process for {model_id}")
 
@@ -290,11 +313,24 @@ class HuggingFaceClient:
             progress=0,
         )
 
-        # Start download as a background task
+        # Check if already cancelled before starting download
+        if cancel_event and cancel_event.is_set():
+            logger.info(f"Download already cancelled before start for {model_id}")
+            yield DownloadStatus(
+                status="cancelled",
+                model_id=model_id,
+                total_bytes=total_bytes,
+                downloaded_bytes=0,
+                progress=0,
+            )
+            return
+
+        # Start download as a background task, passing cancel_event so the
+        # tqdm progress callback can interrupt snapshot_download mid-chunk.
         logger.info(f"Starting actual download for {model_id}")
         download_task = loop.run_in_executor(
             None,
-            lambda: self._download_with_progress(model_id),
+            lambda: self._download_with_progress(model_id, cancel_event),
         )
 
         # Calculate directory path for progress polling
@@ -309,13 +345,14 @@ class HuggingFaceClient:
                 await asyncio.sleep(1.0)  # Poll every second
                 poll_count += 1
 
-                # Check for cancellation
+                # Check for cancellation — the tqdm callback will interrupt
+                # the thread, but we also check here so we can yield the
+                # cancelled status promptly once the task finishes.
                 if cancel_event and cancel_event.is_set():
                     logger.info(f"Download cancelled for {model_id}")
-                    download_task.cancel()
                     try:
                         await download_task
-                    except (asyncio.CancelledError, Exception):
+                    except (DownloadCancelledError, asyncio.CancelledError, Exception):
                         pass
                     yield DownloadStatus(
                         status="cancelled",
@@ -345,7 +382,7 @@ class HuggingFaceClient:
                     progress=min(progress, 99),  # Cap at 99 until actually done
                 )
 
-            # Get the result (may raise exception)
+            # Get the result (may raise DownloadCancelledError or other exception)
             local_dir = await download_task
             logger.info(f"Download completed for {model_id}: {local_dir}")
 
@@ -358,17 +395,38 @@ class HuggingFaceClient:
                 progress=100,
             )
 
+        except DownloadCancelledError:
+            # The tqdm callback interrupted snapshot_download before the
+            # polling loop detected the cancel event.
+            logger.info(f"Download interrupted by cancellation for {model_id}")
+            yield DownloadStatus(
+                status="cancelled",
+                model_id=model_id,
+                total_bytes=total_bytes,
+                downloaded_bytes=self._get_directory_size(download_dir),
+                progress=0,
+            )
         except Exception as e:
             logger.exception(f"Download failed for {model_id}: {e}")
             yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
 
-    def _download_with_progress(self, model_id: str) -> str:
-        """Perform download (runs in executor)."""
+    def _download_with_progress(
+        self, model_id: str, cancel_event: threading.Event | None = None
+    ) -> str:
+        """Perform download (runs in executor).
+
+        Args:
+            model_id: HuggingFace model ID to download.
+            cancel_event: Optional threading.Event for cancellation.
+                When set, the tqdm progress callback will raise
+                DownloadCancelledError, interrupting snapshot_download.
+        """
+        progress_class = make_cancellable_progress(cancel_event)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             warnings.filterwarnings("ignore", category=FutureWarning)
 
-            return snapshot_download(repo_id=model_id, tqdm_class=SilentProgress)
+            return snapshot_download(repo_id=model_id, tqdm_class=progress_class)
 
     def _get_directory_size(self, path: Path) -> int:
         """Get total size of files in directory."""

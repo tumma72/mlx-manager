@@ -389,7 +389,7 @@ class MLXServerSettings(BaseSettings):
     enable_batching: bool = Field(default=False)
 
 # When running embedded
-# mlx-manager serve  → Parent app binds to 127.0.0.1:8080
+# mlx-manager serve  → Parent app binds to 127.0.0.1:10242
 #                       MLX Server mounted at /v1 (no separate port)
 
 # When running standalone (for testing)
@@ -427,8 +427,8 @@ async def mlx_health():
     return {"status": "healthy", "app": "mlx_server"}
 
 # OpenAPI docs
-# Manager: http://localhost:8080/docs
-# MLX Server (if exposed): http://localhost:8080/v1/docs
+# Manager: http://localhost:10242/docs
+# MLX Server (if exposed): http://localhost:10242/v1/docs
 ```
 
 **Warning signs:**

@@ -19,6 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models import ServerProfile
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 

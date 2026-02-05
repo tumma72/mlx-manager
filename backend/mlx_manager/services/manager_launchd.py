@@ -13,7 +13,7 @@ def get_plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 
 
-def install_manager_service(host: str = "127.0.0.1", port: int = 8080) -> str:
+def install_manager_service(host: str = "127.0.0.1", port: int = 10242) -> str:
     """Install MLX Manager as a launchd service."""
     launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
     launch_agents_dir.mkdir(parents=True, exist_ok=True)

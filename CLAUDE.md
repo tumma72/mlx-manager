@@ -79,7 +79,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run development server
-uvicorn mlx_manager.main:app --reload --port 8080
+uvicorn mlx_manager.main:app --reload --port 10242
 
 # Linting (with auto-fix)
 ruff check . --fix
@@ -194,7 +194,7 @@ npm run check && npm run lint && npm run test
 - **src/lib/stores/**: Svelte 5 runes-based stores (profiles, servers, system)
 - **src/lib/components/**: UI components organized by feature (models/, profiles/, servers/, ui/)
 - **src/routes/**: SvelteKit file-based routing (models/, profiles/, servers/)
-- Vite proxies `/api` requests to backend at `localhost:8080`
+- Vite proxies `/api` requests to backend at `localhost:10242`
 
 ### Key Patterns
 - Backend uses singleton services instantiated at module level

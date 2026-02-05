@@ -179,7 +179,7 @@ All existing tests pass (532 tests). No new tests added because:
 
 2. **Test Basic Streaming**
    ```bash
-   curl -X POST http://localhost:8080/api/chat/completions \
+   curl -X POST http://localhost:10242/api/chat/completions \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -194,7 +194,7 @@ All existing tests pass (532 tests). No new tests added because:
 3. **Test Thinking Tags (Reasoning Model)**
    ```bash
    # Start a profile with reasoning_parser set (e.g., deepseek-r1)
-   curl -X POST http://localhost:8080/api/chat/completions \
+   curl -X POST http://localhost:10242/api/chat/completions \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -209,7 +209,7 @@ All existing tests pass (532 tests). No new tests added because:
 4. **Test Connection Error**
    ```bash
    # Use a profile ID that exists but isn't running
-   curl -X POST http://localhost:8080/api/chat/completions \
+   curl -X POST http://localhost:10242/api/chat/completions \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -224,7 +224,7 @@ All existing tests pass (532 tests). No new tests added because:
 5. **Test Authentication**
    ```bash
    # Same request without Authorization header
-   curl -X POST http://localhost:8080/api/chat/completions \
+   curl -X POST http://localhost:10242/api/chat/completions \
      -H "Content-Type: application/json" \
      -d '{
        "profile_id": 1,

@@ -137,7 +137,7 @@ jobs:
       - name: Start backend server
         working-directory: backend
         run: |
-          uv run uvicorn mlx_manager.main:app --port 8080 &
+          uv run uvicorn mlx_manager.main:app --port 10242 &
           sleep 5
 
       - name: Run E2E tests

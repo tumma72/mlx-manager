@@ -89,7 +89,7 @@ Each task was committed atomically:
 
 ## Decisions Made
 
-- **Proxy pattern:** Manager API proxies all audit log requests (REST + WebSocket) to MLX Server, keeping frontend connection unified on port 8080/5173
+- **Proxy pattern:** Manager API proxies all audit log requests (REST + WebSocket) to MLX Server, keeping frontend connection unified on port 10242/5173
 - **WebSocket keepalive:** 30-second ping to maintain connection during idle periods
 - **Stats grid:** Shows total requests, successful, errors, and unique models for quick overview
 - **Button import fix:** Used `$components/ui` alias consistent with project conventions

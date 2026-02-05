@@ -29,6 +29,7 @@ IMAGES_DIR = FIXTURES_DIR / "images"
 # Prefer qat variants over DWQ for Gemma due to VisionConfig compatibility.
 VISION_MODELS_QUICK = [
     "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+    "lmstudio-community/Qwen3-VL-8B-Instruct-MLX-4bit",
     "mlx-community/gemma-3-12b-it-qat-4bit",
 ]
 VISION_MODELS_FULL = [
@@ -159,16 +160,23 @@ def embeddings_model():
     return EMBEDDINGS_MODEL
 
 
-# Reference model for audio TTS testing
-AUDIO_TTS_MODEL = "mlx-community/Kokoro-82M-4bit"
+# Reference models for audio TTS testing
+# Order matters: first available model is selected.
+# prince-canuma/Kokoro-82M is the original non-quantized model (compatible with mlx-audio 0.3.x)
+# mlx-community/Kokoro-82M-4bit has weight layout issues with current mlx-audio
+AUDIO_TTS_MODELS = [
+    "prince-canuma/Kokoro-82M",
+    "mlx-community/Kokoro-82M-4bit",
+]
 
 
 @pytest.fixture(scope="session")
 def audio_tts_model():
-    """Return audio TTS model ID, skip if not downloaded."""
-    if not is_model_available(AUDIO_TTS_MODEL):
-        pytest.skip(f"Model {AUDIO_TTS_MODEL} not downloaded")
-    return AUDIO_TTS_MODEL
+    """Return audio TTS model ID, skip if none available."""
+    model = _find_available_model(AUDIO_TTS_MODELS)
+    if model is None:
+        pytest.skip(f"No audio TTS model available. Need one of: {', '.join(AUDIO_TTS_MODELS)}")
+    return model
 
 
 @pytest.fixture(autouse=True)
@@ -179,3 +187,50 @@ async def cleanup_pool():
         loaded = list(pool_module.model_pool._models.keys())
         for model_id in loaded:
             await pool_module.model_pool.unload_model(model_id)
+
+
+def _print_model_status() -> None:
+    """Print E2E model availability summary at session start."""
+    all_models = {
+        "Vision (quick)": VISION_MODELS_QUICK,
+        "Vision (full)": VISION_MODELS_FULL,
+        "Text": [TEXT_MODEL_QUICK],
+        "Embeddings": [EMBEDDINGS_MODEL],
+        "Audio TTS": AUDIO_TTS_MODELS,
+    }
+
+    print("\n" + "=" * 60)
+    print("E2E Test Model Availability")
+    print("=" * 60)
+
+    missing_models: list[str] = []
+
+    for category, candidates in all_models.items():
+        found = _find_available_model(candidates) if len(candidates) > 1 else None
+        if len(candidates) == 1:
+            available = is_model_available(candidates[0])
+            status = "OK" if available else "MISSING"
+            model_name = candidates[0]
+            if not available:
+                missing_models.append(model_name)
+            print(f"  {category}: {model_name} [{status}]")
+        else:
+            found = _find_available_model(candidates)
+            if found:
+                print(f"  {category}: {found} [OK]")
+            else:
+                missing_models.extend(candidates)
+                print(f"  {category}: NONE AVAILABLE")
+                for c in candidates:
+                    print(f"    - {c} [MISSING]")
+
+    if missing_models:
+        print("\nTo download missing models:")
+        for m in missing_models:
+            print(f"  huggingface-cli download {m}")
+
+    print("=" * 60 + "\n")
+
+
+# Print model status once at import time (session start)
+_print_model_status()

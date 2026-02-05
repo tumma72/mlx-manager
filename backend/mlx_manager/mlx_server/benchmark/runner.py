@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from loguru import logger
 
 from mlx_manager.config import DEFAULT_PORT
 

@@ -41,7 +41,7 @@ class MlxManager < Formula
         mlx-manager menubar
 
       The web interface will be available at:
-        http://localhost:8080
+        http://localhost:10242
     EOS
   end
 

@@ -8,7 +8,7 @@ Tests validate the complete pipeline:
 5. Response generation (ChatCompletionResponse)
 
 Tiered approach:
-- Quick tier (@e2e_vision_quick): Qwen2-VL-2B (~1.5GB, fast)
+- Quick tier (@e2e_vision_quick): Qwen2-VL-2B / Qwen3-VL-8B / Gemma-3-12b (first available)
 - Full tier (@e2e_vision_full): Gemma-3-27b (~15GB, thorough)
 
 Run:
@@ -18,9 +18,9 @@ Run:
 """
 
 import base64
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 GOLDEN_DIR = FIXTURES_DIR / "golden" / "vision"
@@ -65,7 +65,7 @@ def build_vision_request(
 
 
 # ──────────────────────────────────────────────
-# Quick tier: Qwen2-VL-2B-Instruct-4bit
+# Quick tier: first available vision model (Qwen2-VL-2B / Qwen3-VL-8B / Gemma-3-12b)
 # ──────────────────────────────────────────────
 
 

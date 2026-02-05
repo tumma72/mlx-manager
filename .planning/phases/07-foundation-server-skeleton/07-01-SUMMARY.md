@@ -81,7 +81,7 @@ Each task was committed atomically:
 
 - **MLX server as subpackage:** Placed under mlx_manager rather than separate package to share database, auth, and infrastructure while maintaining modularity
 - **LogFire instrumentation:** Made conditional on `logfire_enabled` setting with graceful fallback when no token configured (warning logged, app continues)
-- **Port separation:** MLX server runs on port 8000 (vs manager on 8080) for clear separation
+- **Port separation:** MLX server runs on port 8000 (vs manager on 10242) for clear separation
 
 ## Deviations from Plan
 

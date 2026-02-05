@@ -232,7 +232,7 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
                                     │ HTTP/REST + Server-Sent Events
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Backend API (localhost:8080)                       │
+│                      Backend API (localhost:10242)                       │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │                    FastAPI Application (Python)                   │  │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐   │  │
@@ -516,7 +516,7 @@ class Setting(SQLModel, table=True):
 ## 7. Backend API Specification
 
 ### Base URL
-`http://localhost:8080/api`
+`http://localhost:10242/api`
 
 ### API Endpoints
 
@@ -2768,7 +2768,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8080
+uvicorn app.main:app --reload --port 10242
 
 # Frontend development
 cd frontend

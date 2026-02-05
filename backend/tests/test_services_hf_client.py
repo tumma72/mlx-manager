@@ -529,6 +529,84 @@ class TestSilentProgress:
         progress.close()
 
 
+class TestCancellableProgress:
+    """Tests for the make_cancellable_progress factory and DownloadCancelledError."""
+
+    def test_cancellable_progress_disables_output(self):
+        """CancellableProgress suppresses console output like SilentProgress."""
+        from mlx_manager.services.hf_client import make_cancellable_progress
+
+        cls = make_cancellable_progress(cancel_event=None)
+        progress = cls(total=100)
+        assert progress.disable is True
+        progress.close()
+
+    def test_cancellable_progress_update_without_cancel(self):
+        """update() completes without error when no cancel event is set."""
+        from mlx_manager.services.hf_client import make_cancellable_progress
+
+        cls = make_cancellable_progress(cancel_event=None)
+        progress = cls(total=100)
+        # Should not raise
+        progress.update(10)
+        progress.update(20)
+        progress.close()
+
+    def test_cancellable_progress_raises_on_cancel(self):
+        """update() raises DownloadCancelledError when cancel event is set."""
+        import threading
+
+        from mlx_manager.services.hf_client import (
+            DownloadCancelledError,
+            make_cancellable_progress,
+        )
+
+        event = threading.Event()
+        cls = make_cancellable_progress(cancel_event=event)
+        progress = cls(total=100)
+
+        # First update works fine (no cancel)
+        progress.update(10)
+
+        # Set the cancel event
+        event.set()
+
+        # Next update should raise
+        with pytest.raises(DownloadCancelledError, match="cancelled by user"):
+            progress.update(10)
+
+        progress.close()
+
+    def test_cancellable_progress_concurrent_independence(self):
+        """Each factory call creates an independent class with its own cancel event."""
+        import threading
+
+        from mlx_manager.services.hf_client import (
+            DownloadCancelledError,
+            make_cancellable_progress,
+        )
+
+        event_a = threading.Event()
+        event_b = threading.Event()
+        cls_a = make_cancellable_progress(cancel_event=event_a)
+        cls_b = make_cancellable_progress(cancel_event=event_b)
+        progress_a = cls_a(total=100)
+        progress_b = cls_b(total=100)
+
+        # Cancel only event_a
+        event_a.set()
+
+        # progress_a should raise
+        with pytest.raises(DownloadCancelledError):
+            progress_a.update(10)
+
+        # progress_b should still work fine (no exception)
+        progress_b.update(10)
+
+        progress_a.close()
+        progress_b.close()
+
+
 # ============================================================================
 # Tests for _get_directory_size exception handling (lines 232-235)
 # ============================================================================

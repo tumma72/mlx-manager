@@ -44,7 +44,7 @@ pip install mlx-manager
 mlx-manager serve
 ```
 
-Open http://localhost:8080 and you're ready to:
+Open http://localhost:10242 and you're ready to:
 
 1. **Register** - Create your account (first user becomes admin)
 2. **Browse** - Search HuggingFace for MLX-optimized models
