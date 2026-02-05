@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 9 of 9 (Loguru migration)
+Plan: 15 of 15 (AuthLib consolidation)
 Status: Phase 15 complete
-Last activity: 2026-02-04 - Completed 15-09 (Loguru migration)
+Last activity: 2026-02-05 - Completed 15-15 (AuthLib consolidation)
 
-Progress: [████████████] 100% (9 of 9 plans complete in Phase 15)
+Progress: [████████████████] 100% (15 of 15 plans complete in Phase 15)
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -163,7 +163,7 @@ Recent decisions affecting current work:
 - **Routing before batching**: Cloud routing check happens before batching check — cloud routing has higher priority when both enabled
 - **Automatic routing fallback**: Any routing exception falls through to local inference path
 - **PBKDF2HMAC with 1.2M iterations**: Industry standard for key derivation from jwt_secret for Fernet encryption
-- **Salt persistence**: Encryption salt stored in ~/.mlx-manager/.encryption_salt alongside database
+- **AuthLib JWE for encryption**: A256KW+A256GCM replaces Fernet; SHA-256(jwt_secret) as key, no salt file needed
 - **Static routes before dynamic**: /rules/priorities and /rules/test must come before /rules/{rule_id}
 - **ServerConfig singleton**: Use id=1 for global pool settings, created on first access
 - **Local API helpers in components**: When shared API client not available (parallel execution), define local fetch wrappers in component — refactor later
@@ -238,6 +238,8 @@ Recent decisions affecting current work:
 - **Shared detect_multimodal()**: MLX server detection calls shared utility for badge/loading consistency
 - **Model type mismatch error**: Clear message in vision.py guides user to unload/reload when detection was wrong
 - **Loguru for structured logging**: Replace standard logging with Loguru for efficiency, auto-stacktraces via .exception(), simpler configuration
+- **AuthLib jose for JWT**: Replace pyjwt with authlib.jose.jwt — unified auth library, accepts any valid HMAC signature
+- **DecryptionError backward compat**: Aliased as InvalidToken for existing consumers in settings router
 - **Separate log files by component**: mlx-server.log for inference, mlx-manager.log for app — easier debugging of distinct components
 - **InterceptHandler for third-party compatibility**: Redirect standard logging to Loguru to capture third-party library logs
 
@@ -286,8 +288,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-04
-Stopped at: Phase 15 execution complete, verified
+Last session: 2026-02-05
+Stopped at: Completed 15-15-PLAN.md (AuthLib consolidation)
 Resume file: None - Milestone v1.2 complete
 Next: Run /gsd:audit-milestone to verify cross-phase integration and E2E flows
 
