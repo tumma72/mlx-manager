@@ -64,14 +64,18 @@ async def generate_embeddings(
                 import mlx.core as mx
 
                 # Tokenize batch
-                # mlx-embeddings tokenizer uses batch_encode_plus
-                inputs = tokenizer.batch_encode_plus(
+                # Use inner tokenizer's __call__ for batch encoding.
+                # TokenizerWrapper from mlx-embeddings is not callable and
+                # batch_encode_plus was removed in transformers v5.
+                inner_tokenizer = getattr(tokenizer, "_tokenizer", tokenizer)
+                encoded = inner_tokenizer(
                     texts,
-                    return_tensors="mlx",
+                    return_tensors=None,
                     padding=True,
                     truncation=True,
                     max_length=512,
                 )
+                inputs = {k: mx.array(v) for k, v in encoded.items()}
 
                 # Count tokens per input (not padded batch)
                 total_tokens = 0
