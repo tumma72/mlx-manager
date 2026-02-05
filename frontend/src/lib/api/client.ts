@@ -235,11 +235,13 @@ export const profiles = {
 // Active download info from backend
 export interface ActiveDownload {
   task_id: string;
+  download_id?: number;
   model_id: string;
   status: string;
   progress: number;
   downloaded_bytes: number;
   total_bytes: number;
+  needs_resume?: boolean;
 }
 
 // Models API
@@ -279,6 +281,41 @@ export const models = {
     const res = await fetch(`${API_BASE}/models/downloads/active`, {
       headers: getAuthHeaders(),
     });
+    return handleResponse(res);
+  },
+
+  pauseDownload: async (downloadId: number): Promise<void> => {
+    const res = await fetch(
+      `${API_BASE}/models/download/${downloadId}/pause`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
+    return handleResponse(res);
+  },
+
+  resumeDownload: async (
+    downloadId: number,
+  ): Promise<{ task_id: string; model_id: string; download_id: number }> => {
+    const res = await fetch(
+      `${API_BASE}/models/download/${downloadId}/resume`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
+    return handleResponse(res);
+  },
+
+  cancelDownload: async (downloadId: number): Promise<void> => {
+    const res = await fetch(
+      `${API_BASE}/models/download/${downloadId}/cancel`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
     return handleResponse(res);
   },
 

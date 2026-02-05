@@ -118,7 +118,13 @@ export interface SystemInfo {
 }
 
 export interface DownloadProgress {
-  status: "starting" | "downloading" | "completed" | "failed";
+  status:
+    | "starting"
+    | "downloading"
+    | "paused"
+    | "completed"
+    | "failed"
+    | "cancelled";
   model_id: string;
   progress: number;
   downloaded_bytes?: number;

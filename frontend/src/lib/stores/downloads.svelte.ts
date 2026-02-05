@@ -11,7 +11,15 @@ import { models as modelsApi } from "$api";
 export interface DownloadState {
   model_id: string;
   task_id: string;
-  status: "pending" | "starting" | "downloading" | "completed" | "failed";
+  download_id?: number;
+  status:
+    | "pending"
+    | "starting"
+    | "downloading"
+    | "paused"
+    | "completed"
+    | "failed"
+    | "cancelled";
   progress: number;
   downloaded_bytes: number;
   total_bytes: number;
@@ -64,6 +72,61 @@ class DownloadsStore {
         error: error instanceof Error ? error.message : "Download failed",
       });
     }
+  }
+
+  /**
+   * Pause an active download.
+   */
+  async pauseDownload(modelId: string): Promise<void> {
+    const state = this.downloads.get(modelId);
+    if (!state?.download_id) return;
+
+    await modelsApi.pauseDownload(state.download_id);
+
+    // Close SSE connection (download is paused)
+    this.closeSSE(modelId);
+
+    // Update local state
+    this.updateDownload(modelId, { status: "paused" });
+  }
+
+  /**
+   * Resume a paused download.
+   */
+  async resumeDownload(modelId: string): Promise<void> {
+    const state = this.downloads.get(modelId);
+    if (!state?.download_id) return;
+
+    const { task_id } = await modelsApi.resumeDownload(state.download_id);
+
+    // Update state and reconnect SSE with new task_id
+    this.updateDownload(modelId, { status: "downloading", task_id });
+    this.connectSSE(modelId, task_id);
+  }
+
+  /**
+   * Cancel a download and remove from store.
+   */
+  async cancelDownload(modelId: string): Promise<void> {
+    const state = this.downloads.get(modelId);
+    if (!state?.download_id) return;
+
+    await modelsApi.cancelDownload(state.download_id);
+
+    // Close SSE and remove from store
+    this.closeSSE(modelId);
+
+    const newMap = new Map(this.downloads);
+    newMap.delete(modelId);
+    this.downloads = newMap;
+  }
+
+  /**
+   * Check if a model download is paused.
+   */
+  isPaused(modelId: string): boolean {
+    const download = this.downloads.get(modelId);
+    return download?.status === "paused";
   }
 
   /**
@@ -147,6 +210,7 @@ class DownloadsStore {
     const state: DownloadState = {
       model_id: modelId,
       task_id: taskId,
+      download_id: currentState.download_id,
       status: (currentState.status as DownloadState["status"]) || "downloading",
       progress: currentState.progress || 0,
       downloaded_bytes: currentState.downloaded_bytes || 0,
@@ -169,13 +233,28 @@ class DownloadsStore {
       const active = await modelsApi.getActiveDownloads();
 
       for (const download of active) {
-        // Only reconnect to downloads that are still in progress
-        if (
+        if (download.status === "paused") {
+          // Paused downloads: add to store but don't connect SSE
+          const state: DownloadState = {
+            model_id: download.model_id,
+            task_id: download.task_id,
+            download_id: download.download_id,
+            status: "paused",
+            progress: download.progress,
+            downloaded_bytes: download.downloaded_bytes,
+            total_bytes: download.total_bytes,
+          };
+          const newMap = new Map(this.downloads);
+          newMap.set(download.model_id, state);
+          this.downloads = newMap;
+        } else if (
           download.status === "starting" ||
           download.status === "downloading" ||
           download.status === "pending"
         ) {
+          // Active downloads: reconnect SSE
           this.reconnect(download.model_id, download.task_id, {
+            download_id: download.download_id,
             status: download.status as DownloadState["status"],
             progress: download.progress,
             downloaded_bytes: download.downloaded_bytes,
@@ -221,7 +300,11 @@ class DownloadsStore {
   clearCompleted(): void {
     const newMap = new Map<string, DownloadState>();
     for (const [modelId, download] of this.downloads) {
-      if (download.status !== "completed" && download.status !== "failed") {
+      if (
+        download.status !== "completed" &&
+        download.status !== "failed" &&
+        download.status !== "cancelled"
+      ) {
         newMap.set(modelId, download);
       }
     }
