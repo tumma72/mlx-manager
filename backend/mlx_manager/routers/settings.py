@@ -213,7 +213,7 @@ async def test_provider_connection(
     try:
         api_key = decrypt_api_key(credential.encrypted_api_key)
     except InvalidToken:
-        # Key was encrypted with different salt/secret - needs to be re-entered
+        # Key was encrypted with different secret or old format - needs to be re-entered
         raise HTTPException(
             status_code=400,
             detail="API key cannot be decrypted. Please re-enter your API key.",
