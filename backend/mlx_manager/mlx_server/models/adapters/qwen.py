@@ -33,12 +33,17 @@ class QwenAdapter(DefaultAdapter):
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Apply Qwen chat template using tokenizer's built-in template.
 
         For Qwen3 models, enables thinking mode which wraps reasoning
         in <think>...</think> tags.
+
+        Args:
+            tools: Ignored - Qwen uses prompt injection for tools, not native support.
         """
+        # Note: tools parameter ignored - Qwen uses prompt injection via format_tools_for_prompt
         # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
 

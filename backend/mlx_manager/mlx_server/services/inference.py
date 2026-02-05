@@ -73,15 +73,26 @@ async def generate_chat_completion(
 
     # Build messages with tool definitions if provided
     effective_messages = converted_messages
-    if tools and adapter.supports_tool_calling():
-        # Inject tool definitions into system prompt
-        tool_prompt = adapter.format_tools_for_prompt(tools)
-        if tool_prompt:
-            effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
-            logger.debug(f"Injected tools into prompt for {model_id}")
+    use_native_tools = False
 
-    # Apply chat template
-    prompt = adapter.apply_chat_template(tokenizer, effective_messages, add_generation_prompt=True)
+    if tools and adapter.supports_tool_calling():
+        # Check if adapter has native tool support (tools passed directly to template)
+        use_native_tools = adapter.has_native_tool_support(tokenizer)
+
+        if not use_native_tools:
+            # Fall back to prompt injection for models without native support
+            tool_prompt = adapter.format_tools_for_prompt(tools)
+            if tool_prompt:
+                effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
+                logger.debug(f"Injected tools into prompt for {model_id}")
+
+    # Apply chat template (pass tools for native support, otherwise None)
+    prompt = adapter.apply_chat_template(
+        tokenizer,
+        effective_messages,
+        add_generation_prompt=True,
+        tools=tools if use_native_tools else None,
+    )
 
     # Debug: Log the final prompt when tools are present
     if tools:
@@ -235,9 +246,20 @@ async def _stream_chat_generate(
     if starts_in_thinking:
         logger.debug("Prompt ends with thinking tag, starting in thinking mode")
 
+    # Use model-family-specific patterns to prevent cross-family conflicts
+    model_family = adapter.family if adapter else None
     stream_processor = StreamingProcessor(
-        starts_in_thinking=starts_in_thinking
+        starts_in_thinking=starts_in_thinking,
+        model_family=model_family,
     )  # Filters patterns during streaming
+
+    # Debug: Log configuration for this generation
+    if tools:
+        logger.debug(
+            f"Generation config: model={model_id}, max_tokens={max_tokens}, "
+            f"stop_tokens={stop_token_ids}, tools_count={len(tools)}, "
+            f"starts_in_thinking={starts_in_thinking}"
+        )
 
     # Queue for passing tokens from generation thread to async generator
     # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
@@ -324,6 +346,10 @@ async def _stream_chat_generate(
                 finish_reason = "stop"
                 # Feed to processor but don't yield (updates accumulated text)
                 stream_processor.feed(token_text)
+                logger.debug(
+                    f"Stop token encountered: token_id={token_id}, "
+                    f"token_text={repr(token_text)}, tokens_so_far={completion_tokens}"
+                )
                 break
 
             # Process token through StreamingProcessor
@@ -353,9 +379,12 @@ async def _stream_chat_generate(
         gen_thread.join(timeout=1.0)
 
         # Debug: Log raw accumulated text before finalization
-        raw_text = stream_processor._buffer  # Access internal buffer for debug
+        raw_text = stream_processor.get_accumulated_text()
         if tools:
-            logger.debug(f"=== RAW MODEL OUTPUT ===\n{raw_text}")
+            logger.debug(
+                f"=== RAW MODEL OUTPUT ({len(raw_text)} chars) ===\n"
+                f"{raw_text}\n=== END RAW OUTPUT ==="
+            )
 
         # Finalize StreamingProcessor - extracts tool calls and reasoning
         result_parsed = stream_processor.finalize()
@@ -502,10 +531,11 @@ async def _generate_chat_complete(
         completion_tokens = len(tokenizer.encode(response_text))
 
         # Post-process: Single-pass extraction with ResponseProcessor
-        # This replaces multi-pass adapter.parse_tool_calls() and adapter.extract_reasoning()
-        from mlx_manager.mlx_server.services.response_processor import get_response_processor
+        # Uses model-family-specific patterns to prevent cross-family conflicts
+        from mlx_manager.mlx_server.services.response_processor import get_processor_for_family
 
-        processor = get_response_processor()
+        model_family = adapter.family if adapter else "default"
+        processor = get_processor_for_family(model_family)
         result_parsed = processor.process(response_text)
 
         # Extract results from ParseResult

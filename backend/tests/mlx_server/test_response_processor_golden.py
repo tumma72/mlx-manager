@@ -123,6 +123,44 @@ class TestResponseProcessorToolCalls:
         # Python tag format: module.method -> function name
         assert "." in result.tool_calls[0].function.name
 
+    def test_glm4_attr_format(self):
+        """Verify GLM-4.7 attr-style format is parsed.
+
+        GLM-4.7-Flash outputs a malformed hybrid format:
+        <tool_call>func_name<param="value"</param></tool_call>
+        """
+        attr_file = GOLDEN_DIR / "glm4" / "tool_calls_attr.txt"
+        if not attr_file.exists():
+            pytest.skip("GLM4 attr-style tool calls file not found")
+
+        text = attr_file.read_text()
+        processor = get_response_processor()
+        result = processor.process(text)
+
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "get_weather"
+        # Arguments should be parsed from attr format
+        import json
+
+        args = json.loads(result.tool_calls[0].function.arguments)
+        assert "location" in args
+        assert args["location"] == "Rome, Italy"
+
+    def test_glm4_attr_format_multiple(self):
+        """Verify multiple GLM-4.7 attr-style tool calls are parsed."""
+        attr_file = GOLDEN_DIR / "glm4" / "tool_calls_attr_multi.txt"
+        if not attr_file.exists():
+            pytest.skip("GLM4 multi attr-style tool calls file not found")
+
+        text = attr_file.read_text()
+        processor = get_response_processor()
+        result = processor.process(text)
+
+        assert len(result.tool_calls) == 2
+        names = {tc.function.name for tc in result.tool_calls}
+        assert "get_weather" in names
+        assert "calculate" in names
+
 
 class TestResponseProcessorThinking:
     """Test thinking/reasoning extraction from golden files."""

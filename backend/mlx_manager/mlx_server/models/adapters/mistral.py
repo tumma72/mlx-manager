@@ -24,13 +24,18 @@ class MistralAdapter(DefaultAdapter):
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Apply Mistral chat template with system message handling.
 
         For Mistral v1/v2 models that don't support system role natively,
         prepend system message content to the first user message.
         Mistral v3+ tokenizers handle system messages correctly.
+
+        Args:
+            tools: Ignored - Mistral uses prompt injection for tools, not native support.
         """
+        # Note: tools parameter ignored - Mistral uses prompt injection
         processed = list(messages)
 
         # Handle system message for older Mistral versions

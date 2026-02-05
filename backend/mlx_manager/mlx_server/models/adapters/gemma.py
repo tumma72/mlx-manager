@@ -21,11 +21,16 @@ class GemmaAdapter(DefaultAdapter):
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Apply Gemma chat template using tokenizer's built-in template.
 
         Handles both Tokenizer and Processor objects (vision models use Processor).
+
+        Args:
+            tools: Ignored - Gemma uses prompt injection for tools, not native support.
         """
+        # Note: tools parameter ignored - Gemma uses prompt injection
         # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         result: str = cast(

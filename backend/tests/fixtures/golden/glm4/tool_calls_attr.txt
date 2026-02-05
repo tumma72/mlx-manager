@@ -1,0 +1,3 @@
+I'd be happy to help you plan a daily trip to Rome, Italy! Let me first check the current weather conditions to help you plan accordingly.<tool_call>get_weather<location="Rome, Italy"</location>
+</tool_call>
+This will give us the weather information.

@@ -1,5 +1,14 @@
 """MLX Model Manager - FastAPI Application."""
 
+# Suppress deprecation warnings from mlx-lm (uses deprecated mx.metal.device_info)
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="mx.metal.device_info is deprecated",
+    category=UserWarning,
+)
+
 # Configure Loguru FIRST (before any other imports)
 from mlx_manager.logging_config import intercept_standard_logging, setup_logging
 
@@ -25,7 +34,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
-
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -181,6 +189,9 @@ async def lifespan(app: FastAPI):
     if pool.model_pool:
         await pool.model_pool.cleanup()
         logger.info("MLX Server model pool cleaned up")
+
+    # Complete any pending log writes before shutdown
+    await logger.complete()
 
 
 app = FastAPI(

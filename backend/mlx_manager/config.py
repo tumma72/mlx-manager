@@ -6,7 +6,7 @@ Environment Variables:
     MLX_MANAGER_HF_CACHE_PATH: HuggingFace cache directory
     MLX_MANAGER_OFFLINE_MODE: Disable HuggingFace API calls (default: false)
     MLX_MANAGER_LOG_LEVEL: Log level (DEBUG, INFO, WARNING, ERROR). Default: INFO
-    MLX_MANAGER_LOG_DIR: Log directory path (default: logs/)
+    MLX_MANAGER_LOG_DIR: Log directory path (default: ~/.mlx-manager/logs/)
 """
 
 from pathlib import Path

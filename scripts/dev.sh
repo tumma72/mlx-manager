@@ -210,9 +210,9 @@ else
     echo -e "Skipping dependency check ${YELLOW}(--skip-deps)${NC}"
 fi
 
-# Start uvicorn in background
-echo "Starting backend server..."
-uvicorn mlx_manager.main:app --reload --host 127.0.0.1 --port 8080 &
+# Start uvicorn in background with debug logging
+echo "Starting backend server (DEBUG mode)..."
+MLX_MANAGER_LOG_LEVEL=DEBUG uvicorn mlx_manager.main:app --reload --host 127.0.0.1 --port 8080 &
 BACKEND_PID=$!
 
 # Wait for backend to start

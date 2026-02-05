@@ -1,0 +1,5 @@
+Let me check both the weather and do a calculation.<tool_call>get_weather<location="Rome, Italy"</location><unit="celsius"</unit>
+</tool_call>
+And here's the calculation:<tool_call>calculate<expression="24 * 1.8 + 32"</expression>
+</tool_call>
+Done!

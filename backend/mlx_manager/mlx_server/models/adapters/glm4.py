@@ -40,21 +40,51 @@ class GLM4Adapter(DefaultAdapter):
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Apply GLM4 chat template.
 
         GLM4 uses ChatML-like format. The tokenizer should have a built-in template.
         Falls back to manual formatting if no template is available.
 
+        GLM-4.7 models may support native tool calling via tokenizer's apply_chat_template.
+        We try native tools first, then fall back to prompt injection.
+
         Handles both Tokenizer and Processor objects (vision models use Processor).
         """
         # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        tokenizer_id = id(actual_tokenizer)
 
         # Try using tokenizer's built-in template first
         if hasattr(actual_tokenizer, "apply_chat_template"):
+            # Try native tool support for GLM-4.7+ if tools provided
+            if tools and _native_tools_cache.get(tokenizer_id, True):
+                try:
+                    result: str = cast(
+                        str,
+                        actual_tokenizer.apply_chat_template(
+                            messages,
+                            tools=tools,
+                            add_generation_prompt=add_generation_prompt,
+                            tokenize=False,
+                        ),
+                    )
+                    _native_tools_cache[tokenizer_id] = True
+                    logger.debug("GLM4 using native tool support via apply_chat_template")
+                    return result
+                except (TypeError, Exception) as e:
+                    # TypeError = tools param not supported, other = template error
+                    if isinstance(e, TypeError) and "tools" in str(e):
+                        _native_tools_cache[tokenizer_id] = False
+                        logger.debug("GLM4 tokenizer doesn't support native tools, using injection")
+                    else:
+                        logger.warning("GLM4 apply_chat_template with tools failed: %s", e)
+                        _native_tools_cache[tokenizer_id] = False
+
+            # Standard template without native tools
             try:
-                result: str = cast(
+                result = cast(
                     str,
                     actual_tokenizer.apply_chat_template(
                         messages,
@@ -77,6 +107,16 @@ class GLM4Adapter(DefaultAdapter):
             parts.append("<|assistant|>")
 
         return "\n".join(parts)
+
+    def has_native_tool_support(self, tokenizer: Any) -> bool:
+        """Check if this tokenizer supports native tool calling.
+
+        Returns:
+            True if tokenizer's apply_chat_template accepts tools parameter.
+        """
+        actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        tokenizer_id = id(actual_tokenizer)
+        return _native_tools_cache.get(tokenizer_id, False)
 
     def get_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Get GLM4 stop tokens.
@@ -188,22 +228,24 @@ Only call tools when necessary."""
                 # Convert tool result to a user message with clear formatting
                 tool_call_id = msg.get("tool_call_id", "unknown")
                 content = msg.get("content", "")
-                converted.append({
-                    "role": "user",
-                    "content": f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]\n\nPlease provide your response based on this tool result."
-                })
+                tool_result_content = (
+                    f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]\n\n"
+                    f"Please provide your response based on this tool result."
+                )
+                converted.append({"role": "user", "content": tool_result_content})
             elif role == "assistant" and msg.get("tool_calls"):
                 # Include assistant message but convert tool_calls to text format
                 tool_calls = msg.get("tool_calls", [])
                 tool_text = ""
                 for tc in tool_calls:
                     func = tc.get("function", {})
-                    tool_text += f"\n<tool_call>{json.dumps({'name': func.get('name'), 'arguments': json.loads(func.get('arguments', '{}'))})}</tool_call>"
+                    tool_call_data = {
+                        "name": func.get("name"),
+                        "arguments": json.loads(func.get("arguments", "{}")),
+                    }
+                    tool_text += f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>"
                 content = msg.get("content", "") + tool_text
-                converted.append({
-                    "role": "assistant",
-                    "content": content
-                })
+                converted.append({"role": "assistant", "content": content})
             else:
                 # Keep other messages as-is
                 converted.append(msg)

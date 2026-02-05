@@ -8,19 +8,20 @@ Provides:
 
 Environment Variables:
 - MLX_MANAGER_LOG_LEVEL: Log level (DEBUG, INFO, WARNING, ERROR). Default: INFO
-- MLX_MANAGER_LOG_DIR: Log directory path. Default: logs/
+- MLX_MANAGER_LOG_DIR: Log directory path. Default: ~/.mlx-manager/logs/
 """
 
 import logging
 import os
 import sys
 from pathlib import Path
+from types import FrameType
 
 from loguru import logger
 
 # Environment variables
 LOG_LEVEL = os.environ.get("MLX_MANAGER_LOG_LEVEL", "INFO").upper()
-LOG_DIR = Path(os.environ.get("MLX_MANAGER_LOG_DIR", "logs"))
+LOG_DIR = Path(os.environ.get("MLX_MANAGER_LOG_DIR", str(Path.home() / ".mlx-manager" / "logs")))
 
 # Track if logging has been configured to avoid duplicate setup
 _logging_configured = False
@@ -67,7 +68,7 @@ def setup_logging() -> None:
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
         retention="7 days",
-        filter=lambda record: record["name"].startswith("mlx_manager.mlx_server"),
+        filter=lambda record: (record["name"] or "").startswith("mlx_manager.mlx_server"),
     )
 
     # MLX Manager log file (app, routers, services)
@@ -77,7 +78,7 @@ def setup_logging() -> None:
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
         retention="7 days",
-        filter=lambda record: not record["name"].startswith("mlx_manager.mlx_server"),
+        filter=lambda record: not (record["name"] or "").startswith("mlx_manager.mlx_server"),
     )
 
 
@@ -97,8 +98,9 @@ class InterceptHandler(logging.Handler):
             level = str(record.levelno)
 
         # Find caller from where the logged message originated
-        frame, depth = logging.currentframe(), 2
-        while frame and frame.f_code.co_filename == logging.__file__:
+        frame: FrameType | None = logging.currentframe()
+        depth = 2
+        while frame is not None and frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
             depth += 1
 
@@ -110,9 +112,34 @@ def intercept_standard_logging() -> None:
 
     This ensures that third-party libraries using standard logging
     have their output routed through our Loguru configuration.
+
+    Third-party loggers are set to WARNING to prevent debug noise from
+    aiosqlite, SQLAlchemy, and other infrastructure libraries from
+    drowning out our application's debug logs.
     """
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
-    # Suppress noisy third-party loggers
-    for name in ["httpx", "httpcore", "uvicorn.access", "huggingface_hub"]:
+    # Suppress noisy third-party loggers to WARNING level.
+    # Without this, DEBUG mode floods the console with internal
+    # aiosqlite/sqlalchemy operations like cursor.execute(), fetchall(), etc.
+    noisy_loggers = [
+        # HTTP clients
+        "httpx",
+        "httpcore",
+        # ASGI server
+        "uvicorn.access",
+        # HuggingFace
+        "huggingface_hub",
+        # Database internals
+        "aiosqlite",
+        "sqlalchemy",
+        "sqlalchemy.engine",
+        "sqlalchemy.pool",
+        "sqlalchemy.orm",
+        # Async internals
+        "asyncio",
+        # Multipart form parsing
+        "multipart",
+    ]
+    for name in noisy_loggers:
         logging.getLogger(name).setLevel(logging.WARNING)

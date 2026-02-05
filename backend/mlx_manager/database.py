@@ -1,5 +1,6 @@
 """Database setup and session management."""
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -10,10 +11,16 @@ from sqlmodel import SQLModel
 
 from mlx_manager.config import ensure_data_dir, settings
 
+# SQLAlchemy echo is controlled by a dedicated env var, NOT by settings.debug.
+# Debug mode enables application-level debug logging via Loguru, but SQLAlchemy's
+# echo produces low-level SQL traces that flood the console and are rarely useful.
+# Use MLX_MANAGER_ECHO_SQL=true explicitly when you need raw SQL output.
+_echo_sql = os.environ.get("MLX_MANAGER_ECHO_SQL", "").lower() in ("true", "1", "yes")
+
 # Create async engine
 engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.database_path}",
-    echo=settings.debug,
+    echo=_echo_sql,
     future=True,
 )
 

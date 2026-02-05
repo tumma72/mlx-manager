@@ -41,6 +41,7 @@ class ModelAdapter(Protocol):
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Apply model-specific chat template.
 
@@ -48,6 +49,7 @@ class ModelAdapter(Protocol):
             tokenizer: HuggingFace tokenizer
             messages: List of {"role": str, "content": str} dicts
             add_generation_prompt: Whether to add assistant role marker
+            tools: Optional list of tool definitions for models with native tool support
 
         Returns:
             Formatted prompt string
@@ -94,6 +96,20 @@ class ModelAdapter(Protocol):
 
         Returns:
             List of token IDs that indicate tool call completion
+        """
+        ...
+
+    def has_native_tool_support(self, tokenizer: Any) -> bool:
+        """Check if this tokenizer supports native tool calling.
+
+        Native tool support means the tokenizer's apply_chat_template accepts
+        a tools parameter and handles tool formatting internally.
+
+        Args:
+            tokenizer: HuggingFace tokenizer
+
+        Returns:
+            True if tokenizer supports native tools via apply_chat_template.
         """
         ...
 
@@ -152,13 +168,17 @@ class DefaultAdapter:
         tokenizer: Any,
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Use tokenizer's built-in chat template.
 
         Handles both Tokenizer and Processor objects (vision models use Processor).
+        The tools parameter is accepted but ignored by default - models with native
+        tool support can override this to pass tools to the tokenizer.
         """
         # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        # Note: tools parameter ignored by default adapter - handled via prompt injection
         result: str = cast(
             str,
             actual_tokenizer.apply_chat_template(
@@ -191,6 +211,10 @@ class DefaultAdapter:
     def get_tool_call_stop_tokens(self, tokenizer: Any) -> list[int]:
         """Default: No additional stop tokens for tools."""
         return []
+
+    def has_native_tool_support(self, tokenizer: Any) -> bool:
+        """Default: No native tool support, use prompt injection."""
+        return False
 
     # --- Optional Methods: Reasoning Mode Support ---
 

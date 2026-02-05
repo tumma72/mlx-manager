@@ -15,13 +15,21 @@ import json
 import pytest
 
 from mlx_manager.mlx_server.services.response_processor import (
+    GLM4_PATTERNS,
+    LLAMA_PATTERNS,
+    MODEL_FAMILY_PATTERNS,
+    QWEN_PATTERNS,
+    ModelFamilyPatterns,
     ParseResult,
     ResponseProcessor,
     StreamEvent,
     StreamingProcessor,
     ToolCall,
     ToolCallFunction,
+    ToolPatternSpec,
     create_default_processor,
+    create_processor_for_family,
+    get_processor_for_family,
     get_response_processor,
     reset_response_processor,
 )
@@ -576,6 +584,185 @@ class TestProcessorFactory:
         # Test GLM4 format
         result = processor.process("<tool_call><name>f</name><arguments>{}</arguments></tool_call>")
         assert len(result.tool_calls) == 1
+
+
+# --- Model Family Processor Tests ---
+
+
+class TestModelFamilyProcessors:
+    """Tests for model-family-specific processors."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        """Reset processor before each test."""
+        reset_response_processor()
+
+    def test_qwen_family_patterns_defined(self) -> None:
+        """Qwen patterns are properly defined."""
+        assert "qwen" in MODEL_FAMILY_PATTERNS
+        patterns = QWEN_PATTERNS
+        assert len(patterns.tool_patterns) >= 2  # At least closed and unclosed formats
+        assert len(patterns.thinking_tags) >= 1
+
+    def test_glm4_family_patterns_defined(self) -> None:
+        """GLM4 patterns are properly defined."""
+        assert "glm4" in MODEL_FAMILY_PATTERNS
+        patterns = GLM4_PATTERNS
+        assert len(patterns.tool_patterns) >= 3  # XML, compact, attr formats
+        assert len(patterns.thinking_tags) >= 1
+
+    def test_llama_family_patterns_defined(self) -> None:
+        """Llama patterns are properly defined."""
+        assert "llama" in MODEL_FAMILY_PATTERNS
+        patterns = LLAMA_PATTERNS
+        assert len(patterns.tool_patterns) >= 2  # XML and Python formats
+        assert len(patterns.thinking_tags) >= 1
+
+    def test_create_processor_for_qwen(self) -> None:
+        """create_processor_for_family creates Qwen-specific processor."""
+        processor = create_processor_for_family("qwen")
+
+        # Should match Hermes/Qwen JSON format
+        result = processor.process('<tool_call>{"name": "f", "arguments": {}}</tool_call>')
+        assert len(result.tool_calls) == 1
+
+        # Should NOT match GLM4 XML format (family-specific)
+        result = processor.process(
+            "<tool_call><name>f</name><arguments>{}</arguments></tool_call>"
+        )
+        assert len(result.tool_calls) == 0  # Pattern not registered for Qwen
+
+    def test_create_processor_for_glm4(self) -> None:
+        """create_processor_for_family creates GLM4-specific processor."""
+        processor = create_processor_for_family("glm4")
+
+        # Should match GLM4 XML format
+        result = processor.process(
+            "<tool_call><name>f</name><arguments>{}</arguments></tool_call>"
+        )
+        assert len(result.tool_calls) == 1
+
+        # Should NOT match Hermes JSON format (family-specific)
+        result = processor.process('<tool_call>{"name": "f", "arguments": {}}</tool_call>')
+        assert len(result.tool_calls) == 0  # Pattern not registered for GLM4
+
+    def test_create_processor_for_llama(self) -> None:
+        """create_processor_for_family creates Llama-specific processor."""
+        processor = create_processor_for_family("llama")
+
+        # Should match Llama function format
+        result = processor.process("<function=f>{}</function>")
+        assert len(result.tool_calls) == 1
+
+        # Should NOT match Hermes JSON format (family-specific)
+        result = processor.process('<tool_call>{"name": "f", "arguments": {}}</tool_call>')
+        assert len(result.tool_calls) == 0  # Pattern not registered for Llama
+
+    def test_get_processor_for_family_caches_instance(self) -> None:
+        """get_processor_for_family caches processors per family."""
+        p1 = get_processor_for_family("qwen")
+        p2 = get_processor_for_family("qwen")
+        p3 = get_processor_for_family("glm4")
+
+        assert p1 is p2  # Same family returns same instance
+        assert p1 is not p3  # Different families return different instances
+
+    def test_get_processor_for_family_case_insensitive(self) -> None:
+        """get_processor_for_family is case-insensitive."""
+        p1 = get_processor_for_family("Qwen")
+        p2 = get_processor_for_family("QWEN")
+        p3 = get_processor_for_family("qwen")
+
+        assert p1 is p2
+        assert p2 is p3
+
+    def test_unknown_family_uses_default_patterns(self) -> None:
+        """Unknown family falls back to default patterns (all patterns)."""
+        processor = create_processor_for_family("unknown_model")
+
+        # Should match multiple formats since default has all patterns
+        result = processor.process('<tool_call>{"name": "f", "arguments": {}}</tool_call>')
+        assert len(result.tool_calls) == 1
+
+        processor2 = create_processor_for_family("unknown_model")
+        result2 = processor2.process("<function=f>{}</function>")
+        assert len(result2.tool_calls) == 1
+
+    def test_streaming_processor_with_model_family(self) -> None:
+        """StreamingProcessor accepts model_family parameter."""
+        # Qwen processor - should extract Hermes format
+        sp_qwen = StreamingProcessor(model_family="qwen")
+        sp_qwen.feed("<tool_call>")
+        sp_qwen.feed('{"name": "test", "arguments": {}}')
+        sp_qwen.feed("</tool_call>")
+        result = sp_qwen.finalize()
+        assert len(result.tool_calls) == 1
+
+    def test_streaming_processor_family_specificity(self) -> None:
+        """StreamingProcessor uses family-specific patterns."""
+        # GLM4 processor should NOT extract Hermes JSON format
+        sp_glm4 = StreamingProcessor(model_family="glm4")
+        sp_glm4.feed("<tool_call>")
+        sp_glm4.feed('{"name": "test", "arguments": {}}')
+        sp_glm4.feed("</tool_call>")
+        result = sp_glm4.finalize()
+        # GLM4 expects XML inside <tool_call>, not JSON
+        assert len(result.tool_calls) == 0
+
+    def test_reset_clears_family_caches(self) -> None:
+        """reset_response_processor clears family processor caches."""
+        p1 = get_processor_for_family("qwen")
+        reset_response_processor()
+        p2 = get_processor_for_family("qwen")
+
+        assert p1 is not p2
+
+
+class TestToolPatternSpec:
+    """Tests for ToolPatternSpec dataclass."""
+
+    def test_tool_pattern_spec_defaults(self) -> None:
+        """ToolPatternSpec has sensible defaults."""
+        spec = ToolPatternSpec(pattern=r"<test>", parser_name="hermes")
+
+        assert spec.pattern == r"<test>"
+        assert spec.parser_name == "hermes"
+        assert spec.description == ""
+
+    def test_tool_pattern_spec_with_description(self) -> None:
+        """ToolPatternSpec accepts description."""
+        spec = ToolPatternSpec(
+            pattern=r"<test>",
+            parser_name="hermes",
+            description="Test pattern",
+        )
+
+        assert spec.description == "Test pattern"
+
+
+class TestModelFamilyPatterns:
+    """Tests for ModelFamilyPatterns dataclass."""
+
+    def test_model_family_patterns_defaults(self) -> None:
+        """ModelFamilyPatterns has empty defaults."""
+        patterns = ModelFamilyPatterns()
+
+        assert patterns.tool_patterns == []
+        assert patterns.thinking_tags == []
+        assert patterns.cleanup_tokens == []
+
+    def test_model_family_patterns_with_data(self) -> None:
+        """ModelFamilyPatterns accepts full configuration."""
+        spec = ToolPatternSpec(pattern=r"<test>", parser_name="hermes")
+        patterns = ModelFamilyPatterns(
+            tool_patterns=[spec],
+            thinking_tags=["think"],
+            cleanup_tokens=["<|end|>"],
+        )
+
+        assert len(patterns.tool_patterns) == 1
+        assert patterns.thinking_tags == ["think"]
+        assert patterns.cleanup_tokens == ["<|end|>"]
 
 
 # --- Custom Processor Tests ---
