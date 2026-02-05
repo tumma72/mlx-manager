@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 15 of 15 (AuthLib consolidation)
-Status: Phase 15 complete
-Last activity: 2026-02-05 - Completed 15-15 (AuthLib consolidation)
+Plan: 14 of 15 (Download management)
+Status: In progress
+Last activity: 2026-02-05 - Completed 15-14 (Download management)
 
 Progress: [████████████████] 100% (15 of 15 plans complete in Phase 15)
 
@@ -243,6 +243,11 @@ Recent decisions affecting current work:
 - **Separate log files by component**: mlx-server.log for inference, mlx-manager.log for app — easier debugging of distinct components
 - **InterceptHandler for third-party compatibility**: Redirect standard logging to Loguru to capture third-party library logs
 
+- **E2E tiered test infrastructure**: pytest markers (e2e, e2e_vision_quick, e2e_vision_full) with addopts excluding E2E from default run
+- **Fallback model resolution for E2E**: Prefer qat variants over DWQ for Gemma models due to VisionConfig incompatibility in mlx-vlm 0.3.11
+- **Manual pool init in ASGI tests**: httpx ASGITransport does not trigger FastAPI lifespan; initialize ModelPoolManager explicitly in fixture
+- **Cleanup models after each E2E test**: Unload all loaded models between tests to prevent 7-16GB vision model memory accumulation
+
 See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
@@ -289,9 +294,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 15-15-PLAN.md (AuthLib consolidation)
-Resume file: None - Milestone v1.2 complete
-Next: Run /gsd:audit-milestone to verify cross-phase integration and E2E flows
+Stopped at: Completed 15-14-PLAN.md (Download management)
+Resume file: None
+Next: Continue with remaining plans or run /gsd:audit-milestone
 
 ### Roadmap Evolution
 
