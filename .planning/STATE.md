@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 12 of 15 (Embeddings E2E tests)
+Plan: 13 of 15 (Audio integration)
 Status: In progress
-Last activity: 2026-02-05 - Completed 15-12 (Embeddings E2E tests)
+Last activity: 2026-02-05 - Completed 15-13 (Audio integration)
 
 Progress: [████████████████] 100% (15 of 15 plans complete in Phase 15)
 
@@ -258,6 +258,12 @@ Recent decisions affecting current work:
 - **Thinking model token budget for E2E**: System message tests use 512 max_tokens because Qwen3 thinking models consume tokens for reasoning before visible output
 - **Cross-protocol E2E flexible tool assertion**: Tool call test accepts either tool_call or content response since small models may not always trigger tool calls
 
+- **Audio models tokenizer=None**: Audio models loaded via mlx-audio don't use text tokenizers; tokenizer field set to None in LoadedModel
+- **mlx-audio load_model auto-detection**: mlx_audio.utils.load_model auto-detects TTS vs STT from config and name patterns
+- **TTS model.generate() returns GenerationResult iterable**: Each result has .audio (mx.array), .sample_rate, .audio_duration fields
+- **STT temp file for audio input**: generate_transcription expects file path not bytes; write to tempfile then unlink
+- **WAV default for TTS**: WAV requires no external dependencies (uses miniaudio); MP3 needs ffmpeg
+
 See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
@@ -304,9 +310,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-05
-Stopped at: Completed 15-12-PLAN.md (Embeddings E2E tests)
+Stopped at: Completed 15-13-PLAN.md (Audio integration)
 Resume file: None
-Next: Continue with 15-13 (Audio integration)
+Next: Continue with 15-14 (Download management)
 
 ### Roadmap Evolution
 
