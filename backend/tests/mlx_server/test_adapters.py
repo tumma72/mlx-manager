@@ -3,7 +3,10 @@
 from unittest.mock import MagicMock
 
 from mlx_manager.mlx_server.models.adapters import get_adapter, get_supported_families
+from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
 from mlx_manager.mlx_server.models.adapters.gemma import GemmaAdapter
+from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
+from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
 from mlx_manager.mlx_server.models.adapters.mistral import MistralAdapter
 from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
 
@@ -263,3 +266,42 @@ class TestGemmaAdapter:
         assert 100 in stop_tokens  # eos
         assert 300 in stop_tokens  # <end_of_turn>
         inner_tokenizer.convert_tokens_to_ids.assert_called_with("<end_of_turn>")
+
+
+class TestAdapterReasoningSupport:
+    """Tests for adapter reasoning mode support flags.
+
+    Migrated from test_reasoning.py. Reasoning extraction is handled by
+    ResponseProcessor (tested in test_response_processor.py). These tests
+    verify the adapter-level supports_reasoning_mode() contract.
+    """
+
+    def test_llama_adapter_supports_reasoning_mode(self):
+        """Llama adapter supports reasoning mode."""
+        adapter = LlamaAdapter()
+        assert adapter.supports_reasoning_mode() is True
+
+    def test_qwen_adapter_supports_reasoning_mode(self):
+        """Qwen adapter supports reasoning mode."""
+        adapter = QwenAdapter()
+        assert adapter.supports_reasoning_mode() is True
+
+    def test_glm4_adapter_supports_reasoning_mode(self):
+        """GLM4 adapter supports reasoning mode."""
+        adapter = GLM4Adapter()
+        assert adapter.supports_reasoning_mode() is True
+
+    def test_default_adapter_does_not_support_reasoning_mode(self):
+        """Default adapter does not support reasoning mode."""
+        adapter = DefaultAdapter()
+        assert adapter.supports_reasoning_mode() is False
+
+    def test_gemma_adapter_does_not_support_reasoning_mode(self):
+        """Gemma adapter does not support reasoning mode (inherits default)."""
+        adapter = GemmaAdapter()
+        assert adapter.supports_reasoning_mode() is False
+
+    def test_mistral_adapter_does_not_support_reasoning_mode(self):
+        """Mistral adapter does not support reasoning mode (inherits default)."""
+        adapter = MistralAdapter()
+        assert adapter.supports_reasoning_mode() is False
