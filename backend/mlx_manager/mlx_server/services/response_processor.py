@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from mlx_manager.mlx_server.schemas.openai import FunctionCall, ToolCall
+
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
 
@@ -92,20 +94,8 @@ class ModelFamilyPatterns:
 
 # --- Pydantic Models ---
 
-
-class ToolCallFunction(BaseModel):
-    """Function call details within a tool call."""
-
-    name: str
-    arguments: str
-
-
-class ToolCall(BaseModel):
-    """Tool call in OpenAI-compatible format."""
-
-    id: str
-    type: str = "function"
-    function: ToolCallFunction
+# ToolCall and FunctionCall are imported from schemas/openai.py (canonical types).
+# No duplicate definitions here — see Principle P4 (one canonical type per concept).
 
 
 class ParseResult(BaseModel):
@@ -140,7 +130,7 @@ def parse_hermes_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=arguments_str),
+            function=FunctionCall(name=name, arguments=arguments_str),
         )
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning("Invalid Hermes tool call: %s", e)
@@ -162,7 +152,7 @@ def parse_llama_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=args_str),
+            function=FunctionCall(name=name, arguments=args_str),
         )
     except (IndexError, AttributeError) as e:
         logger.warning("Invalid Llama tool call: %s", e)
@@ -184,7 +174,7 @@ def parse_glm4_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=args_str),
+            function=FunctionCall(name=name, arguments=args_str),
         )
     except (IndexError, AttributeError) as e:
         logger.warning("Invalid GLM4 tool call: %s", e)
@@ -210,7 +200,7 @@ def parse_glm4_compact_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=args_str),
+            function=FunctionCall(name=name, arguments=args_str),
         )
     except (IndexError, AttributeError) as e:
         logger.warning("Invalid GLM4.7 compact tool call: %s", e)
@@ -245,7 +235,7 @@ def parse_glm4_attr_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=args_str),
+            function=FunctionCall(name=name, arguments=args_str),
         )
     except (IndexError, AttributeError) as e:
         logger.warning("Invalid GLM4.7 attr tool call: %s", e)
@@ -265,7 +255,7 @@ def parse_llama_python_tool(match: re.Match[str]) -> ToolCall | None:
 
         return ToolCall(
             id=f"call_{uuid.uuid4().hex[:8]}",
-            function=ToolCallFunction(name=name, arguments=json.dumps(args_dict)),
+            function=FunctionCall(name=name, arguments=json.dumps(args_dict)),
         )
     except (IndexError, AttributeError) as e:
         logger.warning("Invalid Llama Python tool call: %s", e)
@@ -656,8 +646,7 @@ def create_processor_for_family(family: str) -> ResponseProcessor:
     """
     patterns = MODEL_FAMILY_PATTERNS.get(family.lower(), DEFAULT_PATTERNS)
     logger.debug(
-        f"Creating processor for family '{family}' with "
-        f"{len(patterns.tool_patterns)} tool patterns"
+        f"Creating processor for family '{family}' with {len(patterns.tool_patterns)} tool patterns"
     )
     return create_processor_from_patterns(patterns)
 

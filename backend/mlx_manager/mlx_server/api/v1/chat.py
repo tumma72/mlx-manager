@@ -19,7 +19,6 @@ from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
-    FunctionCall,
     ToolCall,
     Usage,
     extract_content_parts,
@@ -482,7 +481,11 @@ async def _handle_non_streaming(
 
 
 def _convert_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[ToolCall] | None:
-    """Convert tool calls dict to Pydantic ToolCall objects.
+    """Convert tool calls dicts to canonical ToolCall Pydantic objects.
+
+    The inference service returns tool calls as dicts (from ToolCall.model_dump()),
+    so we use model_validate to reconstruct the canonical type without manual
+    field-by-field bridging.
 
     Args:
         tool_calls: List of tool call dicts from inference service
@@ -493,20 +496,7 @@ def _convert_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[ToolCal
     if not tool_calls:
         return None
 
-    result: list[ToolCall] = []
-    for tc in tool_calls:
-        func = tc.get("function", {})
-        result.append(
-            ToolCall(
-                id=tc.get("id", ""),
-                type=tc.get("type", "function"),
-                function=FunctionCall(
-                    name=func.get("name", ""),
-                    arguments=func.get("arguments", "{}"),
-                ),
-            )
-        )
-    return result
+    return [ToolCall.model_validate(tc) for tc in tool_calls]
 
 
 # --- Batched Request Handlers ---

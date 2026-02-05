@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+from mlx_manager.mlx_server.schemas.openai import FunctionCall, ToolCall
 from mlx_manager.mlx_server.services.response_processor import (
     GLM4_PATTERNS,
     LLAMA_PATTERNS,
@@ -24,8 +25,6 @@ from mlx_manager.mlx_server.services.response_processor import (
     ResponseProcessor,
     StreamEvent,
     StreamingProcessor,
-    ToolCall,
-    ToolCallFunction,
     ToolPatternSpec,
     create_default_processor,
     create_processor_for_family,
@@ -41,8 +40,8 @@ class TestPydanticModels:
     """Tests for Pydantic model behavior."""
 
     def test_tool_call_function_serialization(self) -> None:
-        """ToolCallFunction serializes to dict correctly."""
-        func = ToolCallFunction(name="get_weather", arguments='{"city": "SF"}')
+        """FunctionCall serializes to dict correctly."""
+        func = FunctionCall(name="get_weather", arguments='{"city": "SF"}')
         data = func.model_dump()
 
         assert data == {"name": "get_weather", "arguments": '{"city": "SF"}'}
@@ -51,7 +50,7 @@ class TestPydanticModels:
         """ToolCall serializes to dict correctly."""
         tc = ToolCall(
             id="call_abc123",
-            function=ToolCallFunction(name="search", arguments='{"q": "test"}'),
+            function=FunctionCall(name="search", arguments='{"q": "test"}'),
         )
         data = tc.model_dump()
 
@@ -72,7 +71,7 @@ class TestPydanticModels:
         """ParseResult correctly holds tool calls."""
         tc = ToolCall(
             id="call_1",
-            function=ToolCallFunction(name="test", arguments="{}"),
+            function=FunctionCall(name="test", arguments="{}"),
         )
         result = ParseResult(content="Result", tool_calls=[tc], reasoning="Thought")
 
@@ -627,9 +626,7 @@ class TestModelFamilyProcessors:
         assert len(result.tool_calls) == 1
 
         # Should NOT match GLM4 XML format (family-specific)
-        result = processor.process(
-            "<tool_call><name>f</name><arguments>{}</arguments></tool_call>"
-        )
+        result = processor.process("<tool_call><name>f</name><arguments>{}</arguments></tool_call>")
         assert len(result.tool_calls) == 0  # Pattern not registered for Qwen
 
     def test_create_processor_for_glm4(self) -> None:
@@ -637,9 +634,7 @@ class TestModelFamilyProcessors:
         processor = create_processor_for_family("glm4")
 
         # Should match GLM4 XML format
-        result = processor.process(
-            "<tool_call><name>f</name><arguments>{}</arguments></tool_call>"
-        )
+        result = processor.process("<tool_call><name>f</name><arguments>{}</arguments></tool_call>")
         assert len(result.tool_calls) == 1
 
         # Should NOT match Hermes JSON format (family-specific)
