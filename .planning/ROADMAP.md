@@ -265,7 +265,7 @@ Plans:
 5. Integration tests validate ResponseProcessor with real tokenizer outputs from each model family
 6. Golden file tests cover tool calling and thinking extraction patterns for Qwen, Llama, GLM4
 
-**Plans**: 9 plans in 4 waves
+**Plans**: 15 plans in 6 waves
 
 Plans:
 - [x] 15-01-PLAN.md — Dead code removal (delete parsers directory, remove adapter methods)
@@ -277,6 +277,12 @@ Plans:
 - [x] 15-07-PLAN.md — Fix hanging model downloads (UAT Gap 6)
 - [x] 15-08-PLAN.md — Profile model cleanup (remove obsolete fields, add generation params)
 - [x] 15-09-PLAN.md — Loguru migration (structured logging with separate log files)
+- [x] 15-10-PLAN.md — Vision E2E tests (tiered: Qwen2-VL-2B quick / Gemma-3-27b full)
+- [x] 15-11-PLAN.md — Cross-protocol E2E tests (OpenAI vs Anthropic with golden prompts)
+- [x] 15-12-PLAN.md — Embeddings E2E tests (dimensionality, normalization, similarity) + UI fix
+- [x] 15-13-PLAN.md — Audio integration (ModelType.AUDIO, detection, TTS/STT endpoints, E2E)
+- [x] 15-14-PLAN.md — Download management (pause/resume/cancel with HF cache cleanup)
+- [x] 15-15-PLAN.md — AuthLib consolidation (JWE encryption + jose JWT)
 
 ## Progress
 
@@ -292,7 +298,7 @@ Plans:
 | 12. Hardening | v1.2 | 7/7 | Complete | 2026-01-31 |
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
-| 15. Cleanup & Tests | v1.2 | 9/9 | Complete | 2026-02-04 |
+| 15. Cleanup & Tests | v1.2 | 15/15 | Complete | 2026-02-05 |
 
 ## Technical Architecture
 
@@ -359,5 +365,5 @@ Plans:
 | jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-02-04*
+*Roadmap revised: 2026-02-05*
 *Previous version: adapter/proxy approach (deprecated)*
