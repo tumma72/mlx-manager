@@ -1364,3 +1364,99 @@ class TestStreamEventDataclass:
 
         assert event.content == "Result"
         assert event.reasoning_content == "Thought"
+
+
+class TestFamilyAwareStreamingProcessor:
+    """Tests for family-aware streaming pattern configuration.
+
+    Verifies that StreamingProcessor uses family-specific markers
+    derived from ModelFamilyPatterns (P2: adapter-driven, P5: shared infra).
+    """
+
+    @pytest.fixture(autouse=True)
+    def reset(self) -> None:
+        """Reset singleton cache before each test."""
+        reset_response_processor()
+
+    def test_qwen_processor_detects_tool_call_markers(self) -> None:
+        """Qwen StreamingProcessor detects <tool_call> markers."""
+        sp = StreamingProcessor(model_family="qwen")
+
+        # Feed a tool call pattern
+        events = []
+        for token in ["Hello ", "<tool_call>", '{"name":"f","arguments":{}}', "</tool_call>"]:
+            event = sp.feed(token)
+            events.append(event)
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "f"
+
+    def test_qwen_processor_does_not_detect_llama_markers(self) -> None:
+        """Qwen StreamingProcessor ignores <function= markers (Llama-only)."""
+        sp = StreamingProcessor(model_family="qwen")
+
+        # Feed a Llama-style function call - should be treated as content
+        for token in ['<function=test>{"a":1}', "</function>"]:
+            sp.feed(token)
+
+        result = sp.finalize()
+        # No tool calls extracted (Qwen processor doesn't have Llama patterns)
+        assert len(result.tool_calls) == 0
+
+    def test_llama_processor_detects_function_markers(self) -> None:
+        """Llama StreamingProcessor detects <function= markers."""
+        sp = StreamingProcessor(model_family="llama")
+
+        for token in ["<function=", "test>", '{"a":1}', "</function>"]:
+            sp.feed(token)
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].function.name == "test"
+
+    def test_llama_processor_does_not_detect_glm4_markers(self) -> None:
+        """Llama StreamingProcessor ignores GLM4 XML format."""
+        sp = StreamingProcessor(model_family="llama")
+
+        text = "<tool_call><name>f</name><arguments>{}</arguments></tool_call>"
+        for char_chunk in [text[i : i + 5] for i in range(0, len(text), 5)]:
+            sp.feed(char_chunk)
+
+        result = sp.finalize()
+        # No tool calls (Llama processor doesn't have GLM4 patterns)
+        assert len(result.tool_calls) == 0
+
+    def test_default_processor_detects_all_markers(self) -> None:
+        """Default StreamingProcessor detects all tool marker types."""
+        sp = StreamingProcessor()  # No family = default
+
+        # Feed Hermes-style tool call
+        for token in ["<tool_call>", '{"name":"f","arguments":{}}', "</tool_call>"]:
+            sp.feed(token)
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+
+    def test_family_aware_thinking_tags(self) -> None:
+        """Family-aware processor detects thinking tags from family patterns."""
+        sp = StreamingProcessor(model_family="qwen")
+
+        events = []
+        for token in ["<think>", "My reasoning", "</think>", "Answer"]:
+            events.append(sp.feed(token))
+
+        # Should have streamed reasoning_content
+        reasoning_events = [e for e in events if e.reasoning_content]
+        assert len(reasoning_events) > 0
+
+    def test_model_family_patterns_streaming_markers(self) -> None:
+        """ModelFamilyPatterns derives correct streaming markers."""
+        assert QWEN_PATTERNS.get_thinking_starts() == [
+            "<think>",
+            "<thinking>",
+            "<reasoning>",
+            "<reflection>",
+        ]
+        assert "<tool_call>" in [m[0] for m in QWEN_PATTERNS.streaming_tool_markers]
+        assert "<function=" in [m[0] for m in LLAMA_PATTERNS.streaming_tool_markers]

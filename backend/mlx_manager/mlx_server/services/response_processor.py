@@ -82,14 +82,38 @@ class ModelFamilyPatterns:
     for a specific model family (e.g., 'qwen', 'glm4', 'llama').
 
     Attributes:
-        tool_patterns: List of tool pattern specifications
+        tool_patterns: List of tool pattern specifications (for ResponseProcessor regex)
         thinking_tags: List of thinking tag names (e.g., ['think', 'thinking'])
         cleanup_tokens: List of special tokens to remove from output
+        streaming_tool_markers: List of (start, end) literal string markers for
+            StreamingProcessor's token-by-token detection. Separate from regex
+            patterns because streaming requires simple string prefix matching.
     """
 
     tool_patterns: list[ToolPatternSpec] = field(default_factory=list)
     thinking_tags: list[str] = field(default_factory=list)
     cleanup_tokens: list[str] = field(default_factory=list)
+    streaming_tool_markers: list[tuple[str, str]] = field(default_factory=list)
+
+    def get_thinking_starts(self) -> list[str]:
+        """Derive thinking start markers from tag names."""
+        return [f"<{tag}>" for tag in self.thinking_tags]
+
+    def get_thinking_ends(self) -> dict[str, str]:
+        """Derive thinking start -> end marker mapping."""
+        return {f"<{tag}>": f"</{tag}>" for tag in self.thinking_tags}
+
+    def get_all_pattern_starts(self) -> list[str]:
+        """Get all pattern start markers (thinking + tool) for streaming."""
+        starts = self.get_thinking_starts()
+        starts.extend(marker[0] for marker in self.streaming_tool_markers)
+        return starts
+
+    def get_all_pattern_ends(self) -> dict[str, str]:
+        """Get all start -> end marker mappings for streaming."""
+        ends = self.get_thinking_ends()
+        ends.update(dict(self.streaming_tool_markers))
+        return ends
 
 
 # --- Pydantic Models ---
@@ -347,6 +371,7 @@ QWEN_PATTERNS = ModelFamilyPatterns(
     ],
     thinking_tags=COMMON_THINKING_TAGS,
     cleanup_tokens=COMMON_CLEANUP_TOKENS,
+    streaming_tool_markers=[("<tool_call>", "</tool_call>")],
 )
 
 # GLM4 family patterns (XML-style and compact/attr variants)
@@ -376,6 +401,7 @@ GLM4_PATTERNS = ModelFamilyPatterns(
     ],
     thinking_tags=COMMON_THINKING_TAGS,
     cleanup_tokens=COMMON_CLEANUP_TOKENS,
+    streaming_tool_markers=[("<tool_call>", "</tool_call>")],
 )
 
 # Llama family patterns
@@ -396,6 +422,10 @@ LLAMA_PATTERNS = ModelFamilyPatterns(
     ],
     thinking_tags=COMMON_THINKING_TAGS,
     cleanup_tokens=COMMON_CLEANUP_TOKENS,
+    streaming_tool_markers=[
+        ("<function=", "</function>"),
+        ("<|python_tag|>", "<|eom_id|>"),
+    ],
 )
 
 # Default patterns: includes all patterns for backward compatibility
@@ -411,6 +441,12 @@ DEFAULT_PATTERNS = ModelFamilyPatterns(
     ],
     thinking_tags=COMMON_THINKING_TAGS,
     cleanup_tokens=COMMON_CLEANUP_TOKENS,
+    # All tool markers from all families for backward compatibility
+    streaming_tool_markers=[
+        ("<tool_call>", "</tool_call>"),
+        ("<function=", "</function>"),
+        ("<|python_tag|>", "<|eom_id|>"),
+    ],
 )
 
 # Registry mapping model family names to their patterns
@@ -737,8 +773,11 @@ class StreamingProcessor:
     This follows OpenAI o1/o3 reasoning model API spec where thinking
     content goes in delta.reasoning_content and regular content in delta.content.
 
+    Pattern configuration is derived from ModelFamilyPatterns, ensuring
+    consistent behavior between streaming and non-streaming paths (P2, P5).
+
     Usage:
-        processor = StreamingProcessor()
+        processor = StreamingProcessor(model_family="qwen")
         for token in generation:
             event = processor.feed(token)
             if event.reasoning_content or event.content:
@@ -752,35 +791,6 @@ class StreamingProcessor:
     - Regular content streamed as content
     - Final processing extracts tool_calls from accumulated text
     """
-
-    # Thinking pattern markers (content streamed as reasoning_content)
-    THINKING_STARTS = [
-        "<think>",
-        "<thinking>",
-        "<reasoning>",
-        "<reflection>",
-    ]
-
-    # Tool pattern markers (content filtered, extracted in finalize)
-    TOOL_STARTS = [
-        "<tool_call>",
-        "<function=",
-        "<|python_tag|>",
-    ]
-
-    # All pattern start markers
-    PATTERN_STARTS = THINKING_STARTS + TOOL_STARTS
-
-    # Pattern end markers (map start -> end)
-    PATTERN_ENDS = {
-        "<think>": "</think>",
-        "<thinking>": "</thinking>",
-        "<reasoning>": "</reasoning>",
-        "<reflection>": "</reflection>",
-        "<tool_call>": "</tool_call>",
-        "<function=": "</function>",
-        "<|python_tag|>": "<|eom_id|>",
-    }
 
     # Buffer size for incremental reasoning yield (avoid partial tokens)
     REASONING_BUFFER_SIZE = 10
@@ -812,6 +822,16 @@ class StreamingProcessor:
             # Backward compatible: use global processor with all patterns
             self._processor = get_response_processor()
 
+        # Derive streaming markers from family patterns (P2: adapter-driven)
+        family_key = (model_family or "default").lower()
+        patterns = MODEL_FAMILY_PATTERNS.get(family_key, DEFAULT_PATTERNS)
+
+        # Instance-level pattern configuration (not hardcoded class variables)
+        self._thinking_starts = patterns.get_thinking_starts()
+        self._tool_starts = [m[0] for m in patterns.streaming_tool_markers]
+        self._pattern_starts = self._thinking_starts + self._tool_starts
+        self._pattern_ends = patterns.get_all_pattern_ends()
+
         self._model_family = model_family
         self._buffer = ""  # Buffer for content within a pattern
         self._pending_buffer = ""  # For partial marker detection
@@ -841,12 +861,12 @@ class StreamingProcessor:
         self._pending_buffer = ""
 
         # Check for complete pattern starts first
-        for start in self.PATTERN_STARTS:
+        for start in self._pattern_starts:
             if start in combined:
                 return self._handle_pattern_start(combined, start)
 
         # Check for partial match at end (e.g., "<tool" might become "<tool_call>")
-        for start in self.PATTERN_STARTS:
+        for start in self._pattern_starts:
             for i in range(1, len(start)):
                 partial = start[:i]
                 if combined.endswith(partial):
@@ -869,7 +889,7 @@ class StreamingProcessor:
         For tool patterns: buffer silently (extracted in finalize)
         """
         self._buffer += token
-        end_marker = self.PATTERN_ENDS.get(self._pattern_start, "")
+        end_marker = self._pattern_ends.get(self._pattern_start, "")
 
         if end_marker and end_marker in self._buffer:
             # Pattern complete
@@ -906,7 +926,7 @@ class StreamingProcessor:
         if self._is_thinking_pattern:
             # Filter out nested thinking tags from buffer (some models output <think><think>)
             # This handles cases where the model incorrectly outputs duplicate start tags
-            for nested_start in self.THINKING_STARTS:
+            for nested_start in self._thinking_starts:
                 while nested_start in self._buffer:
                     self._buffer = self._buffer.replace(nested_start, "", 1)
 
@@ -926,12 +946,12 @@ class StreamingProcessor:
         before = combined[:idx]
         self._in_pattern = True
         self._pattern_start = start
-        self._is_thinking_pattern = start in self.THINKING_STARTS
+        self._is_thinking_pattern = start in self._thinking_starts
         # Buffer starts AFTER the start marker (we don't want the marker in output)
         self._buffer = combined[idx + len(start) :]
 
         # Check if pattern already ends in this combined text
-        end_marker = self.PATTERN_ENDS.get(start, "")
+        end_marker = self._pattern_ends.get(start, "")
         if end_marker and end_marker in self._buffer:
             # Complete pattern in single combined text
             end_idx = self._buffer.index(end_marker)
