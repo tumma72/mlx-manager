@@ -305,3 +305,228 @@ class TestAdapterReasoningSupport:
         """Mistral adapter does not support reasoning mode (inherits default)."""
         adapter = MistralAdapter()
         assert adapter.supports_reasoning_mode() is False
+
+
+class TestConvertMessages:
+    """Tests for adapter convert_messages() implementations.
+
+    Verifies that tool-capable adapters correctly convert tool messages
+    to formats their tokenizers can handle (P2: adapter-driven, P3: no data loss).
+    """
+
+    # --- Shared test messages ---
+
+    TOOL_RESULT_MSG = {
+        "role": "tool",
+        "content": '{"temp": 72}',
+        "tool_call_id": "call_abc123",
+    }
+
+    ASSISTANT_WITH_TOOL_CALLS_MSG = {
+        "role": "assistant",
+        "content": "Let me check the weather.",
+        "tool_calls": [
+            {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "arguments": '{"city": "SF"}',
+                },
+            }
+        ],
+    }
+
+    REGULAR_USER_MSG = {"role": "user", "content": "Hello"}
+    REGULAR_ASSISTANT_MSG = {"role": "assistant", "content": "Hi there!"}
+
+    # --- DefaultAdapter ---
+
+    def test_default_passes_regular_messages_through(self):
+        """DefaultAdapter preserves regular messages unchanged."""
+        adapter = DefaultAdapter()
+        messages = [self.REGULAR_USER_MSG, self.REGULAR_ASSISTANT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert result == messages
+
+    def test_default_converts_tool_result_to_user(self):
+        """DefaultAdapter converts tool result to user message."""
+        adapter = DefaultAdapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "call_abc123" in result[0]["content"]
+        assert '{"temp": 72}' in result[0]["content"]
+
+    def test_default_converts_assistant_tool_calls_to_text(self):
+        """DefaultAdapter converts assistant tool_calls to text."""
+        adapter = DefaultAdapter()
+        messages = [self.ASSISTANT_WITH_TOOL_CALLS_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "assistant"
+        assert "get_weather" in result[0]["content"]
+        assert "tool_calls" not in result[0]
+
+    # --- QwenAdapter ---
+
+    def test_qwen_converts_tool_result_to_user(self):
+        """QwenAdapter converts tool result to user message."""
+        adapter = QwenAdapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "call_abc123" in result[0]["content"]
+        assert '{"temp": 72}' in result[0]["content"]
+
+    def test_qwen_converts_assistant_tool_calls_to_hermes(self):
+        """QwenAdapter converts tool_calls to Hermes <tool_call> format."""
+        adapter = QwenAdapter()
+        messages = [self.ASSISTANT_WITH_TOOL_CALLS_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "assistant"
+        assert "<tool_call>" in result[0]["content"]
+        assert "get_weather" in result[0]["content"]
+        assert "tool_calls" not in result[0]
+
+    def test_qwen_preserves_regular_messages(self):
+        """QwenAdapter passes regular messages unchanged."""
+        adapter = QwenAdapter()
+        messages = [self.REGULAR_USER_MSG, self.REGULAR_ASSISTANT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert result == messages
+
+    def test_qwen_multi_turn_tool_use(self):
+        """QwenAdapter handles full multi-turn tool use conversation."""
+        adapter = QwenAdapter()
+        messages = [
+            {"role": "system", "content": "You have tools."},
+            {"role": "user", "content": "What's the weather?"},
+            self.ASSISTANT_WITH_TOOL_CALLS_MSG,
+            self.TOOL_RESULT_MSG,
+        ]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 4
+        assert result[0]["role"] == "system"
+        assert result[1]["role"] == "user"
+        assert result[2]["role"] == "assistant"
+        assert "<tool_call>" in result[2]["content"]
+        assert result[3]["role"] == "user"  # tool -> user
+        assert "Tool Result" in result[3]["content"]
+
+    # --- LlamaAdapter ---
+
+    def test_llama_converts_tool_result_to_user(self):
+        """LlamaAdapter converts tool result to user message."""
+        adapter = LlamaAdapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "call_abc123" in result[0]["content"]
+        assert '{"temp": 72}' in result[0]["content"]
+
+    def test_llama_converts_assistant_tool_calls_to_function_tags(self):
+        """LlamaAdapter converts tool_calls to <function=name> format."""
+        adapter = LlamaAdapter()
+        messages = [self.ASSISTANT_WITH_TOOL_CALLS_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "assistant"
+        assert "<function=get_weather>" in result[0]["content"]
+        assert "</function>" in result[0]["content"]
+        assert "tool_calls" not in result[0]
+
+    def test_llama_preserves_regular_messages(self):
+        """LlamaAdapter passes regular messages unchanged."""
+        adapter = LlamaAdapter()
+        messages = [self.REGULAR_USER_MSG, self.REGULAR_ASSISTANT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert result == messages
+
+    def test_llama_multi_turn_tool_use(self):
+        """LlamaAdapter handles full multi-turn tool use conversation."""
+        adapter = LlamaAdapter()
+        messages = [
+            {"role": "user", "content": "What's the weather?"},
+            self.ASSISTANT_WITH_TOOL_CALLS_MSG,
+            self.TOOL_RESULT_MSG,
+        ]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 3
+        assert result[0]["role"] == "user"
+        assert result[1]["role"] == "assistant"
+        assert "<function=get_weather>" in result[1]["content"]
+        assert result[2]["role"] == "user"  # tool -> user
+        assert "Tool Result" in result[2]["content"]
+
+    # --- GLM4Adapter (existing, verify contract) ---
+
+    def test_glm4_converts_tool_result_to_user(self):
+        """GLM4Adapter converts tool result to user message."""
+        adapter = GLM4Adapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+        assert "call_abc123" in result[0]["content"]
+
+    def test_glm4_converts_assistant_tool_calls_to_text(self):
+        """GLM4Adapter converts tool_calls to inline text."""
+        adapter = GLM4Adapter()
+        messages = [self.ASSISTANT_WITH_TOOL_CALLS_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "assistant"
+        assert "get_weather" in result[0]["content"]
+
+    # --- Non-tool adapters inherit safe default ---
+
+    def test_gemma_safely_handles_tool_messages(self):
+        """GemmaAdapter (inherits DefaultAdapter) safely converts tool messages."""
+        adapter = GemmaAdapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
+
+    def test_mistral_safely_handles_tool_messages(self):
+        """MistralAdapter (inherits DefaultAdapter) safely converts tool messages."""
+        adapter = MistralAdapter()
+        messages = [self.TOOL_RESULT_MSG]
+
+        result = adapter.convert_messages(messages)
+
+        assert len(result) == 1
+        assert result[0]["role"] == "user"

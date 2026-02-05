@@ -185,6 +185,52 @@ Only call functions when necessary. If no function call is needed, respond norma
 
         return stop_tokens
 
+    # --- Message Conversion ---
+
+    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert messages to Llama-compatible format.
+
+        Llama tokenizers cannot handle role="tool" messages or assistant messages
+        with tool_calls in their Jinja templates. This method converts:
+        - role="tool" -> role="user" with structured tool result text
+        - assistant with tool_calls -> assistant with <function=name> tags
+
+        Args:
+            messages: Messages in OpenAI format (may include tool role)
+
+        Returns:
+            Messages with tool messages converted to Llama-friendly format
+        """
+        converted: list[dict[str, Any]] = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "tool":
+                # Convert tool result to user message
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                content = msg.get("content", "")
+                tool_result_content = (
+                    f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]\n\n"
+                    f"Please provide your response based on this tool result."
+                )
+                converted.append({"role": "user", "content": tool_result_content})
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Convert assistant tool_calls to Llama XML-style text
+                tool_calls = msg.get("tool_calls", [])
+                tool_text = ""
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    name = func.get("name", "unknown")
+                    args = func.get("arguments", "{}")
+                    tool_text += f"\n<function={name}>{args}</function>"
+                content = (msg.get("content", "") or "") + tool_text
+                converted.append({"role": "assistant", "content": content})
+            else:
+                converted.append(msg)
+
+        return converted
+
     # --- Reasoning Mode Support ---
 
     def supports_reasoning_mode(self) -> bool:

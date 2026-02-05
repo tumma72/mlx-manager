@@ -225,8 +225,50 @@ class DefaultAdapter:
     # --- Optional Methods: Message Conversion ---
 
     def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Default: Return messages unchanged."""
-        return messages
+        """Default: Safe fallback that converts tool messages to user messages.
+
+        Tokenizers generally cannot handle role="tool" or assistant messages
+        with tool_calls in their Jinja templates. This default implementation
+        converts them to a format any tokenizer can handle:
+        - role="tool" -> role="user" with structured text
+        - assistant with tool_calls -> plain assistant with text representation
+
+        Adapters for tool-capable families (Qwen, Llama, GLM4) should override
+        this with family-specific formatting.
+        """
+        converted: list[dict[str, Any]] = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "tool":
+                # Convert tool result to user message (safe for any tokenizer)
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                content = msg.get("content", "")
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": f"[Tool Result for {tool_call_id}]\n{content}",
+                    }
+                )
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Convert assistant tool_calls to text representation
+                content = msg.get("content", "") or ""
+                tool_calls = msg.get("tool_calls", [])
+                tool_text_parts = []
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    name = func.get("name", "unknown")
+                    args = func.get("arguments", "{}")
+                    tool_text_parts.append(f"[Tool Call: {name}({args})]")
+                tool_text = "\n".join(tool_text_parts)
+                if tool_text_parts:
+                    content = f"{content}\n{tool_text}" if content else tool_text
+                converted.append({"role": "assistant", "content": content})
+            else:
+                converted.append(msg)
+
+        return converted
 
     # --- Optional Methods: Response Cleaning ---
 

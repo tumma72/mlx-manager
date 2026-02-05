@@ -161,6 +161,54 @@ Only call tools when necessary. If no tool call is needed, respond normally."""
         # ResponseProcessor will detect tool calls in the output
         return []
 
+    # --- Message Conversion ---
+
+    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert messages to Qwen-compatible format.
+
+        Qwen tokenizers cannot handle role="tool" messages or assistant messages
+        with tool_calls in their Jinja templates. This method converts:
+        - role="tool" -> role="user" with structured tool result text
+        - assistant with tool_calls -> assistant with Hermes-style <tool_call> tags
+
+        Args:
+            messages: Messages in OpenAI format (may include tool role)
+
+        Returns:
+            Messages with tool messages converted to Qwen-friendly format
+        """
+        converted: list[dict[str, Any]] = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "tool":
+                # Convert tool result to user message
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                content = msg.get("content", "")
+                tool_result_content = (
+                    f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]\n\n"
+                    f"Please provide your response based on this tool result."
+                )
+                converted.append({"role": "user", "content": tool_result_content})
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Convert assistant tool_calls to Hermes-style text
+                tool_calls = msg.get("tool_calls", [])
+                tool_text = ""
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    tool_call_data = {
+                        "name": func.get("name"),
+                        "arguments": json.loads(func.get("arguments", "{}")),
+                    }
+                    tool_text += f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>"
+                content = (msg.get("content", "") or "") + tool_text
+                converted.append({"role": "assistant", "content": content})
+            else:
+                converted.append(msg)
+
+        return converted
+
     # --- Reasoning Mode Support ---
 
     def supports_reasoning_mode(self) -> bool:
