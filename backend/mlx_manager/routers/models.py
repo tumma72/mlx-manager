@@ -17,7 +17,13 @@ from sqlmodel import select
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.models import Download, LocalModel, ModelSearchResult, User
-from mlx_manager.services.hf_client import hf_client
+from mlx_manager.services.hf_client import (
+    cleanup_cancel_event,
+    cleanup_partial_download,
+    hf_client,
+    register_cancel_event,
+    request_cancel,
+)
 from mlx_manager.utils.model_detection import get_model_detection_info
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -123,8 +129,15 @@ async def get_download_progress(
         download_id = task.get("download_id")
         last_db_update = time.time()
 
+        # Register cancel event so pause/cancel endpoints can signal this download
+        cancel_event = None
+        if download_id:
+            cancel_event = register_cancel_event(str(download_id))
+
         try:
-            async for progress in hf_client.download_model(model_id):
+            async for progress in hf_client.download_model(
+                model_id, cancel_event=cancel_event
+            ):
                 download_tasks[task_id].update(progress)
 
                 # Serialize progress dict properly
@@ -140,7 +153,7 @@ async def get_download_progress(
                 # Update DB record periodically (every 5 seconds) or on status change
                 current_time = time.time()
                 status = progress.get("status")
-                is_final = status in ("completed", "failed")
+                is_final = status in ("completed", "failed", "cancelled")
 
                 if download_id and (is_final or current_time - last_db_update >= 5):
                     await _update_download_record(
@@ -162,6 +175,9 @@ async def get_download_progress(
             if download_id:
                 await _update_download_record(download_id, status="failed", error=error_msg)
         finally:
+            # Clean up cancel event
+            if download_id:
+                cleanup_cancel_event(str(download_id))
             # Clean up task after a delay
             await asyncio.sleep(60)
             download_tasks.pop(task_id, None)
@@ -283,6 +299,144 @@ async def get_active_downloads(
             )
 
     return active
+
+
+@router.post("/download/{download_id}/pause")
+async def pause_download(
+    current_user: Annotated[User, Depends(get_current_user)],
+    download_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Pause an active download.
+
+    Signals the download thread to stop via cancel event.
+    HF Hub leaves .incomplete files in place for later resume.
+    """
+    result = await db.execute(select(Download).where(Download.id == download_id))
+    download = result.scalars().first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+
+    if download.status != "downloading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot pause download in '{download.status}' state",
+        )
+
+    # Signal the download thread to stop
+    request_cancel(str(download_id))
+
+    # Update status to paused
+    download.status = "paused"
+    db.add(download)
+    await db.flush()
+
+    return {
+        "id": download.id,
+        "model_id": download.model_id,
+        "status": "paused",
+        "downloaded_bytes": download.downloaded_bytes,
+        "total_bytes": download.total_bytes,
+    }
+
+
+@router.post("/download/{download_id}/resume")
+async def resume_download(
+    current_user: Annotated[User, Depends(get_current_user)],
+    download_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resume a paused download.
+
+    Creates a new background task. HF Hub's snapshot_download()
+    automatically resumes from .incomplete files.
+    """
+    result = await db.execute(select(Download).where(Download.id == download_id))
+    download = result.scalars().first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+
+    if download.status != "paused":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot resume download in '{download.status}' state",
+        )
+
+    # Update status to downloading
+    download.status = "downloading"
+    db.add(download)
+    await db.flush()
+
+    # Generate a new task_id for SSE reconnection
+    task_id = str(uuid.uuid4())
+    download_tasks[task_id] = {
+        "model_id": download.model_id,
+        "download_id": download.id,
+        "status": "downloading",
+        "progress": (
+            int((download.downloaded_bytes / download.total_bytes) * 100)
+            if download.total_bytes
+            else 0
+        ),
+        "downloaded_bytes": download.downloaded_bytes,
+        "total_bytes": download.total_bytes or 0,
+    }
+
+    return {
+        "task_id": task_id,
+        "model_id": download.model_id,
+        "download_id": download.id,
+    }
+
+
+@router.post("/download/{download_id}/cancel")
+async def cancel_download(
+    current_user: Annotated[User, Depends(get_current_user)],
+    download_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a download and clean up partial files.
+
+    Works for both active (downloading) and paused downloads.
+    Removes partial files from HF cache.
+    """
+    result = await db.execute(select(Download).where(Download.id == download_id))
+    download = result.scalars().first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+
+    if download.status not in ("downloading", "paused", "pending"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel download in '{download.status}' state",
+        )
+
+    # Signal active download to stop
+    if download.status == "downloading":
+        request_cancel(str(download_id))
+
+    # Update status to cancelled
+    download.status = "cancelled"
+    download.completed_at = datetime.now(tz=UTC)
+    db.add(download)
+    await db.flush()
+
+    # Clean up partial files from HF cache
+    cleanup_success = False
+    try:
+        cleanup_success = cleanup_partial_download(download.model_id)
+    except Exception as e:
+        # Log but don't fail - download is already marked cancelled
+        from loguru import logger
+
+        logger.error(f"Failed to clean up partial download for {download.model_id}: {e}")
+
+    return {
+        "id": download.id,
+        "model_id": download.model_id,
+        "status": "cancelled",
+        "cleanup_success": cleanup_success,
+    }
 
 
 @router.delete("/{model_id:path}")
