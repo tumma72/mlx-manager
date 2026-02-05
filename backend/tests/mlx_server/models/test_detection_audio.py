@@ -9,7 +9,6 @@ import pytest
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import ModelType
 
-
 # ── Config-based detection (highest priority) ──────────────────────────
 
 
@@ -186,9 +185,7 @@ def test_non_audio_models_not_detected_as_audio(
         ),
     ],
 )
-def test_real_world_models(
-    model_id: str, config: dict, expected: ModelType
-) -> None:
+def test_real_world_models(model_id: str, config: dict, expected: ModelType) -> None:
     """Real-world model IDs should be classified correctly."""
     result = detect_model_type(model_id, config=config)
     assert result == expected

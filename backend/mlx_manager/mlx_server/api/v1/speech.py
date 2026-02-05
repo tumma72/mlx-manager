@@ -34,8 +34,7 @@ async def create_speech(request: SpeechRequest) -> Response:
         Response with audio bytes and appropriate content type
     """
     logger.info(
-        f"TTS request: model={request.model}, "
-        f"text_len={len(request.input)}, voice={request.voice}"
+        f"TTS request: model={request.model}, text_len={len(request.input)}, voice={request.voice}"
     )
 
     audio_bytes, _sample_rate = await generate_speech(
@@ -46,14 +45,10 @@ async def create_speech(request: SpeechRequest) -> Response:
         response_format=request.response_format,
     )
 
-    content_type = AUDIO_CONTENT_TYPES.get(
-        request.response_format, "application/octet-stream"
-    )
+    content_type = AUDIO_CONTENT_TYPES.get(request.response_format, "application/octet-stream")
 
     return Response(
         content=audio_bytes,
         media_type=content_type,
-        headers={
-            "Content-Disposition": f"attachment; filename=speech.{request.response_format}"
-        },
+        headers={"Content-Disposition": f"attachment; filename=speech.{request.response_format}"},
     )

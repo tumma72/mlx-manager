@@ -222,9 +222,7 @@ async def transcribe_audio(
 
                 # Write audio data to a temporary file since generate_transcription
                 # expects a file path for the audio parameter
-                with tempfile.NamedTemporaryFile(
-                    suffix=".wav", delete=False
-                ) as tmp:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                     tmp.write(audio_data)
                     tmp_path = tmp.name
 
@@ -276,8 +274,7 @@ async def transcribe_audio(
             raise RuntimeError(f"STT transcription failed: {result}") from result
 
         logger.info(
-            f"Transcription complete: model={model_id}, "
-            f"text_len={len(result.get('text', ''))}"
+            f"Transcription complete: model={model_id}, text_len={len(result.get('text', ''))}"
         )
 
         if LOGFIRE_AVAILABLE:

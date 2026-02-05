@@ -37,9 +37,7 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
         try:
             config = read_model_config(model_id)
             if config:
-                logger.debug(
-                    f"Loaded config for {model_id}: keys={list(config.keys())}"
-                )
+                logger.debug(f"Loaded config for {model_id}: keys={list(config.keys())}")
             else:
                 logger.debug(f"No config found for {model_id} (model not downloaded)")
         except Exception as e:

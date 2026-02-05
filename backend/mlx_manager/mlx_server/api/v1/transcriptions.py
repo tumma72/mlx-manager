@@ -31,10 +31,7 @@ async def create_transcription(
     Returns:
         TranscriptionResponse with transcribed text
     """
-    logger.info(
-        f"STT request: model={model}, "
-        f"filename={file.filename}, language={language}"
-    )
+    logger.info(f"STT request: model={model}, filename={file.filename}, language={language}")
 
     # Read uploaded audio data
     audio_data = await file.read()

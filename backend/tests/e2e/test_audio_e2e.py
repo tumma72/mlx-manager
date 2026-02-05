@@ -108,7 +108,10 @@ class TestTTSGeneration:
             "/v1/audio/speech",
             json={
                 "model": audio_tts_model,
-                "input": "This is a significantly longer piece of text that should produce more audio output than a simple greeting.",
+                "input": (
+                    "This is a significantly longer piece of text that should "
+                    "produce more audio output than a simple greeting."
+                ),
                 "voice": "af_heart",
             },
         )
