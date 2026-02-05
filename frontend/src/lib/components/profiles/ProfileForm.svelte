@@ -37,7 +37,7 @@
 		modelPath = profile?.model_path ?? initialModelPath;
 		// Map unsupported model types to 'lm'
 		const profileModelType = profile?.model_type ?? 'lm';
-		modelType = ['lm', 'multimodal', 'embeddings'].includes(profileModelType)
+		modelType = ['lm', 'multimodal', 'embeddings', 'audio'].includes(profileModelType)
 			? profileModelType
 			: 'lm';
 		autoStart = profile?.auto_start ?? false;
@@ -139,6 +139,7 @@
 					<option value="lm">Language Model (lm)</option>
 					<option value="multimodal">Multimodal (Vision)</option>
 					<option value="embeddings">Embeddings</option>
+					<option value="audio">Audio (TTS/STT)</option>
 				</Select>
 			</div>
 
