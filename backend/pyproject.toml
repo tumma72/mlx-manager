@@ -49,6 +49,7 @@ dependencies = [
     # Structured output validation
     "jsonschema>=4.0.0",
     "loguru>=0.7.3",
+    "mlx-audio>=0.3.1",
 ]
 
 [project.optional-dependencies]
@@ -98,6 +99,16 @@ per-file-ignores = { "mlx_manager/main.py" = ["E402"], "mlx_manager/mlx_server/m
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: End-to-end tests requiring running server and downloaded models",
+    "e2e_vision: Vision model E2E tests (requires vision models downloaded)",
+    "e2e_vision_quick: Quick vision tests with small model (Qwen2-VL-2B)",
+    "e2e_vision_full: Comprehensive vision tests with large model (Gemma-3-27b)",
+    "e2e_anthropic: Anthropic API E2E tests",
+    "e2e_embeddings: Embeddings E2E tests",
+    "e2e_audio: Audio model E2E tests",
+]
 filterwarnings = [
     # MLX Metal bindings use SWIG which lacks __module__ attributes
     "ignore:builtin type Swig.*has no __module__ attribute:DeprecationWarning",
