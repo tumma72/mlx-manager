@@ -1,6 +1,6 @@
 """Model type detection for MLX server.
 
-This module determines the model TYPE (text-gen, vision, embeddings) to select
+This module determines the model TYPE (text-gen, vision, embeddings, audio) to select
 the correct loading strategy. It reuses detection utilities from the existing
 model_detection module to ensure consistency between badge display and loading.
 """
@@ -53,8 +53,66 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
             logger.debug(f"Detected VISION model from config: {model_id}")
             return ModelType.VISION
 
-        # Embeddings: specific architectures
+        # Audio: config fields that indicate TTS/STT models
+        audio_config_indicators = (
+            "audio_config",
+            "tts_config",
+            "stt_config",
+            "vocoder_config",
+            "codec_config",
+        )
+        if any(key in config for key in audio_config_indicators):
+            logger.debug(f"Detected AUDIO model from config field: {model_id}")
+            return ModelType.AUDIO
+
+        # Audio: architecture-based detection
         arch_list = config.get("architectures", [])
+        if arch_list:
+            arch = arch_list[0].lower() if arch_list else ""
+            audio_arch_indicators = (
+                "kokoro",
+                "whisper",
+                "bark",
+                "speecht5",
+                "parler",
+                "sesame",
+                "spark",
+                "dia",
+                "outetts",
+                "chatterbox",
+                "parakeet",
+                "voxtral",
+                "vibevoice",
+                "voxcpm",
+                "soprano",
+            )
+            if any(ind in arch for ind in audio_arch_indicators):
+                logger.debug(f"Detected AUDIO model from architecture: {model_id}")
+                return ModelType.AUDIO
+
+        # Audio: model_type field detection
+        config_model_type = config.get("model_type", "").lower()
+        audio_model_type_indicators = (
+            "kokoro",
+            "whisper",
+            "bark",
+            "speecht5",
+            "parler",
+            "dia",
+            "outetts",
+            "spark",
+            "chatterbox",
+            "soprano",
+            "parakeet",
+            "qwen3_tts",
+            "qwen3_asr",
+            "glm",
+        )
+        if any(ind in config_model_type for ind in audio_model_type_indicators):
+            logger.debug(f"Detected AUDIO model from model_type: {model_id}")
+            return ModelType.AUDIO
+
+        # Embeddings: specific architectures
         if arch_list:
             arch = arch_list[0].lower() if arch_list else ""
             embedding_indicators = ("embedding", "sentence", "bert", "roberta", "e5", "bge")
@@ -70,6 +128,30 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
 
     # Name-based fallback
     name_lower = model_id.lower()
+
+    # Audio name patterns (check before vision/embeddings since audio is more specific)
+    audio_name_patterns = (
+        "kokoro",
+        "whisper",
+        "tts",
+        "stt",
+        "speech",
+        "bark",
+        "speecht5",
+        "parler",
+        "chatterbox",
+        "dia-",
+        "outetts",
+        "spark-tts",
+        "parakeet",
+        "voxtral",
+        "vibevoice",
+        "voxcpm",
+        "soprano",
+    )
+    if any(pattern in name_lower for pattern in audio_name_patterns):
+        logger.debug(f"Detected AUDIO model from name pattern: {model_id}")
+        return ModelType.AUDIO
 
     # Vision patterns
     vision_patterns = (
