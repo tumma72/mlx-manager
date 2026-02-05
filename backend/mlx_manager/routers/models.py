@@ -244,8 +244,9 @@ async def get_active_downloads(
 ):
     """Get all active/in-progress downloads with their task IDs.
 
-    Returns downloads that are currently in progress or pending.
-    The frontend can use this to reconnect to SSE streams after navigation.
+    Returns downloads that are currently in progress, pending, or paused.
+    The frontend can use this to reconnect to SSE streams after navigation,
+    and to show paused downloads with Resume buttons.
     Combines in-memory tasks with DB-backed downloads for persistence across restarts.
     """
     active = []
@@ -261,6 +262,7 @@ async def get_active_downloads(
                 {
                     "task_id": task_id,
                     "model_id": model_id,
+                    "download_id": task.get("download_id"),
                     "status": status,
                     "progress": task.get("progress", 0),
                     "downloaded_bytes": task.get("downloaded_bytes", 0),
@@ -269,10 +271,10 @@ async def get_active_downloads(
             )
 
     # Also include DB-backed downloads that aren't in memory
-    # (these are downloads that need to be resumed)
+    # (these are downloads that need to be resumed, or paused downloads)
     result = await db.execute(
         select(Download).where(
-            Download.status.in_(["pending", "downloading"])  # type: ignore[attr-defined]
+            Download.status.in_(["pending", "downloading", "paused"])  # type: ignore[attr-defined]
         )
     )
     db_downloads = result.scalars().all()
@@ -280,11 +282,12 @@ async def get_active_downloads(
     for download in db_downloads:
         if download.model_id not in seen_model_ids:
             # This is a download from a previous server session that needs resuming
-            # Generate a new task_id for it
+            # or a paused download that should show in the UI
             task_id = f"resume-{download.id}"
             active.append(
                 {
                     "task_id": task_id,
+                    "download_id": download.id,
                     "model_id": download.model_id,
                     "status": download.status,
                     "progress": (
@@ -294,7 +297,7 @@ async def get_active_downloads(
                     ),
                     "downloaded_bytes": download.downloaded_bytes,
                     "total_bytes": download.total_bytes or 0,
-                    "needs_resume": True,  # Signal to frontend this needs resuming
+                    "needs_resume": download.status != "paused",
                 }
             )
 

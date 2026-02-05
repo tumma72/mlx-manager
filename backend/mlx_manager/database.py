@@ -82,10 +82,13 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
     """Resume any incomplete downloads on startup.
 
     HuggingFace Hub's snapshot_download automatically resumes partial downloads,
-    so we mark them as pending for retry.
+    so we mark actively-downloading ones as pending for retry.
+
+    Paused downloads stay paused - they were intentionally paused by the user
+    and should only resume when the user clicks Resume.
 
     Returns:
-        List of (download_id, model_id) tuples for downloads that need resuming.
+        List of (download_id, model_id) tuples for downloads that need auto-resuming.
     """
     pending_downloads: list[tuple[int, str]] = []
 
@@ -97,7 +100,10 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
 
         result = await session.execute(
             select(Download).where(
-                or_(Download.status == "pending", Download.status == "downloading")  # type: ignore[arg-type]
+                or_(
+                    Download.status == "pending",
+                    Download.status == "downloading",
+                )  # type: ignore[arg-type]
             )
         )
         incomplete = result.scalars().all()
@@ -112,7 +118,7 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
 
         if incomplete:
             await session.commit()
-            logger.info(f"Marked {len(incomplete)} downloads for resume")
+            logger.info(f"Marked {len(incomplete)} downloads for auto-resume")
 
     return pending_downloads
 
