@@ -1,14 +1,13 @@
-"""Tests for the encryption service."""
+"""Tests for the encryption service (AuthLib JWE)."""
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from cryptography.fernet import InvalidToken
 
 from mlx_manager.services import encryption_service
 from mlx_manager.services.encryption_service import (
+    DecryptionError,
     clear_cache,
     decrypt_api_key,
     encrypt_api_key,
@@ -22,7 +21,7 @@ def temp_data_dir(tmp_path: Path):
     data_dir.mkdir()
     db_path = data_dir / "test.db"
 
-    # Clear any cached Fernet instance
+    # Clear any cached JWE key instance
     clear_cache()
 
     # Mock settings to use the temp directory
@@ -92,13 +91,13 @@ class TestEncryptionUniqueness:
         assert encrypted1 != encrypted2
 
     def test_same_key_produces_different_ciphertext_each_time(self, temp_data_dir: Path):
-        """Same plaintext produces different ciphertext due to random IV."""
+        """Same plaintext produces different ciphertext due to random IV in A256GCM."""
         original = "sk-same-key-12345"
 
         encrypted1 = encrypt_api_key(original)
         encrypted2 = encrypt_api_key(original)
 
-        # Fernet uses random IV, so ciphertext differs
+        # JWE A256GCM uses random IV, so ciphertext differs
         assert encrypted1 != encrypted2
 
         # But both decrypt to the same value
@@ -118,12 +117,12 @@ class TestDecryptionFailures:
         clear_cache()
 
         with patch.object(encryption_service.settings, "jwt_secret", "different-secret"):
-            with pytest.raises(InvalidToken):
+            with pytest.raises(DecryptionError):
                 decrypt_api_key(encrypted)
 
     def test_decrypt_invalid_token_fails(self, temp_data_dir: Path):
         """Decryption fails for invalid ciphertext."""
-        with pytest.raises(InvalidToken):
+        with pytest.raises(DecryptionError):
             decrypt_api_key("not-a-valid-encrypted-token")
 
     def test_decrypt_tampered_token_fails(self, temp_data_dir: Path):
@@ -134,70 +133,45 @@ class TestDecryptionFailures:
         # Tamper with the ciphertext
         tampered = encrypted[:-5] + "XXXXX"
 
-        with pytest.raises(InvalidToken):
+        with pytest.raises(DecryptionError):
             decrypt_api_key(tampered)
 
 
-class TestSaltPersistence:
-    """Test salt file persistence."""
+class TestJweFormat:
+    """Test JWE token format."""
 
-    def test_salt_file_created_on_first_use(self, temp_data_dir: Path):
-        """Salt file is created when encryption is first used."""
-        salt_path = temp_data_dir / ".encryption_salt"
-        assert not salt_path.exists()
+    def test_encrypted_key_is_jwe_compact_serialization(self, temp_data_dir: Path):
+        """Encrypted output is JWE compact serialization (5 dot-separated parts)."""
+        original = "sk-test-key-12345"
+        encrypted = encrypt_api_key(original)
 
-        # Trigger salt creation
-        encrypt_api_key("test-key")
+        # JWE compact serialization has 5 parts: header.key.iv.ciphertext.tag
+        parts = encrypted.split(".")
+        assert len(parts) == 5
 
-        assert salt_path.exists()
-        assert len(salt_path.read_bytes()) == 16  # 16-byte salt
+    def test_encrypted_key_is_ascii_safe(self, temp_data_dir: Path):
+        """Encrypted output is ASCII-safe for database storage."""
+        original = "sk-test-key-12345"
+        encrypted = encrypt_api_key(original)
 
-    def test_salt_file_persists_across_calls(self, temp_data_dir: Path):
-        """Same salt is used across multiple calls."""
-        salt_path = temp_data_dir / ".encryption_salt"
-
-        # First encryption creates salt
-        encrypt_api_key("test-key")
-        salt1 = salt_path.read_bytes()
-
-        # Clear cache to force re-read
-        clear_cache()
-
-        # Second encryption uses same salt
-        encrypt_api_key("test-key")
-        salt2 = salt_path.read_bytes()
-
-        assert salt1 == salt2
-
-    def test_existing_salt_file_is_used(self, temp_data_dir: Path):
-        """Pre-existing salt file is used instead of generating new one."""
-        salt_path = temp_data_dir / ".encryption_salt"
-
-        # Create salt file manually
-        known_salt = os.urandom(16)
-        salt_path.write_bytes(known_salt)
-
-        # Encrypt should use existing salt
-        encrypt_api_key("test-key")
-
-        # Verify salt wasn't overwritten
-        assert salt_path.read_bytes() == known_salt
+        # Should be valid ASCII (base64url encoding)
+        encrypted.encode("ascii")  # Should not raise
 
 
 class TestCacheManagement:
-    """Test Fernet instance caching."""
+    """Test JWE key caching."""
 
     def test_cache_is_used_for_repeated_calls(self, temp_data_dir: Path):
-        """Fernet instance is cached and reused."""
+        """JWE key instance is cached and reused."""
         # Multiple calls should use cached instance
         for _ in range(10):
             encrypt_api_key("test-key")
 
         # Cache should have exactly 1 entry
-        cache_info = encryption_service._get_fernet_cached.cache_info()
+        cache_info = encryption_service._get_jwe_key_cached.cache_info()
         assert cache_info.hits >= 9  # At least 9 cache hits
 
-    def test_clear_cache_resets_fernet(self, temp_data_dir: Path):
+    def test_clear_cache_resets_key(self, temp_data_dir: Path):
         """Clearing cache allows new secret to take effect."""
         original = "sk-test-key-12345"
 
@@ -233,14 +207,11 @@ class TestIntegration:
 
         assert decrypted == keys
 
-    def test_encrypted_key_is_base64_safe(self, temp_data_dir: Path):
-        """Encrypted output is safe for database storage (base64)."""
-        original = "sk-test-key-12345"
-        encrypted = encrypt_api_key(original)
+    def test_backward_compat_invalid_token_alias(self, temp_data_dir: Path):
+        """InvalidToken alias works for backward compatibility."""
+        from mlx_manager.services.encryption_service import InvalidToken
 
-        # Should be valid base64
-        import base64
+        assert InvalidToken is DecryptionError
 
-        # Fernet tokens are URL-safe base64
-        decoded = base64.urlsafe_b64decode(encrypted)
-        assert len(decoded) > len(original)  # Encryption adds overhead
+        with pytest.raises(InvalidToken):
+            decrypt_api_key("not-a-valid-encrypted-token")

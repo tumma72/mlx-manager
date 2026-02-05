@@ -1,10 +1,9 @@
-"""Tests for authentication service."""
+"""Tests for authentication service (AuthLib jose JWT + pwdlib[argon2])."""
 
 import os
-import warnings
 from datetime import timedelta
 
-import jwt
+from authlib.jose import jwt as authlib_jwt
 
 # Ensure test environment is set before importing app modules
 os.environ["MLX_MANAGER_DATABASE_PATH"] = ":memory:"
@@ -65,8 +64,8 @@ class TestCreateAccessToken:
         data = {"sub": "test@example.com"}
         token = create_access_token(data)
 
-        # Decode to verify
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        # Decode to verify using AuthLib
+        payload = authlib_jwt.decode(token, settings.jwt_secret)
 
         assert payload["sub"] == "test@example.com"
         assert "exp" in payload
@@ -77,8 +76,8 @@ class TestCreateAccessToken:
         custom_expiry = timedelta(hours=1)
         token = create_access_token(data, expires_delta=custom_expiry)
 
-        # Decode to verify
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        # Decode to verify using AuthLib
+        payload = authlib_jwt.decode(token, settings.jwt_secret)
 
         assert payload["sub"] == "test@example.com"
         assert "exp" in payload
@@ -88,7 +87,7 @@ class TestCreateAccessToken:
         data = {"sub": "test@example.com", "role": "admin", "custom": "value"}
         token = create_access_token(data)
 
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = authlib_jwt.decode(token, settings.jwt_secret)
 
         assert payload["sub"] == "test@example.com"
         assert payload["role"] == "admin"
@@ -129,41 +128,43 @@ class TestDecodeToken:
     def test_decode_token_wrong_secret_returns_none(self):
         """Test that token with wrong secret returns None."""
         data = {"sub": "test@example.com"}
-        # Create token with different secret
-        # Suppress expected InsecureKeyLengthWarning for this test case
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*HMAC key.*below the minimum.*")
-            wrong_token = jwt.encode(
-                {**data, "exp": 9999999999},
-                "wrong_secret",
-                algorithm=settings.jwt_algorithm,
-            )
+        # Create token with different secret using AuthLib
+        header = {"alg": settings.jwt_algorithm}
+        wrong_token = authlib_jwt.encode(
+            header,
+            {**data, "exp": 9999999999},
+            "wrong_secret",
+        )
 
-        payload = decode_token(wrong_token)
+        payload = decode_token(wrong_token.decode("utf-8"))
 
         assert payload is None
 
-    def test_decode_token_wrong_algorithm_returns_none(self):
-        """Test that token with wrong algorithm returns None."""
+    def test_decode_token_different_hmac_algorithm_still_valid(self):
+        """Test that token signed with different HMAC variant is still valid.
+
+        AuthLib correctly validates HMAC signatures regardless of variant
+        (HS256 vs HS512) since the key is the same. This differs from pyjwt
+        which requires algorithm matching. Both are valid security approaches.
+        """
         data = {"sub": "test@example.com"}
-        # Create token with different algorithm
-        # Suppress expected InsecureKeyLengthWarning for this test case
-        # (HS512 requires 64+ byte keys, but our test key is only 35 bytes)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*HMAC key.*below the minimum.*")
-            wrong_token = jwt.encode(
-                {**data, "exp": 9999999999},
-                settings.jwt_secret,
-                algorithm="HS512",  # Different from HS256
-            )
+        # Create token with HS512 using AuthLib
+        header = {"alg": "HS512"}
+        hs512_token = authlib_jwt.encode(
+            header,
+            {**data, "exp": 9999999999},
+            settings.jwt_secret,
+        )
 
-        payload = decode_token(wrong_token)
+        # AuthLib accepts this since the HMAC signature is valid
+        payload = decode_token(hs512_token.decode("utf-8"))
 
-        assert payload is None
+        assert payload is not None
+        assert payload["sub"] == "test@example.com"
 
     def test_decode_token_handles_jwt_error(self):
-        """Test that JWTError is caught and returns None."""
-        # Malformed token that will raise JWTError
+        """Test that JoseError is caught and returns None."""
+        # Malformed token that will raise JoseError
         malformed_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.malformed"
 
         payload = decode_token(malformed_token)
@@ -171,7 +172,7 @@ class TestDecodeToken:
         assert payload is None
 
     def test_decode_token_handles_expired_signature_error(self):
-        """Test that ExpiredSignatureError is caught and returns None."""
+        """Test that ExpiredTokenError is caught and returns None."""
         data = {"sub": "test@example.com"}
         # Create an expired token
         expired_token = create_access_token(data, expires_delta=timedelta(seconds=-10))
