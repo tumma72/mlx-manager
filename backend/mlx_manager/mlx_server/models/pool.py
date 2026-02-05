@@ -274,6 +274,13 @@ class ModelPoolManager:
 
                 result = await asyncio.to_thread(load_embeddings, model_id)
                 model, tokenizer = result[0], result[1]
+            elif model_type == ModelType.AUDIO:
+                # Audio models use mlx-audio (load via utils.load_model which
+                # auto-detects TTS vs STT and returns the nn.Module)
+                from mlx_audio.utils import load_model as load_audio  # type: ignore[import-untyped]
+
+                model = await asyncio.to_thread(load_audio, model_id)
+                tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm
                 from mlx_lm import load
@@ -610,6 +617,12 @@ class ModelPoolManager:
 
                 result = await asyncio.to_thread(load_embeddings, model_id)
                 model, tokenizer = result[0], result[1]
+            elif model_type == ModelType.AUDIO:
+                # Audio models use mlx-audio
+                from mlx_audio.utils import load_model as load_audio  # type: ignore[import-untyped]
+
+                model = await asyncio.to_thread(load_audio, model_id)
+                tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm
                 from mlx_lm import load
