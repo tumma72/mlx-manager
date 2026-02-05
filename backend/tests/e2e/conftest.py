@@ -150,6 +150,18 @@ async def app_client():
         yield client
 
 
+# Reference model for embeddings testing
+EMBEDDINGS_MODEL = "mlx-community/all-MiniLM-L6-v2-4bit"
+
+
+@pytest.fixture(scope="session")
+def embeddings_model():
+    """Return embeddings model ID, skip if not downloaded."""
+    if not is_model_available(EMBEDDINGS_MODEL):
+        pytest.skip(f"Model {EMBEDDINGS_MODEL} not downloaded")
+    return EMBEDDINGS_MODEL
+
+
 @pytest.fixture(autouse=True)
 async def cleanup_pool():
     """Reset model pool after each test to free memory."""
