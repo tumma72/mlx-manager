@@ -37,7 +37,9 @@
 		modelPath = profile?.model_path ?? initialModelPath;
 		// Map unsupported model types to 'lm'
 		const profileModelType = profile?.model_type ?? 'lm';
-		modelType = ['lm', 'multimodal'].includes(profileModelType) ? profileModelType : 'lm';
+		modelType = ['lm', 'multimodal', 'embeddings'].includes(profileModelType)
+			? profileModelType
+			: 'lm';
 		autoStart = profile?.auto_start ?? false;
 		// Generation parameters
 		temperature = profile?.temperature ?? 0.7;
@@ -136,6 +138,7 @@
 				<Select id="modelType" bind:value={modelType}>
 					<option value="lm">Language Model (lm)</option>
 					<option value="multimodal">Multimodal (Vision)</option>
+					<option value="embeddings">Embeddings</option>
 				</Select>
 			</div>
 
