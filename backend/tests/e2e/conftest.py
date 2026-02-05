@@ -9,10 +9,10 @@ Run all:  pytest -m e2e
 """
 
 import os
+from pathlib import Path
 
 import httpx
 import pytest
-from pathlib import Path
 
 # Set test database to in-memory before importing app modules
 os.environ.setdefault("MLX_MANAGER_DATABASE_PATH", ":memory:")
@@ -89,8 +89,7 @@ def vision_model_quick():
     model = _find_available_model(VISION_MODELS_QUICK)
     if model is None:
         pytest.skip(
-            f"No quick vision model available. "
-            f"Need one of: {', '.join(VISION_MODELS_QUICK)}"
+            f"No quick vision model available. Need one of: {', '.join(VISION_MODELS_QUICK)}"
         )
     return model
 
@@ -100,10 +99,7 @@ def vision_model_full():
     """Return full vision model ID, skip if none available."""
     model = _find_available_model(VISION_MODELS_FULL)
     if model is None:
-        pytest.skip(
-            f"No full vision model available. "
-            f"Need one of: {', '.join(VISION_MODELS_FULL)}"
-        )
+        pytest.skip(f"No full vision model available. Need one of: {', '.join(VISION_MODELS_FULL)}")
     return model
 
 
@@ -127,9 +123,10 @@ async def app_client():
     Initializes the model pool and database before creating the client,
     since httpx ASGITransport does not trigger FastAPI lifespan handlers.
     """
-    from mlx_manager.main import app
-    from mlx_manager.database import init_db
     from httpx import ASGITransport
+
+    from mlx_manager.database import init_db
+    from mlx_manager.main import app
 
     # Initialize database (creates tables in memory)
     await init_db()
