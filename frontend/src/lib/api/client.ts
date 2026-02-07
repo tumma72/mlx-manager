@@ -13,7 +13,6 @@ import type {
   LaunchdStatus,
   ServerStatus,
   ModelDetectionInfo,
-  ParserOptions,
   User,
   Token,
   UserUpdate,
@@ -343,13 +342,6 @@ export const models = {
     return handleResponse(res);
   },
 
-  getAvailableParsers: async (): Promise<{ parsers: string[] }> => {
-    const res = await fetch(`${API_BASE}/models/available-parsers`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse(res);
-  },
-
   getConfig: async (
     modelId: string,
     tags?: string[],
@@ -430,13 +422,6 @@ export const system = {
 
   info: async (): Promise<SystemInfo> => {
     const res = await fetch(`${API_BASE}/system/info`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse(res);
-  },
-
-  parserOptions: async (): Promise<ParserOptions> => {
-    const res = await fetch(`${API_BASE}/system/parser-options`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
@@ -697,7 +682,11 @@ export const auditLogs = {
   createWebSocket: (): WebSocket => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    return new WebSocket(`${protocol}//${host}/api/system/ws/audit-logs`);
+    const token = authStore.token;
+    const tokenParam = token ? `?token=${token}` : "";
+    return new WebSocket(
+      `${protocol}//${host}/api/system/ws/audit-logs${tokenParam}`,
+    );
   },
 };
 

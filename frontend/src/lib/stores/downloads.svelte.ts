@@ -7,6 +7,7 @@
 
 /* eslint-disable svelte/prefer-svelte-reactivity -- Using Map with reassignment for reactivity */
 import { models as modelsApi } from "$api";
+import { authStore } from "$lib/stores";
 
 export interface DownloadState {
   model_id: string;
@@ -143,9 +144,9 @@ class DownloadsStore {
     // Close existing connection if any
     this.closeSSE(modelId);
 
-    const eventSource = new EventSource(
-      `/api/models/download/${taskId}/progress`,
-    );
+    const token = authStore.token;
+    const url = `/api/models/download/${taskId}/progress${token ? `?token=${token}` : ""}`;
+    const eventSource = new EventSource(url);
     this.eventSources.set(modelId, eventSource);
 
     eventSource.onmessage = (event) => {
