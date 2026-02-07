@@ -285,9 +285,31 @@ Plans:
 - [x] 15-15-PLAN.md — AuthLib consolidation (JWE encryption + jose JWT)
 - [x] 15-16-PLAN.md — MLX Server architecture compliance (dead code, ToolCall unification, message fidelity, adapter contracts, family-aware streaming)
 
+#### Phase 16: MLX Manager Architecture Compliance
+
+**Goal**: Fix authentication gaps in SSE/WebSocket channels, add JWT secret startup warning, remove deprecated endpoints, and reduce router coupling to mlx_server internals — as defined in `mlx_manager/ARCHITECTURE.md`
+
+**Depends on**: Phase 15
+
+**Requirements**: ARCH-01 (SSE/WS Auth), ARCH-02 (Router Decoupling), ARCH-03 (Housekeeping)
+
+**Success Criteria** (what must be TRUE):
+1. SSE download progress endpoint accepts JWT via query parameter; frontend passes token in EventSource URL
+2. WebSocket audit log endpoint validates JWT from query parameter before accepting connection; frontend passes token in WebSocket URL
+3. A shared `get_current_user_from_token` dependency handles query param extraction, reusing the same `decode_token()` pipeline
+4. JWT secret placeholder triggers a startup warning in lifespan when unchanged from default
+5. Deprecated parser-options endpoints removed (both in models and system routers)
+6. All existing tests pass; new tests cover query-param auth for SSE and WebSocket
+
+**Plans**: 2 plans in 2 waves
+
+Plans:
+- [ ] 16-01-PLAN.md — Backend: SSE/WS query-param auth, JWT warning, deprecated endpoint removal, router decoupling
+- [ ] 16-02-PLAN.md — Frontend: Token injection in SSE/WS URLs, remove deprecated parser API functions and types
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14 -> 15
+**Execution Order:** Phases execute in numeric order: 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13 -> 14 -> 15 -> 16
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -300,6 +322,7 @@ Plans:
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
 | 15. Cleanup & Tests | v1.2 | 16/16 | Complete | 2026-02-05 |
+| 16. Manager Arch Compliance | v1.2 | 0/2 | In progress | — |
 
 ## Technical Architecture
 
@@ -366,5 +389,5 @@ Plans:
 | jsonschema | 4.x | JSON Schema validation |
 
 ---
-*Roadmap revised: 2026-02-05*
+*Roadmap revised: 2026-02-07*
 *Previous version: adapter/proxy approach (deprecated)*
