@@ -4,11 +4,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from loguru import logger
-from sqlalchemy import delete
+from sqlalchemy import CursorResult, delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, col
 
 from mlx_manager.mlx_server.config import get_settings
 
@@ -83,8 +84,12 @@ async def cleanup_old_logs() -> int:
     cutoff = datetime.now(UTC) - timedelta(days=settings.audit_retention_days)
 
     async with get_session() as session:
-        result = await session.execute(delete(AuditLog).where(AuditLog.timestamp < cutoff))
-        deleted = result.rowcount
+        # DML statements return CursorResult which has rowcount
+        cursor = cast(
+            CursorResult,
+            await session.execute(delete(AuditLog).where(col(AuditLog.timestamp) < cutoff)),
+        )
+        deleted = cursor.rowcount or 0
         if deleted > 0:
             logger.info(
                 f"Cleaned up {deleted} audit logs older than {settings.audit_retention_days} days"

@@ -91,7 +91,7 @@ class TestCleanupPartialDownload:
 
         result = cleanup_partial_download("mlx-community/test-model")
         assert result is True
-        mock_cache.delete_revisions.assert_called_once_with(["abc123"])
+        mock_cache.delete_revisions.assert_called_once_with("abc123")
         mock_strategy.execute.assert_called_once()
 
     @patch("mlx_manager.services.hf_client._manual_cleanup", return_value=True)
@@ -108,9 +108,7 @@ class TestCleanupPartialDownload:
 
     @patch("mlx_manager.services.hf_client._manual_cleanup", return_value=False)
     @patch("huggingface_hub.scan_cache_dir")
-    def test_cleanup_model_not_in_cache(
-        self, mock_scan: MagicMock, mock_manual: MagicMock
-    ) -> None:
+    def test_cleanup_model_not_in_cache(self, mock_scan: MagicMock, mock_manual: MagicMock) -> None:
         """Returns False when model not found in cache."""
         mock_cache = MagicMock()
         mock_cache.repos = []
@@ -129,9 +127,7 @@ class TestPauseEndpoint:
     """Tests for POST /api/models/download/{id}/pause."""
 
     @pytest.mark.anyio
-    async def test_pause_downloading_sets_paused(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_pause_downloading_sets_paused(self, auth_client, test_session) -> None:
         """Pausing an actively downloading model sets status to paused."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -145,9 +141,7 @@ class TestPauseEndpoint:
         await test_session.refresh(download)
 
         with patch("mlx_manager.routers.models.request_cancel") as mock_cancel:
-            response = await auth_client.post(
-                f"/api/models/download/{download.id}/pause"
-            )
+            response = await auth_client.post(f"/api/models/download/{download.id}/pause")
 
         assert response.status_code == 200
         data = response.json()
@@ -156,9 +150,7 @@ class TestPauseEndpoint:
         mock_cancel.assert_called_once_with(str(download.id))
 
     @pytest.mark.anyio
-    async def test_pause_non_downloading_returns_409(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_pause_non_downloading_returns_409(self, auth_client, test_session) -> None:
         """Cannot pause a download that is not in 'downloading' state."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -169,15 +161,11 @@ class TestPauseEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/pause"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/pause")
         assert response.status_code == 409
 
     @pytest.mark.anyio
-    async def test_pause_paused_returns_409(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_pause_paused_returns_409(self, auth_client, test_session) -> None:
         """Cannot pause a download that is already paused."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -188,9 +176,7 @@ class TestPauseEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/pause"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/pause")
         assert response.status_code == 409
 
     @pytest.mark.anyio
@@ -209,9 +195,7 @@ class TestResumeEndpoint:
     """Tests for POST /api/models/download/{id}/resume."""
 
     @pytest.mark.anyio
-    async def test_resume_paused_sets_downloading(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_resume_paused_sets_downloading(self, auth_client, test_session) -> None:
         """Resuming a paused download sets status to downloading and returns task_id."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -224,9 +208,7 @@ class TestResumeEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/resume"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/resume")
         assert response.status_code == 200
         data = response.json()
         assert "task_id" in data
@@ -234,9 +216,7 @@ class TestResumeEndpoint:
         assert data["download_id"] == download.id
 
     @pytest.mark.anyio
-    async def test_resume_non_paused_returns_409(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_resume_non_paused_returns_409(self, auth_client, test_session) -> None:
         """Cannot resume a download that is not paused."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -247,9 +227,7 @@ class TestResumeEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/resume"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/resume")
         assert response.status_code == 409
 
     @pytest.mark.anyio
@@ -268,9 +246,7 @@ class TestCancelEndpoint:
     """Tests for POST /api/models/download/{id}/cancel."""
 
     @pytest.mark.anyio
-    async def test_cancel_downloading_sets_cancelled(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancel_downloading_sets_cancelled(self, auth_client, test_session) -> None:
         """Cancelling an active download sets status to cancelled and cleans up."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -290,9 +266,7 @@ class TestCancelEndpoint:
                 return_value=True,
             ) as mock_cleanup,
         ):
-            response = await auth_client.post(
-                f"/api/models/download/{download.id}/cancel"
-            )
+            response = await auth_client.post(f"/api/models/download/{download.id}/cancel")
 
         assert response.status_code == 200
         data = response.json()
@@ -302,9 +276,7 @@ class TestCancelEndpoint:
         mock_cleanup.assert_called_once_with("mlx-community/test-model")
 
     @pytest.mark.anyio
-    async def test_cancel_paused_sets_cancelled(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancel_paused_sets_cancelled(self, auth_client, test_session) -> None:
         """Cancelling a paused download also works (no cancel signal needed)."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -321,9 +293,7 @@ class TestCancelEndpoint:
             "mlx_manager.routers.models.cleanup_partial_download",
             return_value=True,
         ) as mock_cleanup:
-            response = await auth_client.post(
-                f"/api/models/download/{download.id}/cancel"
-            )
+            response = await auth_client.post(f"/api/models/download/{download.id}/cancel")
 
         assert response.status_code == 200
         data = response.json()
@@ -331,9 +301,7 @@ class TestCancelEndpoint:
         mock_cleanup.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_cancel_completed_returns_409(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancel_completed_returns_409(self, auth_client, test_session) -> None:
         """Cannot cancel a download that is already completed."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -344,15 +312,11 @@ class TestCancelEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/cancel"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/cancel")
         assert response.status_code == 409
 
     @pytest.mark.anyio
-    async def test_cancel_already_cancelled_returns_409(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancel_already_cancelled_returns_409(self, auth_client, test_session) -> None:
         """Cannot cancel a download that is already cancelled."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -363,9 +327,7 @@ class TestCancelEndpoint:
         await test_session.commit()
         await test_session.refresh(download)
 
-        response = await auth_client.post(
-            f"/api/models/download/{download.id}/cancel"
-        )
+        response = await auth_client.post(f"/api/models/download/{download.id}/cancel")
         assert response.status_code == 409
 
     @pytest.mark.anyio
@@ -375,9 +337,7 @@ class TestCancelEndpoint:
         assert response.status_code == 404
 
     @pytest.mark.anyio
-    async def test_cancel_cleanup_failure_still_cancels(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancel_cleanup_failure_still_cancels(self, auth_client, test_session) -> None:
         """Download is still cancelled even if cleanup fails."""
         download = Download(
             model_id="mlx-community/test-model",
@@ -395,9 +355,7 @@ class TestCancelEndpoint:
                 side_effect=RuntimeError("Cleanup failed"),
             ),
         ):
-            response = await auth_client.post(
-                f"/api/models/download/{download.id}/cancel"
-            )
+            response = await auth_client.post(f"/api/models/download/{download.id}/cancel")
 
         assert response.status_code == 200
         data = response.json()
@@ -420,9 +378,7 @@ class TestActiveDownloadsWithPaused:
         download_tasks.clear()
 
     @pytest.mark.anyio
-    async def test_paused_downloads_in_active_list(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_paused_downloads_in_active_list(self, auth_client, test_session) -> None:
         """Paused downloads are included in the active downloads response."""
         download = Download(
             model_id="mlx-community/paused-model",
@@ -444,9 +400,7 @@ class TestActiveDownloadsWithPaused:
         assert paused[0]["download_id"] == download.id
 
     @pytest.mark.anyio
-    async def test_cancelled_downloads_not_in_active_list(
-        self, auth_client, test_session
-    ) -> None:
+    async def test_cancelled_downloads_not_in_active_list(self, auth_client, test_session) -> None:
         """Cancelled downloads are not included in active downloads."""
         download = Download(
             model_id="mlx-community/cancelled-model",
@@ -459,9 +413,7 @@ class TestActiveDownloadsWithPaused:
         response = await auth_client.get("/api/models/downloads/active")
         assert response.status_code == 200
         data = response.json()
-        cancelled = [
-            d for d in data if d["model_id"] == "mlx-community/cancelled-model"
-        ]
+        cancelled = [d for d in data if d["model_id"] == "mlx-community/cancelled-model"]
         assert len(cancelled) == 0
 
 
@@ -486,9 +438,7 @@ class TestDownloadRecovery:
         download_id = download.id
 
         # Mock get_session to use test_session
-        with patch(
-            "mlx_manager.database.get_session"
-        ) as mock_get_session:
+        with patch("mlx_manager.database.get_session") as mock_get_session:
             from contextlib import asynccontextmanager
 
             @asynccontextmanager
@@ -518,9 +468,7 @@ class TestDownloadRecovery:
         test_session.add(download)
         await test_session.commit()
 
-        with patch(
-            "mlx_manager.database.get_session"
-        ) as mock_get_session:
+        with patch("mlx_manager.database.get_session") as mock_get_session:
             from contextlib import asynccontextmanager
 
             @asynccontextmanager
@@ -537,17 +485,13 @@ class TestDownloadRecovery:
         assert len(pending) == 0
 
         # Verify the download is still "paused" in the database
-        result = await test_session.execute(
-            select(Download).where(Download.id == download.id)
-        )
+        result = await test_session.execute(select(Download).where(Download.id == download.id))
         db_download = result.scalars().first()
         assert db_download is not None
         assert db_download.status == "paused"
 
     @pytest.mark.anyio
-    async def test_cancelled_stays_cancelled_on_restart(
-        self, test_session
-    ) -> None:
+    async def test_cancelled_stays_cancelled_on_restart(self, test_session) -> None:
         """Cancelled downloads are not recovered."""
         download = Download(
             model_id="mlx-community/cancelled-model",
@@ -557,9 +501,7 @@ class TestDownloadRecovery:
         test_session.add(download)
         await test_session.commit()
 
-        with patch(
-            "mlx_manager.database.get_session"
-        ) as mock_get_session:
+        with patch("mlx_manager.database.get_session") as mock_get_session:
             from contextlib import asynccontextmanager
 
             @asynccontextmanager

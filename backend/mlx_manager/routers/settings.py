@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
@@ -640,7 +640,7 @@ async def get_timeout_settings(
     """
     result = await session.execute(
         select(Setting).where(
-            Setting.key.in_(
+            col(Setting.key).in_(
                 [
                     "timeout_chat_seconds",
                     "timeout_completions_seconds",

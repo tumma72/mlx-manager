@@ -19,8 +19,8 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import func
-from sqlmodel import select
+from sqlalchemy import desc, func
+from sqlmodel import col, select
 
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
@@ -211,7 +211,7 @@ async def get_audit_logs(
             query = query.where(AuditLog.timestamp <= end_time)
 
         # Order by timestamp descending (most recent first)
-        query = query.order_by(AuditLog.timestamp.desc())
+        query = query.order_by(desc(col(AuditLog.timestamp)))
 
         # Apply pagination
         query = query.offset(offset).limit(limit)
@@ -227,20 +227,22 @@ async def get_audit_stats() -> dict[str, Any]:
     """Get aggregate statistics for audit logs."""
     async with get_session() as session:
         # Total count
-        total_result = await session.execute(select(func.count(AuditLog.id)))
+        total_result = await session.execute(select(func.count(col(AuditLog.id))))
         total = total_result.scalar() or 0
 
         # Count by status
         status_result = await session.execute(
-            select(AuditLog.status, func.count(AuditLog.id)).group_by(AuditLog.status)
+            select(AuditLog.status, func.count(col(AuditLog.id))).group_by(AuditLog.status)
         )
-        by_status = dict(status_result.all())
+        by_status: dict[str, int] = {row[0]: row[1] for row in status_result.all()}
 
         # Count by backend
         backend_result = await session.execute(
-            select(AuditLog.backend_type, func.count(AuditLog.id)).group_by(AuditLog.backend_type)
+            select(AuditLog.backend_type, func.count(col(AuditLog.id))).group_by(
+                AuditLog.backend_type
+            )
         )
-        by_backend = dict(backend_result.all())
+        by_backend: dict[str, int] = {row[0]: row[1] for row in backend_result.all()}
 
         # Unique models
         models_result = await session.execute(select(func.count(func.distinct(AuditLog.model))))
@@ -282,7 +284,7 @@ async def export_audit_logs(
         if end_time:
             query = query.where(AuditLog.timestamp <= end_time)
 
-        query = query.order_by(AuditLog.timestamp.desc())
+        query = query.order_by(desc(col(AuditLog.timestamp)))
         result = await session.execute(query)
         logs = result.scalars().all()
 

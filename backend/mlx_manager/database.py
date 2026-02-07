@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, col
 
 from mlx_manager.config import ensure_data_dir, settings
 
@@ -52,6 +52,8 @@ async def migrate_schema() -> None:
         # CloudCredential columns for provider configuration (Phase 14 bug fix)
         ("cloud_credentials", "api_type", "TEXT", "'openai'"),
         ("cloud_credentials", "name", "TEXT", "''"),
+        # Tool calling settings
+        ("server_profiles", "force_tool_injection", "INTEGER", "0"),
     ]
 
     # Obsolete columns to drop from server_profiles (unified server approach)
@@ -112,18 +114,12 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
     pending_downloads: list[tuple[int, str]] = []
 
     async with get_session() as session:
-        from sqlalchemy import or_
         from sqlmodel import select
 
         from mlx_manager.models import Download
 
         result = await session.execute(
-            select(Download).where(
-                or_(
-                    Download.status == "pending",
-                    Download.status == "downloading",
-                )  # type: ignore[arg-type]
-            )
+            select(Download).where(col(Download.status).in_(["pending", "downloading"]))
         )
         incomplete = result.scalars().all()
 

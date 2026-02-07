@@ -72,7 +72,7 @@ def cleanup_partial_download(model_id: str) -> bool:
         for repo in cache.repos:
             if repo.repo_id == model_id:
                 delete_strategy = cache.delete_revisions(
-                    [rev.commit_hash for rev in repo.revisions]
+                    *(rev.commit_hash for rev in repo.revisions)
                 )
                 delete_strategy.execute()
                 logger.info(f"Cleaned up {delete_strategy.expected_freed_size_str} for {model_id}")

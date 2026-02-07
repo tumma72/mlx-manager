@@ -327,6 +327,8 @@ async def proxy_audit_log_stream(websocket: WebSocket) -> None:
             async def receive_from_mlx() -> None:
                 """Forward messages from MLX Server to frontend."""
                 async for message in mlx_ws:
+                    if isinstance(message, bytes):
+                        message = message.decode("utf-8")
                     await websocket.send_text(message)
 
             async def receive_from_client() -> None:

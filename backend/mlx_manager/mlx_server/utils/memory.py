@@ -88,7 +88,7 @@ def get_device_memory_gb() -> float:
     try:
         mx = _get_mx()
         info = mx.device_info()
-        return info["memory_size"] / (1024**3)
+        return float(info["memory_size"]) / (1024**3)
     except Exception:
         import psutil
 

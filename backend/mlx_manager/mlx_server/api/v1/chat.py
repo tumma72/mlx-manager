@@ -95,6 +95,8 @@ async def create_chat_completion(
     all_image_urls: list[str] = []
 
     for message in request.messages:
+        if message.content is None:
+            continue
         _, images = extract_content_parts(message.content)
         if message.role == "user":
             all_image_urls.extend(images)
@@ -158,6 +160,8 @@ async def _handle_vision_request(
     # For vision, combine system + user messages into single prompt
     prompt_parts = []
     for message in request.messages:
+        if message.content is None:
+            continue
         text, _ = extract_content_parts(message.content)
         if message.role == "system":
             prompt_parts.append(f"System: {text}")
