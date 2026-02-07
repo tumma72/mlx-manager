@@ -19,6 +19,8 @@ export interface ServerProfile {
   temperature: number;
   max_tokens: number;
   top_p: number;
+  // Tool calling
+  enable_prompt_injection: boolean;
   // Metadata
   launchd_installed: boolean;
   created_at: string;
@@ -37,6 +39,8 @@ export interface ServerProfileCreate {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  // Tool calling
+  enable_prompt_injection?: boolean;
 }
 
 export interface ServerProfileUpdate {
@@ -51,6 +55,8 @@ export interface ServerProfileUpdate {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  // Tool calling
+  enable_prompt_injection?: boolean;
 }
 
 export interface RunningServer {
@@ -380,4 +386,21 @@ export interface AuditStats {
   by_status: Record<string, number>;
   by_backend: Record<string, number>;
   unique_models: number;
+}
+
+export interface ModelCapabilities {
+  model_id: string;
+  supports_native_tools: boolean | null;
+  supports_thinking: boolean | null;
+  practical_max_tokens: number | null;
+  probed_at: string | null;
+  probe_version: number;
+}
+
+export interface ProbeStep {
+  step: string;
+  status: 'running' | 'completed' | 'failed' | 'skipped';
+  capability?: string;
+  value?: unknown;
+  error?: string;
 }

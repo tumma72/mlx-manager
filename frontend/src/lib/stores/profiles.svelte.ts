@@ -32,6 +32,7 @@ function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
     a.temperature === b.temperature &&
     a.max_tokens === b.max_tokens &&
     a.top_p === b.top_p &&
+    a.enable_prompt_injection === b.enable_prompt_injection &&
     a.launchd_installed === b.launchd_installed &&
     a.created_at === b.created_at &&
     a.updated_at === b.updated_at

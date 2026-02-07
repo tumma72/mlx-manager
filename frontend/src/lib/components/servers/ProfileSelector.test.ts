@@ -20,6 +20,7 @@ function createMockProfile(
     temperature: 0.7,
     max_tokens: 4096,
     top_p: 1.0,
+    enable_prompt_injection: false,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",

@@ -5,6 +5,7 @@ export { systemStore } from "./system.svelte";
 export { downloadsStore } from "./downloads.svelte";
 export { modelConfigStore } from "./models.svelte";
 export { settingsStore } from "./settings.svelte";
+export { probeStore } from "./probe.svelte";
 
 // Re-export polling coordinator for convenience
 export { pollingCoordinator } from "$lib/services";

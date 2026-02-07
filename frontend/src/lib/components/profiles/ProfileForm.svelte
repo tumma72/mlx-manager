@@ -27,6 +27,9 @@
 	let maxTokens = $state(4096);
 	let topP = $state(1.0);
 
+	// Tool calling
+	let enablePromptInjection = $state(false);
+
 	let showAdvanced = $state(false);
 
 	// Reset form when profile or initialModelPath changes
@@ -45,6 +48,8 @@
 		temperature = profile?.temperature ?? 0.7;
 		maxTokens = profile?.max_tokens ?? 4096;
 		topP = profile?.top_p ?? 1.0;
+		// Tool calling
+		enablePromptInjection = profile?.enable_prompt_injection ?? false;
 	});
 
 	async function handleSubmit(e: Event) {
@@ -63,7 +68,9 @@
 				// Generation parameters
 				temperature,
 				max_tokens: maxTokens,
-				top_p: topP
+				top_p: topP,
+				// Tool calling
+				enable_prompt_injection: enablePromptInjection
 			};
 
 			await onSubmit(data);
@@ -227,6 +234,18 @@
 						</label>
 						<p class="text-xs text-muted-foreground ml-6">
 							Preload this model when the server starts for faster first response.
+						</p>
+					</div>
+					<div class="space-y-2">
+						<label class="flex items-center gap-2">
+							<input type="checkbox" bind:checked={enablePromptInjection} class="rounded" />
+							<span class="text-sm">Enable experimental tool support (via prompt injection)</span>
+						</label>
+						<p class="text-xs text-muted-foreground ml-6">
+							Experimental: Enables tool calling for models without native support by
+							injecting tool descriptions into the system prompt. Results may vary. Use
+							'Test Capabilities' on the Models page to check if your model has native
+							support.
 						</p>
 					</div>
 				</div>

@@ -32,6 +32,7 @@ import type {
   AuditLog,
   AuditLogFilter,
   AuditStats,
+  ModelCapabilities,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -356,6 +357,27 @@ export const models = {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
+  },
+
+  getCapabilities: async (
+    modelId: string,
+  ): Promise<ModelCapabilities | null> => {
+    const res = await fetch(
+      `${API_BASE}/models/capabilities/${encodeURIComponent(modelId)}`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
+    if (!res.ok) return null;
+    return res.json();
+  },
+
+  getAllCapabilities: async (): Promise<ModelCapabilities[]> => {
+    const res = await fetch(`${API_BASE}/models/capabilities`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    return res.json();
   },
 };
 
