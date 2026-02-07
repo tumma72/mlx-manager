@@ -147,13 +147,6 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("MLX Manager starting up...")
 
-    # Warn if JWT secret is using default placeholder
-    if manager_settings.jwt_secret == "CHANGE_ME_IN_PRODUCTION_USE_ENV_VAR":
-        logger.warning(
-            "JWT secret is using default placeholder. "
-            "Set MLX_MANAGER_JWT_SECRET for production use."
-        )
-
     await init_db()
 
     # Initialize MLX Server model pool

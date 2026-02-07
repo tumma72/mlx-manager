@@ -1,7 +1,7 @@
 """Application configuration.
 
 Environment Variables:
-    MLX_MANAGER_JWT_SECRET: JWT signing secret (required for production)
+    MLX_MANAGER_JWT_SECRET: JWT signing secret (auto-generated if not set)
     MLX_MANAGER_DATABASE_PATH: SQLite database location (default: ~/.mlx-manager/mlx-manager.db)
     MLX_MANAGER_HF_CACHE_PATH: HuggingFace cache directory
     MLX_MANAGER_OFFLINE_MODE: Disable HuggingFace API calls (default: false)
@@ -9,6 +9,8 @@ Environment Variables:
     MLX_MANAGER_LOG_DIR: Log directory path (default: ~/.mlx-manager/logs/)
 """
 
+import os
+import secrets
 from pathlib import Path
 
 from pydantic import Field
@@ -17,6 +19,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Port constants — single source of truth
 DEFAULT_PORT = 10242  # Production / installed version
 DEV_PORT = 10241  # Development / testing (make dev)
+
+_JWT_SECRET_PATH = Path.home() / ".mlx-manager" / ".jwt_secret"
+
+
+def _resolve_jwt_secret() -> str:
+    """Resolve the JWT secret, auto-generating and persisting one if needed.
+
+    Priority: MLX_MANAGER_JWT_SECRET env var > persisted file > generate new.
+    """
+    if _JWT_SECRET_PATH.exists():
+        return _JWT_SECRET_PATH.read_text().strip()
+
+    secret = secrets.token_urlsafe(32)
+    _JWT_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _JWT_SECRET_PATH.write_text(secret)
+    os.chmod(_JWT_SECRET_PATH, 0o600)
+    return secret
 
 
 class Settings(BaseSettings):
@@ -32,8 +51,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MLX_MANAGER_")
 
     # JWT Authentication
-    # Default secret is 32+ bytes (256+ bits) to meet RFC 7518 Section 3.2 requirements for HS256
-    jwt_secret: str = Field(default="CHANGE_ME_IN_PRODUCTION_USE_ENV_VAR")
+    jwt_secret: str = Field(default_factory=lambda: _resolve_jwt_secret())
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 7
 
