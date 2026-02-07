@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 16 of 16 (MLX Manager Architecture Compliance)
-Plan: 1 of 2 complete
-Status: In progress - wave 1 complete
-Last activity: 2026-02-07 - Completed 16-01-PLAN.md (Backend Auth & Housekeeping)
+Plan: 2 of 2 complete
+Status: Phase complete
+Last activity: 2026-02-07 - Completed 16-02-PLAN.md (Frontend SSE/WS Auth & Parser Cleanup)
 
-Progress: [████████░░░░░░░░] 50% (1 of 2 plans in Phase 16)
+Progress: [████████████████] 100% (2 of 2 plans in Phase 16)
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -257,6 +257,9 @@ Recent decisions affecting current work:
 - **Public pool API (get_loaded_model)**: Routers use public method instead of accessing pool._models directly
 - **Direct mock WebSocket tests**: Replace SyncTestClient-based WS tests with direct function calls to avoid lifespan DB issues
 
+- **Conditional token in SSE/WS URLs**: Use `token ? \`?token=${token}\` : ""` for defensive handling when authStore.token is null
+- **Unauthenticated WS test**: Explicit test verifies WebSocket creation without token works correctly
+
 - **Inner tokenizer extraction for mlx-embeddings**: Use getattr(tokenizer, '_tokenizer', tokenizer) to access inner HF tokenizer since batch_encode_plus removed in transformers v5
 - **Manual mlx.array conversion for batch encoding**: TokenizerWrapper is not callable; use inner tokenizer __call__ with return_tensors=None then convert to mx.array
 
@@ -314,10 +317,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-07T12:38:16Z
-Stopped at: Completed 16-01-PLAN.md (Backend Auth & Housekeeping)
+Last session: 2026-02-07T12:44:53Z
+Stopped at: Completed 16-02-PLAN.md (Frontend SSE/WS Auth & Parser Cleanup)
 Resume file: None
-Next: Execute 16-02-PLAN.md (Frontend Settings UI & remaining compliance)
+Next: Phase 16 complete. All architecture compliance items resolved.
 
 ### Roadmap Evolution
 
