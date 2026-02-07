@@ -216,7 +216,7 @@ def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
                 head_dim = hidden_size // num_heads
 
         if not all([num_layers, num_kv_heads, head_dim]):
-            return max_pos
+            return int(max_pos)
 
         # KV cache cost per token in bytes (fp16)
         kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2
@@ -229,7 +229,7 @@ def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
 
         available_gb = (device_memory_gb * 0.75) - model_size_gb - 1.0
         if available_gb <= 0:
-            return min(max_pos, 2048)  # Minimum practical context
+            return int(min(max_pos, 2048))  # Minimum practical context
 
         available_bytes = available_gb * 1e9
         practical_max = int(min(max_pos, available_bytes / kv_per_token))
