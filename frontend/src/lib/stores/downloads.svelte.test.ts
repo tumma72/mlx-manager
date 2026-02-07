@@ -13,6 +13,10 @@ vi.mock("$api", () => ({
   models: mockModelsApi,
 }));
 
+vi.mock("$lib/stores", () => ({
+  authStore: { token: "test-jwt-token" },
+}));
+
 describe("DownloadsStore", () => {
   // We need to dynamically import the store for each test to reset state
   let downloadsStore: Awaited<
@@ -78,6 +82,10 @@ describe("DownloadsStore", () => {
       models: mockModelsApi,
     }));
 
+    vi.doMock("$lib/stores", () => ({
+      authStore: { token: "test-jwt-token" },
+    }));
+
     // Import fresh store
     const module = await import("./downloads.svelte");
     downloadsStore = module.downloadsStore;
@@ -137,7 +145,7 @@ describe("DownloadsStore", () => {
 
       expect(mockEventSources).toHaveLength(1);
       expect(mockEventSources[0].url).toBe(
-        "/api/models/download/task-456/progress",
+        "/api/models/download/task-456/progress?token=test-jwt-token",
       );
     });
 
@@ -430,7 +438,7 @@ describe("DownloadsStore", () => {
 
       expect(mockEventSources).toHaveLength(1);
       expect(mockEventSources[0].url).toBe(
-        "/api/models/download/existing-task/progress",
+        "/api/models/download/existing-task/progress?token=test-jwt-token",
       );
     });
 
@@ -634,7 +642,7 @@ describe("DownloadsStore", () => {
       // New SSE connection created
       const lastEventSource = mockEventSources[mockEventSources.length - 1];
       expect(lastEventSource.url).toBe(
-        "/api/models/download/new-task-789/progress",
+        "/api/models/download/new-task-789/progress?token=test-jwt-token",
       );
     });
 
@@ -769,7 +777,7 @@ describe("DownloadsStore", () => {
       // Only active download gets SSE connection
       expect(mockEventSources).toHaveLength(1);
       expect(mockEventSources[0].url).toBe(
-        "/api/models/download/task-active/progress",
+        "/api/models/download/task-active/progress?token=test-jwt-token",
       );
 
       // Both are in the store

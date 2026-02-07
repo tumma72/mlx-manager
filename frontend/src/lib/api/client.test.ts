@@ -520,21 +520,6 @@ describe("models API", () => {
     });
   });
 
-  describe("getAvailableParsers", () => {
-    it("gets available parsers", async () => {
-      const parsers = { parsers: ["default", "llama", "mistral"] };
-      mockFetch.mockResolvedValueOnce(mockResponse(parsers));
-
-      const result = await models.getAvailableParsers();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "/api/models/available-parsers",
-        expect.objectContaining(defaultHeaders),
-      );
-      expect(result).toEqual(parsers);
-    });
-  });
-
   describe("getConfig", () => {
     it("gets model config without tags", async () => {
       const mockConfig = {
@@ -719,21 +704,6 @@ describe("system API", () => {
         expect.objectContaining(defaultHeaders),
       );
       expect(result).toEqual(sysInfo);
-    });
-  });
-
-  describe("parserOptions", () => {
-    it("returns parser options", async () => {
-      const parserOpts = { available_parsers: ["default", "custom"] };
-      mockFetch.mockResolvedValueOnce(mockResponse(parserOpts));
-
-      const result = await system.parserOptions();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "/api/system/parser-options",
-        expect.objectContaining(defaultHeaders),
-      );
-      expect(result).toEqual(parserOpts);
     });
   });
 
@@ -1193,7 +1163,75 @@ describe("auditLogs API", () => {
   });
 
   describe("createWebSocket", () => {
-    it("creates WebSocket with correct URL", () => {
+    it("creates WebSocket with correct URL and token", async () => {
+      const { authStore } = await import("$lib/stores");
+      authStore.token = "test-jwt-token";
+
+      // Mock window.location
+      const originalLocation = window.location;
+      Object.defineProperty(window, "location", {
+        value: {
+          protocol: "http:",
+          host: "localhost:5173",
+        },
+        writable: true,
+      });
+
+      // Mock WebSocket constructor
+      const mockWebSocket = vi.fn();
+      const originalWebSocket = global.WebSocket;
+      global.WebSocket = mockWebSocket as unknown as typeof WebSocket;
+
+      auditLogs.createWebSocket();
+
+      expect(mockWebSocket).toHaveBeenCalledWith(
+        "ws://localhost:5173/api/system/ws/audit-logs?token=test-jwt-token",
+      );
+
+      // Restore
+      global.WebSocket = originalWebSocket;
+      Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+      });
+      authStore.clearAuth();
+    });
+
+    it("uses wss protocol for https with token", async () => {
+      const { authStore } = await import("$lib/stores");
+      authStore.token = "test-jwt-token";
+
+      // Mock window.location
+      const originalLocation = window.location;
+      Object.defineProperty(window, "location", {
+        value: {
+          protocol: "https:",
+          host: "example.com",
+        },
+        writable: true,
+      });
+
+      // Mock WebSocket constructor
+      const mockWebSocket = vi.fn();
+      const originalWebSocket = global.WebSocket;
+      global.WebSocket = mockWebSocket as unknown as typeof WebSocket;
+
+      auditLogs.createWebSocket();
+
+      expect(mockWebSocket).toHaveBeenCalledWith(
+        "wss://example.com/api/system/ws/audit-logs?token=test-jwt-token",
+      );
+
+      // Restore
+      global.WebSocket = originalWebSocket;
+      Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+      });
+      authStore.clearAuth();
+    });
+
+    it("creates WebSocket without token when not authenticated", () => {
       // Mock window.location
       const originalLocation = window.location;
       Object.defineProperty(window, "location", {
@@ -1213,36 +1251,6 @@ describe("auditLogs API", () => {
 
       expect(mockWebSocket).toHaveBeenCalledWith(
         "ws://localhost:5173/api/system/ws/audit-logs",
-      );
-
-      // Restore
-      global.WebSocket = originalWebSocket;
-      Object.defineProperty(window, "location", {
-        value: originalLocation,
-        writable: true,
-      });
-    });
-
-    it("uses wss protocol for https", () => {
-      // Mock window.location
-      const originalLocation = window.location;
-      Object.defineProperty(window, "location", {
-        value: {
-          protocol: "https:",
-          host: "example.com",
-        },
-        writable: true,
-      });
-
-      // Mock WebSocket constructor
-      const mockWebSocket = vi.fn();
-      const originalWebSocket = global.WebSocket;
-      global.WebSocket = mockWebSocket as unknown as typeof WebSocket;
-
-      auditLogs.createWebSocket();
-
-      expect(mockWebSocket).toHaveBeenCalledWith(
-        "wss://example.com/api/system/ws/audit-logs",
       );
 
       // Restore

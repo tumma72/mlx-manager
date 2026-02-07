@@ -166,12 +166,6 @@ export interface ModelDetectionInfo {
   is_downloaded: boolean;
 }
 
-export interface ParserOptions {
-  tool_call_parsers: string[];
-  reasoning_parsers: string[];
-  message_converters: string[];
-}
-
 // Auth types
 export type UserStatus = "pending" | "approved" | "disabled";
 

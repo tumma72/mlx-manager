@@ -181,18 +181,6 @@ async function setupApiMocks(page: Page) {
       });
     }
 
-    if (url.includes("/api/system/parser-options")) {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          tool_call_parsers: ["hermes", "qwen"],
-          reasoning_parsers: ["deepseek"],
-          message_converters: ["default"],
-        }),
-      });
-    }
-
     // Default: return empty success for unhandled routes
     return route.fulfill({
       status: 200,
