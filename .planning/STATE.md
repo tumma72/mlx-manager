@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 ## Current Position
 
-Phase: 15 of 15 (Code Cleanup & Integration Tests)
-Plan: 16 of 16 (Architecture compliance)
-Status: Phase 15 complete — verified (including post-hoc 15-16)
-Last activity: 2026-02-05 - Completed 15-16-PLAN.md (architecture compliance)
+Phase: 16 of 16 (MLX Manager Architecture Compliance)
+Plan: 1 of 2 complete
+Status: In progress - wave 1 complete
+Last activity: 2026-02-07 - Completed 16-01-PLAN.md (Backend Auth & Housekeeping)
 
-Progress: [████████████████] 100% (16 of 16 plans complete in Phase 15)
+Progress: [████████░░░░░░░░] 50% (1 of 2 plans in Phase 16)
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -252,6 +252,11 @@ Recent decisions affecting current work:
 - **Paused downloads not auto-resumed**: Paused downloads stay paused on server restart — user must explicitly click Resume
 - **Inline cancel confirmation**: Cancel confirmation uses inline Confirm/Keep buttons rather than a modal dialog
 
+- **Query-param JWT for SSE/WS**: Browser EventSource cannot send custom headers; pass token as ?token=<jwt> query parameter
+- **WebSocket auth before accept**: Validate JWT before websocket.accept(), close(1008) on failure per RFC 6455
+- **Public pool API (get_loaded_model)**: Routers use public method instead of accessing pool._models directly
+- **Direct mock WebSocket tests**: Replace SyncTestClient-based WS tests with direct function calls to avoid lifespan DB issues
+
 - **Inner tokenizer extraction for mlx-embeddings**: Use getattr(tokenizer, '_tokenizer', tokenizer) to access inner HF tokenizer since batch_encode_plus removed in transformers v5
 - **Manual mlx.array conversion for batch encoding**: TokenizerWrapper is not callable; use inner tokenizer __call__ with return_tensors=None then convert to mx.array
 
@@ -309,11 +314,12 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-05 17:58 UTC
-Stopped at: Completed 15-16-PLAN.md (MLX Server Architecture Compliance)
-Resume file: None - Milestone v1.2 complete
-Next: Run /gsd:audit-milestone to verify cross-phase integration and E2E flows
+Last session: 2026-02-07T12:38:16Z
+Stopped at: Completed 16-01-PLAN.md (Backend Auth & Housekeeping)
+Resume file: None
+Next: Execute 16-02-PLAN.md (Frontend Settings UI & remaining compliance)
 
 ### Roadmap Evolution
 
 - Phase 15 added: Code Cleanup & Integration Tests (dead code removal, bug fixes, integration tests for ResponseProcessor)
+- Phase 16 added: MLX Manager Architecture Compliance (SSE/WS auth, JWT warning, deprecated endpoint removal, router decoupling)
