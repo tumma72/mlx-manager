@@ -60,8 +60,8 @@ class MLXServerSettings(BaseSettings):
 
     # Model pool settings
     max_memory_gb: float = Field(
-        default=48.0,
-        description="Maximum memory (GB) for model pool",
+        default=0.0,
+        description="Maximum memory (GB) for model pool (0 = auto-detect 75% of device memory)",
     )
     max_models: int = Field(
         default=4,

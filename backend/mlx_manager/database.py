@@ -53,11 +53,21 @@ async def migrate_schema() -> None:
         ("cloud_credentials", "api_type", "TEXT", "'openai'"),
         ("cloud_credentials", "name", "TEXT", "''"),
     ]
-    # NOTE: Obsolete columns in server_profiles are NOT dropped - SQLite limitations
-    # and backward compatibility. They will be ignored by the new model:
-    # port, host, max_concurrency, queue_timeout, queue_size, tool_call_parser,
-    # reasoning_parser, message_converter, enable_auto_tool_choice,
-    # trust_remote_code, chat_template_file, log_level, log_file, no_log_file
+
+    # Obsolete columns to drop from server_profiles (unified server approach)
+    obsolete_columns = [
+        "port",
+        "host",
+        "max_concurrency",
+        "queue_timeout",
+        "queue_size",
+        "enable_auto_tool_choice",
+        "trust_remote_code",
+        "chat_template_file",
+        "log_level",
+        "log_file",
+        "no_log_file",
+    ]
 
     async with engine.begin() as conn:
         for table, column, col_type, default in migrations:
@@ -74,6 +84,15 @@ async def migrate_schema() -> None:
                 # Add the column
                 default_clause = f" DEFAULT {default}" if default is not None else ""
                 sql = f"ALTER TABLE {table} ADD COLUMN {column} {col_type}{default_clause}"
+                logger.info(f"Migrating database: {sql}")
+                await conn.execute(text(sql))
+
+        # Drop obsolete columns from server_profiles (SQLite 3.35+ supports DROP COLUMN)
+        result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
+        existing_columns = [row[1] for row in result.fetchall()]
+        for column in obsolete_columns:
+            if column in existing_columns:
+                sql = f"ALTER TABLE server_profiles DROP COLUMN {column}"
                 logger.info(f"Migrating database: {sql}")
                 await conn.execute(text(sql))
 

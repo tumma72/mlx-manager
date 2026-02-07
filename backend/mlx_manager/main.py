@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings(
     "ignore",
     message="mx.metal.device_info is deprecated",
-    category=UserWarning,
+    category=DeprecationWarning,
 )
 
 # Configure Loguru FIRST (before any other imports)
@@ -157,9 +157,16 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     # Initialize MLX Server model pool
-    set_memory_limit(mlx_server_settings.max_memory_gb)
+    # Auto-detect memory limit from device if not explicitly configured
+    max_memory_gb = mlx_server_settings.max_memory_gb
+    if max_memory_gb <= 0:
+        from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
+
+        max_memory_gb = get_device_memory_gb() * 0.75
+        logger.info(f"Auto-detected memory limit: {max_memory_gb:.1f}GB (75% of device memory)")
+    set_memory_limit(max_memory_gb)
     pool.model_pool = ModelPoolManager(
-        max_memory_gb=mlx_server_settings.max_memory_gb,
+        max_memory_gb=max_memory_gb,
         max_models=mlx_server_settings.max_models,
     )
     logger.info("MLX Server model pool initialized")

@@ -74,3 +74,22 @@ def reset_peak_memory() -> None:
         mx.reset_peak_memory()
     except Exception as e:
         logger.warning(f"Failed to reset peak memory: {e}")
+
+
+def get_device_memory_gb() -> float:
+    """Get total device (GPU) memory in GB.
+
+    On Apple Silicon this returns unified memory size via mx.device_info().
+    Falls back to psutil system memory if MLX is unavailable.
+
+    Returns:
+        Total device memory in GB
+    """
+    try:
+        mx = _get_mx()
+        info = mx.device_info()
+        return info["memory_size"] / (1024**3)
+    except Exception:
+        import psutil
+
+        return psutil.virtual_memory().total / (1024**3)

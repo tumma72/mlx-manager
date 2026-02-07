@@ -10,12 +10,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import psutil
 from fastapi import HTTPException
 from loguru import logger
 
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import AdapterInfo, ModelType
+
+try:  # pragma: no cover
+    import logfire  # pragma: no cover
+
+    LOGFIRE_AVAILABLE = True  # pragma: no cover
+except ImportError:  # pragma: no cover
+    LOGFIRE_AVAILABLE = False  # pragma: no cover
 
 
 @dataclass
@@ -72,15 +78,18 @@ class ModelPoolManager:
     def _get_effective_memory_limit(self) -> float:
         """Get the effective memory limit in GB.
 
-        If memory_limit_pct is set, calculates from total system memory.
+        Uses device (GPU) memory via MLX instead of system RAM.
+        If memory_limit_pct is set, calculates from device memory.
         Otherwise returns max_memory_gb.
 
         Returns:
             Memory limit in GB
         """
         if self._memory_limit_pct is not None:
-            total_memory_gb: float = psutil.virtual_memory().total / (1024**3)
-            return total_memory_gb * self._memory_limit_pct
+            from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
+
+            device_memory_gb = get_device_memory_gb()
+            return device_memory_gb * self._memory_limit_pct
         return self.max_memory_gb
 
     def _current_memory_gb(self) -> float:
@@ -127,7 +136,7 @@ class ModelPoolManager:
         return True
 
     def _estimate_model_size(self, model_id: str) -> float:
-        """Estimate model size based on name patterns.
+        """Estimate model size from HF cache files, falling back to name patterns.
 
         Args:
             model_id: HuggingFace model ID
@@ -135,11 +144,42 @@ class ModelPoolManager:
         Returns:
             Estimated size in GB
         """
-        # Look for parameter count patterns like "3B", "7B", "13B", "70B"
+        # Try actual file sizes from HF cache
+        try:
+            from mlx_manager.config import settings
+
+            cache_name = f"models--{model_id.replace('/', '--')}"
+            snapshots_dir = settings.hf_cache_path / cache_name / "snapshots"
+            if snapshots_dir.exists():
+                # Get latest snapshot
+                snapshots = sorted(
+                    snapshots_dir.iterdir(),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if snapshots:
+                    weight_size = sum(
+                        f.stat().st_size
+                        for f in snapshots[0].rglob("*")
+                        if f.is_file()
+                        and f.suffix in (".safetensors", ".bin", ".gguf")
+                    )
+                    if weight_size > 0:
+                        size_gb = weight_size / (1024**3)
+                        # Add ~5% overhead for runtime buffers (MLX memory-maps weights)
+                        estimated = size_gb * 1.05
+                        logger.debug(
+                            f"Model size from disk for {model_id}: "
+                            f"{size_gb:.1f}GB weights + 5% overhead = {estimated:.1f}GB"
+                        )
+                        return estimated
+        except Exception as e:
+            logger.debug(f"Failed to get model size from disk for {model_id}: {e}")
+
+        # Fallback: name-pattern heuristic
         match = re.search(r"(\d+)[bB]", model_id)
         if match:
             param_count = int(match.group(1))
-            # Rough mapping: 3B -> 2GB, 7B -> 4GB, 8B -> 5GB, 13B -> 8GB, 70B -> 40GB
             size_mapping = {
                 3: 2.0,
                 7: 4.0,
@@ -147,10 +187,8 @@ class ModelPoolManager:
                 13: 8.0,
                 70: 40.0,
             }
-            # Return exact match or interpolate
             if param_count in size_mapping:
                 return size_mapping[param_count]
-            # For other sizes, estimate ~0.6GB per billion parameters (quantized)
             return param_count * 0.6
         # Default estimate
         return 4.0
@@ -175,12 +213,33 @@ class ModelPoolManager:
 
             if estimated_size <= available:
                 # Enough memory available
+                if LOGFIRE_AVAILABLE:
+                    logfire.info(
+                        "Memory check passed for {model_id}: "
+                        "estimated={estimated_size:.1f}GB, "
+                        "available={available:.1f}GB, "
+                        "limit={memory_limit:.1f}GB",
+                        model_id=model_id,
+                        estimated_size=estimated_size,
+                        available=available,
+                        memory_limit=memory_limit,
+                    )
                 return
 
             # Try to evict LRU model
             evictable = self._evictable_models()
             if not evictable:
-                # No models to evict
+                # No models to evict - log to Logfire before raising
+                if LOGFIRE_AVAILABLE:
+                    logfire.error(
+                        "Insufficient memory for {model_id}: "
+                        "need {estimated_size:.1f}GB, "
+                        "only {available:.1f}GB available",
+                        model_id=model_id,
+                        estimated_size=estimated_size,
+                        available=available,
+                        memory_limit=memory_limit,
+                    )
                 raise HTTPException(
                     status_code=503,
                     detail=(
@@ -254,6 +313,15 @@ class ModelPoolManager:
         logger.info(f"Loading model: {model_id}")
         start_time = time.time()
 
+        # Open Logfire span for model loading observability
+        span_context = None
+        if LOGFIRE_AVAILABLE:
+            span_context = logfire.span(
+                "model_load",
+                model_id=model_id,
+            )
+            span_context.__enter__()
+
         try:
             # Detect model type
             model_type = detect_model_type(model_id)
@@ -311,6 +379,18 @@ class ModelPoolManager:
                 f"Model loaded: {model_id} (type={model_type.value}, "
                 f"{elapsed:.1f}s, {loaded.size_gb:.1f}GB)"
             )
+
+            # Close Logfire span with success attributes
+            if span_context is not None:
+                logfire.info(
+                    "Model loaded: {model_id} ({model_type}, {elapsed:.1f}s, {size_gb:.1f}GB)",
+                    model_id=model_id,
+                    model_type=model_type.value,
+                    elapsed=elapsed,
+                    size_gb=loaded.size_gb,
+                )
+                span_context.__exit__(None, None, None)
+
             return loaded
 
         except Exception as e:
@@ -319,6 +399,16 @@ class ModelPoolManager:
                     self._loading[model_id].set()
                     del self._loading[model_id]
             logger.exception(f"Failed to load model {model_id}: {e}")
+
+            # Log error to Logfire and close span
+            if span_context is not None:
+                logfire.error(
+                    "Failed to load model {model_id}: {error}",
+                    model_id=model_id,
+                    error=str(e),
+                )
+                span_context.__exit__(type(e), e, e.__traceback__)
+
             raise RuntimeError(f"Failed to load model: {e}") from e
 
     async def preload_model(self, model_id: str) -> LoadedModel:
