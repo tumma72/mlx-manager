@@ -304,8 +304,8 @@ Plans:
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 16-01-PLAN.md — Backend: SSE/WS query-param auth, JWT warning, deprecated endpoint removal, router decoupling
-- [ ] 16-02-PLAN.md — Frontend: Token injection in SSE/WS URLs, remove deprecated parser API functions and types
+- [x] 16-01-PLAN.md — Backend: SSE/WS query-param auth, JWT warning, deprecated endpoint removal, router decoupling
+- [x] 16-02-PLAN.md — Frontend: Token injection in SSE/WS URLs, remove deprecated parser API functions and types
 
 ## Progress
 
@@ -322,7 +322,7 @@ Plans:
 | 13. Integration | v1.2 | 5/5 | Complete | 2026-02-01 |
 | 14. Adapters | v1.2 | 9/9 | Complete | 2026-02-02 |
 | 15. Cleanup & Tests | v1.2 | 16/16 | Complete | 2026-02-05 |
-| 16. Manager Arch Compliance | v1.2 | 0/2 | In progress | — |
+| 16. Manager Arch Compliance | v1.2 | 2/2 | Complete | 2026-02-07 |
 
 ## Technical Architecture
 
