@@ -16,7 +16,14 @@ from sqlmodel import select
 
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user, get_current_user_from_token
-from mlx_manager.models import Download, LocalModel, ModelSearchResult, User
+from mlx_manager.models import (
+    Download,
+    LocalModel,
+    ModelCapabilities,
+    ModelCapabilitiesResponse,
+    ModelSearchResult,
+    User,
+)
 from mlx_manager.services.hf_client import (
     cleanup_cancel_event,
     cleanup_partial_download,
@@ -139,9 +146,7 @@ async def get_download_progress(
             cancel_event = register_cancel_event(str(download_id))
 
         try:
-            async for progress in hf_client.download_model(
-                model_id, cancel_event=cancel_event
-            ):
+            async for progress in hf_client.download_model(model_id, cancel_event=cancel_event):
                 download_tasks[task_id].update(progress)
 
                 # Serialize progress dict properly
@@ -519,3 +524,58 @@ async def detect_model_options(
     """
     return get_model_detection_info(model_id)
 
+
+@router.get("/capabilities", response_model=list[ModelCapabilitiesResponse])
+async def get_all_capabilities(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """Get all stored model capabilities."""
+    result = await session.execute(select(ModelCapabilities))
+    return result.scalars().all()
+
+
+@router.get("/capabilities/{model_id:path}", response_model=ModelCapabilitiesResponse | None)
+async def get_model_capabilities(
+    model_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """Get stored capabilities for a specific model."""
+    result = await session.execute(
+        select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
+    )
+    caps = result.scalar_one_or_none()
+    if not caps:
+        return None
+    return caps
+
+
+@router.post("/probe/{model_id:path}")
+async def probe_model_capabilities(
+    model_id: str,
+    current_user: Annotated[User, Depends(get_current_user_from_token)],
+):
+    """Probe a model's capabilities (SSE stream).
+
+    Loads the model temporarily, tests for native tool support,
+    thinking support, and practical max tokens. Results are stored
+    in the database for future use.
+
+    Requires JWT token as query parameter (same pattern as download progress).
+    """
+    from mlx_manager.services.model_probe import probe_model
+
+    async def generate():
+        async for step in probe_model(model_id):
+            yield step.to_sse()
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
