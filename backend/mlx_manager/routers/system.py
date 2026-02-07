@@ -15,7 +15,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mlx_manager.config import settings
-from mlx_manager.database import get_db
+from mlx_manager.database import get_db, get_session
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory, User
 from mlx_manager.services.launchd import launchd_manager
@@ -117,23 +117,6 @@ async def get_system_info(
         python_version=python_version,
         mlx_version=mlx_version,
     )
-
-
-@router.get("/parser-options")
-async def get_available_parser_options(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> dict[str, list[str]]:
-    """
-    Get available parser options.
-
-    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
-    Returns empty lists for backwards compatibility.
-    """
-    return {
-        "tool_call_parsers": [],
-        "reasoning_parsers": [],
-        "message_converters": [],
-    }
 
 
 @router.post("/launchd/install/{profile_id}")
@@ -299,8 +282,38 @@ async def proxy_audit_log_stream(websocket: WebSocket) -> None:
     """Proxy WebSocket connection to MLX Server for audit log streaming.
 
     The frontend connects to the manager API. The embedded MLX Server runs
-    on the same port at /v1 prefix.
+    on the same port at /v1 prefix. Validates JWT from query parameter before
+    accepting the connection.
     """
+    from sqlmodel import select as sql_select
+
+    from mlx_manager.models import User, UserStatus
+    from mlx_manager.services.auth_service import decode_token
+
+    # Validate JWT from query parameter before accepting connection
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)
+        return
+
+    payload = decode_token(token)
+    if payload is None:
+        await websocket.close(code=1008)
+        return
+
+    email: str | None = payload.get("sub")
+    if not email:
+        await websocket.close(code=1008)
+        return
+
+    # Validate user exists and is approved
+    async with get_session() as session:
+        result = await session.execute(sql_select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if user is None or user.status != UserStatus.APPROVED:
+            await websocket.close(code=1008)
+            return
+
     await websocket.accept()
 
     # MLX Server WebSocket URL - embedded server at /v1 prefix on same port

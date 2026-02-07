@@ -106,7 +106,7 @@ async def list_servers(
                 continue  # Skip profiles without IDs (shouldn't happen)
             if profile.model_path in loaded_models:
                 # Get model info if available
-                loaded_model = pool._models.get(profile.model_path)
+                loaded_model = pool.get_loaded_model(profile.model_path)
                 model_uptime = 0.0
                 if loaded_model:
                     model_uptime = time.time() - loaded_model.loaded_at
@@ -187,8 +187,8 @@ async def list_loaded_models(
         models = []
 
         for model_id in pool.get_loaded_models():
-            if model_id in pool._models:
-                loaded = pool._models[model_id]
+            loaded = pool.get_loaded_model(model_id)
+            if loaded is not None:
                 models.append(
                     LoadedModelInfo(
                         model_id=loaded.model_id,
@@ -358,7 +358,7 @@ async def stop_server(
             }
 
         # Check if model is preloaded (protected)
-        loaded = pool._models.get(model_id)
+        loaded = pool.get_loaded_model(model_id)
         if loaded and loaded.preloaded:
             return {
                 "success": False,

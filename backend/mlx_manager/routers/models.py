@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from mlx_manager.database import get_db
-from mlx_manager.dependencies import get_current_user
+from mlx_manager.dependencies import get_current_user, get_current_user_from_token
 from mlx_manager.models import Download, LocalModel, ModelSearchResult, User
 from mlx_manager.services.hf_client import (
     cleanup_cancel_event,
@@ -114,10 +114,14 @@ async def start_download(
 
 @router.get("/download/{task_id}/progress")
 async def get_download_progress(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user_from_token)],
     task_id: str,
 ):
-    """SSE endpoint for download progress."""
+    """SSE endpoint for download progress.
+
+    Uses query-parameter JWT auth (?token=<jwt>) because browser EventSource
+    cannot send custom Authorization headers.
+    """
 
     async def generate() -> AsyncGenerator[str, None]:
         if task_id not in download_tasks:
@@ -515,15 +519,3 @@ async def detect_model_options(
     """
     return get_model_detection_info(model_id)
 
-
-@router.get("/available-parsers")
-async def get_available_parsers(
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    Get list of available parser options for dropdowns.
-
-    DEPRECATED: Parser options are no longer used with the embedded MLX Server.
-    Returns empty list for backwards compatibility.
-    """
-    return {"parsers": []}
