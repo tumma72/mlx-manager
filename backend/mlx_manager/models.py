@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from enum import Enum
 
+from sqlalchemy import Boolean, Column
 from sqlmodel import Field, SQLModel
 
 
@@ -101,6 +102,11 @@ class ServerProfileBase(SQLModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=1, le=128000)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Tool calling
+    enable_prompt_injection: bool = Field(
+        default=False,
+        sa_column=Column("force_tool_injection", Boolean, default=False),
+    )
 
 
 class ServerProfile(ServerProfileBase, table=True):
@@ -134,6 +140,8 @@ class ServerProfileUpdate(SQLModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1, le=128000)
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Tool calling
+    enable_prompt_injection: bool | None = None
 
 
 # NOTE: RunningInstance model removed - no longer needed with embedded MLX Server.
@@ -151,6 +159,30 @@ class DownloadedModel(SQLModel, table=True):
     size_bytes: int | None = None
     downloaded_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     last_used_at: datetime | None = None
+
+
+class ModelCapabilities(SQLModel, table=True):
+    """Probed model capabilities stored in DB."""
+
+    __tablename__ = "model_capabilities"
+
+    model_id: str = Field(primary_key=True)
+    supports_native_tools: bool | None = Field(default=None)
+    supports_thinking: bool | None = Field(default=None)
+    practical_max_tokens: int | None = Field(default=None)
+    probed_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    probe_version: int = Field(default=1)
+
+
+class ModelCapabilitiesResponse(SQLModel):
+    """Response model for model capabilities."""
+
+    model_id: str
+    supports_native_tools: bool | None = None
+    supports_thinking: bool | None = None
+    practical_max_tokens: int | None = None
+    probed_at: datetime | None = None
+    probe_version: int = 1
 
 
 class Setting(SQLModel, table=True):

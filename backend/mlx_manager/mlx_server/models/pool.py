@@ -38,6 +38,7 @@ class LoadedModel:
     preloaded: bool = False  # Whether protected from eviction
     adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
     adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
+    capabilities: Any = None  # ModelCapabilities from DB, attached at load time
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -368,6 +369,30 @@ class ModelPoolManager:
                 model_type=model_type.value,
                 size_gb=memory["active_gb"],
             )
+
+            # Attach probed capabilities from DB if available
+            try:
+                from mlx_manager.database import get_session
+                from mlx_manager.models import ModelCapabilities
+
+                async with get_session() as session:
+                    from sqlmodel import select
+
+                    result = await session.execute(
+                        select(ModelCapabilities).where(
+                            ModelCapabilities.model_id == model_id
+                        )
+                    )
+                    caps = result.scalar_one_or_none()
+                    if caps:
+                        loaded.capabilities = caps
+                        logger.info(
+                            f"Attached capabilities for {model_id}: "
+                            f"native_tools={caps.supports_native_tools}, "
+                            f"thinking={caps.supports_thinking}"
+                        )
+            except Exception as e:
+                logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
 
             async with self._lock:
                 self._models[model_id] = loaded

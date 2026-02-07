@@ -52,12 +52,7 @@ class LlamaAdapter(DefaultAdapter):
         - <|eot_id|> after each message
 
         Handles both Tokenizer and Processor objects (vision models use Processor).
-
-        Args:
-            tools: Ignored - Llama uses prompt injection for tools, not native support.
         """
-        # Note: tools parameter ignored - Llama uses prompt injection via format_tools_for_prompt
-        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         result: str = cast(
             str,

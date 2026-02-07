@@ -39,15 +39,10 @@ class QwenAdapter(DefaultAdapter):
 
         For Qwen3 models, enables thinking mode which wraps reasoning
         in <think>...</think> tags.
-
-        Args:
-            tools: Ignored - Qwen uses prompt injection for tools, not native support.
         """
-        # Note: tools parameter ignored - Qwen uses prompt injection via format_tools_for_prompt
-        # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
         actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
 
-        # Try with enable_thinking for Qwen3 (wraps reasoning in <think> tags)
+        # Try with enable_thinking for Qwen3
         try:
             result: str = cast(
                 str,

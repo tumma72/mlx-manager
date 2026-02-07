@@ -213,7 +213,7 @@ class DefaultAdapter:
         return []
 
     def has_native_tool_support(self, tokenizer: Any) -> bool:
-        """Default: No native tool support, use prompt injection."""
+        """Check if the tokenizer natively supports tool calling. Default: no."""
         return False
 
     # --- Optional Methods: Reasoning Mode Support ---

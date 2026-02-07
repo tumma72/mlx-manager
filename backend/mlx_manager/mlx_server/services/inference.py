@@ -11,22 +11,19 @@ Extended capabilities:
 - Structured output: JSON schema validation (handled at API layer)
 """
 
-import asyncio
-import threading
 import time
 import uuid
-from collections.abc import AsyncGenerator
-from queue import Empty, Queue
+from collections.abc import AsyncGenerator, Iterator
 from typing import Any
 
 from loguru import logger
 
-try:
-    import logfire
+try:  # pragma: no cover
+    import logfire  # pragma: no cover
 
-    LOGFIRE_AVAILABLE = True
-except ImportError:
-    LOGFIRE_AVAILABLE = False
+    LOGFIRE_AVAILABLE = True  # pragma: no cover
+except ImportError:  # pragma: no cover
+    LOGFIRE_AVAILABLE = False  # pragma: no cover
 
 
 async def generate_chat_completion(
@@ -38,6 +35,7 @@ async def generate_chat_completion(
     stop: list[str] | None = None,
     stream: bool = False,
     tools: list[dict[str, Any]] | None = None,
+    enable_prompt_injection: bool = False,
 ) -> AsyncGenerator[dict, None] | dict:
     """Generate a chat completion.
 
@@ -76,15 +74,20 @@ async def generate_chat_completion(
     use_native_tools = False
 
     if tools and adapter.supports_tool_calling():
-        # Check if adapter has native tool support (tools passed directly to template)
-        use_native_tools = adapter.has_native_tool_support(tokenizer)
-
-        if not use_native_tools:
-            # Fall back to prompt injection for models without native support
+        loaded_caps = getattr(loaded, "capabilities", None)
+        if loaded_caps and loaded_caps.supports_native_tools:
+            use_native_tools = True
+            logger.debug(f"Using native tool support for {model_id}")
+        elif enable_prompt_injection:
             tool_prompt = adapter.format_tools_for_prompt(tools)
             if tool_prompt:
                 effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
-                logger.debug(f"Injected tools into prompt for {model_id}")
+                logger.debug(f"Injected tools via prompt injection for {model_id}")
+        else:
+            logger.info(
+                f"Tools requested but model {model_id} has no native support "
+                "and prompt injection not enabled"
+            )
 
     # Apply chat template (pass tools for native support, otherwise None)
     prompt = adapter.apply_chat_template(
@@ -222,20 +225,17 @@ async def _stream_chat_generate(
 ) -> AsyncGenerator[dict, None]:
     """Generate tokens with streaming for chat completion.
 
-    CRITICAL: This function uses a dedicated thread for MLX generation to
-    respect Metal GPU thread affinity. Tokens are passed via Queue to the
-    async generator. Using run_in_executor with next(generator) does NOT work
-    because MLX Metal operations have thread affinity requirements.
+    Uses stream_from_metal_thread to run MLX generation on a dedicated thread
+    (required for Metal GPU thread affinity). Tokens are yielded as
+    (token_text, token_id, is_stop) tuples.
 
     Uses StreamingProcessor to filter patterns during generation:
     - Tool call markers (<tool_call>, <function=>) never reach the client
     - Thinking tags (<think>, etc.) filtered from stream
     - Final processing extracts tool_calls and reasoning from accumulated text
     """
-    from mlx_lm import stream_generate
-
     from mlx_manager.mlx_server.services.response_processor import StreamingProcessor
-    from mlx_manager.mlx_server.utils.memory import clear_cache
+    from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
     completion_tokens = 0
 
@@ -261,187 +261,142 @@ async def _stream_chat_generate(
             f"starts_in_thinking={starts_in_thinking}"
         )
 
-    # Queue for passing tokens from generation thread to async generator
-    # Format: (token_text, token_id, is_stop) or Exception or None (completion signal)
-    token_queue: Queue[tuple[str, int | None, bool] | Exception | None] = Queue()
-
-    def run_generation() -> None:
-        """Run MLX generation in dedicated thread (owns Metal context)."""
+    def produce_tokens() -> Iterator[tuple[str, int | None, bool]]:
+        """Yield (token_text, token_id, is_stop) tuples on Metal thread."""
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        try:
-            # Create sampler with temperature and top_p settings
-            sampler = make_sampler(temp=temperature, top_p=top_p)
+        sampler = make_sampler(temp=temperature, top_p=top_p)
 
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                sampler=sampler,
-            ):
-                # Get token ID from response
-                # Note: stream_generate response has .token attribute (int)
-                # and .text attribute (str) for the decoded token
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        for response in stream_generate(
+            model,
+            tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            sampler=sampler,
+        ):
+            token_id = getattr(response, "token", None)
+            token_text = getattr(response, "text", str(response))
 
-                # CRITICAL: Check for stop token
-                is_stop = token_id is not None and token_id in stop_token_ids
-                token_queue.put((token_text, token_id, is_stop))
-
-                if is_stop:
-                    return
-        except Exception as e:
-            # Put exception marker for async side to handle
-            token_queue.put(e)
-        finally:
-            # Signal completion
-            token_queue.put(None)
-
-    try:
-        # First chunk with role
-        yield {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"role": "assistant", "content": ""},
-                    "finish_reason": None,
-                }
-            ],
-        }
-
-        finish_reason = "length"  # Default if we hit max_tokens
-
-        # Start generation thread (daemon=True so it doesn't block process exit)
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
-
-        loop = asyncio.get_running_loop()
-
-        while True:
-            # Poll queue without blocking event loop (use run_in_executor for queue.get)
-            try:
-                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
-            except Empty:
-                continue
-
-            # Check for completion signal
-            if result is None:
-                break
-
-            # Check for exception from generation thread
-            if isinstance(result, Exception):
-                raise result
-
-            token_text, token_id, is_stop = result
-            completion_tokens += 1
+            # CRITICAL: Check for stop token
+            is_stop = token_id is not None and token_id in stop_token_ids
+            yield (token_text, token_id, is_stop)
 
             if is_stop:
-                # Stop token found - don't yield the stop token text
-                finish_reason = "stop"
-                # Feed to processor but don't yield (updates accumulated text)
-                stream_processor.feed(token_text)
-                logger.debug(
-                    f"Stop token encountered: token_id={token_id}, "
-                    f"token_text={repr(token_text)}, tokens_so_far={completion_tokens}"
-                )
-                break
+                return
 
-            # Process token through StreamingProcessor
-            # Returns StreamEvent with reasoning_content or content
-            event = stream_processor.feed(token_text)
-            if event.reasoning_content or event.content:
-                delta: dict[str, Any] = {}
-                if event.reasoning_content:
-                    delta["reasoning_content"] = event.reasoning_content
-                if event.content:
-                    delta["content"] = event.content
-                yield {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model_id,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": delta,
-                            "finish_reason": None,
-                        }
-                    ],
-                }
+    # First chunk with role
+    yield {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }
+        ],
+    }
 
-        # Wait for thread to finish
-        gen_thread.join(timeout=1.0)
+    finish_reason = "length"  # Default if we hit max_tokens
 
-        # Debug: Log raw accumulated text before finalization
-        raw_text = stream_processor.get_accumulated_text()
-        if tools:
+    async for token_text, token_id, is_stop in stream_from_metal_thread(produce_tokens):
+        completion_tokens += 1
+
+        if is_stop:
+            # Stop token found - don't yield the stop token text
+            finish_reason = "stop"
+            # Feed to processor but don't yield (updates accumulated text)
+            stream_processor.feed(token_text)
             logger.debug(
-                f"=== RAW MODEL OUTPUT ({len(raw_text)} chars) ===\n"
-                f"{raw_text}\n=== END RAW OUTPUT ==="
+                f"Stop token encountered: token_id={token_id}, "
+                f"token_text={repr(token_text)}, tokens_so_far={completion_tokens}"
             )
+            break
 
-        # Finalize StreamingProcessor - extracts tool calls and reasoning
-        result_parsed = stream_processor.finalize()
+        # Process token through StreamingProcessor
+        # Returns StreamEvent with reasoning_content or content
+        event = stream_processor.feed(token_text)
+        if event.reasoning_content or event.content:
+            delta: dict[str, Any] = {}
+            if event.reasoning_content:
+                delta["reasoning_content"] = event.reasoning_content
+            if event.content:
+                delta["content"] = event.content
+            yield {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model_id,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": delta,
+                        "finish_reason": None,
+                    }
+                ],
+            }
 
-        # Extract tool calls from ParseResult
-        tool_calls = None
-        if result_parsed.tool_calls:
-            # Convert Pydantic models to dicts for response
-            tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
-            finish_reason = "tool_calls"
-            logger.debug(f"Detected {len(tool_calls)} tool calls in streaming response")
-
-        # Build final chunk with finish_reason and optional tool_calls
-        final_delta: dict[str, Any] = {}
-        if tool_calls:
-            # Include tool_calls in final delta
-            final_delta["tool_calls"] = [
-                {
-                    "index": i,
-                    "id": tc["id"],
-                    "type": tc["type"],
-                    "function": tc["function"],
-                }
-                for i, tc in enumerate(tool_calls)
-            ]
-
-        yield {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": final_delta,
-                    "finish_reason": finish_reason,
-                }
-            ],
-        }
-
-        logger.info(
-            f"Chat stream complete: {completion_id}, "
-            f"tokens={completion_tokens}, reason={finish_reason}"
+    # Debug: Log raw accumulated text before finalization
+    raw_text = stream_processor.get_accumulated_text()
+    if tools:
+        logger.debug(
+            f"=== RAW MODEL OUTPUT ({len(raw_text)} chars) ===\n{raw_text}\n=== END RAW OUTPUT ==="
         )
 
-        if LOGFIRE_AVAILABLE:
-            logfire.info(
-                "stream_completion_finished",
-                completion_id=completion_id,
-                completion_tokens=completion_tokens,
-                finish_reason=finish_reason,
-                has_tool_calls=tool_calls is not None,
-            )
+    # Finalize StreamingProcessor - extracts tool calls and reasoning
+    result_parsed = stream_processor.finalize()
 
-    finally:
-        # Always cleanup
-        clear_cache()
+    # Extract tool calls from ParseResult
+    tool_calls = None
+    if result_parsed.tool_calls:
+        # Convert Pydantic models to dicts for response
+        tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+        finish_reason = "tool_calls"
+        logger.debug(f"Detected {len(tool_calls)} tool calls in streaming response")
+
+    # Build final chunk with finish_reason and optional tool_calls
+    final_delta: dict[str, Any] = {}
+    if tool_calls:
+        # Include tool_calls in final delta
+        final_delta["tool_calls"] = [
+            {
+                "index": i,
+                "id": tc["id"],
+                "type": tc["type"],
+                "function": tc["function"],
+            }
+            for i, tc in enumerate(tool_calls)
+        ]
+
+    yield {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": final_delta,
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
+
+    logger.info(
+        f"Chat stream complete: {completion_id}, tokens={completion_tokens}, reason={finish_reason}"
+    )
+
+    if LOGFIRE_AVAILABLE:
+        logfire.info(
+            "stream_completion_finished",
+            completion_id=completion_id,
+            completion_tokens=completion_tokens,
+            finish_reason=finish_reason,
+            has_tool_calls=tool_calls is not None,
+        )
 
 
 async def _generate_chat_complete(
@@ -460,152 +415,124 @@ async def _generate_chat_complete(
 ) -> dict:
     """Generate complete response (non-streaming) for chat completion.
 
-    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
-    thread affinity. Results are passed via Queue. Using run_in_executor with
-    next(generator) does NOT work because MLX Metal has thread affinity.
+    Uses run_on_metal_thread for Metal GPU thread affinity.
 
     Post-processes the response to:
     - Parse tool calls if tools are enabled and adapter supports it
     - Extract reasoning content if adapter supports reasoning mode
     """
-    from mlx_lm import stream_generate
-
-    from mlx_manager.mlx_server.utils.memory import clear_cache
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
     actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     prompt_tokens = len(actual_tokenizer.encode(prompt))
 
-    # Queue for passing result from generation thread
-    # Format: (response_text, finish_reason) or Exception
-    result_queue: Queue[tuple[str, str] | Exception] = Queue()
-
-    def run_generation() -> None:
+    def run_generation() -> tuple[str, str]:
         """Run complete generation in dedicated thread (owns Metal context)."""
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        try:
-            response_text = ""
-            finish_reason = "length"
+        response_text = ""
+        finish_reason = "length"
 
-            # Create sampler with temperature and top_p settings
-            sampler = make_sampler(temp=temperature, top_p=top_p)
+        # Create sampler with temperature and top_p settings
+        sampler = make_sampler(temp=temperature, top_p=top_p)
 
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                sampler=sampler,
-            ):
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        for response in stream_generate(
+            model,
+            tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            sampler=sampler,
+        ):
+            token_id = getattr(response, "token", None)
+            token_text = getattr(response, "text", str(response))
 
-                # CRITICAL: Check for stop token
-                if token_id is not None and token_id in stop_token_ids:
-                    finish_reason = "stop"
-                    break
+            # CRITICAL: Check for stop token
+            if token_id is not None and token_id in stop_token_ids:
+                finish_reason = "stop"
+                break
 
-                response_text += token_text
+            response_text += token_text
 
-            result_queue.put((response_text, finish_reason))
-        except Exception as e:
-            result_queue.put(e)
+        return (response_text, finish_reason)
 
-    try:
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
+    response_text, finish_reason = await run_on_metal_thread(run_generation)
+    completion_tokens = len(tokenizer.encode(response_text))
 
-        # Wait for result (with timeout to not block forever - 5 min max)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
+    # Post-process: Single-pass extraction with ResponseProcessor
+    # Uses model-family-specific patterns to prevent cross-family conflicts
+    from mlx_manager.mlx_server.services.response_processor import get_processor_for_family
 
-        gen_thread.join(timeout=1.0)
+    model_family = adapter.family if adapter else "default"
+    processor = get_processor_for_family(model_family)
+    result_parsed = processor.process(response_text)
 
-        # Check for exception from generation thread
-        if isinstance(result, Exception):
-            raise result
+    # Extract results from ParseResult
+    tool_calls = None
+    if result_parsed.tool_calls:
+        # Convert Pydantic models to dicts for response
+        tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+        finish_reason = "tool_calls"
+        logger.debug(f"Detected {len(tool_calls)} tool calls in response")
 
-        response_text, finish_reason = result
-        completion_tokens = len(tokenizer.encode(response_text))
+    reasoning_content = result_parsed.reasoning
+    if reasoning_content:
+        logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
 
-        # Post-process: Single-pass extraction with ResponseProcessor
-        # Uses model-family-specific patterns to prevent cross-family conflicts
-        from mlx_manager.mlx_server.services.response_processor import get_processor_for_family
+    # Use cleaned content (tool markers and thinking tags removed)
+    final_content = result_parsed.content
 
-        model_family = adapter.family if adapter else "default"
-        processor = get_processor_for_family(model_family)
-        result_parsed = processor.process(response_text)
+    logger.info(
+        f"Chat complete: {completion_id}, tokens={completion_tokens}, "
+        f"reason={finish_reason}, has_tools={tool_calls is not None}, "
+        f"has_reasoning={reasoning_content is not None}"
+    )
 
-        # Extract results from ParseResult
-        tool_calls = None
-        if result_parsed.tool_calls:
-            # Convert Pydantic models to dicts for response
-            tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
-            finish_reason = "tool_calls"
-            logger.debug(f"Detected {len(tool_calls)} tool calls in response")
-
-        reasoning_content = result_parsed.reasoning
-        if reasoning_content:
-            logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
-
-        # Use cleaned content (tool markers and thinking tags removed)
-        final_content = result_parsed.content
-
-        logger.info(
-            f"Chat complete: {completion_id}, tokens={completion_tokens}, "
-            f"reason={finish_reason}, has_tools={tool_calls is not None}, "
-            f"has_reasoning={reasoning_content is not None}"
+    if LOGFIRE_AVAILABLE:
+        logfire.info(
+            "completion_finished",
+            completion_id=completion_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            finish_reason=finish_reason,
+            has_tool_calls=tool_calls is not None,
+            has_reasoning=reasoning_content is not None,
         )
 
-        if LOGFIRE_AVAILABLE:
-            logfire.info(
-                "completion_finished",
-                completion_id=completion_id,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
-                finish_reason=finish_reason,
-                has_tool_calls=tool_calls is not None,
-                has_reasoning=reasoning_content is not None,
-            )
+    # Build message dict
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": final_content,
+    }
 
-        # Build message dict
-        message: dict[str, Any] = {
-            "role": "assistant",
-            "content": final_content,
-        }
+    # Add tool_calls to message if present
+    if tool_calls:
+        message["tool_calls"] = tool_calls
 
-        # Add tool_calls to message if present
-        if tool_calls:
-            message["tool_calls"] = tool_calls
+    # Add reasoning_content to message if present
+    if reasoning_content:
+        message["reasoning_content"] = reasoning_content
 
-        # Add reasoning_content to message if present
-        if reasoning_content:
-            message["reasoning_content"] = reasoning_content
-
-        return {
-            "id": completion_id,
-            "object": "chat.completion",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": message,
-                    "finish_reason": finish_reason,
-                }
-            ],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
-        }
-
-    finally:
-        clear_cache()
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+    }
 
 
 # --- Completion API (legacy) ---
@@ -705,105 +632,35 @@ async def _stream_completion(
 ) -> AsyncGenerator[dict, None]:
     """Stream raw completion tokens.
 
-    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
-    thread affinity. Tokens are passed via Queue to the async generator.
+    Uses stream_from_metal_thread for Metal GPU thread affinity.
     """
-    from mlx_lm import stream_generate
+    from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
-    from mlx_manager.mlx_server.utils.memory import clear_cache
-
-    # Queue for passing tokens from generation thread to async generator
-    token_queue: Queue[tuple[str, int | None, bool] | Exception | None] = Queue()
-
-    def run_generation() -> None:
-        """Run MLX generation in dedicated thread (owns Metal context)."""
+    def produce_tokens() -> Iterator[tuple[str, int | None, bool]]:
+        """Yield (token_text, token_id, is_stop) tuples on Metal thread."""
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        try:
-            # Create sampler with temperature and top_p settings
-            sampler = make_sampler(temp=temperature, top_p=top_p)
+        sampler = make_sampler(temp=temperature, top_p=top_p)
 
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                sampler=sampler,
-            ):
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        for response in stream_generate(
+            model,
+            tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            sampler=sampler,
+        ):
+            token_id = getattr(response, "token", None)
+            token_text = getattr(response, "text", str(response))
 
-                is_stop = token_id is not None and token_id in stop_tokens
-                token_queue.put((token_text, token_id, is_stop))
-
-                if is_stop:
-                    return
-        except Exception as e:
-            token_queue.put(e)
-        finally:
-            token_queue.put(None)
-
-    try:
-        # Echo prompt if requested
-        if echo:
-            yield {
-                "id": completion_id,
-                "object": "text_completion",
-                "created": created,
-                "model": model_id,
-                "choices": [
-                    {
-                        "index": 0,
-                        "text": prompt,
-                        "finish_reason": None,
-                    }
-                ],
-            }
-
-        finish_reason = "length"
-
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
-
-        loop = asyncio.get_running_loop()
-
-        while True:
-            try:
-                result = await loop.run_in_executor(None, lambda: token_queue.get(timeout=0.1))
-            except Empty:
-                continue
-
-            if result is None:
-                break
-
-            if isinstance(result, Exception):
-                raise result
-
-            token_text, token_id, is_stop = result
+            is_stop = token_id is not None and token_id in stop_tokens
+            yield (token_text, token_id, is_stop)
 
             if is_stop:
-                finish_reason = "stop"
-                break
+                return
 
-            yield {
-                "id": completion_id,
-                "object": "text_completion",
-                "created": created,
-                "model": model_id,
-                "choices": [
-                    {
-                        "index": 0,
-                        "text": token_text,
-                        "finish_reason": None,
-                    }
-                ],
-            }
-
-        # Wait for thread to finish
-        gen_thread.join(timeout=1.0)
-
-        # Final chunk
+    # Echo prompt if requested
+    if echo:
         yield {
             "id": completion_id,
             "object": "text_completion",
@@ -812,14 +669,47 @@ async def _stream_completion(
             "choices": [
                 {
                     "index": 0,
-                    "text": "",
-                    "finish_reason": finish_reason,
+                    "text": prompt,
+                    "finish_reason": None,
                 }
             ],
         }
 
-    finally:
-        clear_cache()
+    finish_reason = "length"
+
+    async for token_text, token_id, is_stop in stream_from_metal_thread(produce_tokens):
+        if is_stop:
+            finish_reason = "stop"
+            break
+
+        yield {
+            "id": completion_id,
+            "object": "text_completion",
+            "created": created,
+            "model": model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "text": token_text,
+                    "finish_reason": None,
+                }
+            ],
+        }
+
+    # Final chunk
+    yield {
+        "id": completion_id,
+        "object": "text_completion",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "text": "",
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
 
 
 async def _generate_raw_completion(
@@ -837,90 +727,64 @@ async def _generate_raw_completion(
 ) -> dict:
     """Generate complete raw completion.
 
-    CRITICAL: Uses a dedicated thread for MLX generation to respect Metal GPU
-    thread affinity. Results are passed via Queue.
+    Uses run_on_metal_thread for Metal GPU thread affinity.
     """
-    from mlx_lm import stream_generate
-
-    from mlx_manager.mlx_server.utils.memory import clear_cache
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
     actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     prompt_tokens = len(actual_tokenizer.encode(prompt))
 
-    # Queue for passing result from generation thread
-    result_queue: Queue[tuple[str, str] | Exception] = Queue()
-
-    def run_generation() -> None:
+    def run_generation() -> tuple[str, str]:
         """Run complete generation in dedicated thread (owns Metal context)."""
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        try:
-            response_text = ""
-            finish_reason = "length"
+        response_text = ""
+        finish_reason = "length"
 
-            # Create sampler with temperature and top_p settings
-            sampler = make_sampler(temp=temperature, top_p=top_p)
+        # Create sampler with temperature and top_p settings
+        sampler = make_sampler(temp=temperature, top_p=top_p)
 
-            for response in stream_generate(
-                model,
-                tokenizer,
-                prompt,
-                max_tokens=max_tokens,
-                sampler=sampler,
-            ):
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+        for response in stream_generate(
+            model,
+            tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            sampler=sampler,
+        ):
+            token_id = getattr(response, "token", None)
+            token_text = getattr(response, "text", str(response))
 
-                if token_id is not None and token_id in stop_tokens:
-                    finish_reason = "stop"
-                    break
+            if token_id is not None and token_id in stop_tokens:
+                finish_reason = "stop"
+                break
 
-                response_text += token_text
+            response_text += token_text
 
-            result_queue.put((response_text, finish_reason))
-        except Exception as e:
-            result_queue.put(e)
+        return (response_text, finish_reason)
 
-    try:
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
+    response_text, finish_reason = await run_on_metal_thread(run_generation)
 
-        # Wait for result (with timeout - 5 min max)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
+    # Prepend prompt if echo requested
+    text = (prompt + response_text) if echo else response_text
+    completion_tokens = len(tokenizer.encode(response_text))
 
-        gen_thread.join(timeout=1.0)
-
-        # Check for exception from generation thread
-        if isinstance(result, Exception):
-            raise result
-
-        response_text, finish_reason = result
-
-        # Prepend prompt if echo requested
-        text = (prompt + response_text) if echo else response_text
-        completion_tokens = len(tokenizer.encode(response_text))
-
-        return {
-            "id": completion_id,
-            "object": "text_completion",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "text": text,
-                    "finish_reason": finish_reason,
-                }
-            ],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
-        }
-
-    finally:
-        clear_cache()
+    return {
+        "id": completion_id,
+        "object": "text_completion",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "text": text,
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+    }

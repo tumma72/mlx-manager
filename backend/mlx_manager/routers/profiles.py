@@ -138,6 +138,8 @@ async def duplicate_profile(
         temperature=profile.temperature,
         max_tokens=profile.max_tokens,
         top_p=profile.top_p,
+        # Tool calling
+        enable_prompt_injection=profile.enable_prompt_injection,
     )
 
     session.add(new_profile)

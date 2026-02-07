@@ -121,7 +121,8 @@ async def chat_completions(
                     temperature=temp,
                     top_p=top_p_val,
                     stream=True,
-                    tools=request.tools,  # Pass tools for tool calling support
+                    tools=request.tools,
+                    enable_prompt_injection=profile.enable_prompt_injection,
                 )
 
             # Cast to async generator (both functions return AsyncGenerator when stream=True)
