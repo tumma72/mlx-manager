@@ -555,6 +555,14 @@ class ModelPoolManager:
         """Check if a model is currently loaded."""
         return model_id in self._models
 
+    def get_loaded_model(self, model_id: str) -> LoadedModel | None:
+        """Get a loaded model by ID, or None if not loaded.
+
+        This is the public API for reading model metadata.
+        Use get_model() for loading models on demand.
+        """
+        return self._models.get(model_id)
+
     async def reload_as_type(self, model_id: str, model_type: ModelType) -> LoadedModel:
         """Unload and reload a model with a specific type.
 
