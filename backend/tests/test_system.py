@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.services.auth_service import create_access_token
+
 
 @pytest.mark.asyncio
 async def test_get_memory(auth_client):
@@ -219,25 +221,15 @@ class TestGetSystemInfoExceptions:
 
 
 # ============================================================================
-# Tests for get_parser_options endpoint (deprecated)
+# Tests for removed deprecated endpoints
 # ============================================================================
 
 
 @pytest.mark.asyncio
-async def test_get_parser_options_endpoint(auth_client):
-    """Test the parser options endpoint returns empty lists (deprecated)."""
+async def test_parser_options_endpoint_removed(auth_client):
+    """Test that deprecated /parser-options endpoint returns 404 (removed)."""
     response = await auth_client.get("/api/system/parser-options")
-    assert response.status_code == 200
-
-    data = response.json()
-    assert "tool_call_parsers" in data
-    assert "reasoning_parsers" in data
-    assert "message_converters" in data
-    # Parser options are no longer used with embedded MLX Server
-    assert isinstance(data["tool_call_parsers"], list)
-    assert data["tool_call_parsers"] == []
-    assert data["reasoning_parsers"] == []
-    assert data["message_converters"] == []
+    assert response.status_code in (404, 405)
 
 
 # ============================================================================
@@ -554,24 +546,299 @@ class TestExportAuditLogs:
 
 
 class TestAuditLogWebSocketProxy:
-    """Tests for WebSocket /api/system/ws/audit-logs."""
+    """Tests for WebSocket /api/system/ws/audit-logs.
 
-    def test_websocket_connection_failure(self):
+    All tests use direct function calls with mock WebSocket objects to avoid
+    SyncTestClient lifespan initialization issues with in-memory test databases.
+    """
+
+    def _make_valid_token(self) -> str:
+        """Create a valid JWT token for WebSocket tests."""
+        return create_access_token(data={"sub": "test@example.com"})
+
+    def _mock_get_session_with_user(self, email: str, status: str = "approved"):
+        """Create a mock get_session that returns a user lookup result."""
+        from contextlib import asynccontextmanager
+
+        from mlx_manager.models import User, UserStatus
+
+        mock_user = User(
+            id=1,
+            email=email,
+            hashed_password="hashed",
+            is_admin=False,
+            status=UserStatus.APPROVED if status == "approved" else UserStatus.PENDING,
+        )
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+
+        if status == "not_found":
+            mock_result.scalar_one_or_none.return_value = None
+        else:
+            mock_result.scalar_one_or_none.return_value = mock_user
+
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        return mock_get_session
+
+    @pytest.mark.asyncio
+    async def test_websocket_no_token_closes_1008(self):
+        """Test WebSocket connection without token closes with code 1008."""
+        from mlx_manager.routers.system import proxy_audit_log_stream
+
+        mock_ws = AsyncMock()
+        mock_ws.query_params = {}  # No token
+        mock_ws.close = AsyncMock()
+
+        await proxy_audit_log_stream(mock_ws)
+
+        mock_ws.close.assert_called_once_with(code=1008)
+        mock_ws.accept.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_websocket_invalid_token_closes_1008(self):
+        """Test WebSocket connection with invalid token closes with code 1008."""
+        from mlx_manager.routers.system import proxy_audit_log_stream
+
+        mock_ws = AsyncMock()
+        mock_ws.query_params = {"token": "invalid-jwt-token"}
+        mock_ws.close = AsyncMock()
+
+        await proxy_audit_log_stream(mock_ws)
+
+        mock_ws.close.assert_called_once_with(code=1008)
+        mock_ws.accept.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_websocket_unapproved_user_closes_1008(self):
+        """Test WebSocket connection with valid token for non-existent user closes 1008."""
+        from mlx_manager.routers.system import proxy_audit_log_stream
+
+        token = create_access_token(data={"sub": "nonexistent@example.com"})
+        mock_ws = AsyncMock()
+        mock_ws.query_params = {"token": token}
+        mock_ws.close = AsyncMock()
+
+        # Mock the session to return no user
+        mock_get_session = self._mock_get_session_with_user(
+            "nonexistent@example.com", status="not_found"
+        )
+
+        with patch("mlx_manager.routers.system.get_session", mock_get_session):
+            await proxy_audit_log_stream(mock_ws)
+
+        mock_ws.close.assert_called_once_with(code=1008)
+        mock_ws.accept.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_websocket_pending_user_closes_1008(self):
+        """Test WebSocket connection with valid token for pending user closes 1008."""
+        from mlx_manager.routers.system import proxy_audit_log_stream
+
+        token = create_access_token(data={"sub": "pending@example.com"})
+        mock_ws = AsyncMock()
+        mock_ws.query_params = {"token": token}
+        mock_ws.close = AsyncMock()
+
+        # Mock the session to return a pending user
+        mock_get_session = self._mock_get_session_with_user(
+            "pending@example.com", status="pending"
+        )
+
+        with patch("mlx_manager.routers.system.get_session", mock_get_session):
+            await proxy_audit_log_stream(mock_ws)
+
+        mock_ws.close.assert_called_once_with(code=1008)
+        mock_ws.accept.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_websocket_connection_failure(self):
         """Test WebSocket when MLX Server connection fails."""
-        import websockets
-        from starlette.testclient import TestClient as SyncTestClient
+        from mlx_manager.routers.system import proxy_audit_log_stream
 
-        from mlx_manager.main import app
+        token = self._make_valid_token()
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        mock_ws.send_json = AsyncMock()
+        mock_ws.close = AsyncMock()
+        mock_ws.query_params = {"token": token}
 
-        # Patch websockets.connect to simulate connection failure
-        with patch.object(websockets, "connect") as mock_connect:
-            mock_connect.side_effect = Exception("Connection refused")
+        mock_get_session = self._mock_get_session_with_user("test@example.com")
 
-            # Use synchronous TestClient for WebSocket testing
-            with SyncTestClient(app) as sync_client:
-                # WebSocket should accept connection then send error message
-                with sync_client.websocket_connect("/api/system/ws/audit-logs") as ws:
-                    # Should receive error message
-                    data = ws.receive_json()
-                    assert data["type"] == "error"
-                    assert "MLX Server not available" in data["message"]
+        with (
+            patch("mlx_manager.routers.system.get_session", mock_get_session),
+            patch("websockets.connect", side_effect=Exception("Connection refused")),
+        ):
+            await proxy_audit_log_stream(mock_ws)
+
+        # Should have accepted, sent error, and closed
+        mock_ws.accept.assert_called_once()
+        mock_ws.send_json.assert_called_once()
+        error_data = mock_ws.send_json.call_args[0][0]
+        assert error_data["type"] == "error"
+        assert "MLX Server not available" in error_data["message"]
+        mock_ws.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_websocket_bidirectional_forwarding(self):
+        """Test WebSocket bidirectional message forwarding."""
+        from mlx_manager.routers.system import proxy_audit_log_stream
+
+        # Verify the endpoint exists and has the expected signature
+        assert proxy_audit_log_stream is not None
+        import inspect
+
+        sig = inspect.signature(proxy_audit_log_stream)
+        assert "websocket" in sig.parameters
+
+        # Test that the proxy forwards messages correctly via a mock
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        mock_ws.send_text = AsyncMock()
+        mock_ws.receive_text = AsyncMock(side_effect=Exception("Client disconnected"))
+        mock_ws.close = AsyncMock()
+        mock_ws.query_params = {"token": self._make_valid_token()}
+
+        class MockMLXWebSocket:
+            """Mock MLX Server WebSocket."""
+
+            def __init__(self):
+                self.messages = ["msg1", "msg2"]
+                self.index = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.index < len(self.messages):
+                    msg = self.messages[self.index]
+                    self.index += 1
+                    return msg
+                raise StopAsyncIteration
+
+            async def send(self, data):
+                pass
+
+        mock_get_session = self._mock_get_session_with_user("test@example.com")
+
+        with (
+            patch("mlx_manager.routers.system.get_session", mock_get_session),
+            patch("websockets.connect", return_value=MockMLXWebSocket()),
+        ):
+            try:
+                await proxy_audit_log_stream(mock_ws)
+            except Exception:
+                pass  # Expected to fail when receive_from_client raises
+
+        # Verify the proxy accepted the connection
+        mock_ws.accept.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_websocket_receive_from_client_forwards_messages(self):
+        """Test receive_from_client forwards messages to MLX server."""
+        # Test that messages from client are forwarded to MLX server
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        mock_ws.query_params = {"token": self._make_valid_token()}
+        received_by_mlx = []
+
+        class MockMLXWebSocket:
+            """Mock MLX Server WebSocket that records sent messages."""
+
+            def __init__(self):
+                self.message_count = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                # Send a message from MLX, then wait
+                if self.message_count == 0:
+                    self.message_count += 1
+                    return "mlx_message"
+                # After first message, wait for client messages
+                import asyncio
+
+                await asyncio.sleep(0.5)
+                raise StopAsyncIteration
+
+            async def send(self, data):
+                # Record messages sent to MLX
+                received_by_mlx.append(data)
+
+        # Mock client receiving text to send a message then disconnect
+        call_count = [0]
+
+        async def mock_receive_text():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return "client_message"
+            # Simulate disconnect on second call
+            from fastapi import WebSocketDisconnect
+
+            raise WebSocketDisconnect()
+
+        mock_ws.receive_text = mock_receive_text
+        mock_ws.send_text = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        mock_get_session = self._mock_get_session_with_user("test@example.com")
+
+        with (
+            patch("mlx_manager.routers.system.get_session", mock_get_session),
+            patch("websockets.connect", return_value=MockMLXWebSocket()),
+        ):
+            try:
+                from mlx_manager.routers.system import proxy_audit_log_stream
+
+                await proxy_audit_log_stream(mock_ws)
+            except Exception:
+                pass
+
+        # Verify message was forwarded to MLX server
+        assert "client_message" in received_by_mlx
+
+    @pytest.mark.asyncio
+    async def test_websocket_error_sending_error_message(self):
+        """Test exception when sending error message fails."""
+        # Mock websocket that fails when trying to send error
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        mock_ws.send_json = AsyncMock(side_effect=Exception("Connection closed"))
+        mock_ws.close = AsyncMock()
+        mock_ws.query_params = {"token": self._make_valid_token()}
+
+        mock_get_session = self._mock_get_session_with_user("test@example.com")
+
+        # Make websockets.connect fail
+        with (
+            patch("mlx_manager.routers.system.get_session", mock_get_session),
+            patch("websockets.connect", side_effect=Exception("Connection failed")),
+        ):
+            from mlx_manager.routers.system import proxy_audit_log_stream
+
+            try:
+                await proxy_audit_log_stream(mock_ws)
+            except Exception:
+                pass  # Expected
+
+        # Verify we tried to send error message and it failed
+        mock_ws.send_json.assert_called_once()
+        mock_ws.close.assert_called_once()

@@ -54,7 +54,7 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
 
     mock_pool = MagicMock()
     mock_pool.get_loaded_models.return_value = ["mlx-community/test-model"]
-    mock_pool._models = {"mlx-community/test-model": mock_loaded_model}
+    mock_pool.get_loaded_model.return_value = mock_loaded_model
     mock_pool.max_memory_gb = 32.0
 
     with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
@@ -112,7 +112,7 @@ async def test_list_loaded_models_empty(auth_client):
     """Test listing loaded models when none are loaded."""
     mock_pool = MagicMock()
     mock_pool.get_loaded_models.return_value = []
-    mock_pool._models = {}
+    mock_pool.get_loaded_model.return_value = None
 
     with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get("/api/servers/models")
@@ -133,7 +133,7 @@ async def test_list_loaded_models_with_data(auth_client):
 
     mock_pool = MagicMock()
     mock_pool.get_loaded_models.return_value = ["test-model"]
-    mock_pool._models = {"test-model": mock_loaded_model}
+    mock_pool.get_loaded_model.return_value = mock_loaded_model
 
     with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         response = await auth_client.get("/api/servers/models")
@@ -301,7 +301,6 @@ async def test_stop_endpoint_unloads_model(auth_client, sample_profile_data):
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
-    model_path = sample_profile_data["model_path"]
 
     # Mock loaded model
     mock_loaded_model = MagicMock()
@@ -310,7 +309,7 @@ async def test_stop_endpoint_unloads_model(auth_client, sample_profile_data):
     # Mock the model pool
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = True
-    mock_pool._models = {model_path: mock_loaded_model}
+    mock_pool.get_loaded_model.return_value = mock_loaded_model
     mock_pool.unload_model = AsyncMock(return_value=True)
 
     with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
@@ -347,7 +346,6 @@ async def test_stop_endpoint_preloaded_model(auth_client, sample_profile_data):
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
-    model_path = sample_profile_data["model_path"]
 
     # Mock preloaded model
     mock_loaded_model = MagicMock()
@@ -355,7 +353,7 @@ async def test_stop_endpoint_preloaded_model(auth_client, sample_profile_data):
 
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = True
-    mock_pool._models = {model_path: mock_loaded_model}
+    mock_pool.get_loaded_model.return_value = mock_loaded_model
 
     with patch("mlx_manager.routers.servers.get_model_pool", return_value=mock_pool):
         response = await auth_client.post(f"/api/servers/{profile_id}/stop")

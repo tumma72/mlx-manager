@@ -4,6 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.services.auth_service import create_access_token
+
+
+def _sse_token() -> str:
+    """Generate a JWT token for SSE endpoint tests (query-param auth)."""
+    return create_access_token(data={"sub": "test@example.com"})
+
 
 @pytest.mark.asyncio
 async def test_search_models(auth_client, mock_hf_client):
@@ -143,8 +150,11 @@ async def test_delete_model_not_found(auth_client):
 @pytest.mark.asyncio
 async def test_get_download_progress_task_not_found(auth_client):
     """Test getting download progress for non-existent task."""
+    token = _sse_token()
     with patch("mlx_manager.routers.models.download_tasks", {}):
-        response = await auth_client.get("/api/models/download/nonexistent-task/progress")
+        response = await auth_client.get(
+            f"/api/models/download/nonexistent-task/progress?token={token}"
+        )
         assert response.status_code == 200
         # SSE response
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
@@ -173,7 +183,10 @@ async def test_get_download_progress_with_valid_task(auth_client):
     ):
         mock.download_model = mock_download_model
 
-        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
+        token = _sse_token()
+        response = await auth_client.get(
+            f"/api/models/download/{task_id}/progress?token={token}"
+        )
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
@@ -204,7 +217,10 @@ async def test_get_download_progress_with_error(auth_client):
     ):
         mock.download_model = mock_download_model
 
-        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
+        token = _sse_token()
+        response = await auth_client.get(
+            f"/api/models/download/{task_id}/progress?token={token}"
+        )
         assert response.status_code == 200
         # SSE should contain error
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
@@ -830,19 +846,15 @@ async def test_get_active_downloads_in_memory_takes_precedence(auth_client, test
 
 
 # =============================================================================
-# Tests for get_available_parsers() (deprecated - always returns empty list)
+# Tests for removed deprecated endpoints
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_get_available_parsers_returns_empty_list(auth_client):
-    """Test get_available_parsers returns empty list (feature deprecated)."""
+async def test_available_parsers_endpoint_removed(auth_client):
+    """Test that deprecated /available-parsers endpoint returns 404 (removed)."""
     response = await auth_client.get("/api/models/available-parsers")
-    assert response.status_code == 200
-
-    data = response.json()
-    assert "parsers" in data
-    assert data["parsers"] == []
+    assert response.status_code in (404, 405)
 
 
 # =============================================================================
@@ -893,7 +905,10 @@ async def test_download_progress_sse_updates_db_periodically(auth_client):
     ):
         mock_hf.download_model = mock_download_model
 
-        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
+        token = _sse_token()
+        response = await auth_client.get(
+            f"/api/models/download/{task_id}/progress?token={token}"
+        )
         assert response.status_code == 200
 
     # Should have called _update_download_record at least once for the completed status
@@ -941,7 +956,10 @@ async def test_download_progress_sse_error_updates_db(auth_client):
     ):
         mock_hf.download_model = mock_download_model_error
 
-        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
+        token = _sse_token()
+        response = await auth_client.get(
+            f"/api/models/download/{task_id}/progress?token={token}"
+        )
         assert response.status_code == 200
         # SSE content should contain error
         assert b"failed" in response.content or b"error" in response.content
@@ -977,7 +995,10 @@ async def test_download_progress_sse_without_download_id(auth_client):
     ):
         mock_hf.download_model = mock_download_model
 
-        response = await auth_client.get(f"/api/models/download/{task_id}/progress")
+        token = _sse_token()
+        response = await auth_client.get(
+            f"/api/models/download/{task_id}/progress?token={token}"
+        )
         assert response.status_code == 200
 
         # _update_download_record should NOT be called when there's no download_id
