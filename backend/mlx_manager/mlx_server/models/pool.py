@@ -162,8 +162,7 @@ class ModelPoolManager:
                     weight_size = sum(
                         f.stat().st_size
                         for f in snapshots[0].rglob("*")
-                        if f.is_file()
-                        and f.suffix in (".safetensors", ".bin", ".gguf")
+                        if f.is_file() and f.suffix in (".safetensors", ".bin", ".gguf")
                     )
                     if weight_size > 0:
                         size_gb = weight_size / (1024**3)
@@ -296,6 +295,10 @@ class ModelPoolManager:
         - TEXT_GEN: mlx_lm.load()
         - VISION: mlx_vlm.load()
         - EMBEDDINGS: mlx_embeddings.utils.load()
+        - AUDIO: mlx_audio.utils.load_model()
+
+        Uses DB-cached model type from probing when available,
+        falling back to detect_model_type() for unprobed models.
 
         Args:
             model_id: Model identifier
@@ -324,8 +327,32 @@ class ModelPoolManager:
             span_context.__enter__()
 
         try:
-            # Detect model type
-            model_type = detect_model_type(model_id)
+            # Try DB-cached model type first (set during probing)
+            model_type: ModelType | None = None
+            try:
+                from mlx_manager.database import get_session
+                from mlx_manager.models import ModelCapabilities
+
+                async with get_session() as session:
+                    from sqlmodel import select
+
+                    db_result = await session.execute(
+                        select(ModelCapabilities.model_type).where(
+                            ModelCapabilities.model_id == model_id
+                        )
+                    )
+                    cached_type = db_result.scalar_one_or_none()
+                    if cached_type:
+                        model_type = ModelType(cached_type)
+                        logger.info(
+                            f"Using DB-cached model type for {model_id}: {model_type.value}"
+                        )
+            except Exception as e:
+                logger.debug(f"Could not query cached model type for {model_id}: {e}")
+
+            # Fall back to detection if no DB entry
+            if model_type is None:
+                model_type = detect_model_type(model_id)
             logger.info(f"Detected model type: {model_type.value} for {model_id}")
 
             # Load based on type
@@ -348,7 +375,18 @@ class ModelPoolManager:
                 # auto-detects TTS vs STT and returns the nn.Module)
                 from mlx_audio.utils import load_model as load_audio  # type: ignore[import-untyped]
 
-                model = await asyncio.to_thread(load_audio, model_id)
+                try:
+                    model = await asyncio.to_thread(load_audio, model_id)
+                except ValueError as ve:
+                    # Quantized audio models (e.g. Kokoro-82M-4bit) may have
+                    # incompatible weight layouts that mlx-audio cannot handle.
+                    if "shape" in str(ve).lower() or "dimension" in str(ve).lower():
+                        raise RuntimeError(
+                            f"Audio model '{model_id}' has incompatible quantized weight layout. "
+                            f"Try the unquantized version instead (e.g. prince-canuma/Kokoro-82M). "
+                            f"Original error: {ve}"
+                        ) from ve
+                    raise
                 tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm
@@ -378,12 +416,10 @@ class ModelPoolManager:
                 async with get_session() as session:
                     from sqlmodel import select
 
-                    result = await session.execute(
-                        select(ModelCapabilities).where(
-                            ModelCapabilities.model_id == model_id
-                        )
+                    caps_result = await session.execute(
+                        select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
                     )
-                    caps = result.scalar_one_or_none()
+                    caps = caps_result.scalar_one_or_none()
                     if caps:
                         loaded.capabilities = caps
                         logger.info(

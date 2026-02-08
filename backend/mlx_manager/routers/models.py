@@ -525,6 +525,16 @@ async def detect_model_options(
     return get_model_detection_info(model_id)
 
 
+@router.get("/probe/supported-types")
+async def get_probeable_types(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Return model types that have a registered probe strategy."""
+    from mlx_manager.services.probe import registered_model_types
+
+    return [mt.value for mt in registered_model_types()]
+
+
 @router.get("/capabilities", response_model=list[ModelCapabilitiesResponse])
 async def get_all_capabilities(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -564,7 +574,7 @@ async def probe_model_capabilities(
 
     Requires JWT token as query parameter (same pattern as download progress).
     """
-    from mlx_manager.services.model_probe import probe_model
+    from mlx_manager.services.probe import probe_model
 
     async def generate():
         async for step in probe_model(model_id):
