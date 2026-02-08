@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Probe output
+probe_output/
 .Python
 build/
 develop-eggs/

@@ -30,7 +30,7 @@ from mlx_manager.mlx_server.services.batching.priority_queue import (
 from mlx_manager.mlx_server.services.batching.request import BatchRequest
 from mlx_manager.mlx_server.services.batching.types import RequestStatus
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
     from mlx_manager.mlx_server.services.batching.batch_inference import (
         BatchInferenceEngine,

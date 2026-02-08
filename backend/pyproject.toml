@@ -38,6 +38,7 @@ dependencies = [
     "authlib>=1.3.0",
     "pwdlib[argon2]>=0.3.0",
     "mlx-vlm>=0.3.9",
+    "torchvision>=0.25.0; sys_platform == 'darwin'",
     # MLX Server dependencies
     "logfire[fastapi,httpx,sqlalchemy]>=3.0.0",
     "sse-starlette>=2.0.0",
@@ -116,6 +117,8 @@ filterwarnings = [
     "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
     # LogFire not configured warning is expected in tests (no external observability service)
     "ignore::logfire._internal.config.LogfireNotConfiguredWarning",
+    # Asyncio Queue.get() coroutines from GC during multi-test runs (race condition from WebSocket tests)
+    "ignore:coroutine 'Queue.get' was never awaited:RuntimeWarning",
 ]
 
 [tool.mypy]
@@ -141,12 +144,12 @@ omit = [
     # plist file creation in ~/Library/LaunchAgents and launchctl commands. Testing
     # would require mocking filesystem and subprocess calls with little added value.
     "mlx_manager/services/manager_launchd.py",
-    # MLX Server module: Will have separate test coverage tracking
-    "mlx_manager/mlx_server/*",
+    # Benchmark CLI: Standalone benchmark runner, not part of the server runtime.
+    "mlx_manager/mlx_server/benchmark/*",
 ]
 
 [tool.coverage.report]
-fail_under = 95
+fail_under = 95 # target is 95%
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
