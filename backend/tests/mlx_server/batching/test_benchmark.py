@@ -304,6 +304,121 @@ class TestBenchmarkFunctions:
         assert batched_tps > 0
 
 
+class TestPrintComparisonResults:
+    """Tests for print_comparison_results output formatting."""
+
+    def test_print_meets_target(self, capsys) -> None:
+        """Print results when speedup meets target (>= 2x)."""
+        from mlx_manager.mlx_server.services.batching.benchmark import (
+            print_comparison_results,
+        )
+
+        results = {
+            "single": BenchmarkResult(
+                mode="single",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=5.0,
+                tokens_per_second=10.0,
+                avg_latency_ms=1000.0,
+                p50_latency_ms=950.0,
+                p99_latency_ms=1100.0,
+            ),
+            "batched": BenchmarkResult(
+                mode="batched",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=1.5,
+                tokens_per_second=33.3,
+                avg_latency_ms=300.0,
+                p50_latency_ms=280.0,
+                p99_latency_ms=350.0,
+            ),
+            "speedup": 3.33,
+            "prompts_count": 5,
+        }
+
+        print_comparison_results(results)
+        captured = capsys.readouterr()
+
+        assert "CONTINUOUS BATCHING BENCHMARK RESULTS" in captured.out
+        assert "3.33x" in captured.out
+        assert "MEETS TARGET" in captured.out
+        assert "5" in captured.out  # prompts_count
+
+    def test_print_partial_target(self, capsys) -> None:
+        """Print results when speedup is partial (1.5-2x)."""
+        from mlx_manager.mlx_server.services.batching.benchmark import (
+            print_comparison_results,
+        )
+
+        results = {
+            "single": BenchmarkResult(
+                mode="single",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=5.0,
+                tokens_per_second=10.0,
+                avg_latency_ms=1000.0,
+                p50_latency_ms=950.0,
+                p99_latency_ms=1100.0,
+            ),
+            "batched": BenchmarkResult(
+                mode="batched",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=3.0,
+                tokens_per_second=16.7,
+                avg_latency_ms=600.0,
+                p50_latency_ms=580.0,
+                p99_latency_ms=700.0,
+            ),
+            "speedup": 1.67,
+            "prompts_count": 5,
+        }
+
+        print_comparison_results(results)
+        captured = capsys.readouterr()
+
+        assert "PARTIAL" in captured.out
+
+    def test_print_below_target(self, capsys) -> None:
+        """Print results when speedup is below target (< 1.5x)."""
+        from mlx_manager.mlx_server.services.batching.benchmark import (
+            print_comparison_results,
+        )
+
+        results = {
+            "single": BenchmarkResult(
+                mode="single",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=5.0,
+                tokens_per_second=10.0,
+                avg_latency_ms=1000.0,
+                p50_latency_ms=950.0,
+                p99_latency_ms=1100.0,
+            ),
+            "batched": BenchmarkResult(
+                mode="batched",
+                num_requests=5,
+                total_tokens=50,
+                total_time_seconds=4.0,
+                tokens_per_second=12.5,
+                avg_latency_ms=800.0,
+                p50_latency_ms=780.0,
+                p99_latency_ms=900.0,
+            ),
+            "speedup": 1.25,
+            "prompts_count": 5,
+        }
+
+        print_comparison_results(results)
+        captured = capsys.readouterr()
+
+        assert "BELOW TARGET" in captured.out
+
+
 class TestBatchingModuleComplete:
     """Integration test verifying all batching exports are available."""
 

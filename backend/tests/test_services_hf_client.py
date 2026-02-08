@@ -786,3 +786,408 @@ class TestListLocalModelsNoOrganization:
             result = client.list_local_models()
 
         assert len(result) == 1
+
+
+# ============================================================================
+# Tests for cleanup_partial_download and _manual_cleanup (lines 89-96)
+# ============================================================================
+
+
+class TestCleanupPartialDownload:
+    """Tests for cleanup_partial_download and _manual_cleanup functions."""
+
+    def test_manual_cleanup_removes_cache_directory(self, tmp_path):
+        """Test _manual_cleanup removes HF cache directory (lines 89-96)."""
+        from pathlib import Path
+
+        from mlx_manager.services.hf_client import _manual_cleanup
+
+        # Create a mock cache structure under tmp_path
+        # The function expects: Path.home() / ".cache" / "huggingface" / "hub" / "models--..."
+        cache_base = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir = cache_base / "models--mlx-community--test-model"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "file.txt").write_text("test")
+
+        with patch.object(Path, "home", return_value=tmp_path):
+            result = _manual_cleanup("mlx-community/test-model")
+
+        assert result is True
+        assert not cache_dir.exists()
+
+    def test_manual_cleanup_returns_false_if_not_exists(self, tmp_path):
+        """Test _manual_cleanup returns False if cache dir doesn't exist."""
+        from pathlib import Path
+
+        from mlx_manager.services.hf_client import _manual_cleanup
+
+        with patch.object(Path, "home", return_value=tmp_path):
+            result = _manual_cleanup("mlx-community/nonexistent")
+
+        assert result is False
+
+    def test_cleanup_partial_download_falls_back_to_manual(self, tmp_path):
+        """Test cleanup_partial_download falls back to _manual_cleanup on API failure."""
+        from pathlib import Path
+
+        from mlx_manager.services.hf_client import cleanup_partial_download
+
+        # Create cache structure
+        cache_base = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir = cache_base / "models--mlx-community--test-model"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "file.txt").write_text("test")
+
+        # Mock scan_cache_dir to raise exception (import happens inside function)
+        def mock_import(name, *args, **kwargs):
+            if name == "huggingface_hub" or "scan_cache_dir" in str(name):
+                raise Exception("API error")
+            return __import__(name, *args, **kwargs)
+
+        with (
+            patch("builtins.__import__", side_effect=mock_import),
+            patch.object(Path, "home", return_value=tmp_path),
+        ):
+            result = cleanup_partial_download("mlx-community/test-model")
+
+        # Should fall back to manual cleanup and succeed
+        assert result is True
+        assert not cache_dir.exists()
+
+    def test_cleanup_partial_download_success_via_api(self, tmp_path):
+        """Test cleanup_partial_download succeeds via cache API (lines 71-79)."""
+
+        from mlx_manager.services.hf_client import cleanup_partial_download
+
+        # Mock the huggingface_hub cache API
+        mock_repo = MagicMock()
+        mock_repo.repo_id = "mlx-community/test-model"
+        mock_revision = MagicMock()
+        mock_revision.commit_hash = "abc123"
+        mock_repo.revisions = [mock_revision]
+
+        mock_cache = MagicMock()
+        mock_cache.repos = [mock_repo]
+
+        mock_delete_strategy = MagicMock()
+        mock_delete_strategy.expected_freed_size_str = "1.5GB"
+        mock_delete_strategy.execute = MagicMock()
+        mock_cache.delete_revisions.return_value = mock_delete_strategy
+
+        # Patch the import inside the function
+        with patch("huggingface_hub.scan_cache_dir", return_value=mock_cache):
+            result = cleanup_partial_download("mlx-community/test-model")
+
+        # Should succeed via cache API (lines 71-79)
+        assert result is True
+        mock_delete_strategy.execute.assert_called_once()
+
+    def test_cleanup_partial_download_model_not_in_cache(self, tmp_path):
+        """Test cleanup_partial_download when model not found in cache (line 81)."""
+        from pathlib import Path
+
+        from mlx_manager.services.hf_client import cleanup_partial_download
+
+        # Mock cache with no matching repo
+        mock_cache = MagicMock()
+        mock_cache.repos = []  # No repos
+
+        # Create manual cleanup directory
+        cache_base = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir = cache_base / "models--mlx-community--test-model"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / "file.txt").write_text("test")
+
+        with (
+            patch("huggingface_hub.scan_cache_dir", return_value=mock_cache),
+            patch.object(Path, "home", return_value=tmp_path),
+        ):
+            result = cleanup_partial_download("mlx-community/test-model")
+
+        # Should fall back to manual cleanup (line 81)
+        assert result is True
+        assert not cache_dir.exists()
+
+
+# ============================================================================
+# Tests for download cancellation (lines 318-326, 352-364, 401-402)
+# ============================================================================
+
+
+class TestDownloadCancellation:
+    """Tests for download cancellation during various stages."""
+
+    @pytest.mark.asyncio
+    async def test_download_cancelled_before_start(self, hf_client_instance, tmp_path):
+        """Test download cancelled before starting actual download (lines 318-326)."""
+
+        from mlx_manager.services.hf_client import register_cancel_event
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            return str(tmp_path / "downloaded")
+
+        # Register cancel event and set it immediately
+        cancel_event = register_cancel_event("test-download")
+        cancel_event.set()
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
+            events = []
+            async for event in hf_client_instance.download_model(
+                "mlx-community/test", cancel_event=cancel_event
+            ):
+                events.append(event)
+
+        # Should yield cancelled status (line 319-326)
+        assert events[-1]["status"] == "cancelled"
+        assert events[-1]["progress"] == 0
+
+    @pytest.mark.asyncio
+    async def test_download_cancelled_during_download(self, hf_client_instance, tmp_path):
+        """Test download cancelled during download (lines 352-364)."""
+        import asyncio
+        import threading
+
+        cancel_event = threading.Event()
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            # Simulate a slow download
+            import time
+
+            time.sleep(2)
+            return str(tmp_path / "downloaded")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
+            events = []
+
+            # Start download
+            async def collect_events():
+                async for event in hf_client_instance.download_model(
+                    "mlx-community/test", cancel_event=cancel_event
+                ):
+                    events.append(event)
+
+            # Run download and cancel after 0.5 seconds
+            task = asyncio.create_task(collect_events())
+            await asyncio.sleep(0.5)
+            cancel_event.set()
+            await task
+
+        # Should detect cancellation during polling (lines 352-364)
+        assert any(e["status"] == "cancelled" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_download_cancelled_error_in_except_block(self, hf_client_instance, tmp_path):
+        """Test DownloadCancelledError caught in except block (lines 401-402)."""
+        import threading
+
+        from mlx_manager.services.hf_client import DownloadCancelledError
+
+        cancel_event = threading.Event()
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            # Raise DownloadCancelledError immediately
+            raise DownloadCancelledError("Download cancelled by user")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
+            events = []
+            async for event in hf_client_instance.download_model(
+                "mlx-community/test", cancel_event=cancel_event
+            ):
+                events.append(event)
+
+        # Should catch DownloadCancelledError and yield cancelled status (lines 401-402)
+        assert events[-1]["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_download_await_cancelled_task_raises_exception(
+        self, hf_client_instance, tmp_path
+    ):
+        """Test awaiting cancelled task handles exceptions (lines 355-356)."""
+        import asyncio
+        import threading
+
+        cancel_event = threading.Event()
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            # Simulate download that gets cancelled and raises when awaited
+            import time
+
+            time.sleep(0.5)
+            raise asyncio.CancelledError("Task was cancelled")
+
+        with patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download):
+            events = []
+
+            async def collect_events():
+                async for event in hf_client_instance.download_model(
+                    "mlx-community/test", cancel_event=cancel_event
+                ):
+                    events.append(event)
+
+            # Run download and cancel immediately after starting
+            task = asyncio.create_task(collect_events())
+            await asyncio.sleep(0.2)
+            cancel_event.set()  # Trigger cancellation
+            await task
+
+        # Should handle the exception when awaiting cancelled task (lines 355-356)
+        assert any(e["status"] == "cancelled" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_download_progress_logging_every_10_polls(self, hf_client_instance, tmp_path):
+        """Test debug logging occurs every 10 polls (line 371)."""
+
+        call_count = [0]  # Track number of polls
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                mock_info = MagicMock()
+                mock_info.file_size = 100_000_000  # 100MB
+                return [mock_info]
+            # Simulate slow download
+            import time
+
+            time.sleep(12)  # Long enough for 12 polls (1 per second)
+            return str(tmp_path / "downloaded")
+
+        # Create download directory with growing size
+        cache_name = "models--mlx-community--test".replace("/", "--")
+        download_dir = hf_client_instance.cache_dir / cache_name
+        download_dir.mkdir(parents=True)
+
+        def mock_get_size(path):
+            call_count[0] += 1
+            # Simulate growing download
+            return call_count[0] * 1_000_000
+
+        with (
+            patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download),
+            patch.object(hf_client_instance, "_get_directory_size", side_effect=mock_get_size),
+            patch("mlx_manager.services.hf_client.logger") as mock_logger,
+        ):
+            events = []
+            async for event in hf_client_instance.download_model("mlx-community/test"):
+                events.append(event)
+
+        # Should have logged debug messages (line 371) - at poll 10
+        # Check that debug was called (poll_count % 10 == 0)
+        debug_calls = [call for call in mock_logger.debug.call_args_list]
+        # Should have at least one debug call for progress
+        assert len(debug_calls) > 0
+
+
+# ============================================================================
+# Tests for dry_run timeout (lines 291-294)
+# ============================================================================
+
+
+class TestDryRunTimeout:
+    """Tests for dry_run timeout handling."""
+
+    @pytest.mark.asyncio
+    async def test_download_dry_run_timeout(self, hf_client_instance, tmp_path):
+        """Test dry_run timeout falls back to zero size (lines 291-294)."""
+
+        def mock_snapshot_download(repo_id, **kwargs):
+            if kwargs.get("dry_run"):
+                # Won't be called due to timeout mock
+                mock_info = MagicMock()
+                mock_info.file_size = 1_000_000_000
+                return [mock_info]
+            return str(tmp_path / "downloaded")
+
+        # Patch asyncio.wait_for in the hf_client module context
+        async def mock_wait_for(coro, timeout=None):
+            # If this is the dry_run call (with 30s timeout), raise TimeoutError
+            if timeout == 30.0:
+                raise TimeoutError("Dry run timed out")
+            # For other calls, await normally
+            return await coro
+
+        with (
+            patch("mlx_manager.services.hf_client.snapshot_download", mock_snapshot_download),
+            patch("mlx_manager.services.hf_client.asyncio.wait_for", side_effect=mock_wait_for),
+        ):
+            events = []
+            async for event in hf_client_instance.download_model("mlx-community/test"):
+                events.append(event)
+
+        # Should proceed with zero size after timeout (lines 291-294)
+        # First event has total_bytes=0, second event should also have 0 after timeout
+        assert events[0]["total_bytes"] == 0
+        assert events[1]["total_bytes"] == 0  # Still zero after timeout
+        # Check that download still completes
+        assert events[-1]["status"] == "completed"
+
+
+# ============================================================================
+# Tests for cancellation infrastructure functions
+# ============================================================================
+
+
+class TestCancellationInfrastructure:
+    """Tests for register_cancel_event, request_cancel, cleanup_cancel_event."""
+
+    def test_register_cancel_event(self):
+        """Test registering a cancel event."""
+        from mlx_manager.services.hf_client import cleanup_cancel_event, register_cancel_event
+
+        event = register_cancel_event("test-id")
+        assert event is not None
+        assert not event.is_set()
+
+        # Cleanup
+        cleanup_cancel_event("test-id")
+
+    def test_request_cancel_returns_true_if_found(self):
+        """Test request_cancel returns True if event exists."""
+        from mlx_manager.services.hf_client import (
+            cleanup_cancel_event,
+            register_cancel_event,
+            request_cancel,
+        )
+
+        register_cancel_event("test-id")
+        result = request_cancel("test-id")
+        assert result is True
+
+        # Cleanup
+        cleanup_cancel_event("test-id")
+
+    def test_request_cancel_returns_false_if_not_found(self):
+        """Test request_cancel returns False if event doesn't exist."""
+        from mlx_manager.services.hf_client import request_cancel
+
+        result = request_cancel("nonexistent-id")
+        assert result is False
+
+    def test_cleanup_cancel_event_removes_event(self):
+        """Test cleanup_cancel_event removes the event."""
+        from mlx_manager.services.hf_client import (
+            cleanup_cancel_event,
+            register_cancel_event,
+            request_cancel,
+        )
+
+        register_cancel_event("test-id")
+        cleanup_cancel_event("test-id")
+
+        # Should not find the event after cleanup
+        result = request_cancel("test-id")
+        assert result is False

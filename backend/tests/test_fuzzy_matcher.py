@@ -160,8 +160,14 @@ class TestContainsOptionTokens:
         from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
 
         matcher = RapidfuzzMatcher()
-        # m2 variant matches m2.1 pattern
+        # m2 variant matches m2.1 pattern (tests line 110-111 direct match)
         assert matcher._contains_option_tokens("mlx-community/minimax-m2.1-3b", "minimax_m2")
+        # Test various m2 patterns
+        assert matcher._contains_option_tokens("mlx-community/minimax-m2-3b", "minimax_m2")
+        assert matcher._contains_option_tokens("mlx-community/minimax-m2.5-3b", "minimax_m2")
+        assert matcher._contains_option_tokens("mlx-community/minimax-m23-3b", "minimax_m2")
+        # Test that models without m2 pattern don't match
+        assert not matcher._contains_option_tokens("mlx-community/minimax-text-3b", "minimax_m2")
 
     def test_base_option_doesnt_match_variant_models(self):
         """Base options don't match models with known variants."""
@@ -212,6 +218,125 @@ class TestFindBestMatch:
         matcher = RapidfuzzMatcher()
         result = matcher.find_best_match("mlx-community/Qwen3-8B", "unknown_parser")
         assert result is None
+
+    def test_find_best_match_with_mocked_options_tool_call_parser(self):
+        """Test find_best_match with mocked options for tool_call_parser (covers lines 166-205)."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        # Mock get_parser_options to return test options
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            mock_get_opts.return_value = {
+                "tool_call_parsers": ["qwen3", "qwen3_coder", "glm4_moe"],
+                "reasoning_parsers": [],
+                "message_converters": [],
+            }
+
+            # Test matching qwen3_coder (more specific than qwen3)
+            result = matcher.find_best_match(
+                "mlx-community/Qwen3-Coder-7B-4bit", "tool_call_parser"
+            )
+            assert result == "qwen3_coder"
+
+            # Test matching base qwen3 (no variant)
+            result = matcher.find_best_match("mlx-community/Qwen3-8B-4bit", "tool_call_parser")
+            assert result == "qwen3"
+
+            # Test matching glm4_moe
+            result = matcher.find_best_match("mlx-community/GLM-4-MoE-8B", "tool_call_parser")
+            assert result == "glm4_moe"
+
+    def test_find_best_match_with_mocked_options_message_converter(self):
+        """Test find_best_match with message_converter type (different threshold path)."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            mock_get_opts.return_value = {
+                "tool_call_parsers": [],
+                "reasoning_parsers": [],
+                "message_converters": ["qwen3", "qwen3_coder"],
+            }
+
+            # Test message_converter doesn't match base option for variant models
+            result = matcher.find_best_match("mlx-community/Qwen3-Coder-7B", "message_converter")
+            assert result == "qwen3_coder"
+
+            # Test base option matches when no variant
+            result = matcher.find_best_match("mlx-community/Qwen3-8B", "message_converter")
+            assert result == "qwen3"
+
+    def test_find_best_match_single_family_fallback(self):
+        """Test single-family fallback (lines 189-196) for non-message_converter."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            # Only one option in glm family
+            mock_get_opts.return_value = {
+                "tool_call_parsers": ["glm4_moe"],
+                "reasoning_parsers": [],
+                "message_converters": [],
+            }
+
+            # Should match glm4_moe even though model doesn't have "moe" in name
+            # because it's the only option in the glm family
+            result = matcher.find_best_match("mlx-community/GLM-4-9B", "tool_call_parser")
+            assert result == "glm4_moe"
+
+    def test_find_best_match_no_single_family_fallback_for_message_converter(self):
+        """Test that single-family fallback is skipped for message_converter (line 189)."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            mock_get_opts.return_value = {
+                "tool_call_parsers": [],
+                "reasoning_parsers": [],
+                "message_converters": ["qwen3_coder"],
+            }
+
+            # Should NOT match qwen3_coder for base Qwen3 (no fallback for message_converter)
+            result = matcher.find_best_match("mlx-community/Qwen3-8B", "message_converter")
+            assert result is None
+
+    def test_find_best_match_prefers_longer_matches(self):
+        """Test that longer/more specific options are preferred (lines 201-203)."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            mock_get_opts.return_value = {
+                "tool_call_parsers": ["qwen3", "qwen3_coder"],
+                "reasoning_parsers": [],
+                "message_converters": [],
+            }
+
+            # For a coder model, qwen3_coder (longer) should be preferred over qwen3
+            result = matcher.find_best_match("mlx-community/Qwen3-Coder-7B", "tool_call_parser")
+            assert result == "qwen3_coder"
+
+    def test_find_best_match_no_candidates_returns_none(self):
+        """Test that no candidates returns None (line 198-199)."""
+        from mlx_manager.utils.fuzzy_matcher import RapidfuzzMatcher
+
+        matcher = RapidfuzzMatcher()
+
+        with patch("mlx_manager.utils.fuzzy_matcher.get_parser_options") as mock_get_opts:
+            mock_get_opts.return_value = {
+                "tool_call_parsers": ["qwen3"],
+                "reasoning_parsers": [],
+                "message_converters": [],
+            }
+
+            # Llama model won't match qwen3 option
+            result = matcher.find_best_match("mlx-community/Llama-3-8B", "tool_call_parser")
+            assert result is None
 
 
 class TestRapidfuzzMatcherPartialScore:

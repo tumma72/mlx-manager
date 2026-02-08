@@ -646,9 +646,7 @@ class TestAuditLogWebSocketProxy:
         mock_ws.close = AsyncMock()
 
         # Mock the session to return a pending user
-        mock_get_session = self._mock_get_session_with_user(
-            "pending@example.com", status="pending"
-        )
+        mock_get_session = self._mock_get_session_with_user("pending@example.com", status="pending")
 
         with patch("mlx_manager.routers.system.get_session", mock_get_session):
             await proxy_audit_log_stream(mock_ws)

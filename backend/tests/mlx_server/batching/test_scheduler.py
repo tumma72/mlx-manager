@@ -316,6 +316,117 @@ class TestShutdown:
         assert len(scheduler.running) == 0
 
 
+class TestSubmitGenerator:
+    """Tests for submit() async generator."""
+
+    @pytest.mark.asyncio
+    async def test_submit_yields_tokens_from_output_queue(
+        self, scheduler: ContinuousBatchingScheduler
+    ) -> None:
+        """submit() yields tokens from the request's output queue."""
+        request = make_request("test-sub", max_tokens=3)
+
+        async def feed_tokens():
+            """Push tokens then None to simulate generation."""
+            await asyncio.sleep(0.01)
+            await request.output_queue.put({"token_id": 1, "text": "a"})
+            await request.output_queue.put({"token_id": 2, "text": "b"})
+            await request.output_queue.put(None)  # completion signal
+
+        # Run feeder in background
+        feeder = asyncio.create_task(feed_tokens())
+
+        tokens = []
+        async for token in scheduler.submit(request):
+            tokens.append(token)
+
+        await feeder
+        assert len(tokens) == 2
+        assert tokens[0]["text"] == "a"
+        assert tokens[1]["text"] == "b"
+
+    @pytest.mark.asyncio
+    async def test_submit_cancellation_marks_request(
+        self, scheduler: ContinuousBatchingScheduler
+    ) -> None:
+        """Cancelling submit() marks the request as cancelled."""
+        request = make_request("test-cancel", max_tokens=100)
+
+        async def start_submit():
+            async for _ in scheduler.submit(request):
+                pass
+
+        task = asyncio.create_task(start_submit())
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert request.status == RequestStatus.CANCELLED
+
+
+class TestReleaseBlocksLegacy:
+    """Tests for _release_blocks with legacy block format."""
+
+    def test_release_blocks_legacy_format(
+        self, scheduler: ContinuousBatchingScheduler, block_manager: PagedBlockManager
+    ) -> None:
+        """_release_blocks handles legacy list-of-block-IDs format."""
+        # Allocate some blocks manually
+        block_ids = [block_manager.allocate() for _ in range(3)]
+        initial_free = block_manager.get_free_count()
+
+        request = make_request("test-legacy")
+        request.block_table = block_ids  # Legacy format: list of ints
+
+        scheduler._release_blocks(request)
+
+        assert block_manager.get_free_count() == initial_free + 3
+        assert request.block_table is None
+
+
+class TestBatchStepWithEngine:
+    """Tests for _batch_step with and without inference engine."""
+
+    @pytest.mark.asyncio
+    async def test_batch_step_placeholder_without_engine(
+        self, scheduler: ContinuousBatchingScheduler
+    ) -> None:
+        """Without inference engine, batch_step uses placeholder behavior."""
+        request = make_request("test-placeholder", max_tokens=1)
+        request.mark_running()
+        scheduler.running.append(request)
+
+        await scheduler._batch_step()
+
+        # Should have put a token dict into the output queue
+        token_data = await asyncio.wait_for(request.output_queue.get(), timeout=1.0)
+        assert token_data is not None
+        assert token_data["token_id"] == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_step_with_engine_error_marks_completed(
+        self, scheduler: ContinuousBatchingScheduler
+    ) -> None:
+        """Batch step engine error marks all running requests as COMPLETED."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_engine = MagicMock()
+        mock_engine.generate_batch_step = AsyncMock(side_effect=RuntimeError("GPU error"))
+        scheduler._inference_engine = mock_engine
+
+        request = make_request("test-engine-err", max_tokens=10)
+        request.mark_running()
+        scheduler.running.append(request)
+
+        await scheduler._batch_step()
+
+        assert request.status == RequestStatus.COMPLETED
+
+
 class TestAdaptiveTiming:
     """Tests for adaptive wait timing."""
 
