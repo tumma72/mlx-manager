@@ -377,16 +377,10 @@ class ModelPoolManager:
 
                 try:
                     model = await asyncio.to_thread(load_audio, model_id)
-                except ValueError as ve:
-                    # Quantized audio models (e.g. Kokoro-82M-4bit) may have
-                    # incompatible weight layouts that mlx-audio cannot handle.
-                    if "shape" in str(ve).lower() or "dimension" in str(ve).lower():
-                        raise RuntimeError(
-                            f"Audio model '{model_id}' has incompatible quantized weight layout. "
-                            f"Try the unquantized version instead (e.g. prince-canuma/Kokoro-82M). "
-                            f"Original error: {ve}"
-                        ) from ve
-                    raise
+                except (ValueError, RuntimeError) as e:
+                    raise RuntimeError(
+                        f"Failed to load audio model '{model_id}': {e}"
+                    ) from e
                 tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm

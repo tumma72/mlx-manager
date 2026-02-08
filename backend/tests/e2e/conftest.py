@@ -162,11 +162,10 @@ def embeddings_model():
 
 # Reference models for audio TTS testing
 # Order matters: first available model is selected.
-# prince-canuma/Kokoro-82M is the original non-quantized model (compatible with mlx-audio 0.3.x)
-# mlx-community/Kokoro-82M-4bit has weight layout issues with current mlx-audio
+# Kokoro-82M-bf16 is the recommended reference model (full precision, no quantization bugs)
+# Note: Kokoro-82M-4bit has transposed weight shapes incompatible with mlx-audio 0.3.x
 AUDIO_TTS_MODELS = [
-    "prince-canuma/Kokoro-82M",
-    "mlx-community/Kokoro-82M-4bit",
+    "mlx-community/Kokoro-82M-bf16",
 ]
 
 

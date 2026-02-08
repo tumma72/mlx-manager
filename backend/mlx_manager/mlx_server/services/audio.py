@@ -109,11 +109,11 @@ async def generate_speech(
             # Convert to numpy
             audio_np = np.array(audio.tolist())
 
-            # Write to bytes buffer using mlx-audio's audio_write
-            from mlx_audio.tts.generate import audio_write
+            # Write to bytes buffer using soundfile (used internally by mlx-audio)
+            import soundfile as sf
 
             buffer = io.BytesIO()
-            audio_write(buffer, audio_np, sample_rate, format=response_format)
+            sf.write(buffer, audio_np, sample_rate, format=response_format.upper())
             audio_bytes = buffer.getvalue()
 
             return (audio_bytes, sample_rate)

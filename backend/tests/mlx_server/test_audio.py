@@ -25,13 +25,13 @@ class TestAudioSchemas:
     def test_speech_request_custom_fields(self):
         """SpeechRequest should accept custom field values."""
         req = SpeechRequest(
-            model="mlx-community/Kokoro-82M-4bit",
+            model="mlx-community/Kokoro-82M-bf16",
             input="Testing TTS generation",
             voice="af_bella",
             speed=1.5,
             response_format="flac",
         )
-        assert req.model == "mlx-community/Kokoro-82M-4bit"
+        assert req.model == "mlx-community/Kokoro-82M-bf16"
         assert req.input == "Testing TTS generation"
         assert req.voice == "af_bella"
         assert req.speed == 1.5
@@ -82,7 +82,7 @@ class TestSpeechEndpoint:
         from mlx_manager.mlx_server.api.v1.speech import create_speech
 
         request = SpeechRequest(
-            model="mlx-community/Kokoro-82M-4bit",
+            model="mlx-community/Kokoro-82M-bf16",
             input="Hello world",
         )
 
@@ -99,7 +99,7 @@ class TestSpeechEndpoint:
             assert response.body == fake_audio
             assert response.media_type == "audio/wav"
             mock_gen.assert_called_once_with(
-                model_id="mlx-community/Kokoro-82M-4bit",
+                model_id="mlx-community/Kokoro-82M-bf16",
                 text="Hello world",
                 voice="af_heart",
                 speed=1.0,
@@ -428,13 +428,13 @@ class TestGenerateSpeechService:
             ),
             patch("mlx.core.concatenate") as mock_concat,
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
-            # audio_write writes to the buffer
-            def write_to_buffer(buf, audio_np, sr, format):
+            # sf.write writes to the buffer
+            def write_to_buffer(buf, data, sr, **kwargs):
                 buf.write(b"fake-audio-bytes")
 
-            mock_audio_write.side_effect = write_to_buffer
+            mock_sf_write.side_effect = write_to_buffer
 
             audio_bytes, sample_rate = await generate_speech(
                 model_id="test-tts-model",
@@ -494,13 +494,13 @@ class TestGenerateSpeechService:
             ),
             patch("mlx.core.concatenate", return_value=concatenated_audio) as mock_concat,
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
 
-            def write_to_buffer(buf, audio_np, sr, format):
+            def write_to_buffer(buf, data, sr, **kwargs):
                 buf.write(b"concatenated-audio")
 
-            mock_audio_write.side_effect = write_to_buffer
+            mock_sf_write.side_effect = write_to_buffer
 
             audio_bytes, sample_rate = await generate_speech(
                 model_id="test-tts",
@@ -582,13 +582,13 @@ class TestGenerateSpeechService:
                 side_effect=run_fn_directly,
             ),
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
 
-            def write_to_buffer(buf, audio_np, sr, format):
+            def write_to_buffer(buf, data, sr, **kwargs):
                 buf.write(b"audio-data")
 
-            mock_audio_write.side_effect = write_to_buffer
+            mock_sf_write.side_effect = write_to_buffer
 
             _, sample_rate = await generate_speech(
                 model_id="test-tts",
@@ -630,13 +630,13 @@ class TestGenerateSpeechService:
                 side_effect=run_fn_directly,
             ),
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
 
-            def write_to_buffer(buf, audio_np, sr, format):
+            def write_to_buffer(buf, data, sr, **kwargs):
                 buf.write(b"audio-data")
 
-            mock_audio_write.side_effect = write_to_buffer
+            mock_sf_write.side_effect = write_to_buffer
 
             _, sample_rate = await generate_speech(
                 model_id="test-tts",
@@ -678,9 +678,9 @@ class TestGenerateSpeechService:
                 side_effect=run_fn_directly,
             ),
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
-            mock_audio_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
+            mock_sf_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
 
             await generate_speech(
                 model_id="test-tts",
@@ -728,9 +728,9 @@ class TestGenerateSpeechService:
                 side_effect=run_fn_directly,
             ),
             patch("mlx.core.eval"),
-            patch("mlx_audio.tts.generate.audio_write") as mock_audio_write,
+            patch("soundfile.write") as mock_sf_write,
         ):
-            mock_audio_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
+            mock_sf_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
 
             _, sample_rate = await generate_speech(
                 model_id="test-tts",

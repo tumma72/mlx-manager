@@ -225,7 +225,7 @@ When testing inference features, use these recommended models from mlx-community
 | `mlx-community/GLM-4.7-Flash-4bit` | Text (LM) | Thinking, Tools | Very powerful, reliable tool calling |
 | `mlx-community/gemma-3-27b-it-4bit-DWQ` | Vision | Images, Videos | Multimodal input support |
 | `mlx-community/all-MiniLM-L6-v2-4bit` | Embeddings | — | Requires mlx-embeddings (not yet in Profile UI) |
-| `mlx-community/Kokoro-82M-4bit` | Audio | TTS, STT | Text-to-speech/Speech-to-text (not yet supported) |
+| `mlx-community/Kokoro-82M-bf16` | Audio | TTS | Full-precision TTS model via mlx-audio |
 
 **Current limitations:**
 - Profile model_type only supports "lm" (text) and "multimodal" (vision), not "embeddings" or "audio"

@@ -1,6 +1,6 @@
 """E2E tests for audio TTS and STT endpoints.
 
-These tests require the Kokoro-82M-4bit model to be pre-downloaded.
+These tests require the Kokoro-82M-bf16 model to be pre-downloaded.
 Run with: pytest -m e2e_audio
 
 The tests validate:
