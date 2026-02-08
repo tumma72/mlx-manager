@@ -14,3 +14,5 @@ export { default as MultimodalBadge } from "./badges/MultimodalBadge.svelte";
 export { default as QuantizationBadge } from "./badges/QuantizationBadge.svelte";
 export { default as ModelBadges } from "./ModelBadges.svelte";
 export { default as ModelSpecs } from "./ModelSpecs.svelte";
+export { default as ThinkingBadge } from "./badges/ThinkingBadge.svelte";
+export { default as ProbeProgress } from "./ProbeProgress.svelte";

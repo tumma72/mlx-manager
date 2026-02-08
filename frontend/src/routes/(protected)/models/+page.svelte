@@ -2,8 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { models } from '$api';
-	import type { ModelSearchResult, LocalModel, ModelCharacteristics } from '$api';
-	import { systemStore, downloadsStore } from '$stores';
+	import type { ModelSearchResult, LocalModel, ModelCharacteristics, ModelCapabilities } from '$api';
+	import { systemStore, downloadsStore, probeStore, authStore } from '$stores';
 	import {
 		ModelCard,
 		DownloadProgressTile,
@@ -12,11 +12,13 @@
 		FilterChips,
 		ModelBadges,
 		ModelSpecs,
+		ProbeProgress,
 		type FilterState,
 		createEmptyFilters
 	} from '$components/models';
 	import { Button, Input, Card, Badge, ConfirmDialog } from '$components/ui';
-	import { Search, HardDrive, Trash2, Filter } from 'lucide-svelte';
+	import { Search, HardDrive, Trash2, Filter, FlaskConical } from 'lucide-svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	let searchQuery = $state('');
 	let searchResults = $state<ModelSearchResult[]>([]);
@@ -37,9 +39,13 @@
 	let modelToDelete = $state<string | null>(null);
 	let deleting = $state(false);
 
-	// Load local models on mount
+	// Capabilities map indexed by model_id
+	let capabilitiesMap = new SvelteMap<string, ModelCapabilities>();
+
+	// Load local models and capabilities on mount
 	$effect(() => {
 		loadLocalModels();
+		loadCapabilities();
 		systemStore.refreshMemory();
 	});
 
@@ -49,6 +55,24 @@
 		} catch (e) {
 			console.error('Failed to load local models:', e);
 		}
+	}
+
+	async function loadCapabilities() {
+		try {
+			const allCaps = await models.getAllCapabilities();
+			capabilitiesMap.clear();
+			for (const cap of allCaps) {
+				capabilitiesMap.set(cap.model_id, cap);
+			}
+		} catch (e) {
+			console.error('Failed to load capabilities:', e);
+		}
+	}
+
+	async function handleProbe(modelId: string) {
+		if (!authStore.token) return;
+		await probeStore.startProbe(modelId, authStore.token);
+		await loadCapabilities();
 	}
 
 	async function handleSearch() {
@@ -297,19 +321,49 @@
 			{#if filteredLocalModels().length > 0}
 				<div class="grid gap-4">
 					{#each filteredLocalModels() as model (model.model_id)}
-						<Card class="p-4">
+						{@const probed = capabilitiesMap.has(model.model_id)}
+						{@const probeState = probeStore.getProbe(model.model_id)}
+						{@const caps = capabilitiesMap.get(model.model_id) ?? null}
+						<Card
+							class="p-4 {!probed
+								? 'border-dashed border-muted-foreground/30'
+								: ''}"
+						>
 							<div class="flex items-start justify-between">
 								<div class="flex-1 min-w-0 space-y-1">
-									<h3 class="font-medium">{model.model_id}</h3>
+									<div class="flex items-center gap-2">
+										<h3 class="font-medium">{model.model_id}</h3>
+										{#if !probed && probeState.status === 'idle'}
+											<span class="text-xs italic text-muted-foreground">not probed</span>
+										{/if}
+									</div>
 									<p class="text-sm text-muted-foreground">
 										{model.size_gb.toFixed(2)} GB
 									</p>
 									{#if model.characteristics}
-										<ModelBadges characteristics={model.characteristics} />
+										<ModelBadges
+											characteristics={model.characteristics}
+											capabilities={caps}
+										/>
 										<ModelSpecs characteristics={model.characteristics} />
+									{/if}
+									{#if probeState.status === 'probing' || probeState.status === 'completed' || probeState.status === 'failed'}
+										<div class="mt-2">
+											<ProbeProgress probe={probeState} />
+										</div>
 									{/if}
 								</div>
 								<div class="flex gap-2 ml-4">
+									{#if !probed && probeState.status === 'idle'}
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={() => handleProbe(model.model_id)}
+										>
+											<FlaskConical class="w-4 h-4 mr-1" />
+											Probe
+										</Button>
+									{/if}
 									<Button
 										variant="outline"
 										size="sm"

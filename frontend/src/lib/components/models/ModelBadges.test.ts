@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/svelte";
-import type { ModelCharacteristics } from "$api";
+import type { ModelCharacteristics, ModelCapabilities } from "$api";
 
 import ModelBadges from "./ModelBadges.svelte";
 
@@ -377,6 +377,97 @@ describe("ModelBadges", () => {
       // Should not show loading skeletons
       expect(container.querySelectorAll(".animate-pulse").length).toBe(0);
       expect(screen.getByText(/llama/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("with capabilities prop", () => {
+    function createMockCapabilities(
+      overrides: Partial<ModelCapabilities> = {},
+    ): ModelCapabilities {
+      return {
+        model_id: "test-model",
+        supports_native_tools: null,
+        supports_thinking: null,
+        practical_max_tokens: null,
+        probed_at: null,
+        probe_version: 1,
+        ...overrides,
+      };
+    }
+
+    it("shows ThinkingBadge when supports_thinking is true", () => {
+      render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics(),
+          capabilities: createMockCapabilities({ supports_thinking: true }),
+        },
+      });
+      expect(screen.getByText("Thinking")).toBeInTheDocument();
+    });
+
+    it("hides ThinkingBadge when supports_thinking is false", () => {
+      render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics(),
+          capabilities: createMockCapabilities({ supports_thinking: false }),
+        },
+      });
+      expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+    });
+
+    it("hides ThinkingBadge when supports_thinking is null", () => {
+      render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics(),
+          capabilities: createMockCapabilities({ supports_thinking: null }),
+        },
+      });
+      expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+    });
+
+    it("shows verified ToolUseBadge when supports_native_tools is true", () => {
+      const { container } = render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics({ is_tool_use: false }),
+          capabilities: createMockCapabilities({ supports_native_tools: true }),
+        },
+      });
+      expect(screen.getByText("Tool Use")).toBeInTheDocument();
+      const badge = container.querySelector("[title='Verified by model probe']");
+      expect(badge).toBeInTheDocument();
+    });
+
+    it("hides ToolUseBadge when probed and supports_native_tools is false", () => {
+      render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics({ is_tool_use: true }),
+          capabilities: createMockCapabilities({ supports_native_tools: false }),
+        },
+      });
+      // Probed result overrides heuristic — tool use hidden
+      expect(screen.queryByText("Tool Use")).not.toBeInTheDocument();
+    });
+
+    it("falls back to heuristic ToolUseBadge when no capabilities", () => {
+      const { container } = render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics({ is_tool_use: true }),
+          capabilities: null,
+        },
+      });
+      expect(screen.getByText("Tool Use")).toBeInTheDocument();
+      const badge = container.querySelector("[title='Detected from model name/tags']");
+      expect(badge).toBeInTheDocument();
+    });
+
+    it("works identically without capabilities prop (backward-compatible)", () => {
+      render(ModelBadges, {
+        props: {
+          characteristics: createMockCharacteristics({ is_tool_use: true }),
+        },
+      });
+      expect(screen.getByText("Tool Use")).toBeInTheDocument();
+      expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
     });
   });
 

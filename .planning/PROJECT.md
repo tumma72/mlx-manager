@@ -53,6 +53,13 @@ Archive: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQU
 
 Tracked for future releases:
 
+### Model Usage Profiles (v1.3)
+- Usage profile testing: design testing prompts per usage profile (coding, creative writing, customer support, etc.)
+- Deterministic evaluation system to score model suitability for each usage profile
+- Suggest recommended usage profiles per model with optimal parameter sets
+- Auto-generate Profile tiles with pre-filled parameters, description, and system prompt
+- One model can have multiple profiles for different usage contexts
+
 ### AI Proxy Agent (v1.3+)
 - LLM-based intelligent routing (orchestrator model routes requests based on natural language rules)
 - Configurable routing criteria per model (e.g., "Thinking Agent" for brainstorming, "Worker Agent" for coding)
