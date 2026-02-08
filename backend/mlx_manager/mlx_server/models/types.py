@@ -1,7 +1,7 @@
 """Model types for the MLX server."""
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
 @dataclass
@@ -13,7 +13,7 @@ class AdapterInfo:
     description: str | None = None
 
 
-class ModelType(str, Enum):
+class ModelType(StrEnum):
     """Supported model types for the MLX server.
 
     Each type corresponds to different inference capabilities:

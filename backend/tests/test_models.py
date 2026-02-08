@@ -184,9 +184,7 @@ async def test_get_download_progress_with_valid_task(auth_client):
         mock.download_model = mock_download_model
 
         token = _sse_token()
-        response = await auth_client.get(
-            f"/api/models/download/{task_id}/progress?token={token}"
-        )
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress?token={token}")
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
@@ -218,9 +216,7 @@ async def test_get_download_progress_with_error(auth_client):
         mock.download_model = mock_download_model
 
         token = _sse_token()
-        response = await auth_client.get(
-            f"/api/models/download/{task_id}/progress?token={token}"
-        )
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress?token={token}")
         assert response.status_code == 200
         # SSE should contain error
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
@@ -906,9 +902,7 @@ async def test_download_progress_sse_updates_db_periodically(auth_client):
         mock_hf.download_model = mock_download_model
 
         token = _sse_token()
-        response = await auth_client.get(
-            f"/api/models/download/{task_id}/progress?token={token}"
-        )
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress?token={token}")
         assert response.status_code == 200
 
     # Should have called _update_download_record at least once for the completed status
@@ -957,9 +951,7 @@ async def test_download_progress_sse_error_updates_db(auth_client):
         mock_hf.download_model = mock_download_model_error
 
         token = _sse_token()
-        response = await auth_client.get(
-            f"/api/models/download/{task_id}/progress?token={token}"
-        )
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress?token={token}")
         assert response.status_code == 200
         # SSE content should contain error
         assert b"failed" in response.content or b"error" in response.content
@@ -996,9 +988,7 @@ async def test_download_progress_sse_without_download_id(auth_client):
         mock_hf.download_model = mock_download_model
 
         token = _sse_token()
-        response = await auth_client.get(
-            f"/api/models/download/{task_id}/progress?token={token}"
-        )
+        response = await auth_client.get(f"/api/models/download/{task_id}/progress?token={token}")
         assert response.status_code == 200
 
         # _update_download_record should NOT be called when there's no download_id

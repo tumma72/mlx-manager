@@ -54,6 +54,16 @@ async def migrate_schema() -> None:
         ("cloud_credentials", "name", "TEXT", "''"),
         # Tool calling settings
         ("server_profiles", "force_tool_injection", "INTEGER", "0"),
+        # Model capabilities: type-specific probe fields (probe v2)
+        ("model_capabilities", "model_type", "TEXT", None),
+        ("model_capabilities", "supports_multi_image", "INTEGER", None),
+        ("model_capabilities", "supports_video", "INTEGER", None),
+        ("model_capabilities", "embedding_dimensions", "INTEGER", None),
+        ("model_capabilities", "max_sequence_length", "INTEGER", None),
+        ("model_capabilities", "is_normalized", "INTEGER", None),
+        ("model_capabilities", "supports_tts", "INTEGER", None),
+        ("model_capabilities", "supports_stt", "INTEGER", None),
+        ("model_capabilities", "tool_format", "TEXT", None),
     ]
 
     # Obsolete columns to drop from server_profiles (unified server approach)

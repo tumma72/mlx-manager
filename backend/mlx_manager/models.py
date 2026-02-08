@@ -1,13 +1,13 @@
 """SQLModel database models."""
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import Boolean, Column
 from sqlmodel import Field, SQLModel
 
 
-class UserStatus(str, Enum):
+class UserStatus(StrEnum):
     """User account status."""
 
     PENDING = "pending"
@@ -162,27 +162,66 @@ class DownloadedModel(SQLModel, table=True):
 
 
 class ModelCapabilities(SQLModel, table=True):
-    """Probed model capabilities stored in DB."""
+    """Probed model capabilities stored in DB.
+
+    Fields are nullable — only the fields relevant to each model type
+    are populated during probing. For example, embedding_dimensions
+    is only set for EMBEDDINGS models.
+    """
 
     __tablename__ = "model_capabilities"
 
     model_id: str = Field(primary_key=True)
+    model_type: str | None = Field(default=None)
+    probed_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    probe_version: int = Field(default=2)
+
+    # Text-gen capabilities
     supports_native_tools: bool | None = Field(default=None)
     supports_thinking: bool | None = Field(default=None)
+    tool_format: str | None = Field(default=None)
     practical_max_tokens: int | None = Field(default=None)
-    probed_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    probe_version: int = Field(default=1)
+
+    # Vision capabilities
+    supports_multi_image: bool | None = Field(default=None)
+    supports_video: bool | None = Field(default=None)
+
+    # Embeddings capabilities
+    embedding_dimensions: int | None = Field(default=None)
+    max_sequence_length: int | None = Field(default=None)
+    is_normalized: bool | None = Field(default=None)
+
+    # Audio capabilities
+    supports_tts: bool | None = Field(default=None)
+    supports_stt: bool | None = Field(default=None)
 
 
 class ModelCapabilitiesResponse(SQLModel):
     """Response model for model capabilities."""
 
     model_id: str
+    model_type: str | None = None
+    probed_at: datetime | None = None
+    probe_version: int = 2
+
+    # Text-gen
     supports_native_tools: bool | None = None
     supports_thinking: bool | None = None
+    tool_format: str | None = None
     practical_max_tokens: int | None = None
-    probed_at: datetime | None = None
-    probe_version: int = 1
+
+    # Vision
+    supports_multi_image: bool | None = None
+    supports_video: bool | None = None
+
+    # Embeddings
+    embedding_dimensions: int | None = None
+    max_sequence_length: int | None = None
+    is_normalized: bool | None = None
+
+    # Audio
+    supports_tts: bool | None = None
+    supports_stt: bool | None = None
 
 
 class Setting(SQLModel, table=True):
@@ -313,14 +352,14 @@ class ServerStatus(SQLModel):
 # ============================================================================
 
 
-class ApiType(str, Enum):
+class ApiType(StrEnum):
     """API protocol type for cloud providers."""
 
     OPENAI = "openai"  # OpenAI-compatible API
     ANTHROPIC = "anthropic"  # Anthropic-compatible API
 
 
-class BackendType(str, Enum):
+class BackendType(StrEnum):
     """Backend types for routing."""
 
     LOCAL = "local"
