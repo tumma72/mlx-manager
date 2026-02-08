@@ -288,3 +288,187 @@ class TestAuditLogFilter:
         # Max is 1000
         f2 = AuditLogFilter(limit=1000)
         assert f2.limit == 1000
+
+
+class TestWriteLogEntry:
+    """Tests for _write_log_entry with real database operations."""
+
+    @pytest.mark.asyncio
+    async def test_write_log_entry_notifies_subscribers(self) -> None:
+        """_write_log_entry calls subscriber callbacks with log dict."""
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
+        from sqlmodel import SQLModel
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            async with session_factory() as session:
+                try:
+                    yield session
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        service = AuditService(buffer_size=5)
+        callback = MagicMock()
+        service.subscribe(callback)
+
+        log_entry = AuditLog(
+            request_id="test-write",
+            model="test-model",
+            backend_type="local",
+            endpoint="/v1/test",
+            duration_ms=100,
+            status="success",
+        )
+
+        try:
+            with patch("mlx_manager.mlx_server.services.audit.get_session", mock_get_session):
+                await service._write_log_entry(log_entry)
+
+            # Subscriber should have been called
+            callback.assert_called_once()
+            log_dict = callback.call_args[0][0]
+            assert log_dict["request_id"] == "test-write"
+
+            # Recent logs should have the entry
+            recent = service.get_recent_logs()
+            assert len(recent) == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_write_log_entry_handles_subscriber_error(self) -> None:
+        """_write_log_entry handles subscriber callback errors gracefully."""
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
+        from sqlmodel import SQLModel
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            async with session_factory() as session:
+                try:
+                    yield session
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        service = AuditService(buffer_size=5)
+        bad_callback = MagicMock(side_effect=RuntimeError("callback crash"))
+        service.subscribe(bad_callback)
+
+        log_entry = AuditLog(
+            request_id="test-error",
+            model="test-model",
+            backend_type="local",
+            endpoint="/v1/test",
+            duration_ms=100,
+            status="success",
+        )
+
+        try:
+            with patch("mlx_manager.mlx_server.services.audit.get_session", mock_get_session):
+                # Should not raise even though callback fails
+                await service._write_log_entry(log_entry)
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_write_log_entry_handles_db_error(self) -> None:
+        """_write_log_entry handles database errors gracefully."""
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+
+        @asynccontextmanager
+        async def failing_get_session():
+            raise RuntimeError("Database connection failed")
+            yield  # noqa: RET503 - unreachable, needed for async generator
+
+        service = AuditService(buffer_size=5)
+        log_entry = AuditLog(
+            request_id="test-db-error",
+            model="test-model",
+            backend_type="local",
+            endpoint="/v1/test",
+            duration_ms=100,
+            status="success",
+        )
+
+        with patch("mlx_manager.mlx_server.services.audit.get_session", failing_get_session):
+            # Should not raise
+            await service._write_log_entry(log_entry)
+
+    @pytest.mark.asyncio
+    async def test_write_log_entry_trims_buffer(self) -> None:
+        """_write_log_entry trims buffer when exceeding buffer_size."""
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
+        from sqlmodel import SQLModel
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            async with session_factory() as session:
+                try:
+                    yield session
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
+
+        service = AuditService(buffer_size=2)
+
+        try:
+            with patch("mlx_manager.mlx_server.services.audit.get_session", mock_get_session):
+                for i in range(5):
+                    log_entry = AuditLog(
+                        request_id=f"test-{i}",
+                        model="test-model",
+                        backend_type="local",
+                        endpoint="/v1/test",
+                        duration_ms=100,
+                        status="success",
+                    )
+                    await service._write_log_entry(log_entry)
+
+            # Buffer should be trimmed to 2
+            assert len(service.get_recent_logs()) == 2
+        finally:
+            await engine.dispose()

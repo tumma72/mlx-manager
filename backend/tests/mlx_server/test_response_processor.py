@@ -1460,3 +1460,544 @@ class TestFamilyAwareStreamingProcessor:
         ]
         assert "<tool_call>" in [m[0] for m in QWEN_PATTERNS.streaming_tool_markers]
         assert "<function=" in [m[0] for m in LLAMA_PATTERNS.streaming_tool_markers]
+
+
+# --- Parser Function Edge Case Tests ---
+
+
+class TestParserFunctions:
+    """Direct tests for parser functions to cover edge cases."""
+
+    def test_parse_hermes_tool_string_arguments(self) -> None:
+        """parse_hermes_tool handles string arguments (not dict)."""
+        import re
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_hermes_tool,
+        )
+
+        # Arguments as a string instead of dict
+        text = '<tool_call>{"name": "test", "arguments": "raw_string"}</tool_call>'
+        pattern = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+        match = pattern.search(text)
+        assert match is not None
+
+        result = parse_hermes_tool(match)
+
+        assert result is not None
+        assert result.function.name == "test"
+        assert result.function.arguments == "raw_string"
+
+    def test_parse_hermes_tool_invalid_json(self) -> None:
+        """parse_hermes_tool returns None for invalid JSON."""
+        import re
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_hermes_tool,
+        )
+
+        text = "<tool_call>{not valid json}</tool_call>"
+        pattern = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+        match = pattern.search(text)
+        assert match is not None
+
+        result = parse_hermes_tool(match)
+
+        assert result is None
+
+    def test_parse_llama_tool_invalid_json_still_returns(self) -> None:
+        """parse_llama_tool returns ToolCall even with invalid JSON args."""
+        import re
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_llama_tool,
+        )
+
+        text = "<function=test>{not valid}</function>"
+        pattern = re.compile(r"<function=(\w+)>(.*?)</function>", re.DOTALL)
+        match = pattern.search(text)
+        assert match is not None
+
+        result = parse_llama_tool(match)
+
+        assert result is not None
+        assert result.function.name == "test"
+        assert result.function.arguments == "{not valid}"
+
+    def test_parse_llama_tool_error_handling(self) -> None:
+        """parse_llama_tool returns None on IndexError/AttributeError."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_llama_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.side_effect = IndexError("no group")
+
+        result = parse_llama_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_tool_invalid_json_still_returns(self) -> None:
+        """parse_glm4_tool returns ToolCall even with invalid JSON args."""
+        import re
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_tool,
+        )
+
+        text = "<tool_call><name>test</name><arguments>{bad json}</arguments></tool_call>"
+        pattern = re.compile(
+            r"<tool_call>\s*<name>(.*?)</name>\s*<arguments>(.*?)</arguments>\s*</tool_call>",
+            re.DOTALL,
+        )
+        match = pattern.search(text)
+        assert match is not None
+
+        result = parse_glm4_tool(match)
+
+        assert result is not None
+        assert result.function.name == "test"
+        assert result.function.arguments == "{bad json}"
+
+    def test_parse_glm4_tool_error_handling(self) -> None:
+        """parse_glm4_tool returns None on IndexError/AttributeError."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.side_effect = IndexError("no group")
+
+        result = parse_glm4_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_compact_tool_no_name(self) -> None:
+        """parse_glm4_compact_tool returns None when no name found."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_compact_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.return_value = "   "  # Only whitespace, no name
+
+        result = parse_glm4_compact_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_compact_tool_error_handling(self) -> None:
+        """parse_glm4_compact_tool returns None on error."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_compact_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.side_effect = IndexError("no group")
+
+        result = parse_glm4_compact_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_attr_tool_no_name(self) -> None:
+        """parse_glm4_attr_tool returns None when no name found."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_attr_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.return_value = "   "  # Only whitespace
+
+        result = parse_glm4_attr_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_attr_tool_no_params(self) -> None:
+        """parse_glm4_attr_tool returns None when no attr params found."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_attr_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.return_value = "func_name"  # Name but no attr params
+
+        result = parse_glm4_attr_tool(mock_match)
+        assert result is None
+
+    def test_parse_glm4_attr_tool_error_handling(self) -> None:
+        """parse_glm4_attr_tool returns None on error."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_glm4_attr_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.side_effect = IndexError("no group")
+
+        result = parse_glm4_attr_tool(mock_match)
+        assert result is None
+
+    def test_parse_llama_python_tool_error_handling(self) -> None:
+        """parse_llama_python_tool returns None on error."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            parse_llama_python_tool,
+        )
+
+        mock_match = MagicMock()
+        mock_match.group.side_effect = IndexError("no group")
+
+        result = parse_llama_python_tool(mock_match)
+        assert result is None
+
+
+class TestParsePythonArgs:
+    """Tests for _parse_python_args helper function."""
+
+    def test_empty_string(self) -> None:
+        """Empty string returns empty dict."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        assert _parse_python_args("") == {}
+
+    def test_string_value_double_quotes(self) -> None:
+        """Parse string value with double quotes."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args('city="New York"')
+        assert result == {"city": "New York"}
+
+    def test_string_value_single_quotes(self) -> None:
+        """Parse string value with single quotes."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("city='London'")
+        assert result == {"city": "London"}
+
+    def test_integer_value(self) -> None:
+        """Parse integer value."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("limit=10")
+        assert result == {"limit": 10}
+        assert isinstance(result["limit"], int)
+
+    def test_float_value(self) -> None:
+        """Parse float value."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("temp=3.14")
+        assert result == {"temp": 3.14}
+        assert isinstance(result["temp"], float)
+
+    def test_boolean_true(self) -> None:
+        """Parse boolean True value."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("verbose=True")
+        assert result == {"verbose": True}
+        assert isinstance(result["verbose"], bool)
+
+    def test_boolean_false(self) -> None:
+        """Parse boolean False value."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("debug=False")
+        assert result == {"debug": False}
+        assert isinstance(result["debug"], bool)
+
+    def test_bare_identifier_value(self) -> None:
+        """Parse bare identifier as string value."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args("mode=fast")
+        assert result == {"mode": "fast"}
+
+    def test_multiple_args(self) -> None:
+        """Parse multiple arguments."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        result = _parse_python_args('query="hello", limit=5, verbose=True')
+        assert result == {"query": "hello", "limit": 5, "verbose": True}
+
+    def test_float_non_numeric_with_dot(self) -> None:
+        """Parse value with dot that is not a valid float."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            _parse_python_args,
+        )
+
+        # The regex won't match "not.a.number" as it expects \d+\.\d+
+        # So this specific case won't be in results
+        result = _parse_python_args('x="1.2.3"')
+        assert result == {"x": "1.2.3"}
+
+
+class TestModelFamilyPatternsHelpers:
+    """Tests for ModelFamilyPatterns helper methods."""
+
+    def test_get_all_pattern_starts(self) -> None:
+        """get_all_pattern_starts returns thinking + tool starts."""
+        patterns = ModelFamilyPatterns(
+            thinking_tags=["think", "reasoning"],
+            streaming_tool_markers=[("<tool_call>", "</tool_call>")],
+        )
+
+        starts = patterns.get_all_pattern_starts()
+
+        assert "<think>" in starts
+        assert "<reasoning>" in starts
+        assert "<tool_call>" in starts
+
+    def test_get_all_pattern_ends(self) -> None:
+        """get_all_pattern_ends returns thinking + tool end mappings."""
+        patterns = ModelFamilyPatterns(
+            thinking_tags=["think"],
+            streaming_tool_markers=[("<tool_call>", "</tool_call>")],
+        )
+
+        ends = patterns.get_all_pattern_ends()
+
+        assert ends["<think>"] == "</think>"
+        assert ends["<tool_call>"] == "</tool_call>"
+
+
+class TestProcessorFromPatternsEdgeCases:
+    """Tests for edge cases in processor factory functions."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        reset_response_processor()
+
+    def test_create_processor_from_patterns_unknown_parser(self) -> None:
+        """Unknown parser name in pattern spec is skipped with warning."""
+        from mlx_manager.mlx_server.services.response_processor import (
+            create_processor_from_patterns,
+        )
+
+        patterns = ModelFamilyPatterns(
+            tool_patterns=[
+                ToolPatternSpec(
+                    pattern=r"<test>(.*?)</test>",
+                    parser_name="nonexistent_parser",
+                    description="Test pattern with unknown parser",
+                ),
+            ],
+            thinking_tags=[],
+            cleanup_tokens=[],
+        )
+
+        processor = create_processor_from_patterns(patterns)
+
+        # Should not crash, just skip the unknown pattern
+        result = processor.process("<test>content</test>")
+        # Pattern not registered, so no extraction
+        assert result.tool_calls == []
+        assert "<test>content</test>" in result.content
+
+    def test_create_processor_for_adapter(self) -> None:
+        """create_processor_for_adapter uses adapter.family."""
+        from unittest.mock import MagicMock
+
+        from mlx_manager.mlx_server.services.response_processor import (
+            create_processor_for_adapter,
+        )
+
+        mock_adapter = MagicMock()
+        mock_adapter.family = "qwen"
+
+        processor = create_processor_for_adapter(mock_adapter)
+
+        # Should work like a Qwen processor
+        result = processor.process('<tool_call>{"name": "f", "arguments": {}}</tool_call>')
+        assert len(result.tool_calls) == 1
+
+
+class TestStreamingProcessorCustomRP:
+    """Tests for StreamingProcessor with custom ResponseProcessor."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self) -> None:
+        reset_response_processor()
+
+    def test_streaming_with_custom_response_processor(self) -> None:
+        """StreamingProcessor accepts a custom ResponseProcessor."""
+        custom_rp = create_default_processor()
+        sp = StreamingProcessor(response_processor=custom_rp)
+
+        sp.feed("Hello")
+        result = sp.finalize()
+
+        assert result.content == "Hello"
+
+    def test_finalize_flushes_pending_buffer(self) -> None:
+        """finalize() flushes pending buffer from incomplete markers."""
+        sp = StreamingProcessor()
+        sp.feed("Hello ")
+        sp.feed("<tool")  # Partial marker - goes to pending buffer
+
+        result = sp.finalize()
+
+        # The finalize should process the full accumulated text
+        assert "Hello" in result.content
+
+    def test_handle_pattern_start_with_before_and_after_thinking(self) -> None:
+        """_handle_pattern_start with content before and after a complete thinking tag."""
+        sp = StreamingProcessor()
+
+        # Feed text that has before + complete thinking pattern in one chunk
+        event = sp.feed("Hello<think>thought</think>World")
+
+        # Should get both content and reasoning in this event
+        assert event.content is not None
+        # The event might contain "Hello" as content
+        assert "Hello" in (event.content or "")
+
+        result = sp.finalize()
+        assert result.reasoning == "thought"
+        assert "World" in result.content
+
+    def test_handle_pattern_start_before_and_after_tool(self) -> None:
+        """_handle_pattern_start with content before + complete tool pattern + after."""
+        sp = StreamingProcessor()
+
+        # Feed text with before + tool + after all in one token
+        sp.feed('Before<tool_call>{"name":"f","arguments":{}}</tool_call>After')
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+        assert "Before" in result.content
+        assert "After" in result.content
+
+    def test_handle_pattern_start_no_before_with_after_tool(self) -> None:
+        """_handle_pattern_start: complete tool pattern with content after but no before."""
+        sp = StreamingProcessor()
+
+        sp.feed('<tool_call>{"name":"f","arguments":{}}</tool_call>SomeContent')
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+        assert "SomeContent" in result.content
+
+    def test_handle_pattern_start_no_before_no_after_thinking(self) -> None:
+        """_handle_pattern_start: complete thinking pattern, no before/after."""
+        sp = StreamingProcessor()
+
+        event = sp.feed("<think>just thoughts</think>")
+
+        assert event.reasoning_content is not None
+        assert "just thoughts" in (event.reasoning_content or "")
+        assert event.is_complete is True
+
+    def test_handle_pattern_start_before_thinking_no_after(self) -> None:
+        """_handle_pattern_start: content before + complete thinking, no after."""
+        sp = StreamingProcessor()
+
+        event = sp.feed("Preamble<think>thoughts</think>")
+
+        assert "Preamble" in (event.content or "")
+        result = sp.finalize()
+        assert result.reasoning == "thoughts"
+
+    def test_handle_pattern_start_no_before_thinking_with_after(self) -> None:
+        """_handle_pattern_start: complete thinking pattern + content after, no before."""
+        sp = StreamingProcessor()
+
+        sp.feed("<think>thoughts</think>Conclusion")
+
+        result = sp.finalize()
+        assert result.reasoning == "thoughts"
+        assert "Conclusion" in result.content
+
+    def test_partial_marker_yields_nothing_when_at_start(self) -> None:
+        """Partial marker at start of combined text yields empty event."""
+        sp = StreamingProcessor()
+
+        # Feed just the start of a marker
+        event = sp.feed("<")
+        # Should buffer and return empty
+        assert event.content is None or event.content == ""
+
+    def test_handle_in_pattern_thinking_yields_content(self) -> None:
+        """Thinking pattern yields reasoning_content incrementally."""
+        sp = StreamingProcessor()
+
+        # Enter thinking mode
+        sp.feed("<think>")
+
+        # Feed enough content to exceed REASONING_BUFFER_SIZE
+        long_content = "A" * 50
+        event = sp.feed(long_content)
+
+        # Should yield reasoning content (part of it, keeping buffer)
+        assert event.reasoning_content is not None
+
+    def test_handle_in_pattern_tool_buffers_silently(self) -> None:
+        """Tool pattern buffers content without yielding."""
+        sp = StreamingProcessor()
+
+        # Enter tool mode
+        sp.feed("<tool_call>")
+
+        # Feed tool content
+        event = sp.feed('{"name": "test"}')
+
+        # Tool content is buffered, not yielded
+        assert event.content is None
+        assert event.reasoning_content is None
+
+    def test_partial_marker_with_content_before(self) -> None:
+        """Partial marker after content yields the content before the partial."""
+        sp = StreamingProcessor()
+
+        # Feed content that ends with partial marker start
+        # "Hello<" where '<' could be start of <tool_call>
+        event = sp.feed("Hello<")
+
+        # "Hello" should be yielded, "<" should be buffered
+        # This tests lines 876-878
+        assert event.content == "Hello"
+
+    def test_handle_pattern_start_before_tool_no_after(self) -> None:
+        """_handle_pattern_start: content before + complete tool pattern, no after content.
+
+        This covers line 982: return StreamEvent(content=before) when
+        there's before content, complete non-thinking pattern, but no after_pattern.
+        """
+        sp = StreamingProcessor()
+
+        # Text with content before a complete tool call, but nothing after
+        event = sp.feed('Result:<tool_call>{"name":"f","arguments":{}}</tool_call>')
+
+        # "Result:" should be yielded as content
+        assert event.content is not None
+        assert "Result:" in (event.content or "")
+
+        result = sp.finalize()
+        assert len(result.tool_calls) == 1
+        assert "Result:" in result.content

@@ -563,9 +563,7 @@ class TestGLM4Adapter:
     def test_get_stop_tokens_includes_special_tokens(self):
         """GLM4 stop tokens include eos and special tokens."""
         adapter = GLM4Adapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         # Simulate: <|user|>=200, <|observation|>=201, <|endoftext|>=202
@@ -581,9 +579,7 @@ class TestGLM4Adapter:
     def test_get_stop_tokens_with_processor(self):
         """GLM4 stop tokens work with Processor wrapping tokenizer."""
         adapter = GLM4Adapter()
-        inner_tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        inner_tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         inner_tokenizer.eos_token_id = 100
         inner_tokenizer.unk_token_id = 0
         inner_tokenizer.convert_tokens_to_ids.side_effect = Exception("Not found")
@@ -597,9 +593,7 @@ class TestGLM4Adapter:
     def test_get_stop_tokens_skips_unk_tokens(self):
         """GLM4 stop tokens skip tokens that resolve to unk."""
         adapter = GLM4Adapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 0  # All return unk
@@ -610,9 +604,7 @@ class TestGLM4Adapter:
     def test_get_stop_tokens_skips_none(self):
         """GLM4 stop tokens skip tokens that resolve to None."""
         adapter = GLM4Adapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = None
@@ -623,9 +615,7 @@ class TestGLM4Adapter:
     def test_get_stop_tokens_no_duplicates(self):
         """GLM4 stop tokens don't include duplicate eos."""
         adapter = GLM4Adapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         # All special tokens resolve to same as eos
@@ -749,9 +739,7 @@ class TestGLM4Adapter:
         tokenizer.apply_chat_template.side_effect = Exception("No template")
 
         messages = [{"role": "user", "content": "Hello"}]
-        result = adapter.apply_chat_template(
-            tokenizer, messages, add_generation_prompt=False
-        )
+        result = adapter.apply_chat_template(tokenizer, messages, add_generation_prompt=False)
 
         assert "<|assistant|>" not in result
         assert "<|user|>" in result
@@ -903,9 +891,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_includes_eot_id(self):
         """Llama stop tokens include <|eot_id|>."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 128009
         tokenizer.unk_token_id = 0
 
@@ -927,9 +913,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_handles_missing_eot_id(self):
         """Llama stop tokens handle missing <|eot_id|>."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.side_effect = Exception("Token not found")
@@ -940,9 +924,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_skips_unk(self):
         """Llama stop tokens skip tokens that resolve to unk_token_id."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 0  # unk
@@ -953,9 +935,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_skips_none(self):
         """Llama stop tokens skip tokens that resolve to None."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = None
@@ -966,9 +946,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_with_processor(self):
         """Llama stop tokens unwrap Processor objects."""
         adapter = LlamaAdapter()
-        inner_tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        inner_tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         inner_tokenizer.eos_token_id = 100
         inner_tokenizer.unk_token_id = 0
         inner_tokenizer.convert_tokens_to_ids.return_value = 200
@@ -982,9 +960,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_stop_tokens_no_duplicate_end_turn(self):
         """Llama stop tokens don't duplicate if end_turn already present."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
 
@@ -1003,9 +979,7 @@ class TestLlamaAdapterComprehensive:
     def test_is_stop_token(self):
         """is_stop_token correctly checks token ID."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.eos_token_id = 100
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 0  # unk
@@ -1045,9 +1019,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_tool_call_stop_tokens(self):
         """Llama tool call stop tokens include <|eom_id|>."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 500  # <|eom_id|>
 
@@ -1058,9 +1030,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_tool_call_stop_tokens_missing_eom(self):
         """Llama tool call stop tokens handle missing <|eom_id|>."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.side_effect = Exception("Not found")
 
@@ -1070,9 +1040,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_tool_call_stop_tokens_unk(self):
         """Llama tool call stop tokens skip if eom resolves to unk."""
         adapter = LlamaAdapter()
-        tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         tokenizer.unk_token_id = 0
         tokenizer.convert_tokens_to_ids.return_value = 0  # unk
 
@@ -1082,9 +1050,7 @@ class TestLlamaAdapterComprehensive:
     def test_get_tool_call_stop_tokens_with_processor(self):
         """Llama tool call stop tokens unwrap Processor objects."""
         adapter = LlamaAdapter()
-        inner_tokenizer = MagicMock(
-            spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"]
-        )
+        inner_tokenizer = MagicMock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         inner_tokenizer.unk_token_id = 0
         inner_tokenizer.convert_tokens_to_ids.return_value = 500
 

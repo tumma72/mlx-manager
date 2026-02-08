@@ -141,3 +141,62 @@ def test_timeout_http_exception() -> None:
 
     exc_custom = TimeoutHTTPException(timeout_seconds=60.0, detail="Custom timeout message")
     assert exc_custom.detail == "Custom timeout message"
+
+
+def test_validation_error_returns_422(app: FastAPI, client: TestClient) -> None:
+    """Validation errors return 422 with field-level details."""
+    from pydantic import BaseModel
+
+    @app.post("/strict-validation")
+    async def strict_endpoint(data: BaseModel):
+        return {"ok": True}
+
+    # Post invalid JSON for a strict endpoint
+    response = client.post("/strict-validation", json="not-a-dict")
+    assert response.status_code == 422
+    data = response.json()
+
+    assert data["type"] == "https://mlx-manager.dev/errors/validation-error"
+    assert data["title"] == "Validation Error"
+    assert data["status"] == 422
+    assert "errors" in data
+    assert "request_id" in data
+
+
+def test_validation_error_422_from_pydantic(app: FastAPI, client: TestClient) -> None:
+    """Pydantic validation errors include field names and messages."""
+    from pydantic import BaseModel, Field
+
+    class StrictModel(BaseModel):
+        name: str = Field(..., min_length=1)
+        count: int = Field(..., gt=0)
+
+    @app.post("/pydantic-validation")
+    async def pydantic_endpoint(data: StrictModel):
+        return data.model_dump()
+
+    response = client.post("/pydantic-validation", json={"name": "", "count": -1})
+    assert response.status_code == 422
+    data = response.json()
+
+    assert data["status"] == 422
+    assert len(data["errors"]) >= 1
+    # Check that error entries have field and message
+    for err in data["errors"]:
+        assert "field" in err
+        assert "message" in err
+        assert "type" in err
+
+
+def test_http_exception_with_unmapped_status_code(app: FastAPI, client: TestClient) -> None:
+    """HTTPException with unmapped status code uses about:blank type."""
+
+    @app.get("/teapot")
+    async def teapot():
+        raise HTTPException(status_code=418, detail="I'm a teapot")
+
+    response = client.get("/teapot")
+    assert response.status_code == 418
+    data = response.json()
+    assert data["type"] == "about:blank"
+    assert data["title"] == "Error"

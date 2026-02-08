@@ -1270,9 +1270,7 @@ class TestErrorHandling:
         assert "bad-model" not in pool._loading
 
     @pytest.mark.asyncio
-    async def test_load_model_failure_propagates_original_error(
-        self, mock_detect
-    ) -> None:
+    async def test_load_model_failure_propagates_original_error(self, mock_detect) -> None:
         """Verify the original exception is chained."""
         pool = ModelPoolManager(max_memory_gb=48.0)
         mock_detect.return_value = ModelType.TEXT_GEN
@@ -1285,9 +1283,7 @@ class TestErrorHandling:
         assert "Bad model format" in str(exc_info.value.__cause__)
 
     @pytest.mark.asyncio
-    async def test_load_model_double_check_returns_cached(
-        self, mock_detect, mock_memory
-    ) -> None:
+    async def test_load_model_double_check_returns_cached(self, mock_detect, mock_memory) -> None:
         """If model appears in pool during _load_model lock acquisition, return it."""
         pool = ModelPoolManager(max_memory_gb=48.0)
 

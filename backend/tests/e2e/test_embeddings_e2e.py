@@ -75,9 +75,7 @@ class TestSingleEmbedding:
 
         assert response.status_code == 200
         embedding = response.json()["data"][0]["embedding"]
-        assert len(embedding) == 384, (
-            f"Expected 384 dimensions for MiniLM, got {len(embedding)}"
-        )
+        assert len(embedding) == 384, f"Expected 384 dimensions for MiniLM, got {len(embedding)}"
 
     async def test_embedding_is_normalized(self, app_client, embeddings_model):
         """Embeddings should be L2-normalized (unit vectors)."""

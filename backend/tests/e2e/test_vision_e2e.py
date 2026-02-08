@@ -170,12 +170,8 @@ class TestVisionQuickStreaming:
         prompt = load_golden_prompt("describe_image")
         image = load_image_base64("red_square.png")
 
-        request = build_vision_request(
-            vision_model_quick, prompt, [image], stream=True
-        )
-        async with app_client.stream(
-            "POST", "/v1/chat/completions", json=request
-        ) as response:
+        request = build_vision_request(vision_model_quick, prompt, [image], stream=True)
+        async with app_client.stream("POST", "/v1/chat/completions", json=request) as response:
             assert response.status_code == 200
 
             chunks = []
