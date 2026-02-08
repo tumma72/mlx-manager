@@ -6,10 +6,16 @@ from mlx_manager.mlx_server.utils.memory import (
     reset_peak_memory,
     set_memory_limit,
 )
+from mlx_manager.mlx_server.utils.metal import (
+    run_on_metal_thread,
+    stream_from_metal_thread,
+)
 
 __all__ = [
     "clear_cache",
     "get_memory_usage",
     "reset_peak_memory",
+    "run_on_metal_thread",
     "set_memory_limit",
+    "stream_from_metal_thread",
 ]
