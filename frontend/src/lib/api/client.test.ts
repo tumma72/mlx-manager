@@ -558,6 +558,125 @@ describe("models API", () => {
       expect(result).toEqual(mockConfig);
     });
   });
+
+  describe("pauseDownload", () => {
+    it("pauses a download", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await models.pauseDownload(123);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/download/123/pause",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
+    });
+  });
+
+  describe("resumeDownload", () => {
+    it("resumes a download", async () => {
+      const resumeResponse = {
+        task_id: "task-456",
+        model_id: "mlx-community/test-model",
+        download_id: 123,
+        progress: 45,
+        downloaded_bytes: 450000000,
+        total_bytes: 1000000000,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(resumeResponse));
+
+      const result = await models.resumeDownload(123);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/download/123/resume",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
+      expect(result).toEqual(resumeResponse);
+    });
+  });
+
+  describe("cancelDownload", () => {
+    it("cancels a download", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await models.cancelDownload(123);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/download/123/cancel",
+        expect.objectContaining({
+          method: "POST",
+          ...defaultHeaders,
+        }),
+      );
+    });
+  });
+
+  describe("getCapabilities", () => {
+    it("gets capabilities for a specific model", async () => {
+      const capabilities = {
+        model_id: "mlx-community/test-model",
+        supports_tools: true,
+        supports_vision: false,
+        supports_thinking: true,
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(capabilities));
+
+      const result = await models.getCapabilities("mlx-community/test-model");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/capabilities/mlx-community%2Ftest-model",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(capabilities);
+    });
+
+    it("returns null when capabilities not found", async () => {
+      mockFetch.mockResolvedValueOnce(mockErrorResponse("Not found", 404));
+
+      const result = await models.getCapabilities("mlx-community/unknown");
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getAllCapabilities", () => {
+    it("gets capabilities for all models", async () => {
+      const allCapabilities = [
+        {
+          model_id: "mlx-community/model-1",
+          supports_tools: true,
+          supports_vision: false,
+        },
+        {
+          model_id: "mlx-community/model-2",
+          supports_tools: false,
+          supports_vision: true,
+        },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(allCapabilities));
+
+      const result = await models.getAllCapabilities();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/capabilities",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(allCapabilities);
+    });
+
+    it("returns empty array on error", async () => {
+      mockFetch.mockResolvedValueOnce(mockErrorResponse("Server error", 500));
+
+      const result = await models.getAllCapabilities();
+
+      expect(result).toEqual([]);
+    });
+  });
 });
 
 describe("servers API", () => {
