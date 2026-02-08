@@ -104,7 +104,7 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
             "parakeet",
             "qwen3_tts",
             "qwen3_asr",
-            "glm",
+            "glm4_voice",
         )
         if any(ind in config_model_type for ind in audio_model_type_indicators):
             logger.debug(f"Detected AUDIO model from model_type: {model_id}")
@@ -138,7 +138,7 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
         "speecht5",
         "parler",
         "chatterbox",
-        "dia-",
+        "/dia-",
         "outetts",
         "spark-tts",
         "parakeet",
@@ -146,6 +146,10 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
         "vibevoice",
         "voxcpm",
         "soprano",
+        "dac",
+        "snac",
+        "vocos",
+        "descript-audio",
     )
     if any(pattern in name_lower for pattern in audio_name_patterns):
         logger.debug(f"Detected AUDIO model from name pattern: {model_id}")

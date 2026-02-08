@@ -78,7 +78,7 @@ def test_audio_detected_from_architecture(architecture: str) -> None:
         "parakeet",
         "qwen3_tts",
         "qwen3_asr",
-        "glm",
+        "glm4_voice",
     ],
 )
 def test_audio_detected_from_model_type_field(model_type_value: str) -> None:
@@ -111,6 +111,9 @@ def test_audio_detected_from_model_type_field(model_type_value: str) -> None:
         "mlx-community/vibevoice-v1",
         "mlx-community/voxcpm-v1",
         "mlx-community/soprano-v1",
+        "mlx-community/descript-audio-codec",
+        "mlx-community/snac_24khz",
+        "mlx-community/vocos-mel-24khz",
     ],
 )
 def test_audio_detected_from_name_pattern(model_id: str) -> None:
@@ -189,3 +192,135 @@ def test_real_world_models(model_id: str, config: dict, expected: ModelType) -> 
     """Real-world model IDs should be classified correctly."""
     result = detect_model_type(model_id, config=config)
     assert result == expected
+
+
+# ── Config loading error handling ─────────────────────────────────────
+
+
+class TestConfigLoadingFallback:
+    """Tests for config loading error handling and fallback paths."""
+
+    def test_config_loading_exception_falls_back_to_name(self) -> None:
+        """When config loading raises, fall back to name-based detection."""
+        from unittest.mock import patch
+
+        with patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            side_effect=RuntimeError("Read error"),
+        ):
+            # Audio model name should still be detected
+            result = detect_model_type("mlx-community/Kokoro-82M-4bit")
+            assert result == ModelType.AUDIO
+
+    def test_config_none_falls_through_to_name_detection(self) -> None:
+        """When config is None (not downloaded), name patterns are used."""
+        from unittest.mock import patch
+
+        with patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            return_value=None,
+        ):
+            result = detect_model_type("mlx-community/all-MiniLM-L6-v2-4bit")
+            assert result == ModelType.EMBEDDINGS
+
+
+# ── Config-based embeddings detection (model_type field) ─────────────
+
+
+@pytest.mark.parametrize(
+    "model_type_value",
+    ["embedding", "sentence-transformers", "bert"],
+)
+def test_embeddings_detected_from_model_type_field(model_type_value: str) -> None:
+    """Config model_type with embedding indicators -> EMBEDDINGS."""
+    config = {"model_type": model_type_value}
+    result = detect_model_type("some-org/some-model", config=config)
+    assert result == ModelType.EMBEDDINGS
+
+
+# ── Name-based vision detection ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "mlx-community/some-vlm-model",
+        "mlx-community/llava-1.5-7b-4bit",
+        "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+        "mlx-community/pixtral-12b-4bit",
+        "mlx-community/gemma-3-27b-it-4bit",
+    ],
+)
+def test_vision_detected_from_name_pattern(model_id: str) -> None:
+    """Vision model names should be detected as VISION (no config)."""
+    result = detect_model_type(model_id, config={})
+    assert result == ModelType.VISION
+
+
+# ── Name-based embeddings detection ──────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "mlx-community/all-MiniLM-L6-v2-4bit",
+        "mlx-community/e5-small-v2",
+        "mlx-community/bge-small-en-v1.5",
+        "mlx-community/gte-small-4bit",
+        "mlx-community/sentence-transformers-test",
+    ],
+)
+def test_embeddings_detected_from_name_pattern(model_id: str) -> None:
+    """Embeddings model names should be detected as EMBEDDINGS (no config)."""
+    result = detect_model_type(model_id, config={})
+    assert result == ModelType.EMBEDDINGS
+
+
+# ── Regression tests: false positive fixes ────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "model_id,config,expected",
+    [
+        # GLM-4.7-Flash regression: should be TEXT_GEN, not AUDIO
+        # Config has model_type "glm4_moe_lite" which should not trigger audio detection
+        (
+            "mlx-community/GLM-4.7-Flash-4bit",
+            {"model_type": "glm4_moe_lite", "architectures": ["Glm4MoeLiteForCausalLM"]},
+            ModelType.TEXT_GEN,
+        ),
+        # Nemotron regression: empty config + "nvidia" in name (contains "dia")
+        # Should be TEXT_GEN, not AUDIO
+        (
+            "mlx-community/NVIDIA-Nemotron-3-Nano-30B-A3B-4bit",
+            {},
+            ModelType.TEXT_GEN,
+        ),
+    ],
+)
+def test_regression_false_positive_fixes(model_id: str, config: dict, expected: ModelType) -> None:
+    """Regression tests for models that were incorrectly detected as AUDIO.
+
+    - GLM-4.7-Flash has model_type "glm4_moe_lite" (not "glm4_voice"), should be TEXT_GEN
+    - Nemotron contains "nvidia" which contains "dia" substring, but should be TEXT_GEN
+    """
+    result = detect_model_type(model_id, config=config)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "mlx-community/descript-audio-codec",
+        "mlx-community/snac_24khz",
+        "mlx-community/vocos-mel-24khz",
+    ],
+)
+def test_audio_codecs_detected_from_name(model_id: str) -> None:
+    """Audio codec models should be detected as AUDIO from name patterns.
+
+    These are specialized audio processing models (codecs/vocoders) that should
+    be classified as AUDIO even without config information.
+    """
+    result = detect_model_type(model_id, config={})
+    assert result == ModelType.AUDIO

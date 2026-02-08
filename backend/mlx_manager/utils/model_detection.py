@@ -351,22 +351,35 @@ def get_model_detection_info(model_id: str) -> dict:
     }
 
 
-def detect_tool_use(config: dict[str, Any], tags: list[str] | None = None) -> bool:
+def detect_tool_use(
+    config: dict[str, Any],
+    tags: list[str] | None = None,
+    tokenizer: Any | None = None,
+) -> bool:
     """
     Detect if a model supports tool-use / function-calling.
 
-    Uses three detection strategies:
-    1. Tag-based (primary): Check HuggingFace tags for tool-use indicators
-    2. Family-based (secondary): Check if model_type matches known tool-capable families
-    3. Config-based (fallback): Check config.json for tool_call_parser
+    Uses four detection strategies (first match wins):
+    1. Template-based: Check tokenizer Jinja template for native ``tools=`` support
+    2. Tag-based: Check HuggingFace tags for tool-use indicators
+    3. Family-based: Check if model_type matches known tool-capable families
+    4. Config-based: Check config.json for tool_call_parser
 
     Args:
         config: Parsed config.json dictionary
         tags: Optional list of HuggingFace tags for the model
+        tokenizer: Optional tokenizer for template-based detection
 
     Returns:
         True if model supports tool-use, False otherwise
     """
+    # Template-based detection (highest priority when tokenizer available)
+    if tokenizer is not None:
+        from mlx_manager.mlx_server.utils.template_tools import has_native_tool_support
+
+        if has_native_tool_support(tokenizer):
+            return True
+
     # Tag-based detection (primary)
     if tags:
         tags_lower = [tag.lower() for tag in tags]
