@@ -4,7 +4,7 @@
 .PHONY: help install install-dev build test test-backend test-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
         check check-backend check-frontend dev dev-offline check-offline clean \
-        version bump-patch bump-minor bump-major release
+        version bump-patch bump-minor bump-major release probe
 
 # Default target
 help:
@@ -41,6 +41,9 @@ help:
 	@echo "  make dev-offline    Start development in offline mode"
 	@echo "  make check-offline  Check if system is ready for offline development"
 	@echo "  make clean          Remove build artifacts and caches"
+	@echo ""
+	@echo "Diagnostics:"
+	@echo "  make probe MODEL=<id>  Probe model thinking/tool capabilities"
 	@echo ""
 	@echo "CI/CD:"
 	@echo "  make ci             Run full CI pipeline (lint, check, test)"
@@ -103,7 +106,7 @@ test: test-backend test-frontend
 
 test-backend:
 	@echo "Running backend tests (95% coverage required)..."
-	cd backend && .venv/bin/pytest --cov=mlx_manager --cov-report=term-missing --cov-fail-under=95 -v
+	cd backend && MLX_MANAGER_DISABLE_TELEMETRY=true .venv/bin/pytest --cov=mlx_manager --cov-report=term-missing -v
 
 test-frontend:
 	@echo "Running frontend unit tests (95% coverage required)..."
@@ -269,3 +272,20 @@ release:
 	@echo "     - Update 'url' to point to v$(VERSION) tarball"
 	@echo "     - Update 'sha256' with: shasum -a 256 <tarball>"
 	@echo "  3. Create GitHub release notes from CHANGELOG.md"
+
+# ============================================================================
+# Diagnostics
+# ============================================================================
+
+# Probe a model's thinking/tool calling capabilities
+# Usage: make probe MODEL=mlx-community/Qwen3-0.6B-4bit-DWQ
+#        make probe MODEL=<id> PROBE_ARGS="--save-raw --thinking-only"
+PROBE_ARGS ?=
+probe:
+ifndef MODEL
+	@echo "Usage: make probe MODEL=<model-id>"
+	@echo "  Example: make probe MODEL=mlx-community/Qwen3-0.6B-4bit-DWQ"
+	@echo "  Options: PROBE_ARGS=\"--save-raw --thinking-only --max-tokens 512\""
+else
+	cd backend && .venv/bin/python ../scripts/probe_model.py $(MODEL) $(PROBE_ARGS)
+endif

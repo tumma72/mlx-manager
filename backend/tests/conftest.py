@@ -13,6 +13,7 @@ from sqlmodel import SQLModel
 # Set test environment before importing app modules
 os.environ["MLX_MANAGER_DATABASE_PATH"] = ":memory:"
 os.environ["MLX_MANAGER_DEBUG"] = "false"
+os.environ["MLX_MANAGER_DISABLE_TELEMETRY"] = "true"
 
 from mlx_manager.database import get_db
 from mlx_manager.main import app

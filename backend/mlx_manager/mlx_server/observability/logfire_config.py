@@ -1,11 +1,12 @@
 """LogFire configuration for MLX Inference Server."""
 
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Literal
 
 import logfire
 from loguru import logger
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from fastapi import FastAPI
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -25,10 +26,20 @@ def configure_logfire(
     if _configured:
         return
 
+    # Disable telemetry when running tests or explicitly opted out
+    telemetry_disabled = os.environ.get("MLX_MANAGER_DISABLE_TELEMETRY", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    send_mode: bool | Literal["if-token-present"] = (
+        False if telemetry_disabled else "if-token-present"
+    )
+
     logfire.configure(
         service_name=service_name,
         service_version=service_version,
-        send_to_logfire="if-token-present",  # Offline mode without token
+        send_to_logfire=send_mode,
     )
     _configured = True
     logger.info(f"LogFire configured for {service_name}")

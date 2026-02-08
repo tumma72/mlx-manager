@@ -5,7 +5,7 @@ Set LOGFIRE_CONSOLE_VERBOSE=true to enable verbose console output.
 """
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import logfire
 from loguru import logger
@@ -36,10 +36,20 @@ def configure_logfire(
     # Check if verbose console output is requested
     verbose = os.environ.get("LOGFIRE_CONSOLE_VERBOSE", "").lower() in ("true", "1", "yes")
 
+    # Disable telemetry when running tests or explicitly opted out
+    telemetry_disabled = os.environ.get("MLX_MANAGER_DISABLE_TELEMETRY", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    send_mode: bool | Literal["if-token-present"] = (
+        False if telemetry_disabled else "if-token-present"
+    )
+
     logfire.configure(
         service_name=service_name,
         service_version=service_version,
-        send_to_logfire="if-token-present",  # Offline mode without token
+        send_to_logfire=send_mode,
         console=logfire.ConsoleOptions(verbose=verbose) if verbose else False,
     )
     _configured = True
