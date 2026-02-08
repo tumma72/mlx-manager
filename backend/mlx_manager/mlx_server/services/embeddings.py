@@ -1,12 +1,8 @@
 """Embeddings generation service using mlx-embeddings.
 
-CRITICAL: This module uses the same queue-based threading pattern as inference.py
-to respect MLX Metal thread affinity requirements.
+CRITICAL: This module uses run_on_metal_thread utility to respect
+MLX Metal thread affinity requirements.
 """
-
-import asyncio
-import threading
-from queue import Queue
 
 from loguru import logger
 
@@ -35,6 +31,7 @@ async def generate_embeddings(
         RuntimeError: If model loading or generation fails
     """
     from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     # Get model from pool
     pool = get_model_pool()
@@ -55,69 +52,51 @@ async def generate_embeddings(
         span_context.__enter__()
 
     try:
-        # Queue for passing result from generation thread
-        result_queue: Queue[tuple[list[list[float]], int] | Exception] = Queue()
 
-        def run_embeddings() -> None:
+        def run_embeddings() -> tuple[list[list[float]], int]:
             """Run embedding generation in dedicated thread (owns Metal context)."""
-            try:
-                import mlx.core as mx
+            import mlx.core as mx
 
-                # Tokenize batch
-                # Use inner tokenizer's __call__ for batch encoding.
-                # TokenizerWrapper from mlx-embeddings is not callable and
-                # batch_encode_plus was removed in transformers v5.
-                inner_tokenizer = getattr(tokenizer, "_tokenizer", tokenizer)
-                encoded = inner_tokenizer(
-                    texts,
-                    return_tensors=None,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                )
-                inputs = {k: mx.array(v) for k, v in encoded.items()}
+            # Tokenize batch
+            # Use inner tokenizer's __call__ for batch encoding.
+            # TokenizerWrapper from mlx-embeddings is not callable and
+            # batch_encode_plus was removed in transformers v5.
+            inner_tokenizer = getattr(tokenizer, "_tokenizer", tokenizer)
+            encoded = inner_tokenizer(
+                texts,
+                return_tensors=None,
+                padding=True,
+                truncation=True,
+                max_length=512,
+            )
+            inputs = {k: mx.array(v) for k, v in encoded.items()}
 
-                # Count tokens per input (not padded batch)
-                total_tokens = 0
-                for text in texts:
-                    tokens = tokenizer.encode(text, truncation=True, max_length=512)
-                    total_tokens += len(tokens)
+            # Count tokens per input (not padded batch)
+            total_tokens = 0
+            for text in texts:
+                tokens = tokenizer.encode(text, truncation=True, max_length=512)
+                total_tokens += len(tokens)
 
-                # Forward pass
-                outputs = model(
-                    inputs["input_ids"],
-                    attention_mask=inputs.get("attention_mask"),
-                )
+            # Forward pass
+            outputs = model(
+                inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+            )
 
-                # text_embeds are ALREADY L2-normalized (mean pooled + normalized)
-                embeddings = outputs.text_embeds
+            # text_embeds are ALREADY L2-normalized (mean pooled + normalized)
+            embeddings = outputs.text_embeds
 
-                # Convert to Python lists
-                # NOTE: mx.eval() is MLX framework's tensor evaluation (NOT Python eval())
-                # It ensures computation is complete before converting to Python lists
-                mx.eval(embeddings)
-                embeddings_list = embeddings.tolist()
+            # Convert to Python lists
+            # NOTE: mx.eval() is MLX framework's tensor evaluation (NOT Python eval())
+            # It ensures computation is complete before converting to Python lists
+            mx.eval(embeddings)
+            embeddings_list = embeddings.tolist()
 
-                result_queue.put((embeddings_list, total_tokens))
+            return (embeddings_list, total_tokens)
 
-            except Exception as e:
-                result_queue.put(e)
-
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_embeddings, daemon=True)
-        gen_thread.start()
-
-        # Wait for result (with 5 minute timeout)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
-
-        gen_thread.join(timeout=1.0)
-
-        # Check for exception
-        if isinstance(result, Exception):
-            raise RuntimeError(f"Embeddings generation failed: {result}") from result
-
-        embeddings_list, total_tokens = result
+        embeddings_list, total_tokens = await run_on_metal_thread(
+            run_embeddings, error_context="Embeddings generation failed"
+        )
 
         logger.info(
             f"Embeddings complete: model={model_id}, "
@@ -137,8 +116,3 @@ async def generate_embeddings(
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
-
-        # Clear cache after embeddings
-        from mlx_manager.mlx_server.utils.memory import clear_cache
-
-        clear_cache()

@@ -2,16 +2,13 @@
 
 Handles vision-language model generation using mlx-vlm.
 
-CRITICAL: This module uses the same queue-based threading pattern as inference.py
-to respect MLX Metal thread affinity requirements.
+CRITICAL: Uses the run_on_metal_thread utility to respect MLX Metal thread
+affinity requirements.
 """
 
-import asyncio
-import threading
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from queue import Queue
 
 from loguru import logger
 from PIL import Image
@@ -139,115 +136,92 @@ async def _stream_vision_generate(
 
     TODO: Investigate mlx-vlm internals for true token-by-token streaming.
     """
-    from mlx_manager.mlx_server.utils.memory import clear_cache
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
-    # Queue for passing result from generation thread
-    result_queue: Queue[str | Exception] = Queue()
-
-    def run_generation() -> None:
+    def run_generation() -> str:
         """Run vision generation in dedicated thread (owns Metal context)."""
-        try:
-            from mlx_vlm import generate as vlm_generate
-            from mlx_vlm.prompt_utils import apply_chat_template
-            from mlx_vlm.utils import load_config
+        from mlx_vlm import generate as vlm_generate
+        from mlx_vlm.prompt_utils import apply_chat_template
+        from mlx_vlm.utils import load_config
 
-            # Load config for chat template
-            config = load_config(model_id)
+        # Load config for chat template
+        config = load_config(model_id)
 
-            # Apply chat template with image count
-            formatted_prompt = apply_chat_template(
-                processor, config, text_prompt, num_images=len(images)
-            )
+        # Apply chat template with image count
+        formatted_prompt = apply_chat_template(
+            processor, config, text_prompt, num_images=len(images)
+        )
 
-            # Generate response
-            response = vlm_generate(
-                model,
-                processor,
-                formatted_prompt,
-                images,
-                max_tokens=max_tokens,
-                temp=temperature,
-                verbose=False,
-            )
+        # Generate response
+        response = vlm_generate(
+            model,
+            processor,
+            formatted_prompt,
+            images,
+            max_tokens=max_tokens,
+            temp=temperature,
+            verbose=False,
+        )
 
-            # mlx_vlm.generate returns GenerationResult, extract text
-            result_queue.put(response.text)
-        except Exception as e:
-            result_queue.put(e)
+        # mlx_vlm.generate returns GenerationResult, extract text
+        return str(response.text)
 
-    try:
-        # First chunk with role
-        yield {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"role": "assistant", "content": ""},
-                    "finish_reason": None,
-                }
-            ],
-        }
+    # First chunk with role
+    yield {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": ""},
+                "finish_reason": None,
+            }
+        ],
+    }
 
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
+    # Run generation on Metal thread
+    response_text = await run_on_metal_thread(run_generation, timeout=600.0)
 
-        # Wait for result (with 10 minute timeout for vision models)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=600))
+    # Yield content chunk
+    yield {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": response_text},
+                "finish_reason": None,
+            }
+        ],
+    }
 
-        gen_thread.join(timeout=1.0)
+    # Final chunk with finish_reason
+    yield {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop",
+            }
+        ],
+    }
 
-        # Check for exception
-        if isinstance(result, Exception):
-            raise result
+    logger.info(f"Vision stream complete: {completion_id}")
 
-        response_text = result
-
-        # Yield content chunk
-        yield {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"content": response_text},
-                    "finish_reason": None,
-                }
-            ],
-        }
-
-        # Final chunk with finish_reason
-        yield {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-
-        logger.info(f"Vision stream complete: {completion_id}")
-
-        if LOGFIRE_AVAILABLE:
-            logfire.info(
-                "vision_stream_finished",
-                completion_id=completion_id,
-                response_length=len(response_text),
-            )
-
-    finally:
-        clear_cache()
+    if LOGFIRE_AVAILABLE:
+        logfire.info(
+            "vision_stream_finished",
+            completion_id=completion_id,
+            response_length=len(response_text),
+        )
 
 
 async def _generate_vision_complete(
@@ -262,93 +236,70 @@ async def _generate_vision_complete(
     model_id: str,
 ) -> dict:
     """Generate complete vision response (non-streaming)."""
-    from mlx_manager.mlx_server.utils.memory import clear_cache
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
-    # Queue for passing result from generation thread
-    result_queue: Queue[str | Exception] = Queue()
-
-    def run_generation() -> None:
+    def run_generation() -> str:
         """Run vision generation in dedicated thread (owns Metal context)."""
-        try:
-            from mlx_vlm import generate as vlm_generate
-            from mlx_vlm.prompt_utils import apply_chat_template
-            from mlx_vlm.utils import load_config
+        from mlx_vlm import generate as vlm_generate
+        from mlx_vlm.prompt_utils import apply_chat_template
+        from mlx_vlm.utils import load_config
 
-            # Load config for chat template
-            config = load_config(model_id)
+        # Load config for chat template
+        config = load_config(model_id)
 
-            # Apply chat template with image count
-            formatted_prompt = apply_chat_template(
-                processor, config, text_prompt, num_images=len(images)
-            )
+        # Apply chat template with image count
+        formatted_prompt = apply_chat_template(
+            processor, config, text_prompt, num_images=len(images)
+        )
 
-            # Generate response
-            response = vlm_generate(
-                model,
-                processor,
-                formatted_prompt,
-                images,
-                max_tokens=max_tokens,
-                temp=temperature,
-                verbose=False,
-            )
+        # Generate response
+        response = vlm_generate(
+            model,
+            processor,
+            formatted_prompt,
+            images,
+            max_tokens=max_tokens,
+            temp=temperature,
+            verbose=False,
+        )
 
-            # mlx_vlm.generate returns GenerationResult, extract text
-            result_queue.put(response.text)
-        except Exception as e:
-            result_queue.put(e)
+        # mlx_vlm.generate returns GenerationResult, extract text
+        return str(response.text)
 
-    try:
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_generation, daemon=True)
-        gen_thread.start()
+    # Run generation on Metal thread
+    response_text = await run_on_metal_thread(run_generation, timeout=600.0)
 
-        # Wait for result (with 10 minute timeout)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=600))
+    # Estimate tokens (rough approximation)
+    completion_tokens = len(response_text.split())
+    prompt_tokens = len(text_prompt.split()) + (len(images) * 256)  # ~256 tokens per image
 
-        gen_thread.join(timeout=1.0)
+    logger.info(f"Vision complete: {completion_id}, response_length={len(response_text)}")
 
-        # Check for exception
-        if isinstance(result, Exception):
-            raise result
+    if LOGFIRE_AVAILABLE:
+        logfire.info(
+            "vision_completion_finished",
+            completion_id=completion_id,
+            response_length=len(response_text),
+        )
 
-        response_text = result
-
-        # Estimate tokens (rough approximation)
-        completion_tokens = len(response_text.split())
-        prompt_tokens = len(text_prompt.split()) + (len(images) * 256)  # ~256 tokens per image
-
-        logger.info(f"Vision complete: {completion_id}, response_length={len(response_text)}")
-
-        if LOGFIRE_AVAILABLE:
-            logfire.info(
-                "vision_completion_finished",
-                completion_id=completion_id,
-                response_length=len(response_text),
-            )
-
-        return {
-            "id": completion_id,
-            "object": "chat.completion",
-            "created": created,
-            "model": model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": response_text,
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
-        }
-
-    finally:
-        clear_cache()
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": model_id,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": response_text,
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+    }

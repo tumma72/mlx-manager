@@ -1,16 +1,13 @@
 """Audio inference service for TTS and STT using mlx-audio.
 
-CRITICAL: This module uses the same queue-based threading pattern as inference.py
-and embeddings.py to respect MLX Metal thread affinity requirements.
+CRITICAL: This module uses run_on_metal_thread utility to respect MLX Metal
+thread affinity requirements.
 
 TTS uses model.generate() which returns GenerationResult objects with audio data.
 STT uses generate_transcription() which returns STTOutput with text segments.
 """
 
-import asyncio
 import io
-import threading
-from queue import Queue
 from typing import Any
 
 import numpy as np
@@ -47,6 +44,7 @@ async def generate_speech(
         RuntimeError: If model loading or generation fails
     """
     from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     # Get model from pool
     pool = get_model_pool()
@@ -70,77 +68,59 @@ async def generate_speech(
         span_context.__enter__()
 
     try:
-        # Queue for passing result from generation thread
-        result_queue: Queue[tuple[bytes, int] | Exception] = Queue()
 
-        def run_tts() -> None:
+        def run_tts() -> tuple[bytes, int]:
             """Run TTS generation in dedicated thread (owns Metal context)."""
-            try:
-                import mlx.core as mx
+            import mlx.core as mx
 
-                # Generate audio using model.generate()
-                # Returns an iterable of GenerationResult objects
-                gen_kwargs: dict[str, Any] = {
-                    "text": text,
-                    "voice": voice,
-                    "speed": speed,
-                    "verbose": False,
-                }
+            # Generate audio using model.generate()
+            # Returns an iterable of GenerationResult objects
+            gen_kwargs: dict[str, Any] = {
+                "text": text,
+                "voice": voice,
+                "speed": speed,
+                "verbose": False,
+            }
 
-                results = model.generate(**gen_kwargs)
+            results = model.generate(**gen_kwargs)
 
-                # Collect all audio segments
-                audio_segments = []
-                sample_rate = getattr(model, "sample_rate", 24000)
+            # Collect all audio segments
+            audio_segments = []
+            sample_rate = getattr(model, "sample_rate", 24000)
 
-                for result in results:
-                    audio_segments.append(result.audio)
-                    if hasattr(result, "sample_rate"):
-                        sample_rate = result.sample_rate
+            for result in results:
+                audio_segments.append(result.audio)
+                if hasattr(result, "sample_rate"):
+                    sample_rate = result.sample_rate
 
-                if not audio_segments:
-                    raise RuntimeError("TTS model produced no audio output")
+            if not audio_segments:
+                raise RuntimeError("TTS model produced no audio output")
 
-                # Concatenate segments if multiple
-                if len(audio_segments) > 1:
-                    audio = mx.concatenate(audio_segments, axis=0)
-                else:
-                    audio = audio_segments[0]
+            # Concatenate segments if multiple
+            if len(audio_segments) > 1:
+                audio = mx.concatenate(audio_segments, axis=0)
+            else:
+                audio = audio_segments[0]
 
-                # Ensure computation is complete before converting
-                # NOTE: mx.eval() is MLX framework's tensor evaluation, not Python eval()
-                mx.eval(audio)
+            # Ensure computation is complete before converting
+            # NOTE: mx.eval() is MLX framework's tensor evaluation, not Python eval()
+            mx.eval(audio)
 
-                # Convert to numpy
-                audio_np = np.array(audio.tolist())
+            # Convert to numpy
+            audio_np = np.array(audio.tolist())
 
-                # Write to bytes buffer using mlx-audio's audio_write
-                from mlx_audio.tts.generate import audio_write
+            # Write to bytes buffer using mlx-audio's audio_write
+            from mlx_audio.tts.generate import audio_write
 
-                buffer = io.BytesIO()
-                audio_write(buffer, audio_np, sample_rate, format=response_format)
-                audio_bytes = buffer.getvalue()
+            buffer = io.BytesIO()
+            audio_write(buffer, audio_np, sample_rate, format=response_format)
+            audio_bytes = buffer.getvalue()
 
-                result_queue.put((audio_bytes, sample_rate))
+            return (audio_bytes, sample_rate)
 
-            except Exception as e:
-                result_queue.put(e)
-
-        # Start generation thread
-        gen_thread = threading.Thread(target=run_tts, daemon=True)
-        gen_thread.start()
-
-        # Wait for result (with 5 minute timeout)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
-
-        gen_thread.join(timeout=1.0)
-
-        # Check for exception
-        if isinstance(result, Exception):
-            raise RuntimeError(f"TTS generation failed: {result}") from result
-
-        audio_bytes, sample_rate = result
+        audio_bytes, sample_rate = await run_on_metal_thread(
+            run_tts, error_context="TTS generation failed"
+        )
 
         logger.info(
             f"Speech generated: model={model_id}, "
@@ -160,11 +140,6 @@ async def generate_speech(
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
-
-        # Clear cache after generation
-        from mlx_manager.mlx_server.utils.memory import clear_cache
-
-        clear_cache()
 
 
 async def transcribe_audio(
@@ -187,6 +162,7 @@ async def transcribe_audio(
         RuntimeError: If model loading or transcription fails
     """
     from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     # Get model from pool
     pool = get_model_pool()
@@ -209,69 +185,51 @@ async def transcribe_audio(
         span_context.__enter__()
 
     try:
-        # Queue for passing result from transcription thread
-        result_queue: Queue[dict[str, Any] | Exception] = Queue()
 
-        def run_stt() -> None:
+        def run_stt() -> dict[str, Any]:
             """Run STT transcription in dedicated thread (owns Metal context)."""
+            import os
+            import tempfile
+
+            from mlx_audio.stt.generate import generate_transcription
+
+            # Write audio data to a temporary file since generate_transcription
+            # expects a file path for the audio parameter
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(audio_data)
+                tmp_path = tmp.name
+
             try:
-                import os
-                import tempfile
+                # Build kwargs
+                kwargs: dict[str, Any] = {}
+                if language:
+                    kwargs["language"] = language
 
-                from mlx_audio.stt.generate import generate_transcription
+                # Run transcription
+                segments = generate_transcription(
+                    model=model,
+                    audio=tmp_path,
+                    verbose=False,
+                    **kwargs,
+                )
 
-                # Write audio data to a temporary file since generate_transcription
-                # expects a file path for the audio parameter
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                    tmp.write(audio_data)
-                    tmp_path = tmp.name
+                # Extract results from STTOutput
+                result_dict: dict[str, Any] = {
+                    "text": getattr(segments, "text", ""),
+                }
 
-                try:
-                    # Build kwargs
-                    kwargs: dict[str, Any] = {}
-                    if language:
-                        kwargs["language"] = language
+                if hasattr(segments, "segments") and segments.segments:
+                    result_dict["segments"] = segments.segments
 
-                    # Run transcription
-                    segments = generate_transcription(
-                        model=model,
-                        audio=tmp_path,
-                        verbose=False,
-                        **kwargs,
-                    )
+                if hasattr(segments, "language") and segments.language:
+                    result_dict["language"] = segments.language
 
-                    # Extract results from STTOutput
-                    result_dict: dict[str, Any] = {
-                        "text": getattr(segments, "text", ""),
-                    }
+                return result_dict
 
-                    if hasattr(segments, "segments") and segments.segments:
-                        result_dict["segments"] = segments.segments
+            finally:
+                os.unlink(tmp_path)
 
-                    if hasattr(segments, "language") and segments.language:
-                        result_dict["language"] = segments.language
-
-                    result_queue.put(result_dict)
-
-                finally:
-                    os.unlink(tmp_path)
-
-            except Exception as e:
-                result_queue.put(e)
-
-        # Start transcription thread
-        stt_thread = threading.Thread(target=run_stt, daemon=True)
-        stt_thread.start()
-
-        # Wait for result (with 5 minute timeout)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: result_queue.get(timeout=300))
-
-        stt_thread.join(timeout=1.0)
-
-        # Check for exception
-        if isinstance(result, Exception):
-            raise RuntimeError(f"STT transcription failed: {result}") from result
+        result = await run_on_metal_thread(run_stt, error_context="STT transcription failed")
 
         logger.info(
             f"Transcription complete: model={model_id}, text_len={len(result.get('text', ''))}"
@@ -289,8 +247,3 @@ async def transcribe_audio(
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
-
-        # Clear cache after transcription
-        from mlx_manager.mlx_server.utils.memory import clear_cache
-
-        clear_cache()
