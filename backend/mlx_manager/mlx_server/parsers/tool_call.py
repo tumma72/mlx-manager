@@ -62,7 +62,7 @@ class HermesJsonParser(ToolCallParser):
                 function=FunctionCall(name=name, arguments=arguments_str),
             )
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Invalid Hermes tool call: %s", e)
+            logger.warning("Invalid Hermes tool call: {}", e)
             return None
 
 
@@ -129,7 +129,7 @@ class Glm4NativeParser(ToolCallParser):
                 function=FunctionCall(name=name, arguments=args_str),
             )
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4.7 compact tool call: %s", e)
+            logger.warning("Invalid GLM4.7 compact tool call: {}", e)
             return None
 
     @staticmethod
@@ -150,7 +150,7 @@ class Glm4NativeParser(ToolCallParser):
                 function=FunctionCall(name=name, arguments=args_str),
             )
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4.7 attr tool call: %s", e)
+            logger.warning("Invalid GLM4.7 attr tool call: {}", e)
             return None
 
 
@@ -186,13 +186,13 @@ class Glm4XmlParser(ToolCallParser):
             try:
                 json.loads(args_str)
             except json.JSONDecodeError as e:
-                logger.warning("Invalid JSON in GLM4 tool call %s: %s", name, e)
+                logger.warning("Invalid JSON in GLM4 tool call {}: {}", name, e)
             return ToolCall(
                 id=f"call_{uuid.uuid4().hex[:8]}",
                 function=FunctionCall(name=name, arguments=args_str),
             )
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4 tool call: %s", e)
+            logger.warning("Invalid GLM4 tool call: {}", e)
             return None
 
 
@@ -225,13 +225,13 @@ class LlamaXmlParser(ToolCallParser):
             try:
                 json.loads(args_str)
             except json.JSONDecodeError as e:
-                logger.warning("Invalid JSON in Llama tool call %s: %s", name, e)
+                logger.warning("Invalid JSON in Llama tool call {}: {}", name, e)
             return ToolCall(
                 id=f"call_{uuid.uuid4().hex[:8]}",
                 function=FunctionCall(name=name, arguments=args_str),
             )
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Llama tool call: %s", e)
+            logger.warning("Invalid Llama tool call: {}", e)
             return None
 
 
@@ -269,7 +269,7 @@ class LlamaPythonParser(ToolCallParser):
                 function=FunctionCall(name=name, arguments=json.dumps(args_dict)),
             )
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Llama Python tool call: %s", e)
+            logger.warning("Invalid Llama Python tool call: {}", e)
             return None
 
 

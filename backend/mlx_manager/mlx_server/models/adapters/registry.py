@@ -35,5 +35,5 @@ def detect_model_family(model_id: str) -> str:
             return family
 
     # Default fallback
-    logger.info("Unknown model family for %s, using default adapter", model_id)
+    logger.info("Unknown model family for {}, using default adapter", model_id)
     return "default"

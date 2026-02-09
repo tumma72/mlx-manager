@@ -481,7 +481,7 @@ class ModelPoolManager:
                         thinking_parser=thinking_parser,
                     )
                     logger.info(
-                        "Created %s adapter for %s (tool=%s, think=%s)",
+                        "Created {} adapter for {} (tool={}, think={})",
                         family,
                         model_id,
                         loaded.adapter.tool_parser.parser_id,
@@ -489,7 +489,7 @@ class ModelPoolManager:
                     )
                 except Exception as e:
                     logger.warning(
-                        "Could not create composable adapter for %s: %s",
+                        "Could not create composable adapter for {}: {}",
                         model_id,
                         e,
                     )

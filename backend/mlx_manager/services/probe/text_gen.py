@@ -173,16 +173,16 @@ async def _verify_tool_support(
             parser_id = _find_matching_parser(output, "get_weather")
             if parser_id:
                 logger.info(
-                    "Tool probe: native tool support verified (parser=%s)",
+                    "Tool probe: native tool support verified (parser={})",
                     parser_id,
                 )
                 return ("native", parser_id)
             logger.debug(
-                "Native tools template accepted but no parser matched: %s",
+                "Native tools template accepted but no parser matched: {}",
                 output[:200],
             )
         except Exception as e:
-            logger.debug("Native tool generation failed: %s", e)
+            logger.debug("Native tool generation failed: {}", e)
 
     # Tier 2: Try Hermes-style tool injection
     try:
@@ -190,16 +190,16 @@ async def _verify_tool_support(
         parser_id = _find_matching_parser(output, "get_weather")
         if parser_id:
             logger.info(
-                "Tool probe: Hermes format verified (parser=%s)",
+                "Tool probe: Hermes format verified (parser={})",
                 parser_id,
             )
             return ("hermes", parser_id)
         logger.debug(
-            "Hermes prompt did not match any parser: %s",
+            "Hermes prompt did not match any parser: {}",
             output[:200],
         )
     except Exception as e:
-        logger.debug("Hermes tool generation failed: %s", e)
+        logger.debug("Hermes tool generation failed: {}", e)
 
     # Tier 3: No tool support
     logger.info("Tool probe: no tool support detected")

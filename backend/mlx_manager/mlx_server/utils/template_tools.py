@@ -72,17 +72,17 @@ def has_native_tool_support(tokenizer: Any) -> bool:
             tokenize=False,
         )
         _native_tools_cache[tok_id] = True
-        logger.debug("Native tool support detected for tokenizer %s", type(actual).__name__)
+        logger.debug("Native tool support detected for tokenizer {}", type(actual).__name__)
         return True
     except (TypeError, Exception) as exc:
         if isinstance(exc, TypeError) and "tools" in str(exc):
             logger.debug(
-                "Tokenizer %s doesn't accept tools= parameter",
+                "Tokenizer {} doesn't accept tools= parameter",
                 type(actual).__name__,
             )
         else:
             logger.debug(
-                "Tokenizer %s trial tools call failed: %s",
+                "Tokenizer {} trial tools call failed: {}",
                 type(actual).__name__,
                 exc,
             )
@@ -136,11 +136,11 @@ def has_thinking_support(tokenizer: Any) -> bool:
             tokenize=False,
         )
         _thinking_cache[tok_id] = True
-        logger.debug("Thinking support detected for tokenizer %s", type(actual).__name__)
+        logger.debug("Thinking support detected for tokenizer {}", type(actual).__name__)
         return True
     except (TypeError, Exception) as exc:
         logger.debug(
-            "Tokenizer %s doesn't support enable_thinking: %s",
+            "Tokenizer {} doesn't support enable_thinking: {}",
             type(actual).__name__,
             exc,
         )

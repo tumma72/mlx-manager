@@ -354,7 +354,7 @@ class GLM4Adapter(ModelAdapter):
                     self._actual_tokenizer.apply_chat_template(messages, **kwargs),
                 )
             except Exception as e:
-                logger.warning("GLM4 tokenizer.apply_chat_template failed: %s", e)
+                logger.warning("GLM4 tokenizer.apply_chat_template failed: {}", e)
         # Manual ChatML fallback
         parts: list[str] = []
         for msg in messages:
