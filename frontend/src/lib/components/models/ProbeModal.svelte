@@ -281,7 +281,7 @@
 
 					<!-- STT results after STT step (play button + transcript) -->
 					{#if step.step === 'test_stt' && step.status === 'completed' && sttResult}
-						<div class="ml-6 mt-1 mb-2 flex items-center gap-2 flex-wrap">
+						<div class="ml-6 mt-1 mb-2 space-y-1.5">
 							{#if sttAudioUrl}
 								<button
 									onclick={toggleSttPlayback}
@@ -297,9 +297,11 @@
 								</button>
 							{/if}
 							{#if sttResult.transcript}
-								<span class="text-xs text-muted-foreground italic truncate max-w-[400px]"
-									>"{sttResult.transcript}"</span
+								<p
+									class="text-xs text-muted-foreground italic rounded bg-muted/50 px-2 py-1.5 whitespace-pre-wrap break-words"
 								>
+									"{sttResult.transcript}"
+								</p>
 							{/if}
 						</div>
 					{/if}
