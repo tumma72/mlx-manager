@@ -64,6 +64,10 @@ async def migrate_schema() -> None:
         ("model_capabilities", "supports_tts", "INTEGER", None),
         ("model_capabilities", "supports_stt", "INTEGER", None),
         ("model_capabilities", "tool_format", "TEXT", None),
+        # Composable adapter: model family + parser IDs
+        ("model_capabilities", "model_family", "TEXT", None),
+        ("model_capabilities", "tool_parser_id", "TEXT", None),
+        ("model_capabilities", "thinking_parser_id", "TEXT", None),
     ]
 
     # Obsolete columns to drop from server_profiles (unified server approach)

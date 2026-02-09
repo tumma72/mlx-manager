@@ -539,7 +539,7 @@ async def test_text_gen_probe_happy_path():
         ),
         patch(
             "mlx_manager.services.probe.text_gen._verify_tool_support",
-            return_value="native",
+            return_value=("native", "hermes_json"),
         ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=16.0),

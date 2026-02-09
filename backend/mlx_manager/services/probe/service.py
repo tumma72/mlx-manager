@@ -180,3 +180,13 @@ def _apply_result_to_caps(caps: object, result: ProbeResult) -> None:
         caps.supports_tts = result.supports_tts  # type: ignore[attr-defined]
     if result.supports_stt is not None:
         caps.supports_stt = result.supports_stt  # type: ignore[attr-defined]
+
+    # Composable adapter
+    if result.tool_format is not None:
+        caps.tool_format = result.tool_format  # type: ignore[attr-defined]
+    if result.model_family is not None:
+        caps.model_family = result.model_family  # type: ignore[attr-defined]
+    if result.tool_parser_id is not None:
+        caps.tool_parser_id = result.tool_parser_id  # type: ignore[attr-defined]
+    if result.thinking_parser_id is not None:
+        caps.thinking_parser_id = result.thinking_parser_id  # type: ignore[attr-defined]

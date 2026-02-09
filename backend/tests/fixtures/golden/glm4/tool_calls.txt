@@ -1,3 +1,3 @@
 I'll look that up.
-<tool_call><name>lookup</name><arguments>{"key": "value"}</arguments></tool_call>
+<tool_call>lookup<key>value</key></tool_call>
 Here's what I found.

@@ -182,6 +182,11 @@ class ModelCapabilities(SQLModel, table=True):
     tool_format: str | None = Field(default=None)
     practical_max_tokens: int | None = Field(default=None)
 
+    # Composable adapter fields
+    model_family: str | None = Field(default=None)
+    tool_parser_id: str | None = Field(default=None)
+    thinking_parser_id: str | None = Field(default=None)
+
     # Vision capabilities
     supports_multi_image: bool | None = Field(default=None)
     supports_video: bool | None = Field(default=None)
@@ -209,6 +214,11 @@ class ModelCapabilitiesResponse(SQLModel):
     supports_thinking: bool | None = None
     tool_format: str | None = None
     practical_max_tokens: int | None = None
+
+    # Composable adapter fields
+    model_family: str | None = None
+    tool_parser_id: str | None = None
+    thinking_parser_id: str | None = None
 
     # Vision
     supports_multi_image: bool | None = None

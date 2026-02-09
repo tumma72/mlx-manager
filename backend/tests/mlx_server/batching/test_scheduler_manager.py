@@ -305,7 +305,7 @@ class TestSchedulerManagerConfigure:
         mock_model = MagicMock(name="model")
         mock_tokenizer = MagicMock(name="tokenizer")
         mock_adapter = MagicMock(name="adapter")
-        mock_adapter.get_stop_tokens.return_value = [128001, 128009]
+        mock_adapter.stop_tokens = [128001, 128009]
 
         # Configure the scheduler
         await mgr.configure_scheduler("test-model", mock_model, mock_tokenizer, mock_adapter)

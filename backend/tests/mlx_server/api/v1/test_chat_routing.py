@@ -1526,22 +1526,18 @@ class TestHandleBatchedRequest:
         from mlx_manager.mlx_server.api.v1.chat import _handle_batched_request
         from mlx_manager.mlx_server.services.batching import Priority
 
-        with (
-            patch("mlx_manager.mlx_server.models.pool.get_model_pool") as mock_pool_fn,
-            patch("mlx_manager.mlx_server.models.adapters.get_adapter") as mock_adapter_fn,
-        ):
+        with patch("mlx_manager.mlx_server.models.pool.get_model_pool") as mock_pool_fn:
             loaded = MagicMock()
             loaded.model = MagicMock()
             loaded.tokenizer = MagicMock()
             loaded.tokenizer.tokenizer = MagicMock()
             loaded.tokenizer.tokenizer.encode.return_value = [1, 2, 3]
+            adapter = MagicMock()
+            adapter.apply_chat_template.return_value = "Hello"
+            loaded.adapter = adapter
             pool = AsyncMock()
             pool.get_model = AsyncMock(return_value=loaded)
             mock_pool_fn.return_value = pool
-
-            adapter = MagicMock()
-            adapter.apply_chat_template.return_value = "Hello"
-            mock_adapter_fn.return_value = adapter
 
             mgr = AsyncMock()
             scheduler = MagicMock()
@@ -1571,22 +1567,18 @@ class TestHandleBatchedRequest:
         from mlx_manager.mlx_server.api.v1.chat import _handle_batched_request
         from mlx_manager.mlx_server.services.batching import Priority
 
-        with (
-            patch("mlx_manager.mlx_server.models.pool.get_model_pool") as mock_pool_fn,
-            patch("mlx_manager.mlx_server.models.adapters.get_adapter") as mock_adapter_fn,
-        ):
+        with patch("mlx_manager.mlx_server.models.pool.get_model_pool") as mock_pool_fn:
             loaded = MagicMock()
             loaded.model = MagicMock()
             loaded.tokenizer = MagicMock()
             loaded.tokenizer.tokenizer = MagicMock()
             loaded.tokenizer.tokenizer.encode.return_value = [1, 2, 3]
+            adapter = MagicMock()
+            adapter.apply_chat_template.return_value = "Hello"
+            loaded.adapter = adapter
             pool = AsyncMock()
             pool.get_model = AsyncMock(return_value=loaded)
             mock_pool_fn.return_value = pool
-
-            adapter = MagicMock()
-            adapter.apply_chat_template.return_value = "Hello"
-            mock_adapter_fn.return_value = adapter
 
             mgr = AsyncMock()
             scheduler = MagicMock()

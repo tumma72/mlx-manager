@@ -35,7 +35,7 @@ def mock_tokenizer() -> Mock:
 def mock_adapter() -> Mock:
     """Create a mock model adapter."""
     adapter = Mock(spec=[])
-    adapter.get_stop_tokens = Mock(return_value=[128001, 128009])  # Llama 3.x stop tokens
+    adapter.stop_tokens = [128001, 128009]  # Llama 3.x stop tokens
     return adapter
 
 
@@ -93,7 +93,7 @@ class TestBatchInferenceEngineInitialization:
         self, mock_model: Mock, mock_tokenizer: Mock, mock_adapter: Mock
     ) -> None:
         """Engine should extract stop tokens from adapter."""
-        mock_adapter.get_stop_tokens.return_value = [128001, 128009]
+        mock_adapter.stop_tokens = [128001, 128009]
 
         engine = BatchInferenceEngine(
             model=mock_model,
@@ -102,7 +102,6 @@ class TestBatchInferenceEngineInitialization:
         )
 
         assert engine._stop_token_ids == {128001, 128009}
-        mock_adapter.get_stop_tokens.assert_called_once_with(mock_tokenizer)
 
     def test_get_stop_token_ids_returns_copy(self, batch_engine: BatchInferenceEngine) -> None:
         """get_stop_token_ids should return a copy to prevent modification."""
@@ -332,7 +331,7 @@ class TestSchedulerIntegration:
         mock_tokenizer = Mock(spec=[])
         mock_tokenizer.eos_token_id = 128001
         mock_adapter = Mock(spec=[])
-        mock_adapter.get_stop_tokens = Mock(return_value=[128001])
+        mock_adapter.stop_tokens = [128001]
 
         scheduler = ContinuousBatchingScheduler(
             model_id="test-model",
@@ -362,7 +361,7 @@ class TestSchedulerIntegration:
         mock_tokenizer = Mock(spec=[])
         mock_tokenizer.eos_token_id = 128001
         mock_adapter = Mock(spec=[])
-        mock_adapter.get_stop_tokens = Mock(return_value=[128001])
+        mock_adapter.stop_tokens = [128001]
 
         scheduler.set_model(mock_model, mock_tokenizer, mock_adapter)
 

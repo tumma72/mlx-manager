@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 if TYPE_CHECKING:
-    from mlx_manager.mlx_server.models.adapters.base import ModelAdapter
+    from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
     from mlx_manager.mlx_server.services.batching.prefix_cache import PrefixCache
     from mlx_manager.mlx_server.services.batching.request import BatchRequest
 
@@ -63,7 +63,7 @@ class BatchInferenceEngine:
         self._prefix_cache = prefix_cache
 
         # Extract stop token IDs from adapter
-        self._stop_token_ids: set[int] = set(adapter.get_stop_tokens(tokenizer))
+        self._stop_token_ids: set[int] = set(adapter.stop_tokens)
 
         # Thread safety for generation (only one batch can generate at a time)
         self._generation_lock = threading.Lock()

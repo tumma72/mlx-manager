@@ -537,12 +537,18 @@ async def _handle_batched_request(
     Tokenizes the prompt, creates a BatchRequest, and submits to the
     scheduler for batched processing.
     """
-    from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     pool = get_model_pool()
     loaded = await pool.get_model(request.model)
-    adapter = get_adapter(request.model)
+    adapter = loaded.adapter
+    if adapter is None:
+        # Fallback for edge cases
+        from mlx_manager.mlx_server.models.adapters.composable import (
+            DefaultAdapter,
+        )
+
+        adapter = DefaultAdapter(loaded.tokenizer)
 
     # Get actual tokenizer (handle Processor wrapper for vision models)
     actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)
@@ -551,7 +557,7 @@ async def _handle_batched_request(
     messages = _convert_messages_to_dicts(request.messages)
 
     # Apply chat template to get prompt string
-    prompt = adapter.apply_chat_template(loaded.tokenizer, messages, add_generation_prompt=True)
+    prompt = adapter.apply_chat_template(messages, add_generation_prompt=True)
 
     # Tokenize prompt
     prompt_tokens = actual_tokenizer.encode(prompt)

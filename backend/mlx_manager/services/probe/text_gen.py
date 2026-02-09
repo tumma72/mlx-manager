@@ -32,6 +32,13 @@ class TextGenProbe:
     ) -> AsyncGenerator[ProbeStep, None]:
         result.model_type = ModelType.TEXT_GEN
 
+        # Detect model family
+        from mlx_manager.mlx_server.models.adapters.registry import (
+            detect_model_family,
+        )
+
+        result.model_family = detect_model_family(model_id)
+
         # Step 1: Estimate practical context window
         yield ProbeStep(step="check_context", status="running")
         try:
@@ -59,6 +66,7 @@ class TextGenProbe:
 
                 supports_thinking = has_thinking_support(tokenizer)
                 result.supports_thinking = supports_thinking
+                result.thinking_parser_id = "think_tag" if supports_thinking else "null"
                 yield ProbeStep(
                     step="test_thinking",
                     status="completed",
@@ -75,9 +83,10 @@ class TextGenProbe:
         if tokenizer is not None:
             yield ProbeStep(step="test_tools", status="running")
             try:
-                tool_format = await _verify_tool_support(loaded)
+                tool_format, tool_parser_id = await _verify_tool_support(loaded)
                 result.supports_native_tools = tool_format is not None
                 result.tool_format = tool_format
+                result.tool_parser_id = tool_parser_id
                 yield ProbeStep(
                     step="test_tools",
                     status="completed",
@@ -135,23 +144,25 @@ _HERMES_SYSTEM_PROMPT = (
 )
 
 
-async def _verify_tool_support(loaded: LoadedModel) -> str | None:
-    """3-tier generation-based tool verification.
+async def _verify_tool_support(
+    loaded: LoadedModel,
+) -> tuple[str | None, str | None]:
+    """3-tier generation-based tool verification with parser registry.
 
     Tier 1 — Native tools: Template supports tools= parameter →
-             generate with tool definition → check output for valid tool call
-             → return "native"
+             generate with tool definition → validate with ALL parsers
+             → return ("native", parser_id)
 
-    Tier 2 — Hermes format: No native tools= → inject Hermes-style system prompt
-             → generate → check for <tool_call> with correct function
-             → return "hermes"
+    Tier 2 — Hermes format: No native tools= → inject Hermes-style prompt
+             → generate → validate with ALL parsers
+             → return ("hermes", parser_id)
 
-    Tier 3 — No tool support: Neither produces valid tool calls → return None
-
-    Returns:
-        "native", "hermes", or None
+    Tier 3 — No tool support: Neither produces valid tool calls
+             → return (None, None)
     """
-    from mlx_manager.mlx_server.utils.template_tools import has_native_tool_support
+    from mlx_manager.mlx_server.utils.template_tools import (
+        has_native_tool_support,
+    )
 
     tokenizer = loaded.tokenizer
 
@@ -159,28 +170,40 @@ async def _verify_tool_support(loaded: LoadedModel) -> str | None:
     if has_native_tool_support(tokenizer):
         try:
             output = await _generate_with_native_tools(loaded)
-            if _contains_valid_tool_call(output, "get_weather"):
-                logger.info("Tool probe: native tool support verified via generation")
-                return "native"
+            parser_id = _find_matching_parser(output, "get_weather")
+            if parser_id:
+                logger.info(
+                    "Tool probe: native tool support verified (parser=%s)",
+                    parser_id,
+                )
+                return ("native", parser_id)
             logger.debug(
-                f"Native tools template accepted but output has no tool call: {output[:200]}"
+                "Native tools template accepted but no parser matched: %s",
+                output[:200],
             )
         except Exception as e:
-            logger.debug(f"Native tool generation failed: {e}")
+            logger.debug("Native tool generation failed: %s", e)
 
     # Tier 2: Try Hermes-style tool injection
     try:
         output = await _generate_with_hermes_prompt(loaded)
-        if _contains_valid_tool_call(output, "get_weather"):
-            logger.info("Tool probe: Hermes tool format verified via generation")
-            return "hermes"
-        logger.debug(f"Hermes prompt did not produce tool call: {output[:200]}")
+        parser_id = _find_matching_parser(output, "get_weather")
+        if parser_id:
+            logger.info(
+                "Tool probe: Hermes format verified (parser=%s)",
+                parser_id,
+            )
+            return ("hermes", parser_id)
+        logger.debug(
+            "Hermes prompt did not match any parser: %s",
+            output[:200],
+        )
     except Exception as e:
-        logger.debug(f"Hermes tool generation failed: {e}")
+        logger.debug("Hermes tool generation failed: %s", e)
 
-    # Tier 3: No tool support detected
+    # Tier 3: No tool support
     logger.info("Tool probe: no tool support detected")
-    return None
+    return (None, None)
 
 
 async def _generate_with_native_tools(loaded: LoadedModel) -> str:
@@ -241,41 +264,20 @@ async def _generate_with_hermes_prompt(loaded: LoadedModel) -> str:
     return output
 
 
-def _contains_valid_tool_call(output: str, expected_function: str) -> bool:
-    """Check if generation output contains a valid tool call for the expected function.
+def _find_matching_parser(output: str, expected_function: str) -> str | None:
+    """Try ALL registered parsers to find one that validates the output.
 
-    Checks for:
-    1. Native JSON tool calls (e.g. {"name": "get_weather", ...})
-    2. Hermes-style <tool_call>{"name": "get_weather", ...}</tool_call>
-    3. Function call patterns with the expected function name
+    Returns parser_id of the first matching parser, or None.
     """
-    import re
+    from mlx_manager.mlx_server.parsers import TOOL_PARSERS
 
-    if not output or expected_function not in output:
-        return False
-
-    # Check for Hermes-style <tool_call> tags
-    hermes_pattern = re.compile(r"<tool_call>\s*(\{.*?\})\s*(?:</tool_call>|$)", re.DOTALL)
-    for match in hermes_pattern.finditer(output):
-        try:
-            data = json.loads(match.group(1))
-            if data.get("name") == expected_function:
-                return True
-        except (json.JSONDecodeError, AttributeError):
+    for parser_id, parser_cls in TOOL_PARSERS.items():
+        if parser_id == "null":
             continue
-
-    # Check for raw JSON tool call objects in output
-    json_pattern = re.compile(
-        r'\{\s*"name"\s*:\s*"' + re.escape(expected_function) + r'".*?\}', re.DOTALL
-    )
-    for match in json_pattern.finditer(output):
-        try:
-            json.loads(match.group(0))
-            return True
-        except json.JSONDecodeError:
-            continue
-
-    return False
+        parser = parser_cls()
+        if parser.validates(output, expected_function):
+            return parser_id
+    return None
 
 
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:

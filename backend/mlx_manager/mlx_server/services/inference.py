@@ -54,7 +54,6 @@ async def generate_chat_completion(
         Non-streaming: returns complete response dict with optional tool_calls
                       and reasoning_content in the message
     """
-    from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     # Get model from pool
@@ -63,8 +62,15 @@ async def generate_chat_completion(
     model = loaded.model
     tokenizer = loaded.tokenizer
 
-    # Get adapter for model family
-    adapter = get_adapter(model_id)
+    # Get adapter from loaded model
+    adapter = loaded.adapter
+    if adapter is None:
+        # Fallback for non-TEXT_GEN models or edge cases
+        from mlx_manager.mlx_server.models.adapters.composable import (
+            DefaultAdapter,
+        )
+
+        adapter = DefaultAdapter(tokenizer)
 
     # Convert messages to model-specific format (handles tool messages, etc.)
     converted_messages = adapter.convert_messages(messages)
@@ -89,10 +95,9 @@ async def generate_chat_completion(
                 "and prompt injection not enabled"
             )
 
-    # Apply chat template (pass tools for native support, otherwise None)
-    prompt = adapter.apply_chat_template(
-        tokenizer,
-        effective_messages,
+    # Apply chat template
+    prompt: str = adapter.apply_chat_template(
+        messages=effective_messages,
         add_generation_prompt=True,
         tools=tools if use_native_tools else None,
     )
@@ -104,11 +109,11 @@ async def generate_chat_completion(
     # CRITICAL: Get stop token IDs from adapter
     # Llama 3.x requires BOTH eos_token_id AND <|eot_id|> (end of turn)
     # Without this, models will generate past the assistant's response
-    stop_token_ids: set[int] = set(adapter.get_stop_tokens(tokenizer))
+    stop_token_ids: set[int] = set(adapter.stop_tokens)
 
     # Add tool-specific stop tokens when tools are enabled
     if tools and adapter.supports_tool_calling():
-        tool_stop_tokens = adapter.get_tool_call_stop_tokens(tokenizer)
+        tool_stop_tokens = adapter.get_tool_call_stop_tokens()
         stop_token_ids.update(tool_stop_tokens)
 
     logger.debug(f"Stop token IDs for {model_id}: {stop_token_ids}")
@@ -246,11 +251,10 @@ async def _stream_chat_generate(
     if starts_in_thinking:
         logger.debug("Prompt ends with thinking tag, starting in thinking mode")
 
-    # Use model-family-specific patterns to prevent cross-family conflicts
-    model_family = adapter.family if adapter else None
+    # Use adapter for streaming (provides parsers and markers)
     stream_processor = StreamingProcessor(
+        adapter=adapter,
         starts_in_thinking=starts_in_thinking,
-        model_family=model_family,
     )  # Filters patterns during streaming
 
     # Debug: Log configuration for this generation
@@ -346,14 +350,11 @@ async def _stream_chat_generate(
             f"=== RAW MODEL OUTPUT ({len(raw_text)} chars) ===\n{raw_text}\n=== END RAW OUTPUT ==="
         )
 
-    # Finalize StreamingProcessor - extracts tool calls and reasoning
-    result_parsed = stream_processor.finalize()
-
-    # Extract tool calls from ParseResult
+    # Finalize: Use adapter's tool parser for finalization
+    tool_calls_list = adapter.tool_parser.extract(raw_text)
     tool_calls = None
-    if result_parsed.tool_calls:
-        # Convert Pydantic models to dicts for response
-        tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+    if tool_calls_list:
+        tool_calls = [tc.model_dump() for tc in tool_calls_list]
         finish_reason = "tool_calls"
         logger.debug(f"Detected {len(tool_calls)} tool calls in streaming response")
 
@@ -460,28 +461,29 @@ async def _generate_chat_complete(
     response_text, finish_reason = await run_on_metal_thread(run_generation)
     completion_tokens = len(tokenizer.encode(response_text))
 
-    # Post-process: Single-pass extraction with ResponseProcessor
-    # Uses model-family-specific patterns to prevent cross-family conflicts
-    from mlx_manager.mlx_server.services.response_processor import get_processor_for_family
+    # Post-process: Use adapter's parsers if adapter is provided
+    if adapter is not None:
+        tool_calls_list = adapter.tool_parser.extract(response_text)
+        reasoning_content = adapter.thinking_parser.extract(response_text)
+        final_content = response_text
+        if reasoning_content:
+            final_content = adapter.thinking_parser.remove(final_content)
+        final_content = adapter.clean_response(final_content)
+    else:
+        # No adapter - no parsing
+        tool_calls_list = []
+        reasoning_content = None
+        final_content = response_text
 
-    model_family = adapter.family if adapter else "default"
-    processor = get_processor_for_family(model_family)
-    result_parsed = processor.process(response_text)
-
-    # Extract results from ParseResult
+    # Convert tool calls to dicts
     tool_calls = None
-    if result_parsed.tool_calls:
-        # Convert Pydantic models to dicts for response
-        tool_calls = [tc.model_dump() for tc in result_parsed.tool_calls]
+    if tool_calls_list:
+        tool_calls = [tc.model_dump() for tc in tool_calls_list]
         finish_reason = "tool_calls"
         logger.debug(f"Detected {len(tool_calls)} tool calls in response")
 
-    reasoning_content = result_parsed.reasoning
     if reasoning_content:
         logger.debug(f"Extracted reasoning content ({len(reasoning_content)} chars)")
-
-    # Use cleaned content (tool markers and thinking tags removed)
-    final_content = result_parsed.content
 
     logger.info(
         f"Chat complete: {completion_id}, tokens={completion_tokens}, "
@@ -564,7 +566,6 @@ async def generate_completion(
         Streaming: yields chunk dicts
         Non-streaming: returns complete response dict
     """
-    from mlx_manager.mlx_server.models.adapters import get_adapter
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     # Handle list of prompts (use first for now, batch in Phase 9)
@@ -577,9 +578,18 @@ async def generate_completion(
     model = loaded.model
     tokenizer = loaded.tokenizer
 
-    # Get stop tokens (still use adapter for this)
-    adapter = get_adapter(model_id)
-    stop_tokens = set(adapter.get_stop_tokens(tokenizer))
+    # Get stop tokens from adapter
+    adapter = loaded.adapter
+    if adapter is not None:
+        stop_tokens = set(adapter.stop_tokens)
+    else:
+        # Fallback: compute directly from tokenizer
+        from mlx_manager.mlx_server.models.adapters.composable import (
+            DefaultAdapter,
+        )
+
+        adapter = DefaultAdapter(tokenizer)
+        stop_tokens = set(adapter.stop_tokens)
 
     # Generate unique ID
     completion_id = f"cmpl-{uuid.uuid4().hex[:12]}"

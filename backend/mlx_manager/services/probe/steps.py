@@ -48,6 +48,11 @@ class ProbeResult:
     tool_format: str | None = None
     practical_max_tokens: int | None = None
 
+    # Composable adapter fields
+    model_family: str | None = None
+    tool_parser_id: str | None = None
+    thinking_parser_id: str | None = None
+
     # Vision capabilities
     supports_multi_image: bool | None = None
     supports_video: bool | None = None

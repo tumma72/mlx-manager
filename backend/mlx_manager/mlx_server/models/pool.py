@@ -8,13 +8,18 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 from loguru import logger
 
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import AdapterInfo, ModelType
+
+if TYPE_CHECKING:
+    from mlx_manager.mlx_server.models.adapters.composable import (
+        ModelAdapter,
+    )
 
 try:  # pragma: no cover
     import logfire  # pragma: no cover
@@ -39,6 +44,7 @@ class LoadedModel:
     adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
     adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
     capabilities: Any = None  # ModelCapabilities from DB, attached at load time
+    adapter: ModelAdapter | None = None  # Composable adapter for TEXT_GEN
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -378,9 +384,7 @@ class ModelPoolManager:
                 try:
                     model = await asyncio.to_thread(load_audio, model_id)
                 except (ValueError, RuntimeError) as e:
-                    raise RuntimeError(
-                        f"Failed to load audio model '{model_id}': {e}"
-                    ) from e
+                    raise RuntimeError(f"Failed to load audio model '{model_id}': {e}") from e
                 tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm
@@ -423,6 +427,72 @@ class ModelPoolManager:
                         )
             except Exception as e:
                 logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
+
+            # Create composable adapter for TEXT_GEN models
+            if model_type == ModelType.TEXT_GEN and tokenizer is not None:
+                try:
+                    from mlx_manager.mlx_server.models.adapters.composable import (
+                        create_adapter,
+                    )
+                    from mlx_manager.mlx_server.models.adapters.registry import (
+                        detect_model_family,
+                    )
+                    from mlx_manager.mlx_server.parsers import (
+                        resolve_thinking_parser,
+                        resolve_tool_parser,
+                    )
+
+                    # Use DB capabilities if available
+                    family = None
+                    tool_parser = None
+                    thinking_parser = None
+                    if loaded.capabilities:
+                        caps = loaded.capabilities
+                        family = getattr(caps, "model_family", None)
+                        tp_id = getattr(caps, "tool_parser_id", None)
+                        thk_id = getattr(caps, "thinking_parser_id", None)
+                        if tp_id:
+                            try:
+                                tool_parser = resolve_tool_parser(tp_id)
+                            except KeyError:
+                                logger.warning(
+                                    "Unknown tool parser %r for %s",
+                                    tp_id,
+                                    model_id,
+                                )
+                        if thk_id:
+                            try:
+                                thinking_parser = resolve_thinking_parser(thk_id)
+                            except KeyError:
+                                logger.warning(
+                                    "Unknown thinking parser %r for %s",
+                                    thk_id,
+                                    model_id,
+                                )
+
+                    # Fallback to detection
+                    if family is None:
+                        family = detect_model_family(model_id)
+
+                    loaded.adapter = create_adapter(
+                        family=family,
+                        tokenizer=tokenizer,
+                        tool_parser=tool_parser,
+                        thinking_parser=thinking_parser,
+                    )
+                    logger.info(
+                        "Created %s adapter for %s (tool=%s, think=%s)",
+                        family,
+                        model_id,
+                        loaded.adapter.tool_parser.parser_id,
+                        loaded.adapter.thinking_parser.parser_id,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Could not create composable adapter for %s: %s",
+                        model_id,
+                        e,
+                    )
 
             async with self._lock:
                 self._models[model_id] = loaded

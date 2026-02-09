@@ -1,8 +1,20 @@
 """Tests for adapter tool calling support.
 
-Tool call parsing is now handled by ResponseProcessor (tested in test_response_processor.py).
-This file tests adapter-level tool calling configuration: support flags and prompt formatting.
+Tool call parsing is now handled by adapters via injected parsers.
+This file tests adapter-level tool calling configuration: support flags and
+prompt formatting.
 """
+
+
+class MockTokenizer:
+    """Mock tokenizer for adapter initialization."""
+
+    def __init__(self):
+        self.eos_token_id = 100
+        self.unk_token_id = 0
+
+    def convert_tokens_to_ids(self, token):
+        return 200  # Mock token ID
 
 
 class TestAdapterToolCallingSupport:
@@ -10,45 +22,45 @@ class TestAdapterToolCallingSupport:
 
     def test_llama_adapter_supports_tool_calling(self):
         """Llama adapter supports tool calling."""
-        from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import LlamaAdapter
 
-        adapter = LlamaAdapter()
-
+        adapter = LlamaAdapter(MockTokenizer())
         assert adapter.supports_tool_calling() is True
 
     def test_qwen_adapter_supports_tool_calling(self):
         """Qwen adapter supports tool calling."""
-        from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import QwenAdapter
 
-        adapter = QwenAdapter()
-
+        adapter = QwenAdapter(MockTokenizer())
         assert adapter.supports_tool_calling() is True
 
     def test_glm4_adapter_supports_tool_calling(self):
         """GLM4 adapter supports tool calling."""
-        from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
+        from mlx_manager.mlx_server.models.adapters.composable import GLM4Adapter
 
-        adapter = GLM4Adapter()
-
+        adapter = GLM4Adapter(MockTokenizer())
         assert adapter.supports_tool_calling() is True
 
     def test_default_adapter_does_not_support_tool_calling(self):
         """Default adapter does not support tool calling."""
-        from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import DefaultAdapter
 
-        adapter = DefaultAdapter()
-
+        adapter = DefaultAdapter(MockTokenizer())
         assert adapter.supports_tool_calling() is False
 
 
 class TestAdapterToolFormatting:
-    """Tests for adapter tool prompt formatting."""
+    """Tests for adapter tool prompt formatting.
+
+    NOTE: The actual tool formatting moved to individual parsers.
+    These tests verify the adapter delegates correctly.
+    """
 
     def test_llama_adapter_format_tools(self):
         """Llama adapter formats tools for prompt injection."""
-        from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import LlamaAdapter
 
-        adapter = LlamaAdapter()
+        adapter = LlamaAdapter(MockTokenizer())
         tools = [
             {
                 "function": {
@@ -71,25 +83,26 @@ class TestAdapterToolFormatting:
 
     def test_llama_adapter_format_tools_empty(self):
         """Llama adapter returns empty string for no tools."""
-        from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import LlamaAdapter
 
-        adapter = LlamaAdapter()
-
+        adapter = LlamaAdapter(MockTokenizer())
         result = adapter.format_tools_for_prompt([])
-
         assert result == ""
 
     def test_qwen_adapter_format_tools(self):
         """Qwen adapter formats tools using Hermes style."""
-        from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import QwenAdapter
 
-        adapter = QwenAdapter()
+        adapter = QwenAdapter(MockTokenizer())
         tools = [
             {
                 "function": {
                     "name": "search",
                     "description": "Search the web",
-                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                    },
                 }
             }
         ]
@@ -103,19 +116,17 @@ class TestAdapterToolFormatting:
 
     def test_qwen_adapter_format_tools_empty(self):
         """Qwen adapter returns empty string for no tools."""
-        from mlx_manager.mlx_server.models.adapters.qwen import QwenAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import QwenAdapter
 
-        adapter = QwenAdapter()
-
+        adapter = QwenAdapter(MockTokenizer())
         result = adapter.format_tools_for_prompt([])
-
         assert result == ""
 
     def test_glm4_adapter_format_tools(self):
         """GLM4 adapter formats tools using XML style."""
-        from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
+        from mlx_manager.mlx_server.models.adapters.composable import GLM4Adapter
 
-        adapter = GLM4Adapter()
+        adapter = GLM4Adapter(MockTokenizer())
         tools = [
             {
                 "function": {
@@ -123,7 +134,10 @@ class TestAdapterToolFormatting:
                     "description": "Send an email",
                     "parameters": {
                         "type": "object",
-                        "properties": {"to": {"type": "string"}, "body": {"type": "string"}},
+                        "properties": {
+                            "to": {"type": "string"},
+                            "body": {"type": "string"},
+                        },
                     },
                 }
             }
@@ -139,21 +153,18 @@ class TestAdapterToolFormatting:
 
     def test_glm4_adapter_format_tools_empty(self):
         """GLM4 adapter returns empty string for no tools."""
-        from mlx_manager.mlx_server.models.adapters.glm4 import GLM4Adapter
+        from mlx_manager.mlx_server.models.adapters.composable import GLM4Adapter
 
-        adapter = GLM4Adapter()
-
+        adapter = GLM4Adapter(MockTokenizer())
         result = adapter.format_tools_for_prompt([])
-
         assert result == ""
 
     def test_default_adapter_format_tools(self):
         """Default adapter returns empty string for tools."""
-        from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import DefaultAdapter
 
-        adapter = DefaultAdapter()
+        adapter = DefaultAdapter(MockTokenizer())
         tools = [{"function": {"name": "test", "description": "Test"}}]
 
         result = adapter.format_tools_for_prompt(tools)
-
         assert result == ""

@@ -1,20 +1,35 @@
 """Model adapters for family-specific handling."""
 
-from mlx_manager.mlx_server.models.adapters.base import DefaultAdapter, ModelAdapter
-from mlx_manager.mlx_server.models.adapters.llama import LlamaAdapter
+from mlx_manager.mlx_server.models.adapters.composable import (
+    FAMILY_REGISTRY,
+    DefaultAdapter,
+    GemmaAdapter,
+    GLM4Adapter,
+    LlamaAdapter,
+    MistralAdapter,
+    ModelAdapter,
+    QwenAdapter,
+    create_adapter,
+)
 from mlx_manager.mlx_server.models.adapters.registry import (
+    FAMILY_PATTERNS,
     detect_model_family,
-    get_adapter,
-    get_supported_families,
-    register_adapter,
 )
 
 __all__ = [
+    # Protocol and base
     "ModelAdapter",
     "DefaultAdapter",
+    # Family-specific adapters
+    "QwenAdapter",
+    "GLM4Adapter",
     "LlamaAdapter",
-    "get_adapter",
+    "GemmaAdapter",
+    "MistralAdapter",
+    # Factory and registry
+    "create_adapter",
+    "FAMILY_REGISTRY",
+    # Family detection
     "detect_model_family",
-    "register_adapter",
-    "get_supported_families",
+    "FAMILY_PATTERNS",
 ]

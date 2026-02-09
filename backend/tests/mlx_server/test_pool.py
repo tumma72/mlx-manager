@@ -1494,3 +1494,41 @@ class TestAdapterDoubleCheck:
         )
 
         assert result is existing
+
+
+# ============================================================================
+# TestModelAdapterCreation
+# ============================================================================
+
+
+class TestModelAdapterCreation:
+    """Tests for composable adapter creation during model loading."""
+
+    def test_loaded_model_has_adapter_field(self):
+        """LoadedModel has adapter field defaulting to None."""
+        loaded = LoadedModel(
+            model_id="test/model",
+            model=MagicMock(),
+            tokenizer=MagicMock(),
+        )
+        assert loaded.adapter is None
+
+    def test_loaded_model_adapter_assignment(self):
+        """Adapter can be assigned to LoadedModel."""
+        from mlx_manager.mlx_server.models.adapters.composable import (
+            DefaultAdapter,
+        )
+
+        mock_tok = MagicMock()
+        mock_tok.eos_token_id = 0
+        mock_tok.unk_token_id = -1
+        mock_tok.tokenizer = mock_tok
+        loaded = LoadedModel(
+            model_id="test/model",
+            model=MagicMock(),
+            tokenizer=mock_tok,
+        )
+        adapter = DefaultAdapter(tokenizer=mock_tok)
+        loaded.adapter = adapter
+        assert loaded.adapter is not None
+        assert loaded.adapter.family == "default"

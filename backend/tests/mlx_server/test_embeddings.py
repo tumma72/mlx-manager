@@ -494,6 +494,7 @@ class TestGenerateEmbeddingsService:
 
         with patch("mlx_manager.mlx_server.api.v1.embeddings.detect_model_type") as mock_detect:
             from unittest.mock import AsyncMock
+
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.EMBEDDINGS
@@ -513,6 +514,7 @@ class TestGenerateEmbeddingsService:
     async def test_endpoint_generic_exception_returns_500(self):
         """Generic exception during embeddings generation returns 500."""
         from unittest.mock import AsyncMock
+
         from fastapi import HTTPException
 
         request = EmbeddingRequest(
