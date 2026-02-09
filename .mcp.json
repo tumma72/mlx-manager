@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "logfire": {
+      "command": "uvx",
+      "args": ["logfire-mcp@latest"],
+      "type": "stdio",
+      "env": {
+        "LOGFIRE_READ_TOKEN": "${LOGFIRE_READ_TOKEN:-not_set}"
+      }
+    }
+  }
+}
