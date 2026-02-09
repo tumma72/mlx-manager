@@ -390,11 +390,24 @@ export interface AuditStats {
 
 export interface ModelCapabilities {
   model_id: string;
-  supports_native_tools: boolean | null;
-  supports_thinking: boolean | null;
-  practical_max_tokens: number | null;
-  probed_at: string | null;
-  probe_version: number;
+  model_type?: string | null;
+  probed_at?: string | null;
+  probe_version?: number;
+  // Text-gen
+  supports_native_tools?: boolean | null;
+  supports_thinking?: boolean | null;
+  tool_format?: string | null;
+  practical_max_tokens?: number | null;
+  // Vision
+  supports_multi_image?: boolean | null;
+  supports_video?: boolean | null;
+  // Embeddings
+  embedding_dimensions?: number | null;
+  max_sequence_length?: number | null;
+  is_normalized?: boolean | null;
+  // Audio
+  supports_tts?: boolean | null;
+  supports_stt?: boolean | null;
 }
 
 export interface ProbeStep {

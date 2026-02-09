@@ -63,10 +63,15 @@ class AudioProbe:
         if is_tts:
             yield ProbeStep(step="test_tts", status="running")
             try:
-                tts_ok = await _test_tts(loaded)
+                tts_ok, audio_bytes = await _test_tts(loaded)
+                audio_b64 = None
+                if tts_ok and audio_bytes:
+                    import base64
+                    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
                 yield ProbeStep(
                     step="test_tts",
                     status="completed" if tts_ok else "failed",
+                    value=audio_b64,
                     error=None if tts_ok else "TTS generation returned empty audio",
                 )
             except Exception as e:
@@ -142,19 +147,21 @@ def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool]:
     return is_tts, is_stt
 
 
-async def _test_tts(loaded: LoadedModel) -> bool:
+async def _test_tts(loaded: LoadedModel) -> tuple[bool, bytes | None]:
     """Test TTS by generating a short audio clip from minimal text."""
     try:
         from mlx_manager.mlx_server.services.audio import generate_speech
 
         audio_bytes, sample_rate = await generate_speech(
             model_id=loaded.model_id,
-            text="Hello.",
+            text="Welcome to MLX Manager, where your locally downloaded models take flight!",
             voice="af_heart",  # Kokoro default voice
             speed=1.0,
             response_format="wav",
         )
-        return len(audio_bytes) > 0
+        if len(audio_bytes) > 0:
+            return True, audio_bytes
+        return False, None
     except Exception as e:
         logger.debug(f"TTS test error: {e}")
         raise

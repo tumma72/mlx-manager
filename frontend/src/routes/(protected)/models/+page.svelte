@@ -12,7 +12,7 @@
 		FilterChips,
 		ModelBadges,
 		ModelSpecs,
-		ProbeProgress,
+		ProbeModal,
 		type FilterState,
 		createEmptyFilters
 	} from '$components/models';
@@ -33,6 +33,10 @@
 	let filterByMemory = $state(true);
 	let filters = $state<FilterState>(createEmptyFilters());
 	let showFilterModal = $state(false);
+
+	// Probe modal state
+	let showProbeModal = $state(false);
+	let probingModelId = $state<string | null>(null);
 
 	// Delete confirmation state
 	let showDeleteConfirm = $state(false);
@@ -71,6 +75,9 @@
 
 	async function handleProbe(modelId: string) {
 		if (!authStore.token) return;
+		probingModelId = modelId;
+		probeStore.reset(modelId);
+		showProbeModal = true;
 		await probeStore.startProbe(modelId, authStore.token);
 		await loadCapabilities();
 	}
@@ -325,17 +332,12 @@
 						{@const probeState = probeStore.getProbe(model.model_id)}
 						{@const caps = capabilitiesMap.get(model.model_id) ?? null}
 						<Card
-							class="p-4 {!probed
-								? 'border-dashed border-muted-foreground/30'
-								: ''}"
+							class="p-4"
 						>
 							<div class="flex items-start justify-between">
 								<div class="flex-1 min-w-0 space-y-1">
 									<div class="flex items-center gap-2">
 										<h3 class="font-medium">{model.model_id}</h3>
-										{#if !probed && probeState.status === 'idle'}
-											<span class="text-xs italic text-muted-foreground">not probed</span>
-										{/if}
 									</div>
 									<p class="text-sm text-muted-foreground">
 										{model.size_gb.toFixed(2)} GB
@@ -347,23 +349,17 @@
 										/>
 										<ModelSpecs characteristics={model.characteristics} />
 									{/if}
-									{#if probeState.status === 'probing' || probeState.status === 'completed' || probeState.status === 'failed'}
-										<div class="mt-2">
-											<ProbeProgress probe={probeState} />
-										</div>
-									{/if}
 								</div>
 								<div class="flex gap-2 ml-4">
-									{#if !probed && probeState.status === 'idle'}
 										<Button
 											variant="outline"
 											size="sm"
 											onclick={() => handleProbe(model.model_id)}
+											disabled={probeState.status === 'probing'}
 										>
 											<FlaskConical class="w-4 h-4 mr-1" />
-											Probe
+											{probed ? 'Re-probe' : 'Probe'}
 										</Button>
-									{/if}
 									<Button
 										variant="outline"
 										size="sm"
@@ -431,3 +427,8 @@
 		modelToDelete = null;
 	}}
 />
+
+{#if probingModelId}
+	{@const probeState = probeStore.getProbe(probingModelId)}
+	<ProbeModal bind:open={showProbeModal} modelId={probingModelId} probe={probeState} />
+{/if}

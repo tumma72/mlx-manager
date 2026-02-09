@@ -5,6 +5,9 @@
 	import QuantizationBadge from './badges/QuantizationBadge.svelte';
 	import ToolUseBadge from './badges/ToolUseBadge.svelte';
 	import ThinkingBadge from './badges/ThinkingBadge.svelte';
+	import TTSBadge from './badges/TTSBadge.svelte';
+	import STTBadge from './badges/STTBadge.svelte';
+	import EmbeddingsBadge from './badges/EmbeddingsBadge.svelte';
 
 	interface Props {
 		characteristics: ModelCharacteristics | null | undefined;
@@ -48,6 +51,15 @@
 		{/if}
 		{#if showToolUse}
 			<ToolUseBadge verified={toolUseVerified} />
+		{/if}
+		{#if capabilities?.supports_tts === true}
+			<TTSBadge />
+		{/if}
+		{#if capabilities?.supports_stt === true}
+			<STTBadge />
+		{/if}
+		{#if capabilities?.model_type === 'embeddings'}
+			<EmbeddingsBadge />
 		{/if}
 	{/if}
 </div>
