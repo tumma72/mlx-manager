@@ -66,6 +66,16 @@ mlx_manager/
     launchd.py              # macOS launchd plist generation and service control
     manager_launchd.py      # MLX Manager's own launchd service
 
+    probe/                  # Model capability probing (one-time, on download)
+      __init__.py           # Public API: get_probe_service()
+      service.py            # ProbeService singleton — orchestrates probe lifecycle
+      strategy.py           # Type-dispatch: selects probe strategy per ModelType
+      text_gen.py           # TextGenProbe — tool/thinking/context probing
+      vision.py             # VisionProbe — multi-image/video detection
+      embeddings.py         # EmbeddingsProbe — dimensionality/normalization
+      audio.py              # AudioProbe — TTS/STT capability detection
+      steps.py              # ProbeStep/ProbeResult — SSE progress types
+
   utils/                    # Shared utilities
     security.py             # Model path validation
     model_detection.py      # Extract model characteristics from config.json
@@ -321,6 +331,17 @@ chat_router.chat_completions()
     ▼
 mlx_server.services.inference.generate_chat_completion()
     │  or mlx_server.services.vision.generate_vision_completion()
+    │
+    │  The service reads the adapter from LoadedModel — NO per-request
+    │  model detection, adapter creation, or parser selection. The adapter
+    │  was created at load time with the correct parsers already injected
+    │  (see mlx_server/ARCHITECTURE.md §6 and §10).
+    │
+    │  adapter = loaded.adapter
+    │  prompt = adapter.apply_chat_template(messages, tools=tools)
+    │  markers = adapter.get_stream_markers()  # combined tool + thinking
+    │  → single-pass StreamingProcessor with markers
+    │  → finalize via adapter.tool_parser.extract() / thinking_parser.extract()
     ▼
 StreamingResponse (text/event-stream):
     events: thinking, thinking_done, response, tool_call, tool_calls_done, done, error
@@ -382,8 +403,54 @@ POST /api/models/download/{downloadId}/cancel
 | Health Checker        | `health_checker.py`   | Singleton     | Background model pool health monitoring |
 | Launchd Manager       | `launchd.py`          | Singleton     | macOS launchd plist management          |
 | Manager Launchd       | `manager_launchd.py`  | Functions     | MLX Manager's own launchd service       |
+| Probe Service          | `probe/service.py`    | Singleton     | Model capability probing and DB persistence |
 
-### 6.2 Auth Service Contract
+### 6.2 Probe Service Contract
+
+The probe service orchestrates one-time model capability discovery. It runs during
+model download (or on-demand) and stores all results in `ModelCapabilities` so that
+load-time and inference-time require no runtime detection.
+
+```python
+# probe/service.py — singleton via get_probe_service() / reset_probe_service()
+
+class ProbeService:
+    async def probe_model(
+        self, model_id: str, db: AsyncSession
+    ) -> AsyncGenerator[ProbeStep, None]:
+        """Full probe lifecycle for a model.
+
+        1. detect_model_type(config.json) → model_type
+        2. detect_model_family(model_id + config) → model_family
+        3. Load model via pool
+        4. Select probe strategy by model_type (text_gen, vision, embeddings, audio)
+        5. Run type-specific probe steps:
+           - text_gen: tool parser discovery, thinking detection, context estimation
+           - vision: multi-image/video support
+           - embeddings: dimensionality, normalization
+           - audio: TTS/STT capabilities
+        6. Persist ModelCapabilities to DB (upsert)
+        7. Unload model (unless preloaded)
+
+        Yields ProbeStep events for real-time UI progress via SSE.
+        """
+
+    async def get_capabilities(
+        self, model_id: str, db: AsyncSession
+    ) -> ModelCapabilities | None:
+        """Read cached capabilities from DB. Returns None if never probed."""
+```
+
+**Tool parser discovery (text_gen probe)**:
+
+The text_gen probe uses the **same parser infrastructure** as inference (see
+`mlx_server/ARCHITECTURE.md` §5). The probe generates a response with a tool
+definition and validates output using `parser.validates(output, expected_fn)`,
+which internally delegates to `parser.extract()` — the same code path that
+inference uses. If the model family's default parser fails, the probe iterates
+**all registered parsers** as a fallback before concluding "no tool support."
+
+### 6.3 Auth Service Contract
 
 ```python
 # auth_service.py — stateless functions, no class needed
@@ -401,7 +468,7 @@ decode_token(token: str) -> dict | None
     # Validate signature + expiry, return payload or None
 ```
 
-### 6.3 Encryption Service Contract
+### 6.4 Encryption Service Contract
 
 ```python
 # encryption_service.py — stateless functions with cached key derivation
@@ -416,7 +483,7 @@ clear_cache() -> None
     # Clear LRU-cached JWE key (for testing)
 ```
 
-### 6.4 Download Infrastructure
+### 6.5 Download Infrastructure
 
 The download system bridges async FastAPI with synchronous `huggingface_hub`:
 
@@ -442,18 +509,46 @@ Cancellation uses `threading.Event` + custom tqdm subclass that raises
 
 ### 7.1 Database Entities
 
-| Entity           | Table              | Purpose                                      |
-|------------------|--------------------|-----------------------------------------------|
-| `User`           | `users`            | Email, hashed_password, is_admin, status      |
-| `ServerProfile`  | `server_profiles`  | Model config (path, type, context, prompts)   |
-| `Download`       | `downloads`        | Download tracking (status, bytes, timestamps) |
-| `DownloadedModel`| `downloaded_models`| Cache of local model metadata                 |
-| `CloudCredential`| `cloud_credentials`| Encrypted API keys for cloud backends         |
-| `BackendMapping` | `backend_mappings` | Model pattern → cloud backend routing rules   |
-| `ServerConfig`   | `server_config`    | Singleton pool configuration                  |
-| `Setting`        | `settings`         | Key-value app settings                        |
+| Entity              | Table                | Purpose                                      |
+|---------------------|----------------------|-----------------------------------------------|
+| `User`              | `users`              | Email, hashed_password, is_admin, status      |
+| `ServerProfile`     | `server_profiles`    | Model config (path, type, context, prompts)   |
+| `Download`          | `downloads`          | Download tracking (status, bytes, timestamps) |
+| `DownloadedModel`   | `downloaded_models`  | Cache of local model metadata                 |
+| `ModelCapabilities` | `model_capabilities` | Probed model configuration (see §7.2)         |
+| `CloudCredential`   | `cloud_credentials`  | Encrypted API keys for cloud backends         |
+| `BackendMapping`    | `backend_mappings`   | Model pattern → cloud backend routing rules   |
+| `ServerConfig`      | `server_config`      | Singleton pool configuration                  |
+| `Setting`           | `settings`           | Key-value app settings                        |
 
-### 7.2 Session Management
+### 7.2 ModelCapabilities Schema
+
+`ModelCapabilities` is the single source of truth for how a model should behave at
+load-time and inference-time. It is populated once during probing and read at every
+model load to configure the adapter (see `mlx_server/ARCHITECTURE.md` §11 for the
+full schema).
+
+**Key fields** (additions to the original schema marked with `*`):
+
+| Field                  | Type        | Purpose                                           |
+|------------------------|-------------|---------------------------------------------------|
+| `model_id`             | `str` (PK)  | HuggingFace model ID                              |
+| `model_type`           | `str?`      | TEXT_GEN, VISION, EMBEDDINGS, AUDIO               |
+| `model_family` *       | `str?`      | qwen, glm4, llama, gemma, mistral, default        |
+| `tool_parser_id` *     | `str?`      | hermes_json, glm4_native, llama_xml, null          |
+| `thinking_parser_id` * | `str?`      | think_tag, null                                    |
+| `supports_native_tools`| `bool?`     | tokenizer accepts `tools=` parameter               |
+| `supports_thinking`    | `bool?`     | model produces thinking blocks                     |
+| `tool_format`          | `str?`      | "native", "injection", or None                     |
+| `practical_max_tokens` | `int?`      | estimated from KV cache + available memory         |
+| `probe_version` *      | `int`       | schema version (currently 3) for re-probe triggers |
+
+The `model_family` and parser ID fields replace the per-request `detect_model_family()`
+and `get_adapter()` calls. At load time, the pool reads these fields and passes them
+to `create_adapter()` to build a fully configured adapter instance (see
+`mlx_server/ARCHITECTURE.md` §6.3).
+
+### 7.3 Session Management
 
 ```python
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -470,10 +565,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 ```
 
-### 7.3 Schema Migrations
+### 7.4 Schema Migrations
 
 Migrations are additive-only (ALTER TABLE ADD COLUMN) due to SQLite limitations.
 Run at startup in `migrate_schema()`. Columns are never dropped.
+
+**Pending migration** (composable adapter architecture):
+- Add `model_family TEXT` to `model_capabilities`
+- Add `tool_parser_id TEXT` to `model_capabilities`
+- Add `thinking_parser_id TEXT` to `model_capabilities`
+- Add `probe_version INTEGER DEFAULT 3` to `model_capabilities`
+
+Models probed under the previous schema (`probe_version` absent or < 3) should
+be re-probed to populate the new fields. Until re-probed, the pool falls back to
+runtime `detect_model_family()` and family-default parsers.
 
 ---
 
