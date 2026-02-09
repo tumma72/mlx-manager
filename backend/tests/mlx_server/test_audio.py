@@ -969,8 +969,8 @@ class TestTranscribeAudioService:
 
         captured_audio_path = []
 
-        def capture_transcription_call(model, audio, verbose, **kwargs):
-            captured_audio_path.append(audio)
+        def capture_transcription_call(model, audio_path, verbose, **kwargs):
+            captured_audio_path.append(audio_path)
             return mock_stt_output
 
         async def run_fn_directly(fn, **kwargs):
@@ -1021,8 +1021,8 @@ class TestTranscribeAudioService:
 
         captured_path = []
 
-        def capture_path(model, audio, verbose, **kwargs):
-            captured_path.append(audio)
+        def capture_path(model, audio_path, verbose, **kwargs):
+            captured_path.append(audio_path)
             return mock_stt_output
 
         async def run_fn_directly(fn, **kwargs):
