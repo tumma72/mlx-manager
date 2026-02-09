@@ -124,13 +124,70 @@
 		)
 	);
 
-	// STT transcript from probe
-	let sttTranscript = $derived.by(() => {
-		const sttStep = probe.steps.find(
-			(s) => s.step === 'test_stt' && s.status === 'completed' && typeof s.value === 'string'
-		);
-		return sttStep?.value as string | undefined;
+	// STT results from probe (value is {transcript, audio_b64} dict)
+	let sttResult = $derived.by(() => {
+		const sttStep = probe.steps.find((s) => s.step === 'test_stt' && s.status === 'completed');
+		if (!sttStep?.value) return null;
+		const val = sttStep.value as Record<string, unknown>;
+		if (typeof val === 'object' && val !== null && 'transcript' in val) {
+			return {
+				transcript: val.transcript as string,
+				audioB64: (val.audio_b64 as string) ?? null
+			};
+		}
+		// Backwards compat: plain string transcript
+		if (typeof sttStep.value === 'string') {
+			return { transcript: sttStep.value, audioB64: null };
+		}
+		return null;
 	});
+
+	// STT audio playback (separate from TTS audio)
+	let sttAudioUrl = $state<string | null>(null);
+	let sttIsPlaying = $state(false);
+	let sttAudioElement: HTMLAudioElement | null = null;
+
+	$effect(() => {
+		const b64 = sttResult?.audioB64;
+		if (b64) {
+			const binary = atob(b64);
+			const bytes = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) {
+				bytes[i] = binary.charCodeAt(i);
+			}
+			const blob = new Blob([bytes], { type: 'audio/wav' });
+			const url = URL.createObjectURL(blob);
+			sttAudioUrl = url;
+
+			const audio = new Audio(url);
+			audio.addEventListener('ended', () => {
+				sttIsPlaying = false;
+			});
+			sttAudioElement = audio;
+
+			return () => {
+				audio.pause();
+				sttAudioElement = null;
+				sttIsPlaying = false;
+				URL.revokeObjectURL(url);
+			};
+		} else {
+			sttAudioUrl = null;
+			sttAudioElement = null;
+			sttIsPlaying = false;
+		}
+	});
+
+	function toggleSttPlayback() {
+		if (!sttAudioElement) return;
+		if (sttIsPlaying) {
+			sttAudioElement.pause();
+			sttIsPlaying = false;
+		} else {
+			sttAudioElement.play();
+			sttIsPlaying = true;
+		}
+	}
 
 	// Derive which badges to show from capabilities
 	// tool_format is the SSE-emitted capability (supports_native_tools is only in backend ProbeResult)
@@ -222,12 +279,28 @@
 						</div>
 					{/if}
 
-					<!-- STT transcript after STT step (only when STT completed) -->
-					{#if step.step === 'test_stt' && step.status === 'completed' && sttTranscript}
-						<div class="ml-6 mt-1 mb-2">
-							<span class="text-xs text-muted-foreground italic truncate max-w-[400px]"
-								>"{sttTranscript}"</span
-							>
+					<!-- STT results after STT step (play button + transcript) -->
+					{#if step.step === 'test_stt' && step.status === 'completed' && sttResult}
+						<div class="ml-6 mt-1 mb-2 flex items-center gap-2 flex-wrap">
+							{#if sttAudioUrl}
+								<button
+									onclick={toggleSttPlayback}
+									class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors bg-indigo-100 text-indigo-800 border border-indigo-300 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-700 dark:hover:bg-indigo-900/50"
+								>
+									{#if sttIsPlaying}
+										<Pause class="w-3 h-3" />
+										Pause
+									{:else}
+										<Volume2 class="w-3 h-3" />
+										Play
+									{/if}
+								</button>
+							{/if}
+							{#if sttResult.transcript}
+								<span class="text-xs text-muted-foreground italic truncate max-w-[400px]"
+									>"{sttResult.transcript}"</span
+								>
+							{/if}
 						</div>
 					{/if}
 				{/each}

@@ -6,8 +6,10 @@ then validates with lightweight generation tests.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -22,6 +24,11 @@ if TYPE_CHECKING:
 # Architecture patterns for TTS and STT models
 _TTS_ARCHITECTURES = {"kokoro", "bark", "speecht5", "parler", "dia", "outetts", "spark", "soprano"}
 _STT_ARCHITECTURES = {"whisper", "parakeet"}
+
+_TTS_TEST_TEXT = "Welcome to MLX Manager, where your locally downloaded models take flight!"
+
+# Pre-generated WAV file (Kokoro TTS) used for STT testing
+_STT_TEST_WAV = Path(__file__).parent / "stt_test.wav"
 
 
 class AudioProbe:
@@ -67,7 +74,6 @@ class AudioProbe:
                 tts_ok, audio_bytes = await _test_tts(loaded)
                 audio_b64 = None
                 if tts_ok and audio_bytes:
-                    import base64
                     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
                     tts_audio_bytes = audio_bytes
                 yield ProbeStep(
@@ -82,15 +88,25 @@ class AudioProbe:
         else:
             yield ProbeStep(step="test_tts", status="skipped")
 
-        # Step 3: Test STT if supported (use TTS audio if available)
+        # Step 3: Test STT if supported
         if is_stt:
+            # Use TTS output from step 2, or the pre-generated fixture
+            stt_input = tts_audio_bytes or _load_stt_test_wav()
+
             yield ProbeStep(step="test_stt", status="running")
             try:
-                stt_ok, transcript = await _test_stt(loaded, tts_audio_bytes)
+                stt_ok, transcript, used_audio = await _test_stt(loaded, stt_input)
+
+                stt_value: dict[str, Any] | None = None
+                if stt_ok and transcript:
+                    stt_value = {"transcript": transcript}
+                    if used_audio is not None:
+                        stt_value["audio_b64"] = base64.b64encode(used_audio).decode("ascii")
+
                 yield ProbeStep(
                     step="test_stt",
                     status="completed" if stt_ok else "failed",
-                    value=transcript,
+                    value=stt_value,
                     error=None if stt_ok else "STT transcription returned empty text",
                 )
             except Exception as e:
@@ -98,6 +114,14 @@ class AudioProbe:
                 yield ProbeStep(step="test_stt", status="failed", error=str(e))
         else:
             yield ProbeStep(step="test_stt", status="skipped")
+
+
+def _load_stt_test_wav() -> bytes | None:
+    """Load the pre-generated STT test WAV file."""
+    if _STT_TEST_WAV.exists():
+        return _STT_TEST_WAV.read_bytes()
+    logger.warning(f"STT test WAV not found at {_STT_TEST_WAV}")
+    return None
 
 
 def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool]:
@@ -157,7 +181,7 @@ async def _test_tts(loaded: LoadedModel) -> tuple[bool, bytes | None]:
 
         audio_bytes, sample_rate = await generate_speech(
             model_id=loaded.model_id,
-            text="Welcome to MLX Manager, where your locally downloaded models take flight!",
+            text=_TTS_TEST_TEXT,
             voice="af_heart",  # Kokoro default voice
             speed=1.0,
             response_format="wav",
@@ -170,11 +194,15 @@ async def _test_tts(loaded: LoadedModel) -> tuple[bool, bytes | None]:
         raise
 
 
-async def _test_stt(loaded: LoadedModel, audio_bytes: bytes | None = None) -> tuple[bool, str | None]:
+async def _test_stt(
+    loaded: LoadedModel, audio_bytes: bytes | None = None
+) -> tuple[bool, str | None, bytes | None]:
     """Test STT by transcribing audio.
 
-    If audio_bytes is provided (e.g. from a TTS test), uses that.
+    If audio_bytes is provided (from TTS test or fixture), uses that.
     Otherwise falls back to a short silent WAV clip.
+
+    Returns (success, transcript, audio_bytes_used).
     """
     try:
         from mlx_manager.mlx_server.services.audio import transcribe_audio
@@ -188,7 +216,6 @@ async def _test_stt(loaded: LoadedModel, audio_bytes: bytes | None = None) -> tu
             num_samples = int(sample_rate * duration)
             audio_data = struct.pack(f"<{num_samples}h", *([0] * num_samples))
 
-            # WAV header
             wav_header = struct.pack(
                 "<4sI4s4sIHHIIHH4sI",
                 b"RIFF",
@@ -212,10 +239,9 @@ async def _test_stt(loaded: LoadedModel, audio_bytes: bytes | None = None) -> tu
             model_id=loaded.model_id,
             audio_data=audio_bytes,
         )
-        # STT should return something (even empty text for silence)
         if isinstance(result, dict) and "text" in result:
-            return True, result["text"] or None
-        return False, None
+            return True, result["text"] or None, audio_bytes
+        return False, None, audio_bytes
     except Exception as e:
         logger.debug(f"STT test error: {e}")
         raise
