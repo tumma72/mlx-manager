@@ -60,6 +60,7 @@ class AudioProbe:
             return  # Can't continue without knowing the type
 
         # Step 2: Test TTS if supported
+        tts_audio_bytes: bytes | None = None
         if is_tts:
             yield ProbeStep(step="test_tts", status="running")
             try:
@@ -68,6 +69,7 @@ class AudioProbe:
                 if tts_ok and audio_bytes:
                     import base64
                     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                    tts_audio_bytes = audio_bytes
                 yield ProbeStep(
                     step="test_tts",
                     status="completed" if tts_ok else "failed",
@@ -80,14 +82,15 @@ class AudioProbe:
         else:
             yield ProbeStep(step="test_tts", status="skipped")
 
-        # Step 3: Test STT if supported
+        # Step 3: Test STT if supported (use TTS audio if available)
         if is_stt:
             yield ProbeStep(step="test_stt", status="running")
             try:
-                stt_ok = await _test_stt(loaded)
+                stt_ok, transcript = await _test_stt(loaded, tts_audio_bytes)
                 yield ProbeStep(
                     step="test_stt",
                     status="completed" if stt_ok else "failed",
+                    value=transcript,
                     error=None if stt_ok else "STT transcription returned empty text",
                 )
             except Exception as e:
@@ -167,44 +170,52 @@ async def _test_tts(loaded: LoadedModel) -> tuple[bool, bytes | None]:
         raise
 
 
-async def _test_stt(loaded: LoadedModel) -> bool:
-    """Test STT by transcribing a short silent audio clip."""
-    try:
-        import struct
+async def _test_stt(loaded: LoadedModel, audio_bytes: bytes | None = None) -> tuple[bool, str | None]:
+    """Test STT by transcribing audio.
 
+    If audio_bytes is provided (e.g. from a TTS test), uses that.
+    Otherwise falls back to a short silent WAV clip.
+    """
+    try:
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        # Generate a minimal WAV file with silence (0.5s at 16kHz)
-        sample_rate = 16000
-        duration = 0.5
-        num_samples = int(sample_rate * duration)
-        audio_data = struct.pack(f"<{num_samples}h", *([0] * num_samples))
+        if audio_bytes is None:
+            import struct
 
-        # WAV header
-        wav_header = struct.pack(
-            "<4sI4s4sIHHIIHH4sI",
-            b"RIFF",
-            36 + len(audio_data),
-            b"WAVE",
-            b"fmt ",
-            16,  # chunk size
-            1,  # PCM format
-            1,  # mono
-            sample_rate,
-            sample_rate * 2,  # byte rate
-            2,  # block align
-            16,  # bits per sample
-            b"data",
-            len(audio_data),
-        )
+            # Generate a minimal WAV file with silence (0.5s at 16kHz)
+            sample_rate = 16000
+            duration = 0.5
+            num_samples = int(sample_rate * duration)
+            audio_data = struct.pack(f"<{num_samples}h", *([0] * num_samples))
 
-        wav_bytes = wav_header + audio_data
+            # WAV header
+            wav_header = struct.pack(
+                "<4sI4s4sIHHIIHH4sI",
+                b"RIFF",
+                36 + len(audio_data),
+                b"WAVE",
+                b"fmt ",
+                16,  # chunk size
+                1,  # PCM format
+                1,  # mono
+                sample_rate,
+                sample_rate * 2,  # byte rate
+                2,  # block align
+                16,  # bits per sample
+                b"data",
+                len(audio_data),
+            )
+
+            audio_bytes = wav_header + audio_data
+
         result = await transcribe_audio(
             model_id=loaded.model_id,
-            audio_data=wav_bytes,
+            audio_data=audio_bytes,
         )
         # STT should return something (even empty text for silence)
-        return isinstance(result, dict) and "text" in result
+        if isinstance(result, dict) and "text" in result:
+            return True, result["text"] or None
+        return False, None
     except Exception as e:
         logger.debug(f"STT test error: {e}")
         raise

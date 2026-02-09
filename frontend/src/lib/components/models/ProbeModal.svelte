@@ -124,8 +124,21 @@
 		)
 	);
 
+	// STT transcript from probe
+	let sttTranscript = $derived.by(() => {
+		const sttStep = probe.steps.find(
+			(s) => s.step === 'test_stt' && s.status === 'completed' && typeof s.value === 'string'
+		);
+		return sttStep?.value as string | undefined;
+	});
+
 	// Derive which badges to show from capabilities
-	let showToolUse = $derived(probe.capabilities.supports_native_tools === true);
+	// tool_format is the SSE-emitted capability (supports_native_tools is only in backend ProbeResult)
+	let showToolUse = $derived(
+		probe.capabilities.supports_native_tools === true ||
+			(typeof probe.capabilities.tool_format === 'string' &&
+				probe.capabilities.tool_format.length > 0)
+	);
 	let showThinking = $derived(probe.capabilities.supports_thinking === true);
 	let showTTS = $derived(probe.capabilities.supports_tts === true);
 	let showSTT = $derived(probe.capabilities.supports_stt === true);
@@ -191,8 +204,8 @@
 						</div>
 					</div>
 
-					<!-- Audio player after TTS step -->
-					{#if step.step === 'test_tts' && audioUrl}
+					<!-- Play button after TTS step (only when TTS completed) -->
+					{#if step.step === 'test_tts' && step.status === 'completed' && audioUrl}
 						<div class="ml-6 mt-1 mb-2">
 							<button
 								onclick={togglePlayback}
@@ -206,6 +219,15 @@
 									Play Test
 								{/if}
 							</button>
+						</div>
+					{/if}
+
+					<!-- STT transcript after STT step (only when STT completed) -->
+					{#if step.step === 'test_stt' && step.status === 'completed' && sttTranscript}
+						<div class="ml-6 mt-1 mb-2">
+							<span class="text-xs text-muted-foreground italic truncate max-w-[400px]"
+								>"{sttTranscript}"</span
+							>
 						</div>
 					{/if}
 				{/each}
