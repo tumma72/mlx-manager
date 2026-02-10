@@ -428,8 +428,8 @@ class ModelPoolManager:
             except Exception as e:
                 logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
 
-            # Create composable adapter for TEXT_GEN models
-            if model_type == ModelType.TEXT_GEN and tokenizer is not None:
+            # Create composable adapter for TEXT_GEN and VISION models
+            if model_type in (ModelType.TEXT_GEN, ModelType.VISION) and tokenizer is not None:
                 try:
                     from mlx_manager.mlx_server.models.adapters.composable import (
                         create_adapter,

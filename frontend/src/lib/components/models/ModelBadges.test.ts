@@ -469,6 +469,86 @@ describe("ModelBadges", () => {
       expect(screen.getByText("Tool Use")).toBeInTheDocument();
       expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
     });
+
+    describe("vision capability badges", () => {
+      it("shows Multi-Image badge when supports_multi_image is true", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics(),
+            capabilities: createMockCapabilities({ supports_multi_image: true }),
+          },
+        });
+        expect(screen.getByText("Multi-Image")).toBeInTheDocument();
+      });
+
+      it("hides Multi-Image badge when supports_multi_image is false", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics(),
+            capabilities: createMockCapabilities({ supports_multi_image: false }),
+          },
+        });
+        expect(screen.queryByText("Multi-Image")).not.toBeInTheDocument();
+      });
+
+      it("hides Multi-Image badge when supports_multi_image is null", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics(),
+            capabilities: createMockCapabilities({ supports_multi_image: null }),
+          },
+        });
+        expect(screen.queryByText("Multi-Image")).not.toBeInTheDocument();
+      });
+
+      it("shows Video badge when supports_video is true", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics(),
+            capabilities: createMockCapabilities({ supports_video: true }),
+          },
+        });
+        expect(screen.getByText("Video")).toBeInTheDocument();
+      });
+
+      it("hides Video badge when supports_video is false", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics(),
+            capabilities: createMockCapabilities({ supports_video: false }),
+          },
+        });
+        // Use title attribute since VisionVideoBadge has title="Supports video input"
+        const videoBadge = document.querySelector('[title="Supports video input"]');
+        expect(videoBadge).not.toBeInTheDocument();
+      });
+
+      it("shows both Multi-Image and Video badges when both supported", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics({ is_multimodal: true }),
+            capabilities: createMockCapabilities({
+              supports_multi_image: true,
+              supports_video: true,
+            }),
+          },
+        });
+        expect(screen.getByText("Multi-Image")).toBeInTheDocument();
+        expect(screen.getByText("Video")).toBeInTheDocument();
+      });
+
+      it("does not show vision badges without capabilities", () => {
+        render(ModelBadges, {
+          props: {
+            characteristics: createMockCharacteristics({ is_multimodal: true }),
+            capabilities: null,
+          },
+        });
+        expect(screen.queryByText("Multi-Image")).not.toBeInTheDocument();
+        const videoBadge = document.querySelector('[title="Supports video input"]');
+        expect(videoBadge).not.toBeInTheDocument();
+      });
+    });
   });
 
   describe("container styling", () => {

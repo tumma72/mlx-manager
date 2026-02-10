@@ -5,6 +5,8 @@
 	import QuantizationBadge from './badges/QuantizationBadge.svelte';
 	import ToolUseBadge from './badges/ToolUseBadge.svelte';
 	import ThinkingBadge from './badges/ThinkingBadge.svelte';
+	import VisionImageBadge from './badges/VisionImageBadge.svelte';
+	import VisionVideoBadge from './badges/VisionVideoBadge.svelte';
 	import TTSBadge from './badges/TTSBadge.svelte';
 	import STTBadge from './badges/STTBadge.svelte';
 	import EmbeddingsBadge from './badges/EmbeddingsBadge.svelte';
@@ -42,6 +44,12 @@
 		{/if}
 		{#if characteristics.is_multimodal}
 			<MultimodalBadge multimodalType={characteristics.multimodal_type} />
+		{/if}
+		{#if capabilities?.supports_multi_image === true}
+			<VisionImageBadge />
+		{/if}
+		{#if capabilities?.supports_video === true}
+			<VisionVideoBadge />
 		{/if}
 		{#if characteristics.quantization_bits}
 			<QuantizationBadge bits={characteristics.quantization_bits} />

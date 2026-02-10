@@ -14,13 +14,14 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
+from .base import BaseProbe
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
 
-class EmbeddingsProbe:
+class EmbeddingsProbe(BaseProbe):
     """Probe strategy for embedding models."""
 
     @property

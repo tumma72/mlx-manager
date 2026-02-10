@@ -1,7 +1,8 @@
 """Vision model probe strategy.
 
 Tests image processing, multi-image support, video support,
-and estimates practical context window.
+estimates practical context window, and (for models with adapters)
+tests thinking and tool calling capabilities.
 """
 
 from __future__ import annotations
@@ -14,18 +15,73 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
+from .base import GenerativeProbe
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
 
-class VisionProbe:
+class VisionProbe(GenerativeProbe):
     """Probe strategy for vision-language models."""
 
     @property
     def model_type(self) -> ModelType:
         return ModelType.VISION
+
+    async def _generate(
+        self,
+        loaded: LoadedModel,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        enable_thinking: bool = False,
+    ) -> str:
+        """Generate a response using mlx-vlm with a synthetic test image.
+
+        Uses mlx-vlm's apply_chat_template for prompt formatting (correctly
+        handles processor-level image tokens) and forwards tools= /
+        enable_thinking= via **kwargs to the underlying tokenizer template.
+        """
+        import asyncio
+
+        from PIL import Image
+
+        # Synthetic 64x64 gray test image
+        test_image = Image.new("RGB", (64, 64), color=(128, 128, 128))
+
+        def _run() -> str:
+            from mlx_vlm import generate as vlm_generate
+            from mlx_vlm.prompt_utils import apply_chat_template
+            from mlx_vlm.utils import load_config
+
+            processor = loaded.tokenizer
+            config = load_config(loaded.model_id)
+
+            # Build text prompt from messages
+            text_prompt = _messages_to_text(messages)
+
+            # Build kwargs that pass through to the tokenizer template
+            template_kwargs: dict = {}
+            if tools:
+                template_kwargs["tools"] = tools
+            if enable_thinking:
+                template_kwargs["enable_thinking"] = True
+
+            formatted_prompt = apply_chat_template(
+                processor, config, text_prompt, num_images=1, **template_kwargs
+            )
+
+            result = vlm_generate(
+                loaded.model,
+                processor,
+                formatted_prompt,
+                [test_image],
+                max_tokens=200,
+                verbose=False,
+            )
+            return str(result.text) if hasattr(result, "text") else str(result)
+
+        return await asyncio.to_thread(_run)
 
     async def probe(
         self, model_id: str, loaded: LoadedModel, result: ProbeResult
@@ -92,6 +148,25 @@ class VisionProbe:
         except Exception as e:
             logger.warning(f"Context check failed for {model_id}: {e}")
             yield ProbeStep(step="check_context", status="failed", error=str(e))
+
+        # Steps 5-6: Thinking and tool verification (shared with TextGenProbe)
+        async for step in self._probe_generative_capabilities(model_id, loaded, result):
+            yield step
+
+
+def _messages_to_text(messages: list[dict]) -> str:
+    """Extract a simple text prompt from messages for VLM template formatting."""
+    parts = []
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            # Handle structured content (text parts)
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+    return "\n".join(parts) if parts else ""
 
 
 def _check_processor(loaded: LoadedModel) -> bool:

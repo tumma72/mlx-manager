@@ -15,6 +15,7 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
+from .base import BaseProbe
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
@@ -31,7 +32,7 @@ _TTS_TEST_TEXT = "Welcome to MLX Manager, where your locally downloaded models t
 _STT_TEST_WAV = Path(__file__).parent / "stt_test.wav"
 
 
-class AudioProbe:
+class AudioProbe(BaseProbe):
     """Probe strategy for audio models (TTS/STT)."""
 
     @property
