@@ -109,7 +109,7 @@ def _check_processor(loaded: LoadedModel) -> bool:
         # Try to process the image — different processors have different APIs
         # Most accept images via __call__ or process_images
         if hasattr(processor, "image_processor") and processor.image_processor is not None:
-            processor.image_processor(test_image, return_tensors="np")
+            processor.image_processor(test_image)
             return True
 
         return True  # Processor loaded successfully even if we can't test directly
