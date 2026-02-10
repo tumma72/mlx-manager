@@ -279,13 +279,16 @@ release:
 
 # Probe a model's thinking/tool calling capabilities
 # Usage: make probe MODEL=mlx-community/Qwen3-0.6B-4bit-DWQ
-#        make probe MODEL=<id> PROBE_ARGS="--save-raw --thinking-only"
+#        make probe-all
 PROBE_ARGS ?=
 probe:
 ifndef MODEL
 	@echo "Usage: make probe MODEL=<model-id>"
 	@echo "  Example: make probe MODEL=mlx-community/Qwen3-0.6B-4bit-DWQ"
-	@echo "  Options: PROBE_ARGS=\"--save-raw --thinking-only --max-tokens 512\""
+	@echo "  Or: make probe-all"
 else
-	cd backend && .venv/bin/python ../scripts/probe_model.py $(MODEL) $(PROBE_ARGS)
+	cd backend && .venv/bin/python -m mlx_manager.cli probe $(MODEL) $(PROBE_ARGS)
 endif
+
+probe-all:
+	cd backend && .venv/bin/python -m mlx_manager.cli probe --all

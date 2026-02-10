@@ -169,10 +169,12 @@ api/v1/chat.py                             api/v1/messages.py
                    │  │     Transform tool/special roles to format     │
                    │  │     the tokenizer can handle                   │
                    │  │                                                │
-                   ├──│  2. If tools AND adapter.supports_native_tools:│
+                   ├──│  2. If tools AND tool_format="template":       │
                    │  │       pass tools= to apply_chat_template()    │
-                   │  │     Elif tools AND enable_prompt_injection:    │
+                   │  │     Elif tools AND tool_format="adapter":     │
                    │  │       adapter.format_tools_for_prompt()        │
+                   │  │     Elif tools AND enable_prompt_injection:    │
+                   │  │       adapter.format_tools_for_prompt() (user) │
                    │  │                                                │
                    ├──│  3. adapter.apply_chat_template()              │
                    │  │     Messages → prompt string                   │
@@ -655,18 +657,26 @@ Probe(model_id):
     2. detect_model_family(model_id + config) → model_family
     3. Load model via pool
     4. Instantiate family adapter with default parsers
-    5. Test tool support:
-       a. HAPPY PATH: Generate with adapter's default tool_parser
-          → adapter.tool_parser.validates(output, "get_weather")
-          → If passes: record tool_parser_id = adapter.tool_parser.parser_id
-       b. FALLBACK: Default parser failed → iterate ALL registered
-          ToolCallParsers, test each one
-          → If any passes: record that parser's ID
-          → If none pass: record tool_parser_id = "null"
-    6. Test thinking support (same pattern: default first, then all)
+    5. Test tool support (2-attempt, adapter-driven):
+       a. Attempt 1 — Template delivery:
+          If adapter.supports_native_tools() or has_native_tool_support(tokenizer):
+          → Generate with tools= param via adapter
+          → Validate: adapter's tool_parser first, then sweep ALL parsers
+          → If match: tool_format="template", record parser_id
+       b. Attempt 2 — Adapter delivery:
+          If adapter.format_tools_for_prompt() returns content:
+          → Inject as system message, generate via adapter
+          → Validate: adapter's tool_parser first, then sweep ALL parsers
+          → If match: tool_format="adapter", record parser_id
+       c. No match: scan for unknown XML tags (WARNING), tool_format=None
+    6. Test thinking support (generation-based):
+       → Generate with enable_thinking=True via adapter
+       → Validate: adapter's thinking_parser first, then sweep ALL parsers
+       → Template check is authoritative (even if no tags in output)
     7. Store to DB:
        model_type, model_family, tool_parser_id, thinking_parser_id,
-       supports_native_tools, supports_thinking, practical_max_tokens, ...
+       supports_native_tools, supports_thinking, tool_format,
+       practical_max_tokens, ...
     8. Unload model (if not preloaded)
 ```
 
@@ -713,12 +723,17 @@ generate_chat_completion(model_id, messages, tools, ...):
     # 1. Convert messages
     converted = adapter.convert_messages(messages)
 
-    # 2. Handle tools
-    if tools and adapter.supports_native_tools():
+    # 2. Handle tools (tool_format-based routing)
+    tool_format = loaded.capabilities.tool_format  # "template", "adapter", or None
+    if tools and tool_format in ("template", "native"):
         prompt = adapter.apply_chat_template(converted, tools=tools)
-    elif tools and enable_prompt_injection:
+    elif tools and tool_format in ("adapter", "hermes"):
         tool_prompt = adapter.format_tools_for_prompt(tools)
         # inject tool_prompt into system message
+        prompt = adapter.apply_chat_template(injected_messages)
+    elif tools and enable_prompt_injection:
+        # User-level override for unprobed models
+        tool_prompt = adapter.format_tools_for_prompt(tools)
         prompt = adapter.apply_chat_template(injected_messages)
     else:
         prompt = adapter.apply_chat_template(converted)
@@ -767,9 +782,9 @@ ModelCapabilities (SQLModel, table=True):
     thinking_parser_id: str | None  # think_tag, null
 
     # Capabilities (text-gen)
-    supports_native_tools: bool | None  # tokenizer accepts tools= parameter
+    supports_native_tools: bool | None  # True if any tool delivery method works
     supports_thinking: bool | None      # model produces thinking blocks
-    tool_format: str | None             # "native" | "injection" | None
+    tool_format: str | None             # "template" | "adapter" | None
     practical_max_tokens: int | None    # estimated from KV cache + memory
 
     # Capabilities (vision)

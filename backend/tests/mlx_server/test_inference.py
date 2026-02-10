@@ -600,10 +600,11 @@ class TestGenerateChatCompletion:
         adapter.apply_chat_template.assert_called_once()
 
     async def test_tools_with_native_support(self) -> None:
-        """Tools are passed to apply_chat_template when capabilities indicate native support."""
-        # Create a capabilities object with supports_native_tools=True
+        """Tools are passed to apply_chat_template when capabilities indicate template delivery."""
+        # Create a capabilities object with tool_format="template"
         caps = MagicMock()
         caps.supports_native_tools = True
+        caps.tool_format = "template"
 
         loaded, model, tokenizer = _make_mock_loaded_model(capabilities=caps)
         adapter = _make_mock_adapter(supports_tools=True, native_tools=True)

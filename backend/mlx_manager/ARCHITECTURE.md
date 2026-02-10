@@ -537,9 +537,9 @@ full schema).
 | `model_family` *       | `str?`      | qwen, glm4, llama, gemma, mistral, default        |
 | `tool_parser_id` *     | `str?`      | hermes_json, glm4_native, llama_xml, null          |
 | `thinking_parser_id` * | `str?`      | think_tag, null                                    |
-| `supports_native_tools`| `bool?`     | tokenizer accepts `tools=` parameter               |
+| `supports_native_tools`| `bool?`     | True if any tool delivery method works              |
 | `supports_thinking`    | `bool?`     | model produces thinking blocks                     |
-| `tool_format`          | `str?`      | "native", "injection", or None                     |
+| `tool_format`          | `str?`      | "template", "adapter", or None                     |
 | `practical_max_tokens` | `int?`      | estimated from KV cache + available memory         |
 | `probe_version` *      | `int`       | schema version (currently 3) for re-probe triggers |
 

@@ -2,11 +2,19 @@
 
 Tests thinking support, native tool support, and estimates
 practical context window based on KV cache memory requirements.
+
+Tool verification uses a 2-attempt, adapter-driven approach:
+1. Template delivery: adapter passes tools= to tokenizer natively
+2. Adapter delivery: adapter injects tool prompt into messages
+
+Thinking verification uses generation-based validation with
+adapter's thinking_parser, then sweeps all registered parsers.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +25,7 @@ from mlx_manager.mlx_server.models.types import ModelType
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
+    from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
 
@@ -51,22 +60,31 @@ class TextGenProbe:
                 value=practical_max,
             )
         except Exception as e:
-            logger.warning(f"Context check failed for {model_id}: {e}")
+            logger.warning("Context check failed for {}: {}", model_id, e)
             yield ProbeStep(step="check_context", status="failed", error=str(e))
 
         tokenizer = loaded.tokenizer
+        adapter = loaded.adapter
 
-        # Step 2: Test thinking support
+        # Guard: adapter must exist for generation-based probing
+        if adapter is None:
+            logger.warning(
+                "No adapter available for {}; skipping thinking and tool probes",
+                model_id,
+            )
+            yield ProbeStep(step="test_thinking", status="skipped")
+            yield ProbeStep(step="test_tools", status="skipped")
+            return
+
+        # Step 2: Test thinking support (generation-based)
         if tokenizer is not None:
             yield ProbeStep(step="test_thinking", status="running")
             try:
-                from mlx_manager.mlx_server.utils.template_tools import (
-                    has_thinking_support,
+                supports_thinking, thinking_parser_id = await _verify_thinking_support(
+                    loaded, adapter
                 )
-
-                supports_thinking = has_thinking_support(tokenizer)
                 result.supports_thinking = supports_thinking
-                result.thinking_parser_id = "think_tag" if supports_thinking else "null"
+                result.thinking_parser_id = thinking_parser_id
                 yield ProbeStep(
                     step="test_thinking",
                     status="completed",
@@ -74,16 +92,16 @@ class TextGenProbe:
                     value=supports_thinking,
                 )
             except Exception as e:
-                logger.warning(f"Thinking test failed for {model_id}: {e}")
+                logger.warning("Thinking test failed for {}: {}", model_id, e)
                 yield ProbeStep(step="test_thinking", status="failed", error=str(e))
         else:
             yield ProbeStep(step="test_thinking", status="skipped")
 
-        # Step 3: Generation-based tool verification (3-tier)
+        # Step 3: Generation-based tool verification (2-attempt)
         if tokenizer is not None:
             yield ProbeStep(step="test_tools", status="running")
             try:
-                tool_format, tool_parser_id = await _verify_tool_support(loaded)
+                tool_format, tool_parser_id = await _verify_tool_support(loaded, adapter)
                 result.supports_native_tools = tool_format is not None
                 result.tool_format = tool_format
                 result.tool_parser_id = tool_parser_id
@@ -94,7 +112,7 @@ class TextGenProbe:
                     value=tool_format,
                 )
             except Exception as e:
-                logger.warning(f"Tool verification failed for {model_id}: {e}")
+                logger.warning("Tool verification failed for {}: {}", model_id, e)
                 yield ProbeStep(step="test_tools", status="failed", error=str(e))
         else:
             yield ProbeStep(step="test_tools", status="skipped")
@@ -125,159 +143,265 @@ _TOOL_PROBE_MESSAGES = [
     {"role": "user", "content": "What is the weather in Tokyo?"},
 ]
 
-_HERMES_SYSTEM_PROMPT = (
-    "You are a function calling AI model. You are provided with function signatures "
-    "within <tools></tools> XML tags. You may call one or more functions to assist with "
-    "the user query. Don't make assumptions about what values to plug into functions.\n\n"
-    "<tools>\n"
-    '[{"type": "function", "function": {"name": "get_weather", '
-    '"description": "Get the current weather for a location", '
-    '"parameters": {"type": "object", "properties": {"location": '
-    '{"type": "string", "description": "City name"}}, '
-    '"required": ["location"]}}}]\n'
-    "</tools>\n\n"
-    "For each function call return a json object with function name and arguments within "
-    "<tool_call></tool_call> XML tags as follows:\n"
-    "<tool_call>\n"
-    '{"name": <function-name>, "arguments": <args-dict>}\n'
-    "</tool_call>"
+# Known XML tags that are NOT indicators of unknown tool calling formats
+_KNOWN_XML_TAGS: frozenset[str] = frozenset(
+    {
+        "think",
+        "thinking",
+        "reasoning",
+        "reflection",
+        "tool_call",
+        "tool_response",
+        "function_call",
+        "output",
+        "result",
+        "code",
+        "step",
+        "answer",
+        "solution",
+    }
 )
 
 
-async def _verify_tool_support(
+async def _generate_via_adapter(
     loaded: LoadedModel,
-) -> tuple[str | None, str | None]:
-    """3-tier generation-based tool verification with parser registry.
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    enable_thinking: bool = False,
+) -> str:
+    """Generate a response using the model's adapter for template handling."""
+    import asyncio
 
-    Tier 1 — Native tools: Template supports tools= parameter →
-             generate with tool definition → validate with ALL parsers
-             → return ("native", parser_id)
+    from mlx_lm import generate as mlx_generate
 
-    Tier 2 — Hermes format: No native tools= → inject Hermes-style prompt
-             → generate → validate with ALL parsers
-             → return ("hermes", parser_id)
+    adapter = loaded.adapter
+    if adapter is None:
+        msg = "No adapter available for generation"
+        raise RuntimeError(msg)
 
-    Tier 3 — No tool support: Neither produces valid tool calls
-             → return (None, None)
-    """
-    from mlx_manager.mlx_server.utils.template_tools import (
-        has_native_tool_support,
+    prompt = adapter.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tools=tools,
+        enable_thinking=enable_thinking,
     )
+    output = await asyncio.to_thread(
+        mlx_generate,
+        loaded.model,
+        loaded.tokenizer,
+        prompt=prompt,
+        max_tokens=200,
+        verbose=False,
+    )
+    return output
+
+
+async def _verify_thinking_support(loaded: LoadedModel, adapter: ModelAdapter) -> tuple[bool, str]:
+    """Verify thinking support via generation and parser validation.
+
+    Returns:
+        (supports_thinking, thinking_parser_id)
+    """
+    from mlx_manager.mlx_server.parsers import THINKING_PARSERS
+    from mlx_manager.mlx_server.utils.template_tools import has_thinking_support
 
     tokenizer = loaded.tokenizer
+    template_supports = has_thinking_support(tokenizer)
 
-    # Tier 1: Try native tool support
-    if has_native_tool_support(tokenizer):
-        try:
-            output = await _generate_with_native_tools(loaded)
-            parser_id = _find_matching_parser(output, "get_weather")
-            if parser_id:
+    if not template_supports:
+        return (False, "null")
+
+    # Template supports thinking -- generate to verify output tags
+    try:
+        messages = [{"role": "user", "content": "What is 2 + 2?"}]
+        output = await _generate_via_adapter(loaded, messages, enable_thinking=True)
+
+        # Try adapter's thinking_parser first
+        thinking_parser = adapter.thinking_parser
+        if thinking_parser.parser_id != "null":
+            thinking_content = thinking_parser.extract(output)
+            if thinking_content is not None:
                 logger.info(
-                    "Tool probe: native tool support verified (parser={})",
+                    "Thinking probe: verified via adapter parser (parser={})",
+                    thinking_parser.parser_id,
+                )
+                return (True, thinking_parser.parser_id)
+
+        # Sweep all registered thinking parsers
+        for parser_id, parser_cls in THINKING_PARSERS.items():
+            if parser_id == "null":
+                continue
+            if parser_id == thinking_parser.parser_id:
+                continue  # already tried
+            parser = parser_cls()
+            thinking_content = parser.extract(output)
+            if thinking_content is not None:
+                logger.info(
+                    "Thinking probe: verified via sweep parser (parser={})",
                     parser_id,
                 )
-                return ("native", parser_id)
+                return (True, parser_id)
+
+        # Template supports it but no tags found in output -- still report
+        # supported since template check is authoritative for toggle capability
+        logger.info(
+            "Thinking probe: template supports thinking but no tags in output; "
+            "reporting supported (template authoritative)"
+        )
+        fallback_id = (
+            thinking_parser.parser_id if thinking_parser.parser_id != "null" else "think_tag"
+        )
+        return (True, fallback_id)
+
+    except Exception as e:
+        logger.debug("Thinking generation failed, falling back to template check: {}", e)
+        # Template says it supports thinking; trust that even if generation failed
+        return (True, "think_tag")
+
+
+async def _verify_tool_support(
+    loaded: LoadedModel, adapter: ModelAdapter
+) -> tuple[str | None, str | None]:
+    """2-attempt adapter-driven tool verification.
+
+    Attempt 1 -- Template delivery: If adapter supports native tools or
+    tokenizer has native tool support, generate with tools= param.
+
+    Attempt 2 -- Adapter delivery: If adapter can format tools for prompt
+    injection, inject as system message and generate.
+
+    Returns:
+        (tool_format, tool_parser_id) or (None, None)
+    """
+    from mlx_manager.mlx_server.utils.template_tools import has_native_tool_support
+
+    tokenizer = loaded.tokenizer
+    last_output: str | None = None
+
+    # Attempt 1: Template delivery
+    if adapter.supports_native_tools() or has_native_tool_support(tokenizer):
+        try:
+            last_output = await _generate_via_adapter(
+                loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
+            )
+            parser_id = _validate_tool_output(last_output, "get_weather", adapter)
+            if parser_id:
+                logger.info(
+                    "Tool probe: template delivery verified (parser={})",
+                    parser_id,
+                )
+                return ("template", parser_id)
             logger.debug(
-                "Native tools template accepted but no parser matched: {}",
-                output[:200],
+                "Template delivery produced output but no parser matched: {}",
+                last_output[:200],
             )
         except Exception as e:
-            logger.debug("Native tool generation failed: {}", e)
+            logger.debug("Template delivery generation failed: {}", e)
 
-    # Tier 2: Try Hermes-style tool injection
-    try:
-        output = await _generate_with_hermes_prompt(loaded)
-        parser_id = _find_matching_parser(output, "get_weather")
-        if parser_id:
-            logger.info(
-                "Tool probe: Hermes format verified (parser={})",
-                parser_id,
+    # Attempt 2: Adapter delivery
+    tool_prompt = adapter.format_tools_for_prompt(_TOOL_PROBE_TOOL)
+    if tool_prompt:
+        try:
+            messages_with_tools = [
+                {"role": "system", "content": tool_prompt},
+                *_TOOL_PROBE_MESSAGES,
+            ]
+            last_output = await _generate_via_adapter(loaded, messages_with_tools)
+            parser_id = _validate_tool_output(last_output, "get_weather", adapter)
+            if parser_id:
+                logger.info(
+                    "Tool probe: adapter delivery verified (parser={})",
+                    parser_id,
+                )
+                return ("adapter", parser_id)
+            logger.debug(
+                "Adapter delivery produced output but no parser matched: {}",
+                last_output[:200],
             )
-            return ("hermes", parser_id)
-        logger.debug(
-            "Hermes prompt did not match any parser: {}",
-            output[:200],
-        )
-    except Exception as e:
-        logger.debug("Hermes tool generation failed: {}", e)
+        except Exception as e:
+            logger.debug("Adapter delivery generation failed: {}", e)
 
-    # Tier 3: No tool support
-    logger.info("Tool probe: no tool support detected")
+    # No match -- scan for unknown XML tags as diagnostic
+    try:
+        if last_output is None:
+            last_output = await _generate_via_adapter(loaded, _TOOL_PROBE_MESSAGES)
+        unknown_tags = _detect_unknown_xml_tags(last_output)
+        if unknown_tags:
+            logger.warning(
+                "Tool probe: no parser matched but found unknown XML tags: {}",
+                unknown_tags,
+            )
+        else:
+            logger.info("Tool probe: no tool support detected")
+    except Exception:
+        logger.info("Tool probe: no tool support detected")
+
     return (None, None)
 
 
-async def _generate_with_native_tools(loaded: LoadedModel) -> str:
-    """Generate a response using the tokenizer's native tools= parameter."""
-    import asyncio
+def _validate_tool_output(output: str, expected_fn: str, adapter: ModelAdapter) -> str | None:
+    """Validate tool output using adapter's parser first, then sweep all parsers.
 
-    from mlx_lm import generate as mlx_generate
+    Returns parser_id of the matching parser, or None.
+    """
+    # Try adapter's own tool parser first
+    adapter_parser = adapter.tool_parser
+    adapter_parser_id: str | None = None
+    if adapter_parser.parser_id != "null":
+        adapter_parser_id = adapter_parser.parser_id
+        if adapter_parser.validates(output, expected_fn):
+            return adapter_parser_id
 
-    tokenizer = loaded.tokenizer
-    actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
-
-    prompt = actual_tokenizer.apply_chat_template(
-        _TOOL_PROBE_MESSAGES,
-        tools=_TOOL_PROBE_TOOL,
-        add_generation_prompt=True,
-        tokenize=False,
-    )
-
-    output = await asyncio.to_thread(
-        mlx_generate,
-        loaded.model,
-        tokenizer,
-        prompt=prompt,
-        max_tokens=200,
-        verbose=False,
-    )
-    return output
+    # Sweep remaining parsers, excluding the one we already tried
+    sweep_result = _find_matching_parser(output, expected_fn, exclude_parser_id=adapter_parser_id)
+    return sweep_result
 
 
-async def _generate_with_hermes_prompt(loaded: LoadedModel) -> str:
-    """Generate a response using Hermes-style system prompt for tool injection."""
-    import asyncio
-
-    from mlx_lm import generate as mlx_generate
-
-    tokenizer = loaded.tokenizer
-    actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
-
-    messages = [
-        {"role": "system", "content": _HERMES_SYSTEM_PROMPT},
-        {"role": "user", "content": "What is the weather in Tokyo?"},
-    ]
-
-    prompt = actual_tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        tokenize=False,
-    )
-
-    output = await asyncio.to_thread(
-        mlx_generate,
-        loaded.model,
-        tokenizer,
-        prompt=prompt,
-        max_tokens=200,
-        verbose=False,
-    )
-    return output
-
-
-def _find_matching_parser(output: str, expected_function: str) -> str | None:
+def _find_matching_parser(
+    output: str,
+    expected_function: str,
+    exclude_parser_id: str | None = None,
+) -> str | None:
     """Try ALL registered parsers to find one that validates the output.
 
-    Returns parser_id of the first matching parser, or None.
+    Args:
+        output: Model generation output to validate.
+        expected_function: Expected function name in tool call.
+        exclude_parser_id: Parser ID to skip (already checked).
+
+    Returns:
+        parser_id of the first matching parser, or None.
     """
     from mlx_manager.mlx_server.parsers import TOOL_PARSERS
 
     for parser_id, parser_cls in TOOL_PARSERS.items():
         if parser_id == "null":
             continue
+        if parser_id == exclude_parser_id:
+            continue
         parser = parser_cls()
         if parser.validates(output, expected_function):
             return parser_id
     return None
+
+
+def _detect_unknown_xml_tags(output: str) -> set[str]:
+    """Scan output for XML-style tags not in the known set.
+
+    Returns set of unknown tag names found.
+    """
+    # Match opening tags like <tag_name> (not self-closing, not closing)
+    tag_pattern = re.compile(r"<([a-zA-Z_][\w-]*)(?:\s[^>]*)?>")
+    found_tags: set[str] = set()
+    for match in tag_pattern.finditer(output):
+        tag_name = match.group(1).lower()
+        # Verify there's a corresponding closing tag
+        close_pattern = re.compile(rf"</{re.escape(match.group(1))}>", re.IGNORECASE)
+        if close_pattern.search(output):
+            found_tags.add(tag_name)
+
+    unknown = found_tags - _KNOWN_XML_TAGS
+    return unknown
 
 
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
@@ -338,5 +462,5 @@ def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
         return max(practical_max, 512)  # At least 512 tokens
 
     except Exception as e:
-        logger.debug(f"Could not estimate practical max tokens for {model_id}: {e}")
+        logger.debug("Could not estimate practical max tokens for {}: {}", model_id, e)
         return None

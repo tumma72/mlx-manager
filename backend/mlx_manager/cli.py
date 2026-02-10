@@ -131,6 +131,10 @@ def probe(
     ),
     all_models: bool = typer.Option(False, "--all", help="Probe all cached models"),
     format: str = typer.Option("table", "--format", "-f", help="Output format: table or markdown"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diagnostic details"),
+    force: bool = typer.Option(False, "--force", help="Clear cached capabilities before probing"),
+    save: str = typer.Option(None, "--save", help="Write raw outputs to directory"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
 ):
     """Probe model capabilities (tools, thinking, embeddings, audio, etc.)."""
     import asyncio
@@ -140,9 +144,13 @@ def probe(
         raise typer.Exit(1)
 
     if all_models:
-        asyncio.run(_probe_all(format))
+        asyncio.run(_probe_all(format, verbose=verbose, force=force))
     else:
-        asyncio.run(_probe_single(model_id, format))
+        asyncio.run(
+            _probe_single(
+                model_id, format, verbose=verbose, force=force, save=save, json_output=json_output
+            )
+        )
 
 
 async def _init_probe_runtime() -> None:
@@ -163,23 +171,77 @@ async def _init_probe_runtime() -> None:
         )
 
 
-async def _probe_single(model_id: str, format: str) -> None:
+async def _clear_cached_capabilities(model_id: str) -> None:
+    """Delete cached ModelCapabilities for a model before re-probing."""
+    from mlx_manager.database import get_session
+    from mlx_manager.models import ModelCapabilities
+
+    async with get_session() as session:
+        from sqlmodel import select
+
+        result = await session.execute(
+            select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
+        )
+        caps = result.scalar_one_or_none()
+        if caps:
+            await session.delete(caps)
+            await session.commit()
+
+
+async def _probe_single(
+    model_id: str,
+    format: str,
+    *,
+    verbose: bool = False,
+    force: bool = False,
+    save: str | None = None,
+    json_output: bool = False,
+) -> None:
     """Probe a single model and display results."""
+    import json as json_mod
+
     from mlx_manager.services.probe import ProbeStep, probe_model
 
     await _init_probe_runtime()
 
-    console.print(f"\n[bold]Probing [cyan]{model_id}[/cyan]...[/bold]\n")
+    if force:
+        await _clear_cached_capabilities(model_id)
+        if not json_output:
+            console.print(f"[yellow]Cleared cached capabilities for {model_id}[/yellow]")
+
+    if not json_output:
+        console.print(f"\n[bold]Probing [cyan]{model_id}[/cyan]...[/bold]\n")
 
     steps: list[ProbeStep] = []
-    async for step in probe_model(model_id):
+    async for step in probe_model(model_id, verbose=verbose):
         steps.append(step)
-        _print_step(step)
+        if not json_output:
+            _print_step(step, verbose=verbose)
 
-    console.print()
+    if json_output:
+        output = {
+            "model_id": model_id,
+            "steps": [
+                {
+                    "step": s.step,
+                    "status": s.status,
+                    **({"capability": s.capability} if s.capability else {}),
+                    **({"value": s.value} if s.value is not None else {}),
+                    **({"error": s.error} if s.error else {}),
+                    **({"details": s.details} if verbose and s.details else {}),
+                }
+                for s in steps
+            ],
+        }
+        print(json_mod.dumps(output, indent=2))
+    else:
+        console.print()
+
+    if save:
+        _save_probe_outputs(model_id, steps, save)
 
 
-async def _probe_all(format: str) -> None:
+async def _probe_all(format: str, *, verbose: bool = False, force: bool = False) -> None:
     """Probe all cached models and display results as a table."""
     from huggingface_hub import scan_cache_dir
 
@@ -214,13 +276,16 @@ async def _probe_all(format: str) -> None:
             continue
 
         model_type = detect_model_type(model_id, config)
+        if force:
+            await _clear_cached_capabilities(model_id)
+
         console.print(f"[bold]{model_id}[/bold] ({model_type.value})")
 
         capabilities: dict = {}
         status = "ok"
         try:
-            async for step in probe_model(model_id):
-                _print_step(step, indent=2)
+            async for step in probe_model(model_id, verbose=verbose):
+                _print_step(step, indent=2, verbose=verbose)
                 if step.capability and step.value is not None:
                     capabilities[step.capability] = step.value
                 if step.status == "failed" and step.step == "load_model":
@@ -245,7 +310,7 @@ async def _probe_all(format: str) -> None:
         _print_rich_table(rows)
 
 
-def _print_step(step, indent: int = 0) -> None:
+def _print_step(step, indent: int = 0, *, verbose: bool = False) -> None:
     """Print a single probe step with status icon."""
     prefix = " " * indent
     icons = {
@@ -261,6 +326,45 @@ def _print_step(step, indent: int = 0) -> None:
     if step.error:
         detail = f" [red]{step.error}[/red]"
     console.print(f"{prefix}{icon} {step.step}{detail}")
+
+    if verbose and step.details:
+        for key, value in step.details.items():
+            console.print(f"{prefix}  [dim]{key}:[/dim] {value}")
+
+
+def _save_probe_outputs(model_id: str, steps: list, save_dir: str) -> None:
+    """Write probe step data to files for offline analysis."""
+    import json as json_mod
+    from pathlib import Path
+
+    model_dir = Path(save_dir) / model_id.replace("/", "_")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "model_id": model_id,
+        "steps": [
+            {
+                "step": s.step,
+                "status": s.status,
+                **({"capability": s.capability} if s.capability else {}),
+                **({"value": s.value} if s.value is not None else {}),
+                **({"error": s.error} if s.error else {}),
+                **({"details": s.details} if s.details else {}),
+            }
+            for s in steps
+        ],
+    }
+    summary_path = model_dir / "probe_summary.json"
+    summary_path.write_text(json_mod.dumps(summary, indent=2))
+
+    # Write individual detail files for steps that have details
+    for step in steps:
+        if step.details:
+            for key, value in step.details.items():
+                detail_path = model_dir / f"{step.step}_{key}.txt"
+                detail_path.write_text(str(value))
+
+    console.print(f"[green]Saved probe outputs to {model_dir}[/green]")
 
 
 def _print_rich_table(rows: list[dict]) -> None:

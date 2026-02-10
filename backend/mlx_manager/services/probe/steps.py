@@ -21,6 +21,7 @@ class ProbeStep:
     capability: str | None = None
     value: Any = None
     error: str | None = None
+    details: dict[str, Any] | None = None
 
     def to_sse(self) -> str:
         """Serialize to SSE event data."""
@@ -31,6 +32,8 @@ class ProbeStep:
             data["value"] = self.value
         if self.error is not None:
             data["error"] = self.error
+        if self.details is not None:
+            data["details"] = self.details
         return f"data: {json.dumps(data)}\n\n"
 
 

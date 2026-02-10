@@ -15,7 +15,7 @@ from .steps import ProbeResult, ProbeStep
 from .strategy import get_probe_strategy
 
 
-async def probe_model(model_id: str) -> AsyncGenerator[ProbeStep, None]:
+async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator[ProbeStep, None]:
     """Probe a model's capabilities using the appropriate type strategy.
 
     Loads the model, detects its type, dispatches to the matching
@@ -25,6 +25,7 @@ async def probe_model(model_id: str) -> AsyncGenerator[ProbeStep, None]:
 
     Args:
         model_id: HuggingFace model path (e.g. "mlx-community/Qwen3-0.6B-4bit-DWQ")
+        verbose: If True, include diagnostic details in ProbeStep.details
 
     Yields:
         ProbeStep objects describing each step's progress

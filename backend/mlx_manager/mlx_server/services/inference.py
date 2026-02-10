@@ -81,18 +81,29 @@ async def generate_chat_completion(
 
     if tools and adapter.supports_tool_calling():
         loaded_caps = getattr(loaded, "capabilities", None)
-        if loaded_caps and loaded_caps.supports_native_tools:
+        tool_format = getattr(loaded_caps, "tool_format", None) if loaded_caps else None
+
+        if tool_format in ("template", "native"):
+            # Template delivery: pass tools= to apply_chat_template
             use_native_tools = True
-            logger.debug(f"Using native tool support for {model_id}")
-        elif enable_prompt_injection:
+            logger.debug("Using template tool delivery for {}", model_id)
+        elif tool_format in ("adapter", "hermes"):
+            # Adapter delivery: inject tools into messages via adapter
             tool_prompt = adapter.format_tools_for_prompt(tools)
             if tool_prompt:
                 effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
-                logger.debug(f"Injected tools via prompt injection for {model_id}")
+                logger.debug("Using adapter tool delivery for {}", model_id)
+        elif enable_prompt_injection:
+            # User-level override for unprobed models
+            tool_prompt = adapter.format_tools_for_prompt(tools)
+            if tool_prompt:
+                effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
+                logger.debug("Injected tools via prompt injection for {}", model_id)
         else:
             logger.info(
-                f"Tools requested but model {model_id} has no native support "
-                "and prompt injection not enabled"
+                "Tools requested but model {} has no probed tool_format "
+                "and prompt injection not enabled",
+                model_id,
             )
 
     # Apply chat template

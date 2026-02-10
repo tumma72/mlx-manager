@@ -522,6 +522,7 @@ async def test_text_gen_probe_happy_path():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/text-model"
     mock_loaded.tokenizer = MagicMock()
+    mock_loaded.adapter = MagicMock()
     mock_loaded.size_gb = 2.0
     mock_loaded.config = {
         "num_hidden_layers": 24,
@@ -534,12 +535,12 @@ async def test_text_gen_probe_happy_path():
 
     with (
         patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=True,
+            "mlx_manager.services.probe.text_gen._verify_thinking_support",
+            return_value=(True, "think_tag"),
         ),
         patch(
             "mlx_manager.services.probe.text_gen._verify_tool_support",
-            return_value=("native", "hermes_json"),
+            return_value=("template", "hermes_json"),
         ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=16.0),
@@ -560,7 +561,7 @@ async def test_text_gen_probe_happy_path():
         # Verify capabilities populated
         assert result.supports_thinking is True
         assert result.supports_native_tools is True
-        assert result.tool_format == "native"
+        assert result.tool_format == "template"
         assert result.practical_max_tokens is not None
         assert isinstance(result.practical_max_tokens, int)
         assert result.practical_max_tokens > 0
@@ -1077,29 +1078,44 @@ async def test_text_gen_probe_thinking_failure():
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_tools_failure():
-    """Test TextGenProbe handles tools check failure."""
+    """Test TextGenProbe handles tool verification failure gracefully."""
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
     mock_loaded.tokenizer = MagicMock()
+    mock_loaded.adapter = MagicMock()
+    mock_loaded.adapter.supports_native_tools.return_value = False
+    mock_loaded.adapter.format_tools_for_prompt.return_value = ""
     mock_loaded.config = {}
 
     result = ProbeResult()
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        side_effect=Exception("Tool check failed"),
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
+            return_value=False,
+        ),
+        patch(
+            "huggingface_hub.hf_hub_download",
+            side_effect=Exception("Config not found"),
+        ),
     ):
         probe = TextGenProbe()
         steps = []
         async for step in probe.probe("test/model", mock_loaded, result):
             steps.append(step)
 
-        # Tools test should fail
+        # Tools should complete with no support detected
         tools_steps = [s for s in steps if s.step == "test_tools"]
-        assert any(s.status == "failed" for s in tools_steps)
+        assert any(s.status == "completed" for s in tools_steps)
+        assert result.tool_format is None
+        assert result.supports_native_tools is False
 
 
 @pytest.mark.asyncio
@@ -2065,3 +2081,293 @@ async def test_vision_probe_processor_exception():
         # Processor check should fail
         processor_steps = [s for s in steps if s.step == "check_processor"]
         assert any(s.status == "failed" for s in processor_steps)
+
+
+# ============================================================================
+# TextGen Probe: Tool & Thinking Verification Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_template_delivery():
+    """Test Attempt 1: template delivery returns ('template', parser_id)."""
+    from mlx_manager.services.probe.text_gen import _verify_tool_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools.return_value = True
+    mock_adapter.tool_parser.parser_id = "hermes_json"
+    mock_adapter.tool_parser.validates.return_value = True
+
+    with (
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value='<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>',
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id = await _verify_tool_support(mock_loaded, mock_adapter)
+        assert tool_format == "template"
+        assert parser_id == "hermes_json"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_adapter_delivery():
+    """Test Attempt 2: adapter delivery returns ('adapter', parser_id)."""
+    from mlx_manager.services.probe.text_gen import _verify_tool_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools.return_value = False
+    mock_adapter.tool_parser.parser_id = "hermes_json"
+    mock_adapter.tool_parser.validates.return_value = True
+    mock_adapter.format_tools_for_prompt.return_value = "<tools>...</tools>"
+
+    with (
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value='<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>',
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+    ):
+        tool_format, parser_id = await _verify_tool_support(mock_loaded, mock_adapter)
+        assert tool_format == "adapter"
+        assert parser_id == "hermes_json"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_fallback_parser_sweep():
+    """Test fallback: adapter parser fails, sweep finds different parser."""
+    from mlx_manager.services.probe.text_gen import _verify_tool_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools.return_value = True
+    mock_adapter.tool_parser.parser_id = "glm4_native"
+    mock_adapter.tool_parser.validates.return_value = False  # Adapter parser fails
+
+    output = '<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>'
+
+    with (
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value=output,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id = await _verify_tool_support(mock_loaded, mock_adapter)
+        assert tool_format == "template"
+        # The hermes_json parser should match the <tool_call> format
+        assert parser_id == "hermes_json"
+
+
+def test_detect_unknown_xml_tags():
+    """Test _detect_unknown_xml_tags finds unknown tags but skips known ones."""
+    from mlx_manager.services.probe.text_gen import _detect_unknown_xml_tags
+
+    # Known tags should be excluded
+    output_known = "<think>some thinking</think><tool_call>call</tool_call>"
+    assert _detect_unknown_xml_tags(output_known) == set()
+
+    # Unknown tags should be detected
+    output_unknown = "<custom_tool>data</custom_tool><think>ok</think>"
+    assert "custom_tool" in _detect_unknown_xml_tags(output_unknown)
+
+    # No tags at all
+    assert _detect_unknown_xml_tags("plain text response") == set()
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_no_adapter_skips():
+    """Test TextGenProbe skips thinking/tools when adapter is None."""
+    from mlx_manager.services.probe import ProbeResult
+    from mlx_manager.services.probe.text_gen import TextGenProbe
+
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/model"
+    mock_loaded.tokenizer = MagicMock()
+    mock_loaded.adapter = None  # No adapter
+    mock_loaded.config = {}
+
+    result = ProbeResult()
+
+    with patch(
+        "huggingface_hub.hf_hub_download",
+        side_effect=Exception("Config not found"),
+    ):
+        probe = TextGenProbe()
+        steps = []
+        async for step in probe.probe("test/model", mock_loaded, result):
+            steps.append(step)
+
+        # Both should be skipped
+        thinking_steps = [s for s in steps if s.step == "test_thinking"]
+        assert len(thinking_steps) == 1
+        assert thinking_steps[0].status == "skipped"
+
+        tools_steps = [s for s in steps if s.step == "test_tools"]
+        assert len(tools_steps) == 1
+        assert tools_steps[0].status == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_thinking_generation_based():
+    """Test generation-based thinking verification via _verify_thinking_support."""
+    from mlx_manager.services.probe.text_gen import _verify_thinking_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.thinking_parser.parser_id = "think_tag"
+    mock_adapter.thinking_parser.extract.return_value = "Some thinking content"
+
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
+            return_value=True,
+        ),
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value="<think>Some thinking content</think>The answer is 4.",
+        ),
+    ):
+        supports, parser_id = await _verify_thinking_support(mock_loaded, mock_adapter)
+        assert supports is True
+        assert parser_id == "think_tag"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_thinking_template_authoritative():
+    """Test thinking: template support is authoritative even without tags in output."""
+    from mlx_manager.services.probe.text_gen import _verify_thinking_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.thinking_parser.parser_id = "think_tag"
+    mock_adapter.thinking_parser.extract.return_value = None  # No tags in output
+
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
+            return_value=True,
+        ),
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value="The answer is 4.",  # No thinking tags
+        ),
+    ):
+        supports, parser_id = await _verify_thinking_support(mock_loaded, mock_adapter)
+        assert supports is True  # Template is authoritative
+        assert parser_id == "think_tag"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_no_tool_support_detected():
+    """Test probe reports no tool support when both attempts fail."""
+    from mlx_manager.services.probe.text_gen import _verify_tool_support
+
+    mock_loaded = MagicMock()
+    mock_loaded.tokenizer = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools.return_value = False
+    mock_adapter.format_tools_for_prompt.return_value = ""  # No adapter delivery either
+
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.text_gen._generate_via_adapter",
+            new_callable=AsyncMock,
+            return_value="I don't know how to call tools.",
+        ),
+    ):
+        tool_format, parser_id = await _verify_tool_support(mock_loaded, mock_adapter)
+        assert tool_format is None
+        assert parser_id is None
+
+
+# ============================================================================
+# ProbeStep Details Field Tests
+# ============================================================================
+
+
+def test_probe_step_details_field():
+    """Test ProbeStep supports optional details dict."""
+    from mlx_manager.services.probe import ProbeStep
+
+    step = ProbeStep(
+        step="test_tools",
+        status="completed",
+        capability="tool_format",
+        value="template",
+        details={"raw_output": "some output", "parsers_tried": ["hermes_json"]},
+    )
+    sse = step.to_sse()
+    data = json.loads(sse[6:-2])
+    assert data["details"]["raw_output"] == "some output"
+    assert data["details"]["parsers_tried"] == ["hermes_json"]
+
+
+def test_probe_step_details_omitted_when_none():
+    """Test ProbeStep omits details from SSE when None."""
+    from mlx_manager.services.probe import ProbeStep
+
+    step = ProbeStep(step="test_tools", status="running")
+    sse = step.to_sse()
+    data = json.loads(sse[6:-2])
+    assert "details" not in data
+
+
+# ============================================================================
+# Tool Output Validation Tests
+# ============================================================================
+
+
+def test_validate_tool_output_adapter_parser_first():
+    """Test _validate_tool_output tries adapter parser first."""
+    from mlx_manager.services.probe.text_gen import _validate_tool_output
+
+    mock_adapter = MagicMock()
+    mock_adapter.tool_parser.parser_id = "hermes_json"
+    mock_adapter.tool_parser.validates.return_value = True
+
+    result = _validate_tool_output("some output", "get_weather", mock_adapter)
+    assert result == "hermes_json"
+    mock_adapter.tool_parser.validates.assert_called_once_with("some output", "get_weather")
+
+
+def test_validate_tool_output_falls_through_to_sweep():
+    """Test _validate_tool_output sweeps all parsers when adapter parser fails."""
+    from mlx_manager.services.probe.text_gen import _validate_tool_output
+
+    mock_adapter = MagicMock()
+    mock_adapter.tool_parser.parser_id = "null"
+
+    # Should fall through to _find_matching_parser sweep
+    with patch(
+        "mlx_manager.services.probe.text_gen._find_matching_parser",
+        return_value="hermes_json",
+    ) as mock_sweep:
+        result = _validate_tool_output("some output", "get_weather", mock_adapter)
+        assert result == "hermes_json"
+        mock_sweep.assert_called_once_with("some output", "get_weather", exclude_parser_id=None)
