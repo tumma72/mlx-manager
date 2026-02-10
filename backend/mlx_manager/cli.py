@@ -158,12 +158,12 @@ async def _init_probe_runtime() -> None:
     from mlx_manager.database import init_db
     from mlx_manager.mlx_server.models import pool
     from mlx_manager.mlx_server.models.pool import ModelPoolManager
-    from mlx_manager.mlx_server.utils.memory import get_device_memory_gb, set_memory_limit
+    from mlx_manager.mlx_server.utils.memory import auto_detect_memory_limit, set_memory_limit
 
     await init_db()
 
     if pool.model_pool is None:
-        max_memory_gb = get_device_memory_gb() * 0.75
+        max_memory_gb = auto_detect_memory_limit()
         set_memory_limit(max_memory_gb)
         pool.model_pool = ModelPoolManager(
             max_memory_gb=max_memory_gb,

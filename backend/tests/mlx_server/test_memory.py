@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from mlx_manager.mlx_server.utils.memory import (
+    auto_detect_memory_limit,
     clear_cache,
     get_memory_usage,
     reset_peak_memory,
@@ -122,3 +123,48 @@ class TestResetPeakMemory:
 
             # Should not raise
             reset_peak_memory()
+
+
+class TestAutoDetectMemoryLimit:
+    """Tests for auto_detect_memory_limit function.
+
+    Formula: reserve = clamp(total * 0.25, 4.0, 8.0)
+    Based on Apple's macOS requirements: 4GB minimum, 8GB recommended.
+    """
+
+    def _patch(self, total_gb: float):
+        """Helper to patch device memory."""
+        return patch(
+            "mlx_manager.mlx_server.utils.memory.get_device_memory_gb",
+            return_value=total_gb,
+        )
+
+    def test_128gb(self):
+        """128GB: reserve = clamp(32, 4, 8) = 8 -> 120GB available."""
+        with self._patch(128.0):
+            assert abs(auto_detect_memory_limit() - 120.0) < 0.01
+
+    def test_64gb(self):
+        """64GB: reserve = clamp(16, 4, 8) = 8 -> 56GB available."""
+        with self._patch(64.0):
+            assert abs(auto_detect_memory_limit() - 56.0) < 0.01
+
+    def test_32gb(self):
+        """32GB: reserve = clamp(8, 4, 8) = 8 -> 24GB available."""
+        with self._patch(32.0):
+            assert abs(auto_detect_memory_limit() - 24.0) < 0.01
+
+    def test_24gb(self):
+        """24GB: reserve = clamp(6, 4, 8) = 6 -> 18GB available."""
+        with self._patch(24.0):
+            assert abs(auto_detect_memory_limit() - 18.0) < 0.01
+
+    def test_16gb(self):
+        """16GB: reserve = clamp(4, 4, 8) = 4 -> 12GB available."""
+        with self._patch(16.0):
+            assert abs(auto_detect_memory_limit() - 12.0) < 0.01
+
+    def test_8gb(self):
+        """8GB: reserve = clamp(2, 4, 8) = 4 -> 4GB available."""
+        with self._patch(8.0):
+            assert abs(auto_detect_memory_limit() - 4.0) < 0.01

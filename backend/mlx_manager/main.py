@@ -153,10 +153,9 @@ async def lifespan(app: FastAPI):
     # Auto-detect memory limit from device if not explicitly configured
     max_memory_gb = mlx_server_settings.max_memory_gb
     if max_memory_gb <= 0:
-        from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
+        from mlx_manager.mlx_server.utils.memory import auto_detect_memory_limit
 
-        max_memory_gb = get_device_memory_gb() * 0.75
-        logger.info(f"Auto-detected memory limit: {max_memory_gb:.1f}GB (75% of device memory)")
+        max_memory_gb = auto_detect_memory_limit()
     set_memory_limit(max_memory_gb)
     pool.model_pool = ModelPoolManager(
         max_memory_gb=max_memory_gb,

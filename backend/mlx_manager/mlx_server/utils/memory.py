@@ -93,3 +93,32 @@ def get_device_memory_gb() -> float:
         import psutil
 
         return psutil.virtual_memory().total / (1024**3)
+
+
+_MIN_RESERVE_GB = 4.0  # Apple's minimum system memory for macOS
+_MAX_RESERVE_GB = 8.0  # Apple's recommended system memory for macOS
+
+
+def auto_detect_memory_limit() -> float:
+    """Calculate the optimal MLX memory limit based on device memory.
+
+    Reserves 25% of total memory for macOS, clamped to Apple's guidelines:
+    - Minimum reserve: 4 GB (macOS minimum requirement)
+    - Maximum reserve: 8 GB (macOS recommended)
+
+    reserve = clamp(total * 0.25, 4.0, 8.0)
+
+    Returns:
+        Recommended memory limit in GB
+    """
+    total_gb = get_device_memory_gb()
+    reserve = max(_MIN_RESERVE_GB, min(total_gb * 0.25, _MAX_RESERVE_GB))
+    limit = total_gb - reserve
+    logger.info(
+        "Auto-detected memory limit: {:.1f}GB "
+        "(total={:.1f}GB, reserve={:.1f}GB)",
+        limit,
+        total_gb,
+        reserve,
+    )
+    return limit
