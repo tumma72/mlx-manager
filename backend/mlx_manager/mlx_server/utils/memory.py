@@ -115,8 +115,7 @@ def auto_detect_memory_limit() -> float:
     reserve = max(_MIN_RESERVE_GB, min(total_gb * 0.25, _MAX_RESERVE_GB))
     limit = total_gb - reserve
     logger.info(
-        "Auto-detected memory limit: {:.1f}GB "
-        "(total={:.1f}GB, reserve={:.1f}GB)",
+        "Auto-detected memory limit: {:.1f}GB (total={:.1f}GB, reserve={:.1f}GB)",
         limit,
         total_gb,
         reserve,

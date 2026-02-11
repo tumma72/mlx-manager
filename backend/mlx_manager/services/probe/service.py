@@ -63,6 +63,25 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
         )
         return
 
+    # Step 2.5: Pre-validate audio models (codecs are detected as AUDIO but can't be loaded)
+    from mlx_manager.mlx_server.models.types import ModelType
+
+    if model_type == ModelType.AUDIO:
+        from .audio import _detect_audio_capabilities
+
+        is_tts, is_stt, _ = _detect_audio_capabilities(model_id)
+        if not is_tts and not is_stt:
+            yield ProbeStep(
+                step="load_model",
+                status="failed",
+                error=(
+                    f"Unsupported audio model subtype: {model_id} is detected as audio "
+                    "but is not a recognized TTS or STT model (likely an audio codec). "
+                    "Audio codec models are not supported for inference."
+                ),
+            )
+            return
+
     # Step 3: Load model
     yield ProbeStep(step="load_model", status="running")
     try:

@@ -6,6 +6,7 @@ then validates with lightweight generation tests.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -47,9 +48,11 @@ class AudioProbe(BaseProbe):
         # Step 1: Detect audio capabilities (TTS, STT, or both)
         yield ProbeStep(step="detect_audio_type", status="running")
         try:
-            is_tts, is_stt = _detect_audio_capabilities(model_id)
+            is_tts, is_stt, audio_family = _detect_audio_capabilities(model_id)
             result.supports_tts = is_tts
             result.supports_stt = is_stt
+            if audio_family is not None:
+                result.model_family = audio_family
             yield ProbeStep(
                 step="detect_audio_type",
                 status="completed",
@@ -125,11 +128,19 @@ def _load_stt_test_wav() -> bytes | None:
     return None
 
 
-def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool]:
+def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool, str | None]:
     """Detect whether the model supports TTS, STT, or both.
 
     Uses config.json architecture and model_type fields to determine
     capabilities without loading the model.
+
+    Audio codec models (DAC, SNAC, VOCOS) will return (False, False, None)
+    as they are not TTS/STT models despite having audio-related config keys.
+
+    Returns:
+        Tuple of (is_tts, is_stt, audio_family) where audio_family is
+        the matched architecture family name ("whisper", "kokoro", etc.)
+        or None if no specific family was identified.
     """
     from mlx_manager.utils.model_detection import read_model_config
 
@@ -138,65 +149,111 @@ def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool]:
 
     is_tts = False
     is_stt = False
+    audio_family: str | None = None
+
+    # Early detection of codec models (not TTS/STT)
+    codec_indicators = {
+        "codebook_dim",
+        "codebook_size",
+        "vq_strides",
+        "encoder_rates",
+        "decoder_rates",
+        "encoder_dim",
+        "decoder_dim",
+    }
+    codec_name_patterns = ("dac", "snac", "vocos", "descript-audio")
 
     if config:
-        # Check architecture
+        # Check if this is a codec model (has codec config keys but no TTS/STT architecture)
+        has_codec_keys = any(key in config for key in codec_indicators)
         arch_list = config.get("architectures", [])
         arch_str = arch_list[0].lower() if arch_list else ""
         model_type = config.get("model_type", "").lower()
 
+        # If codec keys present but no TTS/STT architecture, it's a codec
+        has_tts_arch = any(
+            pattern in arch_str or pattern in model_type for pattern in _TTS_ARCHITECTURES
+        )
+        has_stt_arch = any(
+            pattern in arch_str or pattern in model_type for pattern in _STT_ARCHITECTURES
+        )
+
+        if has_codec_keys and not has_tts_arch and not has_stt_arch:
+            logger.debug(f"Detected audio codec model (not TTS/STT): {model_id}")
+            return False, False, None
+
+        # Check for TTS architectures
         for pattern in _TTS_ARCHITECTURES:
             if pattern in arch_str or pattern in model_type:
                 is_tts = True
+                if audio_family is None:
+                    audio_family = pattern
 
+        # Check for STT architectures
         for pattern in _STT_ARCHITECTURES:
             if pattern in arch_str or pattern in model_type:
                 is_stt = True
+                if audio_family is None:
+                    audio_family = pattern
 
-        # Config-based hints
-        if "tts_config" in config or "vocoder_config" in config:
+        # Config-based hints for TTS/STT (not codec)
+        if "tts_config" in config or ("vocoder_config" in config and not has_codec_keys):
             is_tts = True
         if "stt_config" in config:
             is_stt = True
 
-    # Name-based fallback
-    if not is_tts and not is_stt:
+    # Name-based fallback (but skip known codec patterns)
+    is_codec_by_name = any(pattern in name_lower for pattern in codec_name_patterns)
+    if not is_tts and not is_stt and not is_codec_by_name:
         for pattern in _TTS_ARCHITECTURES:
             if pattern in name_lower:
                 is_tts = True
+                if audio_family is None:
+                    audio_family = pattern
         for pattern in _STT_ARCHITECTURES:
             if pattern in name_lower:
                 is_stt = True
+                if audio_family is None:
+                    audio_family = pattern
         if "tts" in name_lower:
             is_tts = True
         if "stt" in name_lower or "asr" in name_lower:
             is_stt = True
 
-    return is_tts, is_stt
+    return is_tts, is_stt, audio_family
 
 
-async def _test_tts(loaded: LoadedModel) -> tuple[bool, bytes | None]:
+async def _test_tts(loaded: LoadedModel, *, timeout: float = 60.0) -> tuple[bool, bytes | None]:
     """Test TTS by generating a short audio clip from minimal text."""
     try:
         from mlx_manager.mlx_server.services.audio import generate_speech
 
-        audio_bytes, sample_rate = await generate_speech(
-            model_id=loaded.model_id,
-            text=_TTS_TEST_TEXT,
-            voice="af_heart",  # Kokoro default voice
-            speed=1.0,
-            response_format="wav",
+        audio_bytes, sample_rate = await asyncio.wait_for(
+            generate_speech(
+                model_id=loaded.model_id,
+                text=_TTS_TEST_TEXT,
+                voice="af_heart",  # Kokoro default voice
+                speed=1.0,
+                response_format="wav",
+            ),
+            timeout=timeout,
         )
         if len(audio_bytes) > 0:
             return True, audio_bytes
         return False, None
+    except TimeoutError:
+        logger.warning(f"TTS test timed out after {timeout}s for {loaded.model_id}")
+        raise
     except Exception as e:
         logger.debug(f"TTS test error: {e}")
         raise
 
 
 async def _test_stt(
-    loaded: LoadedModel, audio_bytes: bytes | None = None
+    loaded: LoadedModel,
+    audio_bytes: bytes | None = None,
+    *,
+    timeout: float = 120.0,
 ) -> tuple[bool, str | None, bytes | None]:
     """Test STT by transcribing audio.
 
@@ -236,13 +293,19 @@ async def _test_stt(
 
             audio_bytes = wav_header + audio_data
 
-        result = await transcribe_audio(
-            model_id=loaded.model_id,
-            audio_data=audio_bytes,
+        result = await asyncio.wait_for(
+            transcribe_audio(
+                model_id=loaded.model_id,
+                audio_data=audio_bytes,
+            ),
+            timeout=timeout,
         )
         if isinstance(result, dict) and "text" in result:
             return True, result["text"] or None, audio_bytes
         return False, None, audio_bytes
+    except TimeoutError:
+        logger.warning(f"STT test timed out after {timeout}s for {loaded.model_id}")
+        raise
     except Exception as e:
         logger.debug(f"STT test error: {e}")
         raise

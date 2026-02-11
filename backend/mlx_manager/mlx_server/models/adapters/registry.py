@@ -9,11 +9,13 @@ from loguru import logger
 # Family pattern mappings (used by pool.py and probe utilities)
 FAMILY_PATTERNS = {
     "llama": ["llama", "codellama"],
-    "qwen": ["qwen"],
+    "qwen": ["qwen", "iquest"],
     "mistral": ["mistral", "mixtral"],
     "gemma": ["gemma"],
     "glm4": ["glm", "chatglm"],
     "phi": ["phi"],
+    "whisper": ["whisper"],
+    "kokoro": ["kokoro"],
 }
 
 

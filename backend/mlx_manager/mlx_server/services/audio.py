@@ -208,7 +208,7 @@ async def transcribe_audio(
                 # Run transcription
                 segments = generate_transcription(
                     model=model,
-                    audio_path=tmp_path,
+                    audio=tmp_path,
                     verbose=False,
                     **kwargs,
                 )

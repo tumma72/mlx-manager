@@ -17,6 +17,8 @@
 	import TTSBadge from './badges/TTSBadge.svelte';
 	import STTBadge from './badges/STTBadge.svelte';
 	import EmbeddingsBadge from './badges/EmbeddingsBadge.svelte';
+	import VisionImageBadge from './badges/VisionImageBadge.svelte';
+	import VisionVideoBadge from './badges/VisionVideoBadge.svelte';
 
 	interface Props {
 		open: boolean;
@@ -28,21 +30,24 @@
 
 	const stepLabels: Record<string, string> = {
 		detect_type: 'Detecting model type',
+		find_strategy: 'Finding probe strategy',
 		load_model: 'Loading model into memory',
 		check_context: 'Testing context window',
+		check_processor: 'Checking image processor',
+		check_multi_image: 'Checking multi-image support',
+		check_video: 'Checking video support',
 		test_thinking: 'Testing thinking/reasoning',
 		test_tools: 'Testing native tool calling',
-		detect_model_type: 'Detecting model type',
-		detect_vision: 'Detecting vision capabilities',
-		test_multi_image: 'Testing multi-image support',
-		test_video: 'Testing video support',
 		detect_audio_type: 'Detecting audio capabilities',
 		test_tts: 'Testing text-to-speech',
 		test_stt: 'Testing speech-to-text',
-		test_embeddings: 'Testing embedding generation',
-		test_normalization: 'Testing embedding normalization',
+		test_encode: 'Testing embedding generation',
+		check_normalization: 'Checking embedding normalization',
+		check_max_length: 'Checking max sequence length',
+		test_similarity: 'Testing similarity ordering',
 		save_results: 'Saving probe results',
-		cleanup: 'Cleaning up'
+		cleanup: 'Cleaning up',
+		strategy_error: 'Strategy error'
 	};
 
 	// Audio playback from base64 TTS result
@@ -203,7 +208,9 @@
 		probe.capabilities.embedding_dimensions !== undefined &&
 			probe.capabilities.embedding_dimensions !== null
 	);
-	let hasBadges = $derived(showToolUse || showThinking || showTTS || showSTT || showEmbeddings);
+	let showMultiImage = $derived(probe.capabilities.supports_multi_image === true);
+	let showVideo = $derived(probe.capabilities.supports_video === true);
+	let hasBadges = $derived(showToolUse || showThinking || showTTS || showSTT || showEmbeddings || showMultiImage || showVideo);
 </script>
 
 <Dialog.Root bind:open>
@@ -328,6 +335,12 @@
 							{/if}
 							{#if showThinking}
 								<ThinkingBadge />
+							{/if}
+							{#if showMultiImage}
+								<VisionImageBadge />
+							{/if}
+							{#if showVideo}
+								<VisionVideoBadge />
 							{/if}
 							{#if showTTS}
 								<TTSBadge verified={true} />

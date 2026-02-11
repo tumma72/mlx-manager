@@ -842,6 +842,7 @@ async def test_audio_probe_tts_detection():
         # Verify TTS detected
         assert result.supports_tts is True
         assert result.supports_stt is False
+        assert result.model_family == "kokoro"
 
         # Verify TTS test ran and STT skipped
         step_names = [s.step for s in steps]
@@ -888,6 +889,7 @@ async def test_audio_probe_stt_detection():
         # Verify STT detected
         assert result.supports_stt is True
         assert result.supports_tts is False
+        assert result.model_family == "whisper"
 
         # Verify STT test ran and TTS skipped
         stt_steps = [s for s in steps if s.step == "test_stt"]
@@ -926,6 +928,7 @@ async def test_audio_probe_name_based_fallback():
 
         # Should still detect TTS from model name
         assert result.supports_tts is True
+        assert result.model_family == "kokoro"
 
 
 # ============================================================================
@@ -2106,7 +2109,10 @@ async def test_text_gen_probe_template_delivery():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value='<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>',
+            return_value=(
+                '<tool_call>\n{"name": "get_weather",'
+                ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+            ),
         ),
         patch(
             "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
@@ -2136,7 +2142,10 @@ async def test_text_gen_probe_adapter_delivery():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value='<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>',
+            return_value=(
+                '<tool_call>\n{"name": "get_weather",'
+                ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+            ),
         ),
         patch(
             "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
@@ -2161,7 +2170,9 @@ async def test_text_gen_probe_fallback_parser_sweep():
     mock_adapter.tool_parser.parser_id = "glm4_native"
     mock_adapter.tool_parser.validates.return_value = False  # Adapter parser fails
 
-    output = '<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>'
+    output = (
+        '<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>'
+    )
 
     with (
         patch(
@@ -2385,58 +2396,75 @@ def test_validate_tool_output_falls_through_to_sweep():
 # Probe Class Hierarchy Tests
 # ============================================================================
 
+
 def test_text_gen_probe_is_generative_probe():
     """TextGenProbe should be a GenerativeProbe."""
     from mlx_manager.services.probe.base import GenerativeProbe
     from mlx_manager.services.probe.text_gen import TextGenProbe
+
     assert isinstance(TextGenProbe(), GenerativeProbe)
+
 
 def test_vision_probe_is_generative_probe():
     """VisionProbe should be a GenerativeProbe."""
     from mlx_manager.services.probe.base import GenerativeProbe
     from mlx_manager.services.probe.vision import VisionProbe
+
     assert isinstance(VisionProbe(), GenerativeProbe)
+
 
 def test_text_gen_probe_is_base_probe():
     """TextGenProbe should be a BaseProbe."""
     from mlx_manager.services.probe.base import BaseProbe
     from mlx_manager.services.probe.text_gen import TextGenProbe
+
     assert isinstance(TextGenProbe(), BaseProbe)
+
 
 def test_vision_probe_is_base_probe():
     """VisionProbe should be a BaseProbe."""
     from mlx_manager.services.probe.base import BaseProbe
     from mlx_manager.services.probe.vision import VisionProbe
+
     assert isinstance(VisionProbe(), BaseProbe)
+
 
 def test_embeddings_probe_is_base_probe():
     """EmbeddingsProbe should be a BaseProbe."""
     from mlx_manager.services.probe.base import BaseProbe
     from mlx_manager.services.probe.embeddings import EmbeddingsProbe
+
     assert isinstance(EmbeddingsProbe(), BaseProbe)
+
 
 def test_audio_probe_is_base_probe():
     """AudioProbe should be a BaseProbe."""
-    from mlx_manager.services.probe.base import BaseProbe
     from mlx_manager.services.probe.audio import AudioProbe
+    from mlx_manager.services.probe.base import BaseProbe
+
     assert isinstance(AudioProbe(), BaseProbe)
+
 
 def test_embeddings_probe_is_not_generative():
     """EmbeddingsProbe should NOT be a GenerativeProbe."""
     from mlx_manager.services.probe.base import GenerativeProbe
     from mlx_manager.services.probe.embeddings import EmbeddingsProbe
+
     assert not isinstance(EmbeddingsProbe(), GenerativeProbe)
+
 
 def test_audio_probe_is_not_generative():
     """AudioProbe should NOT be a GenerativeProbe."""
-    from mlx_manager.services.probe.base import GenerativeProbe
     from mlx_manager.services.probe.audio import AudioProbe
+    from mlx_manager.services.probe.base import GenerativeProbe
+
     assert not isinstance(AudioProbe(), GenerativeProbe)
 
 
 # ============================================================================
 # VisionProbe Generative Capability Tests
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_vision_probe_discovers_thinking():
@@ -2636,3 +2664,216 @@ async def test_vision_probe_generative_failure_doesnt_crash():
 
         # Vision-specific steps should still have completed
         assert "check_processor" in [s.step for s in steps]
+
+
+# ============================================================================
+# Additional Vision Coverage Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_vision_probe_generate_with_tools_and_thinking():
+    """Test VisionProbe._generate with tools and enable_thinking kwargs."""
+    from mlx_manager.services.probe.vision import VisionProbe
+
+    mock_processor = MagicMock()
+    mock_model = MagicMock()
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/vision-model"
+    mock_loaded.tokenizer = mock_processor
+    mock_loaded.model = mock_model
+    mock_loaded.config = {}
+
+    # Mock VLM dependencies
+    mock_vlm_result = MagicMock()
+    mock_vlm_result.text = "Generated response"
+
+    tools = [{"type": "function", "function": {"name": "test_tool"}}]
+    messages = [{"role": "user", "content": "Test message"}]
+
+    with (
+        patch("mlx_vlm.generate", return_value=mock_vlm_result),
+        patch(
+            "mlx_vlm.prompt_utils.apply_chat_template", return_value="formatted"
+        ) as mock_template,
+        patch("mlx_vlm.utils.load_config", return_value={}),
+    ):
+        probe = VisionProbe()
+        result = await probe._generate(mock_loaded, messages, tools=tools, enable_thinking=True)
+
+        assert result == "Generated response"
+        # Verify tools and enable_thinking were passed through
+        mock_template.assert_called_once()
+        call_kwargs = mock_template.call_args[1]
+        assert call_kwargs.get("tools") == tools
+        assert call_kwargs.get("enable_thinking") is True
+
+
+@pytest.mark.asyncio
+async def test_vision_probe_messages_to_text_with_list_content():
+    """Test VisionProbe._generate with structured list content in messages."""
+    from mlx_manager.services.probe.vision import VisionProbe
+
+    mock_processor = MagicMock()
+    mock_model = MagicMock()
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/vision-model"
+    mock_loaded.tokenizer = mock_processor
+    mock_loaded.model = mock_model
+    mock_loaded.config = {}
+
+    mock_vlm_result = MagicMock()
+    mock_vlm_result.text = "Response"
+
+    # Messages with structured content (list format)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "First part"},
+                {"type": "image", "source": "data:image/png;base64,..."},
+                {"type": "text", "text": "Second part"},
+            ],
+        }
+    ]
+
+    with (
+        patch("mlx_vlm.generate", return_value=mock_vlm_result),
+        patch(
+            "mlx_vlm.prompt_utils.apply_chat_template", return_value="formatted"
+        ) as mock_template,
+        patch("mlx_vlm.utils.load_config", return_value={}),
+    ):
+        probe = VisionProbe()
+        result = await probe._generate(mock_loaded, messages)
+
+        assert result == "Response"
+        # The first argument to apply_chat_template should be the text prompt
+        # which should have extracted text parts joined
+        call_args = mock_template.call_args[0]
+        text_prompt = call_args[2]  # Third positional arg is the text prompt
+        assert "First part" in text_prompt
+        assert "Second part" in text_prompt
+
+
+@pytest.mark.asyncio
+async def test_vision_probe_processor_without_image_processor():
+    """Test _check_processor when processor exists but has no image_processor attribute."""
+    from mlx_manager.services.probe import ProbeResult
+    from mlx_manager.services.probe.vision import VisionProbe
+
+    # Mock processor without image_processor attribute
+    mock_processor = MagicMock()
+    del mock_processor.image_processor  # Remove the attribute
+
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/vision-model"
+    mock_loaded.tokenizer = mock_processor
+    mock_loaded.config = {}
+
+    result = ProbeResult()
+
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        return_value={},
+    ):
+        probe = VisionProbe()
+        steps = []
+        async for step in probe.probe("test/vision-model", mock_loaded, result):
+            steps.append(step)
+
+        processor_steps = [s for s in steps if s.step == "check_processor"]
+        # Should still complete successfully (fallback return True)
+        assert any(s.status == "completed" for s in processor_steps)
+
+
+@pytest.mark.asyncio
+async def test_vision_probe_context_check_exception():
+    """Test probe handles exception during context check gracefully."""
+    from mlx_manager.services.probe import ProbeResult
+    from mlx_manager.services.probe.vision import VisionProbe
+
+    mock_processor = MagicMock()
+    mock_processor.image_processor = MagicMock()
+
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/vision-model"
+    mock_loaded.tokenizer = mock_processor
+    mock_loaded.size_gb = 4.0
+    mock_loaded.config = {}
+
+    result = ProbeResult()
+
+    with (
+        patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            return_value={},
+        ),
+        patch(
+            "mlx_manager.services.probe.vision._estimate_vision_max_tokens",
+            side_effect=ValueError("Config parsing failed"),
+        ),
+    ):
+        probe = VisionProbe()
+        steps = []
+        async for step in probe.probe("test/vision-model", mock_loaded, result):
+            steps.append(step)
+
+        context_steps = [s for s in steps if s.step == "check_context"]
+        # Should have failed status with error message
+        failed_steps = [s for s in context_steps if s.status == "failed"]
+        assert len(failed_steps) > 0
+        assert "Config parsing failed" in failed_steps[0].error
+
+
+@pytest.mark.asyncio
+async def test_vision_probe_max_tokens_missing_max_pos():
+    """Test _estimate_vision_max_tokens when max_position_embeddings is missing."""
+    from mlx_manager.services.probe import ProbeResult
+    from mlx_manager.services.probe.vision import VisionProbe
+
+    mock_processor = MagicMock()
+    mock_processor.image_processor = MagicMock()
+
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/vision-model"
+    mock_loaded.tokenizer = mock_processor
+    mock_loaded.size_gb = 4.0
+    mock_loaded.config = {}
+
+    result = ProbeResult()
+
+    with (
+        patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            return_value={},
+        ),
+        patch("huggingface_hub.hf_hub_download") as mock_download,
+        patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=32.0),
+    ):
+        import tempfile
+
+        # Config without max_position_embeddings or max_sequence_length
+        config = {
+            "text_config": {
+                "num_hidden_layers": 32,
+                "num_key_value_heads": 8,
+                "head_dim": 128,
+                # Missing max_position_embeddings
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config, f)
+            config_path = f.name
+        mock_download.return_value = config_path
+
+        probe = VisionProbe()
+        steps = []
+        async for step in probe.probe("test/vision-model", mock_loaded, result):
+            steps.append(step)
+
+        # Should complete but practical_max_tokens should be None
+        context_steps = [s for s in steps if s.step == "check_context"]
+        completed = [s for s in context_steps if s.status == "completed"]
+        assert len(completed) > 0
+        assert result.practical_max_tokens is None

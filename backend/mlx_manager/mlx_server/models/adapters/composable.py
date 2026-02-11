@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
@@ -42,13 +43,16 @@ class ModelAdapter(ABC):
 
     def __init__(
         self,
-        tokenizer: Any,
+        tokenizer: Any | None = None,
         tool_parser: ToolCallParser | None = None,
         thinking_parser: ThinkingParser | None = None,
     ) -> None:
         self._tokenizer = tokenizer
         # Get actual tokenizer (Processor wraps tokenizer, regular is itself)
-        self._actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        # Audio adapters pass None; text/vision always have a tokenizer.
+        self._actual_tokenizer: Any = (
+            getattr(tokenizer, "tokenizer", tokenizer) if tokenizer is not None else None
+        )
         self._tool_parser = tool_parser or self._default_tool_parser()
         self._thinking_parser = thinking_parser or self._default_thinking_parser()
         # Pre-compute stop tokens at init
@@ -89,7 +93,12 @@ class ModelAdapter(ABC):
 
     def _compute_stop_tokens(self) -> list[int]:
         """Compute stop tokens from tokenizer. Override in subclasses."""
+        if self._actual_tokenizer is None:
+            return []
         return [self._actual_tokenizer.eos_token_id]
+
+    async def post_load_configure(self, model: Any, model_id: str) -> None:
+        """Post-load configuration hook. Override for model-specific fixups."""
 
     def supports_native_tools(self) -> bool:
         """Whether adapter passes tools= to apply_chat_template."""
@@ -601,6 +610,73 @@ class MistralAdapter(ModelAdapter):
         )
 
 
+# --- Audio Adapters ---
+
+
+class BaseAudioAdapter(ModelAdapter):
+    """Base adapter for audio models (TTS/STT).
+
+    Audio models have no tokenizer, so stop_tokens are empty
+    and tool/thinking parsers are null.
+    """
+
+    @property
+    def family(self) -> str:
+        return "audio_default"
+
+    def _default_tool_parser(self) -> ToolCallParser:
+        return NullToolParser()
+
+    def _default_thinking_parser(self) -> ThinkingParser:
+        return NullThinkingParser()
+
+
+class WhisperAdapter(BaseAudioAdapter):
+    """Whisper family: STT models that may need processor fixups.
+
+    MLX-community whisper repos often lack preprocessor_config.json.
+    When mlx-audio loads these models, _processor is set to None,
+    causing STT to fail. post_load_configure loads the processor
+    from the canonical OpenAI repo as a fallback.
+    """
+
+    @property
+    def family(self) -> str:
+        return "whisper"
+
+    async def post_load_configure(self, model: Any, model_id: str) -> None:
+        """Fix missing/broken WhisperProcessor on mlx-community models."""
+        proc = getattr(model, "_processor", None)
+        tok = getattr(proc, "tokenizer", None) if proc else None
+        if proc is not None and tok is not None and getattr(tok, "vocab_size", 0) > 0:
+            return  # Processor is fine
+
+        # Derive the canonical repo: mlx-community/whisper-X → openai/whisper-X
+        name = model_id.split("/")[-1] if "/" in model_id else model_id
+        canonical_repo = f"openai/{name}"
+
+        try:
+            from transformers import WhisperProcessor
+
+            processor = await asyncio.to_thread(WhisperProcessor.from_pretrained, canonical_repo)
+            model._processor = processor
+            logger.info(f"Loaded WhisperProcessor from fallback repo: {canonical_repo}")
+        except Exception as e:
+            logger.warning(f"Could not load WhisperProcessor from {canonical_repo}: {e}")
+
+
+class KokoroAdapter(BaseAudioAdapter):
+    """Kokoro family: TTS models."""
+
+    @property
+    def family(self) -> str:
+        return "kokoro"
+
+
+class DefaultAudioAdapter(BaseAudioAdapter):
+    """Catchall adapter for unknown audio model families."""
+
+
 # --- Factory ---
 
 # Family name -> composable adapter class
@@ -610,21 +686,24 @@ FAMILY_REGISTRY: dict[str, type[ModelAdapter]] = {
     "llama": LlamaAdapter,
     "gemma": GemmaAdapter,
     "mistral": MistralAdapter,
+    "whisper": WhisperAdapter,
+    "kokoro": KokoroAdapter,
+    "audio_default": DefaultAudioAdapter,
     "default": DefaultAdapter,
 }
 
 
 def create_adapter(
     family: str,
-    tokenizer: Any,
+    tokenizer: Any | None = None,
     tool_parser: ToolCallParser | None = None,
     thinking_parser: ThinkingParser | None = None,
 ) -> ModelAdapter:
     """Create a composable adapter for a model family.
 
     Args:
-        family: Model family name (e.g., "qwen", "llama")
-        tokenizer: HuggingFace tokenizer or processor
+        family: Model family name (e.g., "qwen", "llama", "whisper")
+        tokenizer: HuggingFace tokenizer or processor (None for audio)
         tool_parser: Override default tool parser
         thinking_parser: Override default thinking parser
 

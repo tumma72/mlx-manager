@@ -509,6 +509,9 @@ class TestComposableFamilyRegistry:
             "llama",
             "gemma",
             "mistral",
+            "whisper",
+            "kokoro",
+            "audio_default",
             "default",
         }
         assert set(FAMILY_REGISTRY.keys()) == expected_families

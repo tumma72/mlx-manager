@@ -1,4 +1,4 @@
-"""Tests for the shared native tool detection utility."""
+"""Tests for the shared native tool and thinking detection utilities."""
 
 from unittest.mock import MagicMock
 
@@ -6,16 +6,20 @@ import pytest
 
 from mlx_manager.mlx_server.utils.template_tools import (
     clear_native_tools_cache,
+    clear_thinking_cache,
     has_native_tool_support,
+    has_thinking_support,
 )
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    """Clear detection cache before each test."""
+    """Clear detection caches before each test."""
     clear_native_tools_cache()
+    clear_thinking_cache()
     yield
     clear_native_tools_cache()
+    clear_thinking_cache()
 
 
 def _make_tokenizer(
@@ -113,3 +117,101 @@ class TestHasNativeToolSupport:
         )
         tok.apply_chat_template.side_effect = RuntimeError("template broken")
         assert has_native_tool_support(tok) is False
+
+
+def _make_thinking_tokenizer(
+    *,
+    template: str | None = None,
+    accept_thinking: bool = False,
+) -> MagicMock:
+    """Build a mock tokenizer for thinking support testing."""
+    tok = MagicMock(spec=["apply_chat_template", "chat_template"])
+    tok.chat_template = template
+
+    if accept_thinking:
+        tok.apply_chat_template.return_value = "<formatted with thinking>"
+    else:
+
+        def _side_effect(*args, **kwargs):
+            if "enable_thinking" in kwargs:
+                raise TypeError("unexpected keyword argument 'enable_thinking'")
+            return "<formatted>"
+
+        tok.apply_chat_template.side_effect = _side_effect
+
+    return tok
+
+
+class TestHasThinkingSupport:
+    """Tests for has_thinking_support()."""
+
+    def test_no_template_returns_false(self) -> None:
+        tok = _make_thinking_tokenizer(template=None)
+        assert has_thinking_support(tok) is False
+
+    def test_template_without_thinking_keyword_returns_false(self) -> None:
+        tok = _make_thinking_tokenizer(template="Hello {{ messages }}")
+        assert has_thinking_support(tok) is False
+
+    def test_template_with_thinking_keyword_and_acceptance_returns_true(self) -> None:
+        tok = _make_thinking_tokenizer(
+            template="{% if thinking %}think{% endif %} {{ messages }}",
+            accept_thinking=True,
+        )
+        assert has_thinking_support(tok) is True
+
+    def test_template_with_enable_thinking_keyword_and_acceptance_returns_true(self) -> None:
+        tok = _make_thinking_tokenizer(
+            template="{% if enable_thinking %}think{% endif %}",
+            accept_thinking=True,
+        )
+        assert has_thinking_support(tok) is True
+
+    def test_template_with_thinking_keyword_but_rejection_returns_false(self) -> None:
+        tok = _make_thinking_tokenizer(
+            template="{% if thinking %}think{% endif %} {{ messages }}",
+            accept_thinking=False,
+        )
+        assert has_thinking_support(tok) is False
+
+    def test_result_is_cached(self) -> None:
+        tok = _make_thinking_tokenizer(
+            template="enable_thinking support here",
+            accept_thinking=True,
+        )
+        assert has_thinking_support(tok) is True
+
+        # Change behaviour — but cache should return previous result
+        tok.apply_chat_template.side_effect = TypeError("nope")
+        assert has_thinking_support(tok) is True
+
+    def test_processor_wrapper_is_unwrapped(self) -> None:
+        """Processor objects wrap the real tokenizer in .tokenizer attribute."""
+        inner = _make_thinking_tokenizer(
+            template="thinking is here",
+            accept_thinking=True,
+        )
+        processor = MagicMock()
+        processor.tokenizer = inner
+
+        assert has_thinking_support(processor) is True
+
+    def test_clear_cache_resets_detection(self) -> None:
+        tok = _make_thinking_tokenizer(
+            template="thinking present",
+            accept_thinking=True,
+        )
+        assert has_thinking_support(tok) is True
+        clear_thinking_cache()
+
+        # Now make it reject — should re-evaluate
+        tok.apply_chat_template.side_effect = TypeError("thinking")
+        assert has_thinking_support(tok) is False
+
+    def test_generic_exception_returns_false(self) -> None:
+        """Non-TypeError exceptions during trial call should return False."""
+        tok = _make_thinking_tokenizer(
+            template="thinking keyword present",
+        )
+        tok.apply_chat_template.side_effect = RuntimeError("template broken")
+        assert has_thinking_support(tok) is False

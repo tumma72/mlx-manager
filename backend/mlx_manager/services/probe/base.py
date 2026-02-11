@@ -232,18 +232,37 @@ class GenerativeProbe(BaseProbe):
             except Exception as e:
                 logger.debug("Adapter delivery generation failed: {}", e)
 
-        # No match -- scan for unknown XML tags as diagnostic
+        # No match -- scan for partial tool markers as diagnostic
         try:
             if last_output is None:
                 last_output = await self._generate(loaded, _TOOL_PROBE_MESSAGES)
-            unknown_tags = _detect_unknown_xml_tags(last_output)
-            if unknown_tags:
+
+            # Check for partial/corrupted tool call markers
+            tool_markers = [
+                "<tool_call>",
+                "</tool_call>",
+                "<function=",
+                "</function>",
+                "get_weather",
+                '"name"',
+            ]
+            found_markers = [m for m in tool_markers if m in last_output]
+            if found_markers:
                 logger.warning(
-                    "Tool probe: no parser matched but found unknown XML tags: {}",
-                    unknown_tags,
+                    "Tool probe: model attempted tool use (found markers: {}) "
+                    "but output could not be parsed. Raw output: {}",
+                    found_markers,
+                    last_output[:300],
                 )
             else:
-                logger.info("Tool probe: no tool support detected")
+                unknown_tags = _detect_unknown_xml_tags(last_output)
+                if unknown_tags:
+                    logger.warning(
+                        "Tool probe: no parser matched but found unknown XML tags: {}",
+                        unknown_tags,
+                    )
+                else:
+                    logger.info("Tool probe: no tool support detected")
         except Exception:
             logger.info("Tool probe: no tool support detected")
 

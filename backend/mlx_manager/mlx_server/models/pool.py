@@ -44,7 +44,7 @@ class LoadedModel:
     adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
     adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
     capabilities: Any = None  # ModelCapabilities from DB, attached at load time
-    adapter: ModelAdapter | None = None  # Composable adapter for TEXT_GEN
+    adapter: ModelAdapter | None = None  # Composable adapter for all model types
 
     def touch(self) -> None:
         """Update last_used timestamp."""
@@ -385,6 +385,7 @@ class ModelPoolManager:
                     model = await asyncio.to_thread(load_audio, model_id)
                 except (ValueError, RuntimeError) as e:
                     raise RuntimeError(f"Failed to load audio model '{model_id}': {e}") from e
+
                 tokenizer = None  # Audio models don't use tokenizers
             else:
                 # Text-gen models use mlx-lm
@@ -428,27 +429,30 @@ class ModelPoolManager:
             except Exception as e:
                 logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
 
-            # Create composable adapter for TEXT_GEN and VISION models
-            if model_type in (ModelType.TEXT_GEN, ModelType.VISION) and tokenizer is not None:
-                try:
-                    from mlx_manager.mlx_server.models.adapters.composable import (
-                        create_adapter,
-                    )
-                    from mlx_manager.mlx_server.models.adapters.registry import (
-                        detect_model_family,
-                    )
-                    from mlx_manager.mlx_server.parsers import (
-                        resolve_thinking_parser,
-                        resolve_tool_parser,
-                    )
+            # Create composable adapter for all model types
+            try:
+                from mlx_manager.mlx_server.models.adapters.composable import (
+                    create_adapter,
+                )
+                from mlx_manager.mlx_server.models.adapters.registry import (
+                    detect_model_family,
+                )
 
-                    # Use DB capabilities if available
-                    family = None
-                    tool_parser = None
-                    thinking_parser = None
-                    if loaded.capabilities:
-                        caps = loaded.capabilities
-                        family = getattr(caps, "model_family", None)
+                # Use DB capabilities if available
+                family = None
+                tool_parser = None
+                thinking_parser = None
+                if loaded.capabilities:
+                    caps = loaded.capabilities
+                    family = getattr(caps, "model_family", None)
+
+                    # Only resolve parsers for text/vision (audio has no parsers)
+                    if model_type in (ModelType.TEXT_GEN, ModelType.VISION):
+                        from mlx_manager.mlx_server.parsers import (
+                            resolve_thinking_parser,
+                            resolve_tool_parser,
+                        )
+
                         tp_id = getattr(caps, "tool_parser_id", None)
                         thk_id = getattr(caps, "thinking_parser_id", None)
                         if tp_id:
@@ -470,29 +474,35 @@ class ModelPoolManager:
                                     model_id,
                                 )
 
-                    # Fallback to detection
-                    if family is None:
-                        family = detect_model_family(model_id)
+                # Fallback to detection
+                if family is None:
+                    family = detect_model_family(model_id)
+                    # For audio models, map "default" to "audio_default"
+                    if family == "default" and model_type == ModelType.AUDIO:
+                        family = "audio_default"
 
-                    loaded.adapter = create_adapter(
-                        family=family,
-                        tokenizer=tokenizer,
-                        tool_parser=tool_parser,
-                        thinking_parser=thinking_parser,
-                    )
-                    logger.info(
-                        "Created {} adapter for {} (tool={}, think={})",
-                        family,
-                        model_id,
-                        loaded.adapter.tool_parser.parser_id,
-                        loaded.adapter.thinking_parser.parser_id,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Could not create composable adapter for {}: {}",
-                        model_id,
-                        e,
-                    )
+                loaded.adapter = create_adapter(
+                    family=family,
+                    tokenizer=tokenizer,
+                    tool_parser=tool_parser,
+                    thinking_parser=thinking_parser,
+                )
+                logger.info(
+                    "Created {} adapter for {} (tool={}, think={})",
+                    family,
+                    model_id,
+                    loaded.adapter.tool_parser.parser_id,
+                    loaded.adapter.thinking_parser.parser_id,
+                )
+
+                # Run post-load configuration hook
+                await loaded.adapter.post_load_configure(model, model_id)
+            except Exception as e:
+                logger.warning(
+                    "Could not create composable adapter for {}: {}",
+                    model_id,
+                    e,
+                )
 
             async with self._lock:
                 self._models[model_id] = loaded
