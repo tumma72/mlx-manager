@@ -48,6 +48,8 @@ async def generate_chat_completion(
         stop: Additional stop strings (user-provided)
         stream: If True, yield chunks; if False, return complete response
         tools: Optional list of tool definitions in OpenAI format
+        enable_prompt_injection: Force tool injection even when adapter
+            doesn't claim tool support (user override via Profile)
 
     Yields/Returns:
         Streaming: yields chunk dicts
@@ -75,42 +77,22 @@ async def generate_chat_completion(
     # Convert messages to model-specific format (handles tool messages, etc.)
     converted_messages = adapter.convert_messages(messages)
 
-    # Build messages with tool definitions if provided
-    effective_messages = converted_messages
-    use_native_tools = False
+    # Tool delivery: adapter decides HOW, we decide WHETHER.
+    # Case 1: adapter supports tools → pass tools, adapter handles delivery
+    # Case 2: user forces prompt injection → pass tools anyway
+    use_tools = tools and (adapter.supports_tool_calling() or enable_prompt_injection)
+    if tools and not use_tools:
+        logger.info(
+            "Tools requested but model {} does not support "
+            "tool calling and prompt injection not enabled",
+            model_id,
+        )
 
-    if tools and adapter.supports_tool_calling():
-        loaded_caps = getattr(loaded, "capabilities", None)
-        tool_format = getattr(loaded_caps, "tool_format", None) if loaded_caps else None
-
-        if tool_format in ("template", "native"):
-            # Template delivery: pass tools= to apply_chat_template
-            use_native_tools = True
-            logger.debug("Using template tool delivery for {}", model_id)
-        elif tool_format in ("adapter", "hermes"):
-            # Adapter delivery: inject tools into messages via adapter
-            tool_prompt = adapter.format_tools_for_prompt(tools)
-            if tool_prompt:
-                effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
-                logger.debug("Using adapter tool delivery for {}", model_id)
-        elif enable_prompt_injection:
-            # User-level override for unprobed models
-            tool_prompt = adapter.format_tools_for_prompt(tools)
-            if tool_prompt:
-                effective_messages = _inject_tools_into_messages(converted_messages, tool_prompt)
-                logger.debug("Injected tools via prompt injection for {}", model_id)
-        else:
-            logger.info(
-                "Tools requested but model {} has no probed tool_format "
-                "and prompt injection not enabled",
-                model_id,
-            )
-
-    # Apply chat template
+    # Apply chat template — adapter handles tool injection internally
     prompt: str = adapter.apply_chat_template(
-        messages=effective_messages,
+        messages=converted_messages,
         add_generation_prompt=True,
-        tools=tools if use_native_tools else None,
+        tools=tools if use_tools else None,
     )
 
     # Debug: Log the final prompt when tools are present
@@ -123,7 +105,7 @@ async def generate_chat_completion(
     stop_token_ids: set[int] = set(adapter.stop_tokens)
 
     # Add tool-specific stop tokens when tools are enabled
-    if tools and adapter.supports_tool_calling():
+    if use_tools:
         tool_stop_tokens = adapter.get_tool_call_stop_tokens()
         stop_token_ids.update(tool_stop_tokens)
 
@@ -185,44 +167,6 @@ async def generate_chat_completion(
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
-
-
-def _inject_tools_into_messages(
-    messages: list[dict[str, Any]], tool_prompt: str
-) -> list[dict[str, Any]]:
-    """Inject tool definitions into the message list.
-
-    Appends tool definitions to the system message if one exists,
-    otherwise creates a new system message at the beginning.
-
-    Args:
-        messages: Original message list
-        tool_prompt: Formatted tool definitions string
-
-    Returns:
-        New message list with tool definitions injected
-    """
-    result = list(messages)  # Make a copy
-
-    # Find system message
-    system_idx = None
-    for i, msg in enumerate(result):
-        if msg.get("role") == "system":
-            system_idx = i
-            break
-
-    if system_idx is not None:
-        # Append to existing system message
-        existing_content = result[system_idx].get("content", "")
-        result[system_idx] = {
-            **result[system_idx],
-            "content": f"{existing_content}\n\n{tool_prompt}",
-        }
-    else:
-        # Create new system message at the beginning
-        result.insert(0, {"role": "system", "content": tool_prompt})
-
-    return result
 
 
 async def _stream_chat_generate(

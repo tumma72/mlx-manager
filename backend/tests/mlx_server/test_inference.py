@@ -3,7 +3,7 @@
 Tests cover:
 - Stop token detection logic (existing)
 - Import/structural checks (existing)
-- _inject_tools_into_messages (pure function)
+- _inject_tools (pure function)
 - generate_chat_completion orchestration (mocked pool + adapter)
 - _stream_chat_generate streaming consumer (mocked stream_from_metal_thread)
 - _generate_chat_complete non-streaming (mocked run_on_metal_thread)
@@ -49,7 +49,7 @@ def _make_mock_adapter(
     adapter.family = family
     adapter.convert_messages = MagicMock(side_effect=lambda msgs: list(msgs))
     adapter.supports_tool_calling = MagicMock(return_value=supports_tools)
-    adapter.has_native_tool_support = MagicMock(return_value=native_tools)
+    adapter.supports_native_tools = MagicMock(return_value=native_tools)
     adapter.format_tools_for_prompt = MagicMock(return_value=tool_prompt)
     adapter.apply_chat_template = MagicMock(return_value="formatted prompt")
     adapter.stop_tokens = [128009]  # Property instead of method
@@ -390,22 +390,24 @@ class TestDeprecatedAPIRemoval:
 
 
 # ===========================================================================
-# NEW: _inject_tools_into_messages (pure function, no mocks)
+# NEW: _inject_tools (pure function, no mocks)
 # ===========================================================================
 
 
 class TestInjectToolsIntoMessages:
-    """Test _inject_tools_into_messages pure function."""
+    """Test ModelAdapter._inject_tools static method."""
 
     def test_appends_to_existing_system_message(self) -> None:
         """Tool prompt is appended to existing system message content."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hi"},
         ]
-        result = _inject_tools_into_messages(messages, "TOOLS: search")
+        result = _inject_tools(messages, "TOOLS: search")
 
         assert result[0]["role"] == "system"
         assert "You are a helpful assistant." in result[0]["content"]
@@ -415,10 +417,12 @@ class TestInjectToolsIntoMessages:
 
     def test_creates_system_message_when_absent(self) -> None:
         """Tool prompt creates a new system message when none exists."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [{"role": "user", "content": "Hello"}]
-        result = _inject_tools_into_messages(messages, "TOOLS: lookup")
+        result = _inject_tools(messages, "TOOLS: lookup")
 
         assert len(result) == 2
         assert result[0]["role"] == "system"
@@ -427,7 +431,9 @@ class TestInjectToolsIntoMessages:
 
     def test_does_not_mutate_original_messages(self) -> None:
         """Original message list should not be modified."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [
             {"role": "system", "content": "Original system"},
@@ -435,21 +441,23 @@ class TestInjectToolsIntoMessages:
         ]
         original_system_content = messages[0]["content"]
 
-        result = _inject_tools_into_messages(messages, "injected tools")
+        result = _inject_tools(messages, "injected tools")
 
         assert messages[0]["content"] == original_system_content
         assert result is not messages
 
     def test_system_message_not_first(self) -> None:
         """System message at non-zero index still gets tool prompt appended."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [
             {"role": "user", "content": "Hi"},
             {"role": "system", "content": "System msg"},
             {"role": "user", "content": "Bye"},
         ]
-        result = _inject_tools_into_messages(messages, "tools here")
+        result = _inject_tools(messages, "tools here")
 
         assert result[1]["role"] == "system"
         assert "tools here" in result[1]["content"]
@@ -457,21 +465,25 @@ class TestInjectToolsIntoMessages:
 
     def test_empty_system_content(self) -> None:
         """System message with empty content gets tool prompt appended."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [
             {"role": "system", "content": ""},
             {"role": "user", "content": "test"},
         ]
-        result = _inject_tools_into_messages(messages, "tool_definitions")
+        result = _inject_tools(messages, "tool_definitions")
 
         assert "tool_definitions" in result[0]["content"]
 
     def test_empty_messages_list(self) -> None:
         """Empty message list gets a system message inserted."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
 
-        result = _inject_tools_into_messages([], "tool info")
+        _inject_tools = ModelAdapter._inject_tools
+
+        result = _inject_tools([], "tool info")
 
         assert len(result) == 1
         assert result[0]["role"] == "system"
@@ -479,13 +491,15 @@ class TestInjectToolsIntoMessages:
 
     def test_preserves_extra_system_message_keys(self) -> None:
         """Extra keys on system message dict are preserved."""
-        from mlx_manager.mlx_server.services.inference import _inject_tools_into_messages
+        from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+
+        _inject_tools = ModelAdapter._inject_tools
 
         messages = [
             {"role": "system", "content": "base", "name": "narrator"},
             {"role": "user", "content": "Hi"},
         ]
-        result = _inject_tools_into_messages(messages, "tools")
+        result = _inject_tools(messages, "tools")
 
         assert result[0]["name"] == "narrator"
         assert "tools" in result[0]["content"]
@@ -600,13 +614,8 @@ class TestGenerateChatCompletion:
         adapter.apply_chat_template.assert_called_once()
 
     async def test_tools_with_native_support(self) -> None:
-        """Tools are passed to apply_chat_template when capabilities indicate template delivery."""
-        # Create a capabilities object with tool_format="template"
-        caps = MagicMock()
-        caps.supports_native_tools = True
-        caps.tool_format = "template"
-
-        loaded, model, tokenizer = _make_mock_loaded_model(capabilities=caps)
+        """Tools are passed to apply_chat_template when adapter supports native tools."""
+        loaded, model, tokenizer = _make_mock_loaded_model()
         adapter = _make_mock_adapter(supports_tools=True, native_tools=True)
         loaded.adapter = adapter  # Assign adapter to loaded model
 
@@ -652,8 +661,8 @@ class TestGenerateChatCompletion:
             len(call_kwargs.args) > 3 and call_kwargs.args[3] == SAMPLE_TOOLS
         )
 
-    async def test_tools_with_prompt_injection(self) -> None:
-        """Tools are injected into messages when enable_prompt_injection=True."""
+    async def test_tools_with_adapter_delivery(self) -> None:
+        """Tools are passed to apply_chat_template when adapter supports tools."""
         _, adapter, _ = await self._run_generate(
             tools=SAMPLE_TOOLS,
             adapter_kwargs={
@@ -661,13 +670,11 @@ class TestGenerateChatCompletion:
                 "native_tools": False,
                 "tool_prompt": "Available tools: search",
             },
-            extra_kwargs={"enable_prompt_injection": True},
         )
 
-        adapter.format_tools_for_prompt.assert_called_once_with(SAMPLE_TOOLS)
-        # apply_chat_template should NOT get tools kwarg
+        # Adapter owns tool delivery — inference just passes tools through
         call_kwargs = adapter.apply_chat_template.call_args
-        assert call_kwargs.kwargs.get("tools") is None
+        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
 
     async def test_tool_stop_tokens_added(self) -> None:
         """Tool-specific stop tokens are requested when tools are provided."""
@@ -678,21 +685,33 @@ class TestGenerateChatCompletion:
 
         adapter.get_tool_call_stop_tokens.assert_called_once()
 
-    async def test_enable_prompt_injection_uses_injection(self) -> None:
-        """enable_prompt_injection=True uses injection even without native support."""
+    async def test_prompt_injection_overrides_unsupported_adapter(self) -> None:
+        """Prompt injection passes tools even when adapter doesn't claim support."""
         _, adapter, _ = await self._run_generate(
             tools=SAMPLE_TOOLS,
             adapter_kwargs={
-                "supports_tools": True,
+                "supports_tools": False,
                 "native_tools": False,
                 "tool_prompt": "Available tools: search",
             },
             extra_kwargs={"enable_prompt_injection": True},
         )
 
-        # Should use injection (format_tools_for_prompt called)
-        adapter.format_tools_for_prompt.assert_called_once_with(SAMPLE_TOOLS)
-        # Should NOT pass tools natively
+        # Prompt injection forces tools to be passed to adapter
+        call_kwargs = adapter.apply_chat_template.call_args
+        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
+
+    async def test_tools_not_passed_when_unsupported(self) -> None:
+        """Tools are not passed to adapter when unsupported and no injection."""
+        _, adapter, _ = await self._run_generate(
+            tools=SAMPLE_TOOLS,
+            adapter_kwargs={
+                "supports_tools": False,
+                "native_tools": False,
+            },
+        )
+
+        # Tools should NOT be passed to apply_chat_template
         call_kwargs = adapter.apply_chat_template.call_args
         assert call_kwargs.kwargs.get("tools") is None
 

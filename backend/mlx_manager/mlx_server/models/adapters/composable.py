@@ -114,6 +114,52 @@ class ModelAdapter(ABC):
         markers.extend(self._thinking_parser.stream_markers)
         return markers
 
+    # ── Tool delivery ────────────────────────────────────────────
+
+    @staticmethod
+    def _inject_tools(messages: list[dict[str, Any]], tool_prompt: str) -> list[dict[str, Any]]:
+        """Inject tool definitions into the system message."""
+        result = list(messages)
+        system_idx = None
+        for i, msg in enumerate(result):
+            if msg.get("role") == "system":
+                system_idx = i
+                break
+        if system_idx is not None:
+            existing = result[system_idx].get("content", "")
+            result[system_idx] = {
+                **result[system_idx],
+                "content": f"{existing}\n\n{tool_prompt}",
+            }
+        else:
+            result.insert(0, {"role": "system", "content": tool_prompt})
+        return result
+
+    def _prepare_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
+        """Prepare messages for tool-aware template application.
+
+        Returns:
+            (effective_messages, native_tools) where native_tools is
+            passed to tokenizer.apply_chat_template(tools=...) for
+            models with native template support, or None when tools
+            were injected into messages (or absent).
+        """
+        if not tools:
+            return messages, None
+        if self.supports_native_tools():
+            return messages, tools
+        # Adapter delivery: inject formatted tools into system message
+        tool_prompt = self.format_tools_for_prompt(tools)
+        if tool_prompt:
+            return self._inject_tools(messages, tool_prompt), None
+        return messages, None
+
+    # ── Template application ─────────────────────────────────────
+
     def apply_chat_template(
         self,
         messages: list[dict[str, Any]],
@@ -121,14 +167,17 @@ class ModelAdapter(ABC):
         tools: list[dict[str, Any]] | None = None,
         enable_thinking: bool = False,
     ) -> str:
-        """Apply chat template. No tokenizer param needed - held internally."""
+        """Apply chat template with automatic tool delivery."""
+        effective, native_tools = self._prepare_tools(messages, tools)
+        kwargs: dict[str, Any] = {
+            "add_generation_prompt": add_generation_prompt,
+            "tokenize": False,
+        }
+        if native_tools:
+            kwargs["tools"] = native_tools
         return cast(
             str,
-            self._actual_tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=add_generation_prompt,
-                tokenize=False,
-            ),
+            self._actual_tokenizer.apply_chat_template(effective, **kwargs),
         )
 
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
@@ -224,25 +273,24 @@ class QwenAdapter(ModelAdapter):
         enable_thinking: bool = False,
     ) -> str:
         """Apply Qwen template with enable_thinking support."""
+        effective, native_tools = self._prepare_tools(messages, tools)
+        kwargs: dict[str, Any] = {
+            "add_generation_prompt": add_generation_prompt,
+            "tokenize": False,
+            "enable_thinking": True,
+        }
+        if native_tools:
+            kwargs["tools"] = native_tools
         try:
-            result: str = cast(
-                str,
-                self._actual_tokenizer.apply_chat_template(
-                    messages,
-                    add_generation_prompt=add_generation_prompt,
-                    tokenize=False,
-                    enable_thinking=True,
-                ),
-            )
-            return result
-        except (TypeError, ValueError, KeyError, AttributeError):
             return cast(
                 str,
-                self._actual_tokenizer.apply_chat_template(
-                    messages,
-                    add_generation_prompt=add_generation_prompt,
-                    tokenize=False,
-                ),
+                self._actual_tokenizer.apply_chat_template(effective, **kwargs),
+            )
+        except (TypeError, ValueError, KeyError, AttributeError):
+            del kwargs["enable_thinking"]
+            return cast(
+                str,
+                self._actual_tokenizer.apply_chat_template(effective, **kwargs),
             )
 
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
@@ -349,24 +397,25 @@ class GLM4Adapter(ModelAdapter):
         tools: list[dict[str, Any]] | None = None,
         enable_thinking: bool = False,
     ) -> str:
-        """Apply GLM4 template. Passes tools= natively (the fix)."""
+        """Apply GLM4 template with native tool support."""
+        effective, native_tools = self._prepare_tools(messages, tools)
         if hasattr(self._actual_tokenizer, "apply_chat_template"):
             try:
                 kwargs: dict[str, Any] = {
                     "add_generation_prompt": add_generation_prompt,
                     "tokenize": False,
                 }
-                if tools and self.supports_native_tools():
-                    kwargs["tools"] = tools
+                if native_tools:
+                    kwargs["tools"] = native_tools
                 return cast(
                     str,
-                    self._actual_tokenizer.apply_chat_template(messages, **kwargs),
+                    self._actual_tokenizer.apply_chat_template(effective, **kwargs),
                 )
             except Exception as e:
                 logger.warning("GLM4 tokenizer.apply_chat_template failed: {}", e)
         # Manual ChatML fallback
         parts: list[str] = []
-        for msg in messages:
+        for msg in effective:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             parts.append(f"<|{role}|>\n{content}")
@@ -590,7 +639,9 @@ class MistralAdapter(ModelAdapter):
         enable_thinking: bool = False,
     ) -> str:
         """Apply Mistral template with system message handling for v1/v2."""
-        processed = list(messages)
+        effective, native_tools = self._prepare_tools(messages, tools)
+        # Mistral v1/v2: merge system message into first user message
+        processed = list(effective)
         if processed and processed[0].get("role") == "system":
             system_content = processed[0].get("content", "")
             processed = processed[1:]
@@ -600,13 +651,15 @@ class MistralAdapter(ModelAdapter):
                     "role": "user",
                     "content": f"{system_content}\n\n{user_content}",
                 }
+        kwargs: dict[str, Any] = {
+            "add_generation_prompt": add_generation_prompt,
+            "tokenize": False,
+        }
+        if native_tools:
+            kwargs["tools"] = native_tools
         return cast(
             str,
-            self._actual_tokenizer.apply_chat_template(
-                processed,
-                add_generation_prompt=add_generation_prompt,
-                tokenize=False,
-            ),
+            self._actual_tokenizer.apply_chat_template(processed, **kwargs),
         )
 
 
