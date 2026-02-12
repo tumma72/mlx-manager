@@ -1,7 +1,8 @@
 """Protocol translation between OpenAI and Anthropic formats."""
 
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel
 
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
@@ -9,19 +10,17 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlock,
 )
 from mlx_manager.mlx_server.schemas.anthropic import Usage as AnthropicUsage
+from mlx_manager.models.value_objects import InferenceParams
 
 
-@dataclass
-class InternalRequest:
+class InternalRequest(BaseModel):
     """Internal request format used by inference service."""
 
     model: str
-    messages: list[dict[str, str]]  # [{"role": str, "content": str}]
-    max_tokens: int
-    temperature: float
-    top_p: float | None
-    stream: bool
-    stop: list[str] | None
+    messages: list[dict[str, str]]
+    params: InferenceParams
+    stream: bool = False
+    stop: list[str] | None = None
 
 
 class ProtocolTranslator:
@@ -64,9 +63,11 @@ class ProtocolTranslator:
         return InternalRequest(
             model=request.model,
             messages=messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
+            params=InferenceParams(
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                top_p=request.top_p,
+            ),
             stream=request.stream,
             stop=request.stop_sequences,
         )

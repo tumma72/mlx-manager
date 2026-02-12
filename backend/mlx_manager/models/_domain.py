@@ -1,20 +1,13 @@
 """SQLModel database models."""
 
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Optional
 
 from pydantic import BaseModel, computed_field
 from sqlalchemy import Boolean, Column
 from sqlmodel import Field, Relationship, SQLModel
 
-
-class UserStatus(StrEnum):
-    """User account status."""
-
-    PENDING = "pending"
-    APPROVED = "approved"
-    DISABLED = "disabled"
+from mlx_manager.models.enums import ApiType, BackendType, UserStatus
 
 
 class UserBase(SQLModel):
@@ -388,30 +381,6 @@ class ServerStatus(BaseModel):
 # ============================================================================
 # Backend Routing Models (Phase 10 - Cloud Fallback)
 # ============================================================================
-
-
-class ApiType(StrEnum):
-    """API protocol type for cloud providers."""
-
-    OPENAI = "openai"  # OpenAI-compatible API
-    ANTHROPIC = "anthropic"  # Anthropic-compatible API
-
-
-class BackendType(StrEnum):
-    """Backend types for routing."""
-
-    LOCAL = "local"
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    # Generic providers
-    OPENAI_COMPATIBLE = "openai_compatible"
-    ANTHROPIC_COMPATIBLE = "anthropic_compatible"
-    # Common providers (convenience)
-    TOGETHER = "together"
-    GROQ = "groq"
-    FIREWORKS = "fireworks"
-    MISTRAL = "mistral"
-    DEEPSEEK = "deepseek"
 
 
 # Default base URLs for known providers

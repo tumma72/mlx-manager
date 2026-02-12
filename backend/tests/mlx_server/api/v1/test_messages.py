@@ -20,6 +20,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlockParam,
 )
 from mlx_manager.mlx_server.services.protocol import InternalRequest, reset_translator
+from mlx_manager.models.value_objects import InferenceParams
 
 
 @pytest.fixture(autouse=True)
@@ -66,9 +67,11 @@ def mock_internal_request():
     return InternalRequest(
         model="test-model",
         messages=[{"role": "user", "content": "Hello"}],
-        max_tokens=1000,
-        temperature=1.0,
-        top_p=None,
+        params=InferenceParams(
+            max_tokens=1000,
+            temperature=1.0,
+            top_p=None,
+        ),
         stream=False,
         stop=None,
     )
@@ -254,9 +257,11 @@ class TestStreamingResponse:
         internal = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=1000,
-            temperature=1.0,
-            top_p=None,
+            params=InferenceParams(
+                max_tokens=1000,
+                temperature=1.0,
+                top_p=None,
+            ),
             stream=True,
             stop=None,
         )
@@ -280,9 +285,11 @@ class TestStreamingResponse:
         internal = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=1000,
-            temperature=1.0,
-            top_p=None,
+            params=InferenceParams(
+                max_tokens=1000,
+                temperature=1.0,
+                top_p=None,
+            ),
             stream=True,
             stop=None,
         )
@@ -350,9 +357,11 @@ class TestProtocolTranslationIntegration:
                 {"role": "system", "content": "You are a helpful assistant"},
                 {"role": "user", "content": "Hello"},
             ],
-            max_tokens=1000,
-            temperature=1.0,
-            top_p=None,
+            params=InferenceParams(
+                max_tokens=1000,
+                temperature=1.0,
+                top_p=None,
+            ),
             stream=False,
             stop=None,
         )
@@ -392,9 +401,11 @@ class TestProtocolTranslationIntegration:
         internal = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=1000,
-            temperature=0.7,
-            top_p=0.9,
+            params=InferenceParams(
+                max_tokens=1000,
+                temperature=0.7,
+                top_p=0.9,
+            ),
             stream=False,
             stop=None,
         )

@@ -15,6 +15,7 @@ from mlx_manager.mlx_server.services.protocol import (
     get_translator,
     reset_translator,
 )
+from mlx_manager.models.value_objects import InferenceParams
 
 
 @pytest.fixture
@@ -182,9 +183,9 @@ class TestAnthropicToInternal:
         internal = translator.anthropic_to_internal(request)
 
         assert internal.model == "claude-3-opus"
-        assert internal.max_tokens == 2000
-        assert internal.temperature == 0.7
-        assert internal.top_p == 0.9
+        assert internal.params.max_tokens == 2000
+        assert internal.params.temperature == 0.7
+        assert internal.params.top_p == 0.9
         assert internal.stream is True
 
 
@@ -362,25 +363,27 @@ class TestInternalToAnthropicResponse:
 
 
 class TestInternalRequest:
-    """Tests for InternalRequest dataclass."""
+    """Tests for InternalRequest BaseModel."""
 
-    def test_dataclass_fields(self) -> None:
+    def test_model_fields(self) -> None:
         """InternalRequest has expected fields."""
         request = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=100,
-            temperature=0.7,
-            top_p=0.9,
+            params=InferenceParams(
+                max_tokens=100,
+                temperature=0.7,
+                top_p=0.9,
+            ),
             stream=True,
             stop=["END"],
         )
 
         assert request.model == "test-model"
         assert request.messages == [{"role": "user", "content": "Hello"}]
-        assert request.max_tokens == 100
-        assert request.temperature == 0.7
-        assert request.top_p == 0.9
+        assert request.params.max_tokens == 100
+        assert request.params.temperature == 0.7
+        assert request.params.top_p == 0.9
         assert request.stream is True
         assert request.stop == ["END"]
 
@@ -389,14 +392,16 @@ class TestInternalRequest:
         request = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=100,
-            temperature=1.0,
-            top_p=None,
+            params=InferenceParams(
+                max_tokens=100,
+                temperature=1.0,
+                top_p=None,
+            ),
             stream=False,
             stop=None,
         )
 
-        assert request.top_p is None
+        assert request.params.top_p is None
         assert request.stop is None
 
 
