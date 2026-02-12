@@ -21,7 +21,13 @@ from mlx_manager.config import settings
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
-from mlx_manager.models import ServerProfile, User
+from mlx_manager.models import (
+    HealthStatus,
+    RunningServerResponse,
+    ServerProfile,
+    ServerStatus,
+    User,
+)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
@@ -62,26 +68,11 @@ class ServerHealthStatus(BaseModel):
 _server_start_time = time.time()
 
 
-class RunningServer(BaseModel):
-    """Running server info for UI compatibility."""
-
-    profile_id: int
-    profile_name: str
-    pid: int
-    port: int
-    health_status: str  # "starting", "healthy", "unhealthy", "stopped"
-    uptime_seconds: float
-    memory_mb: float
-    memory_percent: float
-    memory_limit_percent: float = 0.0  # Memory as % of configured limit
-    cpu_percent: float
-
-
-@router.get("", response_model=list[RunningServer])
+@router.get("", response_model=list[RunningServerResponse])
 async def list_servers(
     current_user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
-) -> list[RunningServer]:
+) -> list[RunningServerResponse]:
     """Return running servers list for UI compatibility.
 
     In embedded mode, a profile is "running" when its model is loaded in the
@@ -102,7 +93,7 @@ async def list_servers(
 
         memory_total_gb = pool.max_memory_gb
 
-        running_servers: list[RunningServer] = []
+        running_servers: list[RunningServerResponse] = []
         for profile in profiles:
             if profile.id is None:
                 continue  # Skip profiles without IDs (shouldn't happen)
@@ -114,7 +105,7 @@ async def list_servers(
                     model_uptime = time.time() - loaded_model.loaded_at
 
                 running_servers.append(
-                    RunningServer(
+                    RunningServerResponse(
                         profile_id=profile.id,
                         profile_name=profile.name,
                         pid=os.getpid(),
@@ -406,26 +397,11 @@ async def restart_server(
     }
 
 
-class ProfileServerStatus(BaseModel):
-    """Server status for a profile - for frontend polling compatibility.
-
-    In embedded mode, the server is always running. This response format
-    matches what the frontend expects from the old profile-based server model.
-    """
-
-    profile_id: int
-    running: bool = True  # Embedded server is always running
-    pid: int | None = None
-    exit_code: int | None = None
-    failed: bool = False
-    error_message: str | None = None
-
-
-@router.get("/{profile_id}/status", response_model=ProfileServerStatus)
+@router.get("/{profile_id}/status", response_model=ServerStatus)
 async def get_server_status(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
-) -> ProfileServerStatus:
+) -> ServerStatus:
     """Get server status for a profile.
 
     In embedded mode, the server is always running. Models are loaded on-demand
@@ -435,7 +411,7 @@ async def get_server_status(
     The frontend uses this endpoint to poll for server startup completion.
     With embedded mode, startup is always "complete" since the server is embedded.
     """
-    return ProfileServerStatus(
+    return ServerStatus(
         profile_id=profile_id,
         running=True,
         pid=os.getpid(),
@@ -445,25 +421,12 @@ async def get_server_status(
     )
 
 
-class ProfileHealthStatus(BaseModel):
-    """Health status for a profile - for frontend polling compatibility.
-
-    In embedded mode, the server is always healthy. The model_loaded field
-    indicates whether the profile's model is currently loaded in the pool.
-    """
-
-    status: str  # "healthy", "unhealthy", "starting", "stopped"
-    response_time_ms: int | None = None
-    model_loaded: bool = False
-    error: str | None = None
-
-
-@router.get("/{profile_id}/health", response_model=ProfileHealthStatus)
+@router.get("/{profile_id}/health", response_model=HealthStatus)
 async def get_server_health(
     current_user: Annotated[User, Depends(get_current_user)],
     profile_id: int,
     db: AsyncSession = Depends(get_db),
-) -> ProfileHealthStatus:
+) -> HealthStatus:
     """Check if profile's model is loaded in the embedded server.
 
     Returns health status based on whether the profile's specific model
@@ -487,16 +450,16 @@ async def get_server_health(
         pool = get_model_pool()
         is_loaded = pool.is_loaded(model_id)
 
-        return ProfileHealthStatus(
+        return HealthStatus(
             status="healthy",
             model_loaded=is_loaded,
-            response_time_ms=1,
+            response_time_ms=1.0,
             error=None,
         )
     except RuntimeError:
-        return ProfileHealthStatus(
+        return HealthStatus(
             status="unhealthy",
             model_loaded=False,
-            response_time_ms=0,
+            response_time_ms=0.0,
             error="Model pool not initialized",
         )

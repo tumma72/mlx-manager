@@ -486,9 +486,7 @@ async def test_save_capabilities_create_new():
     )
 
     # Need to mock update_model_capabilities since _save_capabilities now uses it
-    with patch(
-        "mlx_manager.services.model_registry.update_model_capabilities"
-    ) as mock_update_caps:
+    with patch("mlx_manager.services.model_registry.update_model_capabilities") as mock_update_caps:
         mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/model", result)
 
@@ -514,9 +512,7 @@ async def test_save_capabilities_update_existing():
     )
 
     # Need to mock update_model_capabilities since _save_capabilities now uses it
-    with patch(
-        "mlx_manager.services.model_registry.update_model_capabilities"
-    ) as mock_update_caps:
+    with patch("mlx_manager.services.model_registry.update_model_capabilities") as mock_update_caps:
         mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/model", result)
 

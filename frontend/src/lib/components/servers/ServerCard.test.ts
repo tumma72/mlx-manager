@@ -71,6 +71,7 @@ function createMockServer(
     profile_id: 1,
     profile_name: "Test Server",
     pid: 12345,
+    port: 10242,
     health_status: "healthy",
     uptime_seconds: 3600,
     memory_mb: 512,

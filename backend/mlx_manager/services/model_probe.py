@@ -8,41 +8,11 @@ Results are stored in the DB for use at inference time.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
 
-
-@dataclass
-class ProbeStep:
-    """A single step in the probe process, yielded as an SSE event."""
-
-    step: str
-    status: str  # "running", "completed", "failed", "skipped"
-    capability: str | None = None
-    value: Any = None
-    error: str | None = None
-
-    def to_sse(self) -> str:
-        """Serialize to SSE event data."""
-        data: dict[str, Any] = {"step": self.step, "status": self.status}
-        if self.capability is not None:
-            data["capability"] = self.capability
-        if self.value is not None:
-            data["value"] = self.value
-        if self.error is not None:
-            data["error"] = self.error
-        return f"data: {json.dumps(data)}\n\n"
-
-
-@dataclass
-class ProbeResult:
-    """Accumulated probe results."""
-
-    supports_native_tools: bool | None = None
-    supports_thinking: bool | None = None
-    practical_max_tokens: int | None = None
+from mlx_manager.services.probe.steps import ProbeResult, ProbeStep
 
 
 async def probe_model(model_id: str):

@@ -3,38 +3,6 @@
 from typing import TypedDict
 
 
-class HealthCheckResult(TypedDict, total=False):
-    """Result from server health check."""
-
-    status: str
-    response_time_ms: float
-    model_loaded: bool
-    error: str
-
-
-class ServerStats(TypedDict):
-    """Statistics for a running server process."""
-
-    pid: int
-    memory_mb: float
-    memory_percent: float
-    cpu_percent: float
-    status: str
-    create_time: float
-
-
-class RunningServerInfo(TypedDict):
-    """Information about a running server."""
-
-    profile_id: int
-    pid: int
-    memory_mb: float
-    memory_percent: float
-    cpu_percent: float
-    status: str
-    create_time: float
-
-
 class ModelSearchResult(TypedDict, total=False):
     """Search result from HuggingFace Hub."""
 

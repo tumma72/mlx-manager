@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Optional
 
-from pydantic import computed_field
+from pydantic import BaseModel, computed_field
 from sqlalchemy import Boolean, Column
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -37,7 +37,7 @@ class User(UserBase, table=True):
     approved_by: int | None = Field(default=None, foreign_key="users.id")
 
 
-class UserCreate(SQLModel):
+class UserCreate(BaseModel):
     """Schema for creating a user (registration)."""
 
     email: str
@@ -53,14 +53,14 @@ class UserPublic(UserBase):
     created_at: datetime
 
 
-class UserLogin(SQLModel):
+class UserLogin(BaseModel):
     """Schema for login request."""
 
     email: str
     password: str
 
 
-class UserUpdate(SQLModel):
+class UserUpdate(BaseModel):
     """Schema for admin user updates."""
 
     email: str | None = None
@@ -68,14 +68,14 @@ class UserUpdate(SQLModel):
     status: UserStatus | None = None
 
 
-class Token(SQLModel):
+class Token(BaseModel):
     """JWT token response."""
 
     access_token: str
     token_type: str = "bearer"
 
 
-class PasswordReset(SQLModel):
+class PasswordReset(BaseModel):
     """Schema for admin password reset."""
 
     password: str
@@ -135,7 +135,7 @@ class ServerProfileCreate(ServerProfileBase):
     model_id: int = Field(foreign_key="models.id")  # type: ignore[assignment]
 
 
-class ServerProfileUpdate(SQLModel):
+class ServerProfileUpdate(BaseModel):
     """Schema for updating a server profile."""
 
     name: str | None = None
@@ -208,7 +208,7 @@ class Model(SQLModel, table=True):
     profiles: list["ServerProfile"] = Relationship(back_populates="model")
 
 
-class ModelResponse(SQLModel):
+class ModelResponse(BaseModel):
     """Response model for Model entity."""
 
     id: int
@@ -272,7 +272,7 @@ class Download(SQLModel, table=True):
 
 
 # Response models for API
-class ServerProfileResponse(SQLModel):
+class ServerProfileResponse(BaseModel):
     """Response model for server profile."""
 
     id: int
@@ -297,7 +297,7 @@ class ServerProfileResponse(SQLModel):
     updated_at: datetime
 
 
-class RunningServerResponse(SQLModel):
+class RunningServerResponse(BaseModel):
     """Response model for running server status."""
 
     profile_id: int
@@ -308,9 +308,11 @@ class RunningServerResponse(SQLModel):
     memory_mb: float
     memory_percent: float = 0.0
     cpu_percent: float = 0.0
+    port: int = 0
+    memory_limit_percent: float = 0.0
 
 
-class ModelSearchResult(SQLModel):
+class ModelSearchResult(BaseModel):
     """Model search result from HuggingFace."""
 
     model_id: str
@@ -323,7 +325,7 @@ class ModelSearchResult(SQLModel):
     last_modified: str | None = None
 
 
-class LocalModel(SQLModel):
+class LocalModel(BaseModel):
     """Locally downloaded model."""
 
     model_id: str
@@ -333,7 +335,7 @@ class LocalModel(SQLModel):
     characteristics: dict | None = None  # ModelCharacteristics from config.json
 
 
-class SystemMemory(SQLModel):
+class SystemMemory(BaseModel):
     """System memory information."""
 
     total_gb: float
@@ -343,7 +345,7 @@ class SystemMemory(SQLModel):
     mlx_recommended_gb: float
 
 
-class SystemInfo(SQLModel):
+class SystemInfo(BaseModel):
     """System information."""
 
     os_version: str
@@ -353,7 +355,7 @@ class SystemInfo(SQLModel):
     mlx_version: str | None = None
 
 
-class HealthStatus(SQLModel):
+class HealthStatus(BaseModel):
     """Server health status."""
 
     status: str
@@ -362,16 +364,17 @@ class HealthStatus(SQLModel):
     error: str | None = None
 
 
-class LaunchdStatus(SQLModel):
+class LaunchdStatus(BaseModel):
     """Launchd service status."""
 
     installed: bool
     running: bool
     pid: int | None = None
     label: str
+    plist_path: str | None = None
 
 
-class ServerStatus(SQLModel):
+class ServerStatus(BaseModel):
     """Detailed server process status."""
 
     profile_id: int
@@ -468,7 +471,7 @@ class CloudCredential(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
-class BackendMappingCreate(SQLModel):
+class BackendMappingCreate(BaseModel):
     """Schema for creating a backend mapping."""
 
     model_pattern: str
@@ -479,7 +482,7 @@ class BackendMappingCreate(SQLModel):
     priority: int = 0
 
 
-class BackendMappingUpdate(SQLModel):
+class BackendMappingUpdate(BaseModel):
     """Schema for updating a backend mapping."""
 
     model_pattern: str | None = None
@@ -491,7 +494,7 @@ class BackendMappingUpdate(SQLModel):
     enabled: bool | None = None
 
 
-class BackendMappingResponse(SQLModel):
+class BackendMappingResponse(BaseModel):
     """Response model for backend mapping."""
 
     id: int
@@ -504,7 +507,7 @@ class BackendMappingResponse(SQLModel):
     enabled: bool
 
 
-class CloudCredentialCreate(SQLModel):
+class CloudCredentialCreate(BaseModel):
     """Schema for creating cloud credentials."""
 
     backend_type: BackendType
@@ -514,7 +517,7 @@ class CloudCredentialCreate(SQLModel):
     base_url: str | None = None
 
 
-class CloudCredentialResponse(SQLModel):
+class CloudCredentialResponse(BaseModel):
     """Response model (no API key exposed)."""
 
     id: int
@@ -544,7 +547,7 @@ class ServerConfig(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
-class ServerConfigUpdate(SQLModel):
+class ServerConfigUpdate(BaseModel):
     """Schema for updating server configuration."""
 
     memory_limit_mode: str | None = None
@@ -553,7 +556,7 @@ class ServerConfigUpdate(SQLModel):
     preload_models: list[str] | None = None
 
 
-class ServerConfigResponse(SQLModel):
+class ServerConfigResponse(BaseModel):
     """Response model for server configuration."""
 
     memory_limit_mode: str
@@ -567,14 +570,14 @@ class ServerConfigResponse(SQLModel):
 # ============================================================================
 
 
-class RulePriorityUpdate(SQLModel):
+class RulePriorityUpdate(BaseModel):
     """Schema for batch updating rule priorities."""
 
     id: int
     priority: int
 
 
-class RuleMatchResult(SQLModel):
+class RuleMatchResult(BaseModel):
     """Result of testing which rule matches a model name."""
 
     matched_rule_id: int | None

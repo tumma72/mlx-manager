@@ -100,6 +100,7 @@ export interface RunningServer {
   profile_id: number;
   profile_name: string;
   pid: number;
+  port: number;
   health_status: "starting" | "healthy" | "unhealthy" | "stopped";
   uptime_seconds: number;
   memory_mb: number;
