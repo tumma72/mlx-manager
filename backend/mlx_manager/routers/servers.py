@@ -14,6 +14,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
 
 from mlx_manager.config import settings
 from mlx_manager.database import get_db
@@ -85,8 +87,6 @@ async def list_servers(
     In embedded mode, a profile is "running" when its model is loaded in the
     model pool. Returns RunningServer objects for profiles with loaded models.
     """
-    from sqlalchemy import select
-
     try:
         pool = get_model_pool()
         loaded_models = pool.get_loaded_models()
@@ -95,7 +95,9 @@ async def list_servers(
             return []
 
         # Get all profiles and find which ones have loaded models
-        result = await db.execute(select(ServerProfile))
+        result = await db.execute(
+            select(ServerProfile).options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        )
         profiles = result.scalars().all()
 
         memory_total_gb = pool.max_memory_gb
@@ -104,9 +106,9 @@ async def list_servers(
         for profile in profiles:
             if profile.id is None:
                 continue  # Skip profiles without IDs (shouldn't happen)
-            if profile.model_path in loaded_models:
+            if profile.model and profile.model.repo_id in loaded_models:
                 # Get model info if available
-                loaded_model = pool.get_loaded_model(profile.model_path)
+                loaded_model = pool.get_loaded_model(profile.model.repo_id)
                 model_uptime = 0.0
                 if loaded_model:
                     model_uptime = time.time() - loaded_model.loaded_at
@@ -299,11 +301,16 @@ async def start_server(
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     # Get the profile to find which model it uses
-    profile = await db.get(ServerProfile, profile_id)
+    result = await db.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    model_id = profile.model_path
+    model_id = profile.model.repo_id
 
     try:
         pool = get_model_pool()
@@ -342,13 +349,18 @@ async def stop_server(
     Preloaded models are protected and cannot be unloaded.
     """
     # Get the profile to find which model it uses
-    profile = await db.get(ServerProfile, profile_id)
+    result = await db.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     try:
         pool = get_model_pool()
-        model_id = profile.model_path
+        model_id = profile.model.repo_id
 
         # Check if model is loaded
         if not pool.is_loaded(model_id):
@@ -458,11 +470,16 @@ async def get_server_health(
     is currently loaded in the model pool.
     """
     # Get the profile to find which model it uses
-    profile = await db.get(ServerProfile, profile_id)
+    result = await db.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    model_id = profile.model_path
+    model_id = profile.model.repo_id
 
     try:
         from mlx_manager.mlx_server.models.pool import get_model_pool

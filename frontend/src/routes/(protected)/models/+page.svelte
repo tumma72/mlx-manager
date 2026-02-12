@@ -181,8 +181,17 @@
 		// Apply characteristic filters
 		result = result.filter((m) => matchesFilters(m.characteristics));
 
-		return result;
+		// Sort alphabetically by model_id
+		return result.toSorted((a, b) => a.model_id.localeCompare(b.model_id));
 	});
+
+	// Split filtered models into probed and unprobed groups
+	const probedModels = $derived(() =>
+		filteredLocalModels().filter((m) => capabilitiesMap.has(m.model_id))
+	);
+	const unprobedModels = $derived(() =>
+		filteredLocalModels().filter((m) => !capabilitiesMap.has(m.model_id))
+	);
 
 	// Get active downloads for pinned section (defined before displayResults as it's used there)
 	const activeDownloads = $derived(() => {
@@ -320,63 +329,87 @@
 	{/if}
 
 	<!-- Local Search Results (when "My Models" mode is selected) -->
+	{#snippet modelCard(model: LocalModel, probed: boolean)}
+		{@const probeState = probeStore.getProbe(model.model_id)}
+		{@const caps = capabilitiesMap.get(model.model_id) ?? null}
+		<Card class="p-4">
+			<div class="flex items-start justify-between">
+				<div class="flex-1 min-w-0 space-y-1">
+					<div class="flex items-center gap-2">
+						<h3 class="font-medium">{model.model_id}</h3>
+					</div>
+					<p class="text-sm text-muted-foreground">
+						{model.size_gb.toFixed(2)} GB
+					</p>
+					{#if model.characteristics}
+						<ModelBadges
+							characteristics={model.characteristics}
+							capabilities={caps}
+						/>
+						<ModelSpecs characteristics={model.characteristics} />
+					{/if}
+				</div>
+				<div class="flex gap-2 ml-4">
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => handleProbe(model.model_id)}
+						disabled={probeState.status === 'probing'}
+					>
+						<FlaskConical class="w-4 h-4 mr-1" />
+						{probed ? 'Re-probe' : 'Probe'}
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => requestDeleteModel(model.model_id)}
+						disabled={deleting}
+					>
+						<Trash2 class="w-4 h-4 mr-1" />
+						Delete
+					</Button>
+					<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
+						Use
+					</Button>
+				</div>
+			</div>
+		</Card>
+	{/snippet}
+
 	{#if isLocalSearchMode}
-		<section>
-			<h2 class="text-lg font-semibold mb-4">
+		<section class="space-y-6">
+			<h2 class="text-lg font-semibold">
 				Downloaded Models ({filteredLocalModels().length})
 			</h2>
+
 			{#if filteredLocalModels().length > 0}
-				<div class="grid gap-4">
-					{#each filteredLocalModels() as model (model.model_id)}
-						{@const probed = capabilitiesMap.has(model.model_id)}
-						{@const probeState = probeStore.getProbe(model.model_id)}
-						{@const caps = capabilitiesMap.get(model.model_id) ?? null}
-						<Card
-							class="p-4"
-						>
-							<div class="flex items-start justify-between">
-								<div class="flex-1 min-w-0 space-y-1">
-									<div class="flex items-center gap-2">
-										<h3 class="font-medium">{model.model_id}</h3>
-									</div>
-									<p class="text-sm text-muted-foreground">
-										{model.size_gb.toFixed(2)} GB
-									</p>
-									{#if model.characteristics}
-										<ModelBadges
-											characteristics={model.characteristics}
-											capabilities={caps}
-										/>
-										<ModelSpecs characteristics={model.characteristics} />
-									{/if}
-								</div>
-								<div class="flex gap-2 ml-4">
-										<Button
-											variant="outline"
-											size="sm"
-											onclick={() => handleProbe(model.model_id)}
-											disabled={probeState.status === 'probing'}
-										>
-											<FlaskConical class="w-4 h-4 mr-1" />
-											{probed ? 'Re-probe' : 'Probe'}
-										</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => requestDeleteModel(model.model_id)}
-										disabled={deleting}
-									>
-										<Trash2 class="w-4 h-4 mr-1" />
-										Delete
-									</Button>
-									<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
-										Use
-									</Button>
-								</div>
-							</div>
-						</Card>
-					{/each}
-				</div>
+				<!-- Probed models section -->
+				{#if probedModels().length > 0}
+					<div>
+						<h3 class="text-sm font-medium text-muted-foreground mb-2">
+							Probed ({probedModels().length})
+						</h3>
+						<div class="grid gap-4">
+							{#each probedModels() as model (model.model_id)}
+								{@render modelCard(model, true)}
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Unprobed models section -->
+				{#if unprobedModels().length > 0}
+					<div>
+						<h3 class="text-sm font-medium text-muted-foreground mb-2">
+							Not Probed ({unprobedModels().length})
+						</h3>
+						<div class="grid gap-4">
+							{#each unprobedModels() as model (model.model_id)}
+								{@render modelCard(model, false)}
+							{/each}
+						</div>
+					</div>
+				{/if}
 			{:else if searchQuery || hasActiveFilters}
 				<div class="text-center py-8 text-muted-foreground">
 					No downloaded models match your filters.

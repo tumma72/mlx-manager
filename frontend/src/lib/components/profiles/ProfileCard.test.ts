@@ -69,7 +69,7 @@ function createMockProfile(
     id: 1,
     name: "Test Profile",
     description: null,
-    model_path: "mlx-community/test-model",
+    model_id: 1, model_repo_id: "mlx-community/test-model",
     model_type: "lm",
     context_length: null,
     auto_start: false,
@@ -78,6 +78,10 @@ function createMockProfile(
     max_tokens: 4096,
     top_p: 1.0,
     enable_prompt_injection: false,
+    tts_default_voice: null,
+    tts_default_speed: null,
+    tts_sample_rate: null,
+    stt_default_language: null,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
@@ -128,7 +132,7 @@ describe("ProfileCard", () => {
     it("renders model path", () => {
       render(ProfileCard, {
         props: {
-          profile: createMockProfile({ model_path: "mlx-community/llama-2" }),
+          profile: createMockProfile({ model_id: 1, model_repo_id: "mlx-community/llama-2" }),
         },
       });
 

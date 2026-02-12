@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Optional
 
+from pydantic import computed_field
 from sqlalchemy import Boolean, Column
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class UserStatus(StrEnum):
@@ -93,20 +95,24 @@ class ServerProfileBase(SQLModel):
 
     name: str = Field(index=True)
     description: str | None = None
-    model_path: str
-    model_type: str = Field(default="lm")
+    model_id: int | None = Field(default=None, foreign_key="models.id")
     context_length: int | None = None
     auto_start: bool = Field(default=False)
     system_prompt: str | None = None
-    # Generation parameters
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=4096, ge=1, le=128000)
-    top_p: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Generation parameters (nullable — only meaningful for text/vision)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=1, le=128000)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     # Tool calling
     enable_prompt_injection: bool = Field(
         default=False,
         sa_column=Column("force_tool_injection", Boolean, default=False),
     )
+    # Audio parameters (nullable — only meaningful for audio models)
+    tts_default_voice: str | None = None
+    tts_default_speed: float | None = Field(default=None, ge=0.25, le=4.0)
+    tts_sample_rate: int | None = None
+    stt_default_language: str | None = None
 
 
 class ServerProfile(ServerProfileBase, table=True):
@@ -119,11 +125,14 @@ class ServerProfile(ServerProfileBase, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
+    # Relationships
+    model: Optional["Model"] = Relationship(back_populates="profiles")
+
 
 class ServerProfileCreate(ServerProfileBase):
     """Schema for creating a server profile."""
 
-    pass
+    model_id: int = Field(foreign_key="models.id")  # type: ignore[assignment]
 
 
 class ServerProfileUpdate(SQLModel):
@@ -131,8 +140,7 @@ class ServerProfileUpdate(SQLModel):
 
     name: str | None = None
     description: str | None = None
-    model_path: str | None = None
-    model_type: str | None = None
+    model_id: int | None = None
     context_length: int | None = None
     auto_start: bool | None = None
     system_prompt: str | None = None
@@ -142,39 +150,35 @@ class ServerProfileUpdate(SQLModel):
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     # Tool calling
     enable_prompt_injection: bool | None = None
+    # Audio parameters
+    tts_default_voice: str | None = None
+    tts_default_speed: float | None = Field(default=None, ge=0.25, le=4.0)
+    tts_sample_rate: int | None = None
+    stt_default_language: str | None = None
 
 
-# NOTE: RunningInstance model removed - no longer needed with embedded MLX Server.
-# The running_instances table can be manually dropped if it exists.
+class Model(SQLModel, table=True):
+    """Unified model entity combining download info and probed capabilities.
 
+    Created when a model is discovered in HuggingFace cache or downloaded.
+    Capability fields are populated when the model is probed.
+    """
 
-class DownloadedModel(SQLModel, table=True):
-    """Downloaded models cache tracking."""
-
-    __tablename__ = "downloaded_models"  # type: ignore
+    __tablename__ = "models"
 
     id: int | None = Field(default=None, primary_key=True)
-    model_id: str = Field(unique=True, index=True)
-    local_path: str
+    repo_id: str = Field(unique=True, index=True)
+    model_type: str | None = Field(default=None)
+
+    # Download info
+    local_path: str | None = None
     size_bytes: int | None = None
     downloaded_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     last_used_at: datetime | None = None
 
-
-class ModelCapabilities(SQLModel, table=True):
-    """Probed model capabilities stored in DB.
-
-    Fields are nullable — only the fields relevant to each model type
-    are populated during probing. For example, embedding_dimensions
-    is only set for EMBEDDINGS models.
-    """
-
-    __tablename__ = "model_capabilities"
-
-    model_id: str = Field(primary_key=True)
-    model_type: str | None = Field(default=None)
-    probed_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    probe_version: int = Field(default=2)
+    # Probe info
+    probed_at: datetime | None = None
+    probe_version: int | None = None
 
     # Text-gen capabilities
     supports_native_tools: bool | None = Field(default=None)
@@ -200,38 +204,43 @@ class ModelCapabilities(SQLModel, table=True):
     supports_tts: bool | None = Field(default=None)
     supports_stt: bool | None = Field(default=None)
 
+    # Relationships
+    profiles: list["ServerProfile"] = Relationship(back_populates="model")
 
-class ModelCapabilitiesResponse(SQLModel):
-    """Response model for model capabilities."""
 
-    model_id: str
+class ModelResponse(SQLModel):
+    """Response model for Model entity."""
+
+    id: int
+    repo_id: str
     model_type: str | None = None
+    local_path: str | None = None
+    size_bytes: int | None = None
+    size_gb: float | None = None
+    downloaded_at: datetime | None = None
+    last_used_at: datetime | None = None
     probed_at: datetime | None = None
-    probe_version: int = 2
-
-    # Text-gen
+    probe_version: int | None = None
     supports_native_tools: bool | None = None
     supports_thinking: bool | None = None
     tool_format: str | None = None
     practical_max_tokens: int | None = None
-
-    # Composable adapter fields
     model_family: str | None = None
     tool_parser_id: str | None = None
     thinking_parser_id: str | None = None
-
-    # Vision
     supports_multi_image: bool | None = None
     supports_video: bool | None = None
-
-    # Embeddings
     embedding_dimensions: int | None = None
     max_sequence_length: int | None = None
     is_normalized: bool | None = None
-
-    # Audio
     supports_tts: bool | None = None
     supports_stt: bool | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def model_id(self) -> str:
+        """Alias for repo_id used by the frontend capabilities mapping."""
+        return self.repo_id
 
 
 class Setting(SQLModel, table=True):
@@ -263,10 +272,26 @@ class Download(SQLModel, table=True):
 
 
 # Response models for API
-class ServerProfileResponse(ServerProfileBase):
+class ServerProfileResponse(SQLModel):
     """Response model for server profile."""
 
     id: int
+    name: str
+    description: str | None = None
+    model_id: int | None = None
+    model_repo_id: str | None = None
+    model_type: str | None = None
+    context_length: int | None = None
+    auto_start: bool
+    system_prompt: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
+    enable_prompt_injection: bool
+    tts_default_voice: str | None = None
+    tts_default_speed: float | None = None
+    tts_sample_rate: int | None = None
+    stt_default_language: str | None = None
     launchd_installed: bool
     created_at: datetime
     updated_at: datetime

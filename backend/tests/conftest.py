@@ -17,7 +17,7 @@ os.environ["MLX_MANAGER_DISABLE_TELEMETRY"] = "true"
 
 from mlx_manager.database import get_db
 from mlx_manager.main import app
-from mlx_manager.models import User, UserStatus
+from mlx_manager.models import Model, User, UserStatus
 from mlx_manager.services.auth_service import create_access_token, hash_password
 
 
@@ -89,8 +89,7 @@ def sample_profile_data():
     return {
         "name": "Test Profile",
         "description": "A test profile",
-        "model_path": "mlx-community/test-model-4bit",
-        "model_type": "lm",
+        "model_id": 1,  # References test Model record (mlx-community/test-model-4bit)
         "temperature": 0.7,
         "max_tokens": 4096,
         "top_p": 1.0,
@@ -103,8 +102,7 @@ def sample_profile_data_alt():
     return {
         "name": "Another Profile",
         "description": "Another test profile",
-        "model_path": "mlx-community/another-model-4bit",
-        "model_type": "lm",
+        "model_id": 2,  # References test Model record (mlx-community/another-model-4bit)
         "temperature": 0.5,
         "max_tokens": 2048,
         "top_p": 0.9,
@@ -264,6 +262,31 @@ async def auth_client(test_engine, test_user_data):
         session.add(user)
         await session.commit()
 
+    # Create test Model records for profile tests
+    async with async_session() as session:
+        model1 = Model(
+            repo_id="mlx-community/test-model-4bit",
+            model_type="text-gen",
+            local_path="/fake/path/to/model",
+        )
+        model2 = Model(
+            repo_id="mlx-community/another-model-4bit",
+            model_type="text-gen",
+            local_path="/fake/path/to/another-model",
+        )
+        model3 = Model(
+            repo_id="mlx-community/full-model",
+            model_type="vision",
+            local_path="/fake/path/to/full-model",
+        )
+        model4 = Model(
+            repo_id="mlx-community/updated-model",
+            model_type="text-gen",
+            local_path="/fake/path/to/updated-model",
+        )
+        session.add_all([model1, model2, model3, model4])
+        await session.commit()
+
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with async_session() as session:
             try:
@@ -318,6 +341,31 @@ async def admin_client(test_engine, test_admin_user_data):
         session.add(user)
         await session.commit()
 
+    # Create test Model records for profile tests
+    async with async_session() as session:
+        model1 = Model(
+            repo_id="mlx-community/test-model-4bit",
+            model_type="text-gen",
+            local_path="/fake/path/to/model",
+        )
+        model2 = Model(
+            repo_id="mlx-community/another-model-4bit",
+            model_type="text-gen",
+            local_path="/fake/path/to/another-model",
+        )
+        model3 = Model(
+            repo_id="mlx-community/full-model",
+            model_type="vision",
+            local_path="/fake/path/to/full-model",
+        )
+        model4 = Model(
+            repo_id="mlx-community/updated-model",
+            model_type="text-gen",
+            local_path="/fake/path/to/updated-model",
+        )
+        session.add_all([model1, model2, model3, model4])
+        await session.commit()
+
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with async_session() as session:
             try:
@@ -349,8 +397,33 @@ async def admin_client(test_engine, test_admin_user_data):
 
 
 @pytest.fixture
-async def test_profile(test_session, sample_profile_data):
-    """Create a test profile in the database."""
+async def test_models(test_session):
+    """Create test Model records in the database."""
+    model1 = Model(
+        repo_id="mlx-community/test-model-4bit",
+        model_type="text-gen",
+        local_path="/fake/path/to/model",
+    )
+    model2 = Model(
+        repo_id="mlx-community/another-model-4bit",
+        model_type="text-gen",
+        local_path="/fake/path/to/another-model",
+    )
+    test_session.add(model1)
+    test_session.add(model2)
+    await test_session.commit()
+    await test_session.refresh(model1)
+    await test_session.refresh(model2)
+    return {"model1": model1, "model2": model2}
+
+
+@pytest.fixture
+async def test_profile(test_session, sample_profile_data, test_models):
+    """Create a test profile in the database.
+
+    For use with test_session-based tests (not auth_client tests).
+    Uses test_models fixture for FK constraint.
+    """
     from mlx_manager.models import ServerProfile
 
     profile = ServerProfile(**sample_profile_data)
@@ -358,3 +431,18 @@ async def test_profile(test_session, sample_profile_data):
     await test_session.commit()
     await test_session.refresh(profile)
     return profile
+
+
+@pytest.fixture
+async def api_test_profile(auth_client, sample_profile_data):
+    """Create a test profile via API for use with auth_client tests.
+
+    Uses Model records already created by auth_client fixture.
+    Returns a SimpleNamespace with id attribute for test compatibility.
+    """
+    from types import SimpleNamespace
+
+    response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    assert response.status_code == 201
+    data = response.json()
+    return SimpleNamespace(**data)

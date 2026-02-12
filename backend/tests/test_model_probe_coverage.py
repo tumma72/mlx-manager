@@ -233,7 +233,9 @@ async def test_probe_cleanup_failure():
 @pytest.mark.asyncio
 async def test_probe_preloaded_model_updates_capabilities():
     """Test that pre-loaded models get their capabilities updated."""
-    from mlx_manager.models import ModelCapabilities
+    from datetime import UTC, datetime
+
+    from mlx_manager.models import Model
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
@@ -246,11 +248,12 @@ async def test_probe_preloaded_model_updates_capabilities():
     mock_pool._models = {"test/model": mock_loaded}  # Pre-loaded
 
     # Mock DB capabilities
-    mock_caps = ModelCapabilities(
-        model_id="test/model",
+    mock_caps = Model(
+        repo_id="test/model",
         supports_native_tools=True,
         supports_thinking=False,
         practical_max_tokens=4096,
+        downloaded_at=datetime.now(tz=UTC),
     )
 
     mock_session = AsyncMock()
@@ -475,77 +478,54 @@ async def test_estimate_practical_max_tokens_exception():
 
 @pytest.mark.asyncio
 async def test_save_capabilities_create_new():
-    """Test _save_capabilities creates new record when none exists."""
-    from mlx_manager.models import ModelCapabilities
+    """Test _save_capabilities creates new Model record when none exists."""
     from mlx_manager.services.model_probe import ProbeResult, _save_capabilities
 
     result = ProbeResult(
         supports_native_tools=True, supports_thinking=False, practical_max_tokens=4096
     )
 
-    mock_session = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = None  # No existing record
-    mock_session.execute.return_value = mock_result
-    mock_session.__aenter__.return_value = mock_session
-    mock_session.__aexit__.return_value = AsyncMock()
-
-    mock_get_session = MagicMock(return_value=mock_session)
-
-    with patch("mlx_manager.database.get_session", mock_get_session):
+    # Need to mock update_model_capabilities since _save_capabilities now uses it
+    with patch(
+        "mlx_manager.services.model_registry.update_model_capabilities"
+    ) as mock_update_caps:
+        mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/model", result)
 
-        # Verify add was called
-        assert mock_session.add.called
-        added_obj = mock_session.add.call_args[0][0]
-        assert isinstance(added_obj, ModelCapabilities)
-        assert added_obj.model_id == "test/model"
-        assert added_obj.supports_native_tools is True
-        assert added_obj.supports_thinking is False
-        assert added_obj.practical_max_tokens == 4096
-
-        # Verify commit was called
-        mock_session.commit.assert_called_once()
+        # Verify update_model_capabilities was called with correct arguments
+        assert mock_update_caps.called
+        call_args = mock_update_caps.call_args
+        assert call_args[0][0] == "test/model"
+        kwargs = call_args[1]
+        assert kwargs.get("supports_native_tools") is True
+        assert kwargs.get("supports_thinking") is False
+        assert kwargs.get("practical_max_tokens") == 4096
+        assert kwargs.get("probe_version") == 2
 
 
 @pytest.mark.asyncio
 async def test_save_capabilities_update_existing():
-    """Test _save_capabilities updates existing record."""
-    from mlx_manager.models import ModelCapabilities
+    """Test _save_capabilities updates existing Model record."""
+
     from mlx_manager.services.model_probe import ProbeResult, _save_capabilities
 
     result = ProbeResult(
         supports_native_tools=True, supports_thinking=True, practical_max_tokens=8192
     )
 
-    # Mock existing capabilities
-    existing_caps = ModelCapabilities(
-        model_id="test/model",
-        supports_native_tools=False,
-        supports_thinking=False,
-        practical_max_tokens=2048,
-    )
-
-    mock_session = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = existing_caps
-    mock_session.execute.return_value = mock_result
-    mock_session.__aenter__.return_value = mock_session
-    mock_session.__aexit__.return_value = AsyncMock()
-
-    mock_get_session = MagicMock(return_value=mock_session)
-
-    with patch("mlx_manager.database.get_session", mock_get_session):
+    # Need to mock update_model_capabilities since _save_capabilities now uses it
+    with patch(
+        "mlx_manager.services.model_registry.update_model_capabilities"
+    ) as mock_update_caps:
+        mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/model", result)
 
-        # Verify existing record was updated
-        assert existing_caps.supports_native_tools is True
-        assert existing_caps.supports_thinking is True
-        assert existing_caps.practical_max_tokens == 8192
-        assert existing_caps.probed_at is not None
-
-        # Verify add was called (to add updated object to session)
-        assert mock_session.add.called
-
-        # Verify commit was called
-        mock_session.commit.assert_called_once()
+        # Verify update_model_capabilities was called with correct arguments
+        assert mock_update_caps.called
+        call_args = mock_update_caps.call_args
+        assert call_args[0][0] == "test/model"
+        kwargs = call_args[1]
+        assert kwargs.get("supports_native_tools") is True
+        assert kwargs.get("supports_thinking") is True
+        assert kwargs.get("practical_max_tokens") == 8192
+        assert kwargs.get("probe_version") == 2

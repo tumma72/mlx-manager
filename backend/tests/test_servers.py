@@ -15,8 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlx_manager.config import DEFAULT_PORT
-
 
 @pytest.mark.asyncio
 async def test_list_servers_returns_empty_when_no_models_loaded(auth_client):
@@ -33,19 +31,17 @@ async def test_list_servers_returns_empty_when_no_models_loaded(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_list_servers_returns_running_servers_when_models_loaded(auth_client, test_session):
+async def test_list_servers_returns_running_servers_when_models_loaded(auth_client):
     """Test listing servers returns RunningServer objects for profiles with loaded models."""
-    from mlx_manager.models import ServerProfile
 
-    # Create a test profile
-    profile = ServerProfile(
-        name="Test Profile",
-        model_path="mlx-community/test-model",
-        port=DEFAULT_PORT,
-    )
-    test_session.add(profile)
-    await test_session.commit()
-    await test_session.refresh(profile)
+    # Create a test profile via API (Model records exist from auth_client fixture)
+    profile_data = {
+        "name": "Test Profile",
+        "model_id": 1,  # mlx-community/test-model-4bit from auth_client fixture
+    }
+    create_response = await auth_client.post("/api/profiles", json=profile_data)
+    assert create_response.status_code == 201
+    profile_id = create_response.json()["id"]
 
     # Mock the model pool to show the model is loaded
     mock_loaded_model = MagicMock()
@@ -53,7 +49,7 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
     mock_loaded_model.size_gb = 4.0  # Per-model memory size
 
     mock_pool = MagicMock()
-    mock_pool.get_loaded_models.return_value = ["mlx-community/test-model"]
+    mock_pool.get_loaded_models.return_value = ["mlx-community/test-model-4bit"]
     mock_pool.get_loaded_model.return_value = mock_loaded_model
     mock_pool.max_memory_gb = 32.0
 
@@ -63,7 +59,7 @@ async def test_list_servers_returns_running_servers_when_models_loaded(auth_clie
 
         data = response.json()
         assert len(data) == 1
-        assert data[0]["profile_id"] == profile.id
+        assert data[0]["profile_id"] == profile_id
         assert data[0]["profile_name"] == "Test Profile"
         assert data[0]["health_status"] == "healthy"
         assert data[0]["uptime_seconds"] >= 59  # Approximately 60 seconds
@@ -233,7 +229,7 @@ async def test_start_endpoint_triggers_model_loading(auth_client, sample_profile
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
-    model_path = sample_profile_data["model_path"]
+    model_repo_id = create_response.json()["model_repo_id"]
 
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = False
@@ -244,7 +240,7 @@ async def test_start_endpoint_triggers_model_loading(auth_client, sample_profile
 
         data = response.json()
         assert data["status"] == "loading"
-        assert data["model"] == model_path
+        assert data["model"] == model_repo_id
         assert data["pid"] == os.getpid()
 
 
@@ -254,7 +250,7 @@ async def test_start_endpoint_already_loaded(auth_client, sample_profile_data):
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
-    model_path = sample_profile_data["model_path"]
+    model_repo_id = create_response.json()["model_repo_id"]
 
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = True
@@ -265,7 +261,7 @@ async def test_start_endpoint_already_loaded(auth_client, sample_profile_data):
 
         data = response.json()
         assert data["status"] == "already_loaded"
-        assert data["model"] == model_path
+        assert data["model"] == model_repo_id
 
 
 @pytest.mark.asyncio

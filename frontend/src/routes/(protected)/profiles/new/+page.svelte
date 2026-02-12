@@ -5,15 +5,25 @@
 	import { onMount } from 'svelte';
 	import { profileStore } from '$stores';
 	import type { ServerProfileCreate, ServerProfileUpdate } from '$api';
+	import { models as modelsApi } from '$api';
 	import { ProfileForm } from '$components/profiles';
 
-	let initialModelPath = $state('');
+	let initialModelId = $state<number | undefined>(undefined);
 
-	onMount(() => {
+	onMount(async () => {
 		// Check for model query param
 		const modelParam = $page.url.searchParams.get('model');
 		if (modelParam) {
-			initialModelPath = modelParam;
+			// Look up model_id from repo_id
+			try {
+				const downloaded = await modelsApi.listDownloaded();
+				const found = downloaded.find((m) => m.repo_id === modelParam);
+				if (found) {
+					initialModelId = found.id;
+				}
+			} catch {
+				// Ignore - user can select manually
+			}
 		}
 	});
 
@@ -32,6 +42,6 @@
 
 	<!-- Use keyed block to prevent ProfileForm recreation during polling updates -->
 	{#key 'new-profile'}
-		<ProfileForm initialModelPath={initialModelPath} onSubmit={handleSubmit} onCancel={handleCancel} />
+		<ProfileForm initialModelId={initialModelId} onSubmit={handleSubmit} onCancel={handleCancel} />
 	{/key}
 </div>

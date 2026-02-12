@@ -9,11 +9,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
 from mlx_manager.models import (
+    Model,
     ServerProfile,
     ServerProfileCreate,
     ServerProfileResponse,
@@ -30,9 +32,11 @@ async def list_profiles(
     session: AsyncSession = Depends(get_db),
 ):
     """List all server profiles."""
-    result = await session.execute(select(ServerProfile))
+    result = await session.execute(
+        select(ServerProfile).options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
     profiles = result.scalars().all()
-    return profiles
+    return [_profile_to_response(p) for p in profiles]
 
 
 @router.get("/{profile_id}", response_model=ServerProfileResponse)
@@ -41,7 +45,7 @@ async def get_profile(
     profile: ServerProfile = Depends(get_profile_or_404),
 ):
     """Get a specific profile."""
-    return profile
+    return _profile_to_response(profile)
 
 
 @router.post("", response_model=ServerProfileResponse, status_code=201)
@@ -58,12 +62,17 @@ async def create_profile(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Profile name already exists")
 
+    # Validate model exists
+    model = await session.get(Model, profile_data.model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+
     profile = ServerProfile.model_validate(profile_data)
     session.add(profile)
     await session.commit()
-    await session.refresh(profile)
+    await session.refresh(profile, ["model"])
 
-    return profile
+    return _profile_to_response(profile)
 
 
 @router.put("/{profile_id}", response_model=ServerProfileResponse)
@@ -74,7 +83,11 @@ async def update_profile(
     session: AsyncSession = Depends(get_db),
 ):
     """Update a server profile."""
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
+    result = await session.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
     profile = result.scalar_one_or_none()
 
     if not profile:
@@ -90,15 +103,22 @@ async def update_profile(
 
     # Update fields
     update_data = profile_data.model_dump(exclude_unset=True)
+
+    # Validate model_id if changing
+    if "model_id" in update_data:
+        model = await session.get(Model, update_data["model_id"])
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+
     for key, value in update_data.items():
         setattr(profile, key, value)
 
     profile.updated_at = datetime.now(tz=UTC)
     session.add(profile)
     await session.commit()
-    await session.refresh(profile)
+    await session.refresh(profile, ["model"])
 
-    return profile
+    return _profile_to_response(profile)
 
 
 @router.delete("/{profile_id}", status_code=204)
@@ -129,8 +149,7 @@ async def duplicate_profile(
     new_profile = ServerProfile(
         name=new_name,
         description=profile.description,
-        model_path=profile.model_path,
-        model_type=profile.model_type,
+        model_id=profile.model_id,
         context_length=profile.context_length,
         auto_start=False,  # Don't copy auto_start
         system_prompt=profile.system_prompt,
@@ -140,10 +159,41 @@ async def duplicate_profile(
         top_p=profile.top_p,
         # Tool calling
         enable_prompt_injection=profile.enable_prompt_injection,
+        # Audio parameters
+        tts_default_voice=profile.tts_default_voice,
+        tts_default_speed=profile.tts_default_speed,
+        tts_sample_rate=profile.tts_sample_rate,
+        stt_default_language=profile.stt_default_language,
     )
 
     session.add(new_profile)
     await session.commit()
-    await session.refresh(new_profile)
+    await session.refresh(new_profile, ["model"])
 
-    return new_profile
+    return _profile_to_response(new_profile)
+
+
+def _profile_to_response(profile: ServerProfile) -> ServerProfileResponse:
+    """Convert a profile with loaded model relationship to response."""
+    return ServerProfileResponse(
+        id=profile.id,  # type: ignore[arg-type]
+        name=profile.name,
+        description=profile.description,
+        model_id=profile.model_id,
+        model_repo_id=profile.model.repo_id if profile.model else None,
+        model_type=profile.model.model_type if profile.model else None,
+        context_length=profile.context_length,
+        auto_start=profile.auto_start,
+        system_prompt=profile.system_prompt,
+        temperature=profile.temperature,
+        max_tokens=profile.max_tokens,
+        top_p=profile.top_p,
+        enable_prompt_injection=profile.enable_prompt_injection,
+        tts_default_voice=profile.tts_default_voice,
+        tts_default_speed=profile.tts_default_speed,
+        tts_sample_rate=profile.tts_sample_rate,
+        stt_default_language=profile.stt_default_language,
+        launchd_installed=profile.launchd_installed,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )

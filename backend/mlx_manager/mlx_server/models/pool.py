@@ -43,7 +43,7 @@ class LoadedModel:
     preloaded: bool = False  # Whether protected from eviction
     adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
     adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
-    capabilities: Any = None  # ModelCapabilities from DB, attached at load time
+    capabilities: Any = None  # Model from DB, attached at load time
     adapter: ModelAdapter | None = None  # Composable adapter for all model types
 
     def touch(self) -> None:
@@ -337,15 +337,13 @@ class ModelPoolManager:
             model_type: ModelType | None = None
             try:
                 from mlx_manager.database import get_session
-                from mlx_manager.models import ModelCapabilities
+                from mlx_manager.models import Model
 
                 async with get_session() as session:
                     from sqlmodel import select
 
                     db_result = await session.execute(
-                        select(ModelCapabilities.model_type).where(
-                            ModelCapabilities.model_id == model_id
-                        )
+                        select(Model.model_type).where(Model.repo_id == model_id)
                     )
                     cached_type = db_result.scalar_one_or_none()
                     if cached_type:
@@ -410,13 +408,13 @@ class ModelPoolManager:
             # Attach probed capabilities from DB if available
             try:
                 from mlx_manager.database import get_session
-                from mlx_manager.models import ModelCapabilities
+                from mlx_manager.models import Model
 
                 async with get_session() as session:
                     from sqlmodel import select
 
                     caps_result = await session.execute(
-                        select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
+                        select(Model).where(Model.repo_id == model_id)
                     )
                     caps = caps_result.scalar_one_or_none()
                     if caps:

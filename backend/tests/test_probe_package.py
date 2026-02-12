@@ -1445,9 +1445,8 @@ async def test_audio_probe_stt_test_failure():
 
 @pytest.mark.asyncio
 async def test_save_capabilities_creates_new():
-    """Test _save_capabilities creates new ModelCapabilities record."""
+    """Test _save_capabilities creates new Model record."""
 
-    from mlx_manager.models import ModelCapabilities
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.service import _save_capabilities
 
@@ -1458,37 +1457,29 @@ async def test_save_capabilities_creates_new():
         practical_max_tokens=8192,
     )
 
-    # Mock database session
-    mock_session = MagicMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = None  # No existing record
-    mock_session.execute = AsyncMock(return_value=mock_result)
-    mock_session.add = MagicMock()  # NOT async
-    mock_session.commit = AsyncMock()
-
-    @asynccontextmanager
-    async def mock_get_session():
-        yield mock_session
-
-    with patch("mlx_manager.database.get_session", mock_get_session):
+    # Mock update_model_capabilities since _save_capabilities now uses it
+    with patch(
+        "mlx_manager.services.model_registry.update_model_capabilities"
+    ) as mock_update_caps:
+        mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/model", result)
 
-        # Verify add was called with new ModelCapabilities
-        mock_session.add.assert_called_once()
-        added_caps = mock_session.add.call_args[0][0]
-        assert isinstance(added_caps, ModelCapabilities)
-        assert added_caps.model_id == "test/model"
-        assert added_caps.model_type == "text-gen"
-        assert added_caps.supports_native_tools is True
-        assert added_caps.supports_thinking is False
-        assert added_caps.practical_max_tokens == 8192
+        # Verify update_model_capabilities was called with correct arguments
+        assert mock_update_caps.called
+        call_args = mock_update_caps.call_args
+        assert call_args[0][0] == "test/model"
+        kwargs = call_args[1]
+        assert kwargs.get("model_type") == "text-gen"
+        assert kwargs.get("supports_native_tools") is True
+        assert kwargs.get("supports_thinking") is False
+        assert kwargs.get("practical_max_tokens") == 8192
+        assert kwargs.get("probe_version") == 2
 
 
 @pytest.mark.asyncio
 async def test_save_capabilities_updates_existing():
-    """Test _save_capabilities updates existing ModelCapabilities record."""
+    """Test _save_capabilities updates existing Model record."""
 
-    from mlx_manager.models import ModelCapabilities
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.service import _save_capabilities
 
@@ -1499,33 +1490,23 @@ async def test_save_capabilities_updates_existing():
         practical_max_tokens=4096,
     )
 
-    # Mock existing record
-    existing_caps = ModelCapabilities(
-        model_id="test/vision-model",
-        model_type="vision",
-        supports_multi_image=False,  # Will be updated
-    )
-
-    # Mock database session
-    mock_session = MagicMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = existing_caps
-    mock_session.execute = AsyncMock(return_value=mock_result)
-    mock_session.add = MagicMock()
-    mock_session.commit = AsyncMock()
-
-    @asynccontextmanager
-    async def mock_get_session():
-        yield mock_session
-
-    with patch("mlx_manager.database.get_session", mock_get_session):
+    # Mock update_model_capabilities since _save_capabilities now uses it
+    with patch(
+        "mlx_manager.services.model_registry.update_model_capabilities"
+    ) as mock_update_caps:
+        mock_update_caps.return_value = AsyncMock()
         await _save_capabilities("test/vision-model", result)
 
-        # Verify existing record was updated
-        assert existing_caps.supports_multi_image is True
-        assert existing_caps.supports_video is False
-        assert existing_caps.practical_max_tokens == 4096
-        assert existing_caps.probed_at is not None
+        # Verify update_model_capabilities was called with correct arguments
+        assert mock_update_caps.called
+        call_args = mock_update_caps.call_args
+        assert call_args[0][0] == "test/vision-model"
+        kwargs = call_args[1]
+        assert kwargs.get("model_type") == "vision"
+        assert kwargs.get("supports_multi_image") is True
+        assert kwargs.get("supports_video") is False
+        assert kwargs.get("practical_max_tokens") == 4096
+        assert kwargs.get("probe_version") == 2
 
 
 @pytest.mark.asyncio

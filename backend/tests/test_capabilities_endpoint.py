@@ -2,7 +2,7 @@
 
 import pytest
 
-from mlx_manager.models import ModelCapabilities
+from mlx_manager.models import Model
 
 
 @pytest.mark.asyncio
@@ -27,11 +27,14 @@ async def test_get_capabilities_not_found(client, test_user, auth_headers):
 @pytest.mark.asyncio
 async def test_get_capabilities_after_insert(client, test_user, auth_headers, test_session):
     """Test getting capabilities after manual DB insert."""
-    cap = ModelCapabilities(
-        model_id="test/model",
+    from datetime import UTC, datetime
+
+    cap = Model(
+        repo_id="test/model",
         supports_native_tools=True,
         supports_thinking=True,
         practical_max_tokens=4096,
+        probed_at=datetime.now(tz=UTC),
     )
     test_session.add(cap)
     await test_session.commit()
@@ -42,7 +45,8 @@ async def test_get_capabilities_after_insert(client, test_user, auth_headers, te
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["model_id"] == "test/model"
+    assert data["repo_id"] == "test/model"
+    assert data["model_id"] == "test/model"  # Frontend-compatible alias
     assert data["supports_native_tools"] is True
     assert data["supports_thinking"] is True
     assert data["practical_max_tokens"] == 4096
@@ -51,17 +55,21 @@ async def test_get_capabilities_after_insert(client, test_user, auth_headers, te
 @pytest.mark.asyncio
 async def test_get_all_capabilities(client, test_user, auth_headers, test_session):
     """Test listing all capabilities."""
-    cap1 = ModelCapabilities(
-        model_id="model/a",
+    from datetime import UTC, datetime
+
+    cap1 = Model(
+        repo_id="model/a",
         supports_native_tools=True,
         supports_thinking=False,
         practical_max_tokens=8192,
+        probed_at=datetime.now(tz=UTC),
     )
-    cap2 = ModelCapabilities(
-        model_id="model/b",
+    cap2 = Model(
+        repo_id="model/b",
         supports_native_tools=False,
         supports_thinking=True,
         practical_max_tokens=16384,
+        probed_at=datetime.now(tz=UTC),
     )
     test_session.add(cap1)
     test_session.add(cap2)
@@ -72,7 +80,10 @@ async def test_get_all_capabilities(client, test_user, auth_headers, test_sessio
     data = response.json()
     assert len(data) == 2
 
-    # Check both entries exist
+    # Check both entries exist (via both repo_id and model_id alias)
+    repo_ids = {item["repo_id"] for item in data}
+    assert "model/a" in repo_ids
+    assert "model/b" in repo_ids
     model_ids = {item["model_id"] for item in data}
     assert "model/a" in model_ids
     assert "model/b" in model_ids
@@ -83,8 +94,8 @@ async def test_get_capabilities_with_all_fields(client, test_user, auth_headers,
     """Test getting capabilities with all fields populated."""
     from datetime import UTC, datetime
 
-    cap = ModelCapabilities(
-        model_id="test/full-model",
+    cap = Model(
+        repo_id="test/full-model",
         supports_native_tools=True,
         supports_thinking=True,
         practical_max_tokens=32768,
@@ -99,7 +110,8 @@ async def test_get_capabilities_with_all_fields(client, test_user, auth_headers,
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["model_id"] == "test/full-model"
+    assert data["repo_id"] == "test/full-model"
+    assert data["model_id"] == "test/full-model"  # Frontend-compatible alias
     assert data["supports_native_tools"] is True
     assert data["supports_thinking"] is True
     assert data["practical_max_tokens"] == 32768
@@ -110,11 +122,14 @@ async def test_get_capabilities_with_all_fields(client, test_user, auth_headers,
 @pytest.mark.asyncio
 async def test_get_capabilities_with_partial_fields(client, test_user, auth_headers, test_session):
     """Test getting capabilities with some fields as None."""
-    cap = ModelCapabilities(
-        model_id="test/partial-model",
+    from datetime import UTC, datetime
+
+    cap = Model(
+        repo_id="test/partial-model",
         supports_native_tools=None,
         supports_thinking=True,
         practical_max_tokens=None,
+        probed_at=datetime.now(tz=UTC),
     )
     test_session.add(cap)
     await test_session.commit()
@@ -125,7 +140,7 @@ async def test_get_capabilities_with_partial_fields(client, test_user, auth_head
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["model_id"] == "test/partial-model"
+    assert data["repo_id"] == "test/partial-model"
     assert data["supports_native_tools"] is None
     assert data["supports_thinking"] is True
     assert data["practical_max_tokens"] is None
@@ -155,11 +170,14 @@ async def test_probe_endpoint_requires_auth(client):
 @pytest.mark.asyncio
 async def test_get_capabilities_url_encoding(client, test_user, auth_headers, test_session):
     """Test getting capabilities for model with slashes in ID."""
-    cap = ModelCapabilities(
-        model_id="mlx-community/Qwen3-0.6B-4bit-DWQ",
+    from datetime import UTC, datetime
+
+    cap = Model(
+        repo_id="mlx-community/Qwen3-0.6B-4bit-DWQ",
         supports_native_tools=True,
         supports_thinking=False,
         practical_max_tokens=2048,
+        probed_at=datetime.now(tz=UTC),
     )
     test_session.add(cap)
     await test_session.commit()
@@ -171,6 +189,7 @@ async def test_get_capabilities_url_encoding(client, test_user, auth_headers, te
     )
     assert response.status_code == 200
     data = response.json()
+    assert data["repo_id"] == "mlx-community/Qwen3-0.6B-4bit-DWQ"
     assert data["model_id"] == "mlx-community/Qwen3-0.6B-4bit-DWQ"
 
 
@@ -179,9 +198,12 @@ async def test_get_all_capabilities_empty_after_delete(
     client, test_user, auth_headers, test_session
 ):
     """Test that deleted capabilities don't appear in list."""
-    cap = ModelCapabilities(
-        model_id="test/deleted",
+    from datetime import UTC, datetime
+
+    cap = Model(
+        repo_id="test/deleted",
         supports_native_tools=True,
+        probed_at=datetime.now(tz=UTC),
     )
     test_session.add(cap)
     await test_session.commit()

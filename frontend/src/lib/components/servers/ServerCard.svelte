@@ -129,7 +129,7 @@
 	{/if}
 
 	<div class="mt-3 text-sm text-muted-foreground truncate">
-		<span class="font-mono">{profile.model_path}</span>
+		<span class="font-mono">{profile.model_repo_id ?? 'Unknown model'}</span>
 	</div>
 
 	{#if error}

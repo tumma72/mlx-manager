@@ -440,8 +440,11 @@ async def test_update_download_record_completed():
         assert mock_download.downloaded_bytes == 10000
         assert mock_download.total_bytes == 10000
         assert mock_download.completed_at is not None
-        mock_session.add.assert_called_once_with(mock_download)
-        mock_session.commit.assert_called_once()
+        # add() is called twice: once for download, once for Model
+        assert mock_session.add.call_count == 2
+        # commit() is also called twice: once in _update_download_record,
+        # once in register_model_from_download
+        assert mock_session.commit.call_count == 2
 
 
 @pytest.mark.asyncio

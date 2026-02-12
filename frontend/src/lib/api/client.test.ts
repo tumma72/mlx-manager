@@ -337,7 +337,7 @@ describe("profiles API", () => {
     it("creates a new profile", async () => {
       const newProfile = {
         name: "New Profile",
-        model_path: "mlx-community/test",
+        model_id: 1,
         port: 10240,
       };
       const createdProfile = { id: 1, ...newProfile };
@@ -1412,7 +1412,7 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test" });
+      await profiles.create({ name: "", model_id: 1 });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(422);
@@ -1434,7 +1434,7 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test" });
+      await profiles.create({ name: "", model_id: 1 });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).toBe("field: some error");
@@ -1453,7 +1453,7 @@ describe("ApiError", () => {
     });
 
     try {
-      await profiles.create({ name: "", model_path: "test" });
+      await profiles.create({ name: "", model_id: 1 });
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).toBe("name: validation error");

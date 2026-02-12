@@ -7,7 +7,6 @@ to the appropriate strategy, save results, and cleanup.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -122,14 +121,12 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
         # Update capabilities on the already-loaded model
         try:
             from mlx_manager.database import get_session
-            from mlx_manager.models import ModelCapabilities
+            from mlx_manager.models import Model
 
             async with get_session() as session:
                 from sqlmodel import select
 
-                caps_result = await session.execute(
-                    select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
-                )
+                caps_result = await session.execute(select(Model).where(Model.repo_id == model_id))
                 caps = caps_result.scalar_one_or_none()
                 if caps:
                     loaded.capabilities = caps
@@ -141,30 +138,43 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
 
 
 async def _save_capabilities(model_id: str, result: ProbeResult) -> None:
-    """Upsert model capabilities in the database."""
-    from mlx_manager.database import get_session
-    from mlx_manager.models import ModelCapabilities
+    """Save model capabilities to the unified Model table."""
+    from mlx_manager.services.model_registry import update_model_capabilities
 
-    async with get_session() as session:
-        from sqlmodel import select
-
-        existing = await session.execute(
-            select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
-        )
-        caps = existing.scalar_one_or_none()
-
-        if caps:
-            # Update all fields from result
-            _apply_result_to_caps(caps, result)
-            caps.probed_at = datetime.now(tz=UTC)
-            session.add(caps)
-        else:
-            caps = ModelCapabilities(model_id=model_id)
-            _apply_result_to_caps(caps, result)
-            session.add(caps)
-
-        await session.commit()
-        logger.info(f"Saved capabilities for {model_id}")
+    caps_dict: dict[str, object] = {}
+    if result.model_type is not None:
+        caps_dict["model_type"] = result.model_type
+    if result.supports_native_tools is not None:
+        caps_dict["supports_native_tools"] = result.supports_native_tools
+    if result.supports_thinking is not None:
+        caps_dict["supports_thinking"] = result.supports_thinking
+    if result.tool_format is not None:
+        caps_dict["tool_format"] = result.tool_format
+    if result.practical_max_tokens is not None:
+        caps_dict["practical_max_tokens"] = result.practical_max_tokens
+    if result.model_family is not None:
+        caps_dict["model_family"] = result.model_family
+    if result.tool_parser_id is not None:
+        caps_dict["tool_parser_id"] = result.tool_parser_id
+    if result.thinking_parser_id is not None:
+        caps_dict["thinking_parser_id"] = result.thinking_parser_id
+    if result.supports_multi_image is not None:
+        caps_dict["supports_multi_image"] = result.supports_multi_image
+    if result.supports_video is not None:
+        caps_dict["supports_video"] = result.supports_video
+    if result.embedding_dimensions is not None:
+        caps_dict["embedding_dimensions"] = result.embedding_dimensions
+    if result.max_sequence_length is not None:
+        caps_dict["max_sequence_length"] = result.max_sequence_length
+    if result.is_normalized is not None:
+        caps_dict["is_normalized"] = result.is_normalized
+    if result.supports_tts is not None:
+        caps_dict["supports_tts"] = result.supports_tts
+    if result.supports_stt is not None:
+        caps_dict["supports_stt"] = result.supports_stt
+    caps_dict["probe_version"] = 2
+    await update_model_capabilities(model_id, **caps_dict)
+    logger.info(f"Saved capabilities for {model_id}")
 
 
 def _apply_result_to_caps(caps: object, result: ProbeResult) -> None:

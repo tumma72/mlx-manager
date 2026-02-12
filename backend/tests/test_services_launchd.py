@@ -26,8 +26,7 @@ def sample_profile():
     return ServerProfile(
         id=1,
         name="Test Profile",
-        model_path="mlx-community/test-model",
-        model_type="lm",
+        model_id=1,
         auto_start=True,
     )
 

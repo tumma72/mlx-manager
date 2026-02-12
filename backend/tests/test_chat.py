@@ -100,7 +100,7 @@ async def test_chat_completions_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_streaming_response(auth_client, test_profile):
+async def test_chat_completions_streaming_response(auth_client, api_test_profile):
     """Test successful streaming response with regular content.
 
     The chat router forwards content token-by-token from the inference service.
@@ -123,7 +123,7 @@ async def test_chat_completions_streaming_response(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Hi"}],
                 },
             )
@@ -151,7 +151,7 @@ async def test_chat_completions_streaming_response(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_thinking_via_reasoning_content(auth_client, test_profile):
+async def test_chat_completions_thinking_via_reasoning_content(auth_client, api_test_profile):
     """Test thinking content via reasoning_content field from inference.
 
     The inference service extracts thinking content and sends it in the
@@ -173,7 +173,7 @@ async def test_chat_completions_thinking_via_reasoning_content(auth_client, test
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -204,7 +204,7 @@ async def test_chat_completions_thinking_via_reasoning_content(auth_client, test
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_reasoning_content_field(auth_client, test_profile):
+async def test_chat_completions_reasoning_content_field(auth_client, api_test_profile):
     """Test server-extracted thinking via reasoning_content field."""
     chunks = [
         make_chunk(reasoning="First thought"),
@@ -223,7 +223,7 @@ async def test_chat_completions_reasoning_content_field(auth_client, test_profil
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -250,7 +250,7 @@ async def test_chat_completions_reasoning_content_field(auth_client, test_profil
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_reasoning_content_forwarded(auth_client, test_profile):
+async def test_chat_completions_reasoning_content_forwarded(auth_client, api_test_profile):
     """Test that reasoning_content is forwarded as-is to thinking events.
 
     The inference service now handles tag extraction, so chat router
@@ -272,7 +272,7 @@ async def test_chat_completions_reasoning_content_forwarded(auth_client, test_pr
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -291,7 +291,7 @@ async def test_chat_completions_reasoning_content_forwarded(auth_client, test_pr
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_tool_calls(auth_client, test_profile):
+async def test_chat_completions_tool_calls(auth_client, api_test_profile):
     """Test tool call events from model."""
     tool_call = {
         "index": 0,
@@ -317,7 +317,7 @@ async def test_chat_completions_tool_calls(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Weather?"}],
                     "tools": [{"type": "function", "function": {"name": "get_weather"}}],
                 },
@@ -338,7 +338,7 @@ async def test_chat_completions_tool_calls(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_tool_calls_done(auth_client, test_profile):
+async def test_chat_completions_tool_calls_done(auth_client, api_test_profile):
     """Test tool_calls_done event when finish_reason is tool_calls."""
     chunks = [
         make_chunk(content="", finish_reason="tool_calls"),
@@ -355,7 +355,7 @@ async def test_chat_completions_tool_calls_done(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Weather?"}],
                     "tools": [{"type": "function", "function": {"name": "get_weather"}}],
                 },
@@ -371,7 +371,7 @@ async def test_chat_completions_tool_calls_done(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_model_not_found(auth_client, test_profile):
+async def test_chat_completions_model_not_found(auth_client, api_test_profile):
     """Test FileNotFoundError when model is not downloaded."""
 
     async def mock_raise(*args, **kwargs):
@@ -388,7 +388,7 @@ async def test_chat_completions_model_not_found(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Hi"}],
                 },
             )
@@ -406,7 +406,7 @@ async def test_chat_completions_model_not_found(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_stream_ends_in_thinking(auth_client, test_profile):
+async def test_chat_completions_stream_ends_in_thinking(auth_client, api_test_profile):
     """Test that thinking_done is emitted if stream ends while in thinking mode."""
     # Use reasoning_content to maintain thinking state, then stream ends
     chunks = [
@@ -426,7 +426,7 @@ async def test_chat_completions_stream_ends_in_thinking(auth_client, test_profil
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -453,7 +453,7 @@ async def test_chat_completions_stream_ends_in_thinking(auth_client, test_profil
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_with_tools_parameters(auth_client, test_profile):
+async def test_chat_completions_with_tools_parameters(auth_client, api_test_profile):
     """Test that tools and tool_choice are forwarded to inference service."""
     chunks = [
         make_chunk(content="Answer"),
@@ -470,7 +470,7 @@ async def test_chat_completions_with_tools_parameters(auth_client, test_profile)
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Weather?"}],
                     "tools": [{"type": "function", "function": {"name": "get_weather"}}],
                     "tool_choice": "auto",
@@ -481,7 +481,7 @@ async def test_chat_completions_with_tools_parameters(auth_client, test_profile)
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_mixed_thinking_and_response(auth_client, test_profile):
+async def test_chat_completions_mixed_thinking_and_response(auth_client, api_test_profile):
     """Test handling of interleaved reasoning and content.
 
     The inference service handles tag extraction and sends separate events
@@ -504,7 +504,7 @@ async def test_chat_completions_mixed_thinking_and_response(auth_client, test_pr
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -526,7 +526,7 @@ async def test_chat_completions_mixed_thinking_and_response(auth_client, test_pr
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_empty_content_chunks(auth_client, test_profile):
+async def test_chat_completions_empty_content_chunks(auth_client, api_test_profile):
     """Test handling of chunks with empty content."""
     chunks = [
         make_chunk(content=""),
@@ -545,7 +545,7 @@ async def test_chat_completions_empty_content_chunks(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Hi"}],
                 },
             )
@@ -560,7 +560,7 @@ async def test_chat_completions_empty_content_chunks(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_reasoning_without_transition(auth_client, test_profile):
+async def test_chat_completions_reasoning_without_transition(auth_client, api_test_profile):
     """Test reasoning_content without transition to regular content."""
     chunks = [
         make_chunk(reasoning="Thought 1"),
@@ -578,7 +578,7 @@ async def test_chat_completions_reasoning_without_transition(auth_client, test_p
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -597,7 +597,7 @@ async def test_chat_completions_reasoning_without_transition(auth_client, test_p
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_general_exception(auth_client, test_profile):
+async def test_chat_completions_general_exception(auth_client, api_test_profile):
     """Test handling of general exceptions during inference."""
 
     async def mock_raise(*args, **kwargs):
@@ -614,7 +614,7 @@ async def test_chat_completions_general_exception(auth_client, test_profile):
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Hi"}],
                 },
             )
@@ -632,7 +632,7 @@ async def test_chat_completions_general_exception(auth_client, test_profile):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_both_reasoning_and_content_fields(auth_client, test_profile):
+async def test_chat_completions_both_reasoning_and_content_fields(auth_client, api_test_profile):
     """Test chunk with both reasoning_content and content fields.
 
     When a chunk has BOTH reasoning_content and content:
@@ -655,7 +655,7 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
             response = await auth_client.post(
                 "/api/chat/completions",
                 json={
-                    "profile_id": test_profile.id,
+                    "profile_id": api_test_profile.id,
                     "messages": [{"role": "user", "content": "Question?"}],
                 },
             )
@@ -689,7 +689,7 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, t
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_vision_model(auth_client, test_profile):
+async def test_chat_completions_vision_model(auth_client, api_test_profile):
     """Test that vision models use generate_vision_completion."""
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -713,7 +713,7 @@ async def test_chat_completions_vision_model(auth_client, test_profile):
                 response = await auth_client.post(
                     "/api/chat/completions",
                     json={
-                        "profile_id": test_profile.id,
+                        "profile_id": api_test_profile.id,
                         "messages": [
                             {
                                 "role": "user",

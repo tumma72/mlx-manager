@@ -1,26 +1,55 @@
 // API Types for MLX Model Manager
 
+export type ModelType = "text-gen" | "vision" | "embeddings" | "audio";
+
+export interface DownloadedModel {
+  id: number;
+  repo_id: string;
+  model_type: ModelType | null;
+  local_path: string | null;
+  size_bytes: number | null;
+  size_gb: number | null;
+  downloaded_at: string | null;
+  last_used_at: string | null;
+  probed_at: string | null;
+  probe_version: number | null;
+  supports_native_tools: boolean | null;
+  supports_thinking: boolean | null;
+  tool_format: string | null;
+  practical_max_tokens: number | null;
+  model_family: string | null;
+  tool_parser_id: string | null;
+  thinking_parser_id: string | null;
+  supports_multi_image: boolean | null;
+  supports_video: boolean | null;
+  embedding_dimensions: number | null;
+  max_sequence_length: number | null;
+  is_normalized: boolean | null;
+  supports_tts: boolean | null;
+  supports_stt: boolean | null;
+}
+
 export interface ServerProfile {
   id: number;
   name: string;
   description: string | null;
-  model_path: string;
-  model_type:
-    | "lm"
-    | "multimodal"
-    | "whisper"
-    | "embeddings"
-    | "image-generation"
-    | "image-edit";
+  model_id: number;
+  model_repo_id: string | null;
+  model_type: string | null;
   context_length: number | null;
   auto_start: boolean;
   system_prompt: string | null;
   // Generation parameters
-  temperature: number;
-  max_tokens: number;
-  top_p: number;
+  temperature: number | null;
+  max_tokens: number | null;
+  top_p: number | null;
   // Tool calling
   enable_prompt_injection: boolean;
+  // Audio parameters
+  tts_default_voice: string | null;
+  tts_default_speed: number | null;
+  tts_sample_rate: number | null;
+  stt_default_language: string | null;
   // Metadata
   launchd_installed: boolean;
   created_at: string;
@@ -30,8 +59,7 @@ export interface ServerProfile {
 export interface ServerProfileCreate {
   name: string;
   description?: string;
-  model_path: string;
-  model_type?: string;
+  model_id: number;
   context_length?: number;
   auto_start?: boolean;
   system_prompt?: string;
@@ -41,22 +69,31 @@ export interface ServerProfileCreate {
   top_p?: number;
   // Tool calling
   enable_prompt_injection?: boolean;
+  // Audio parameters
+  tts_default_voice?: string;
+  tts_default_speed?: number;
+  tts_sample_rate?: number;
+  stt_default_language?: string;
 }
 
 export interface ServerProfileUpdate {
   name?: string;
   description?: string;
-  model_path?: string;
-  model_type?: string;
+  model_id?: number;
   context_length?: number | null;
   auto_start?: boolean;
   system_prompt?: string | null;
   // Generation parameters
-  temperature?: number;
-  max_tokens?: number;
-  top_p?: number;
+  temperature?: number | null;
+  max_tokens?: number | null;
+  top_p?: number | null;
   // Tool calling
   enable_prompt_injection?: boolean;
+  // Audio parameters
+  tts_default_voice?: string | null;
+  tts_default_speed?: number | null;
+  tts_sample_rate?: number | null;
+  stt_default_language?: string | null;
 }
 
 export interface RunningServer {

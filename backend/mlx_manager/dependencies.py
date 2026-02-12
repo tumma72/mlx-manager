@@ -20,7 +20,13 @@ async def get_profile_or_404(
     session: AsyncSession = Depends(get_db),
 ) -> ServerProfile:
     """Get a profile by ID or raise 404."""
-    result = await session.execute(select(ServerProfile).where(ServerProfile.id == profile_id))
+    from sqlalchemy.orm import selectinload
+
+    result = await session.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")

@@ -24,7 +24,8 @@ function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
     a.id === b.id &&
     a.name === b.name &&
     a.description === b.description &&
-    a.model_path === b.model_path &&
+    a.model_id === b.model_id &&
+    a.model_repo_id === b.model_repo_id &&
     a.model_type === b.model_type &&
     a.context_length === b.context_length &&
     a.auto_start === b.auto_start &&

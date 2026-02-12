@@ -42,7 +42,7 @@
 			: stableProfiles.filter(
 					(p) =>
 						p.name.toLowerCase().includes(searchValue.toLowerCase()) ||
-						p.model_path.toLowerCase().includes(searchValue.toLowerCase())
+						(p.model_repo_id ?? 'Unknown').toLowerCase().includes(searchValue.toLowerCase())
 				)
 	);
 
@@ -119,7 +119,7 @@
 						class="flex cursor-pointer flex-col gap-0.5 rounded px-2 py-1.5 text-sm data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
 					>
 						<span class="font-medium">{profile.name}</span>
-						<span class="truncate text-xs text-muted-foreground">{profile.model_path}</span>
+						<span class="truncate text-xs text-muted-foreground">{profile.model_repo_id ?? 'Unknown'}</span>
 					</Combobox.Item>
 				{/each}
 				{#if filteredProfiles.length === 0}

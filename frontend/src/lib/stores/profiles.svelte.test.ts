@@ -30,7 +30,7 @@ function createMockProfile(
     id: 1,
     name: "Test Profile",
     description: "A test profile",
-    model_path: "mlx-community/test-model",
+    model_id: 1, model_repo_id: "mlx-community/test-model",
     model_type: "lm",
     context_length: 4096,
     auto_start: false,
@@ -39,6 +39,10 @@ function createMockProfile(
     max_tokens: 4096,
     top_p: 1.0,
     enable_prompt_injection: false,
+    tts_default_voice: null,
+    tts_default_speed: null,
+    tts_sample_rate: null,
+    stt_default_language: null,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00",
     updated_at: "2024-01-01T00:00:00",
@@ -173,14 +177,12 @@ describe("ProfileStore", () => {
 
       const result = await profileStore.create({
         name: "New Profile",
-        model_path: "mlx-community/test-model",
-        model_type: "lm",
+        model_id: 1,
       });
 
       expect(mockProfilesApi.create).toHaveBeenCalledWith({
         name: "New Profile",
-        model_path: "mlx-community/test-model",
-        model_type: "lm",
+        model_id: 1,
       });
       expect(mockPollingCoordinator.refresh).toHaveBeenCalledWith("profiles");
       expect(result).toEqual(newProfile);

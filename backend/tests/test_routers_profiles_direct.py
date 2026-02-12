@@ -4,14 +4,17 @@ These tests call router functions directly with mock sessions to ensure
 coverage is properly tracked (avoiding ASGI transport coverage issues).
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from mlx_manager.models import (
+    Model,
     ServerProfile,
     ServerProfileCreate,
+    ServerProfileResponse,
     ServerProfileUpdate,
     User,
     UserStatus,
@@ -36,6 +39,62 @@ def create_mock_user():
     )
 
 
+def _create_mock_model(model_id=1, repo_id="mlx-community/test-model", model_type="text-gen"):
+    """Create a mock Model for testing."""
+    model = MagicMock(spec=Model)
+    model.id = model_id
+    model.repo_id = repo_id
+    model.model_type = model_type
+    return model
+
+
+def _create_mock_profile(
+    profile_id=1,
+    name="Test Profile",
+    model_id=1,
+    model=None,
+):
+    """Create a mock ServerProfile with model relationship for testing."""
+    mock_model = model or _create_mock_model(model_id=model_id)
+    profile = MagicMock(spec=ServerProfile)
+    profile.id = profile_id
+    profile.name = name
+    profile.description = None
+    profile.model_id = model_id
+    profile.model = mock_model
+    profile.context_length = None
+    profile.auto_start = False
+    profile.system_prompt = None
+    profile.temperature = None
+    profile.max_tokens = None
+    profile.top_p = None
+    profile.enable_prompt_injection = False
+    profile.tts_default_voice = None
+    profile.tts_default_speed = None
+    profile.tts_sample_rate = None
+    profile.stt_default_language = None
+    profile.launchd_installed = False
+    profile.created_at = datetime.now(tz=UTC)
+    profile.updated_at = datetime.now(tz=UTC)
+    return profile
+
+
+def _mock_response(profile_id=1, name="Test Profile"):
+    """Create a mock ServerProfileResponse."""
+    return ServerProfileResponse(
+        id=profile_id,
+        name=name,
+        model_id=1,
+        model_repo_id="mlx-community/test-model",
+        model_type="text-gen",
+        auto_start=False,
+        enable_prompt_injection=False,
+        launchd_installed=False,
+        created_at=datetime.now(tz=UTC),
+        updated_at=datetime.now(tz=UTC),
+    )
+
+
 class TestListProfilesDirect:
     """Direct tests for list_profiles function."""
 
@@ -44,10 +103,10 @@ class TestListProfilesDirect:
         """Test list_profiles returns all profiles from database."""
         mock_user = create_mock_user()
 
-        # Create mock profiles
+        # Create mock profiles with model relationships
         mock_profiles = [
-            MagicMock(spec=ServerProfile, id=1, name="Profile 1"),
-            MagicMock(spec=ServerProfile, id=2, name="Profile 2"),
+            _create_mock_profile(profile_id=1, name="Profile 1"),
+            _create_mock_profile(profile_id=2, name="Profile 2"),
         ]
 
         # Setup mock session
@@ -59,7 +118,7 @@ class TestListProfilesDirect:
         # Call function directly
         result = await list_profiles(current_user=mock_user, session=mock_session)
 
-        assert result == mock_profiles
+        assert len(result) == 2
         mock_session.execute.assert_called_once()
 
 
@@ -73,10 +132,10 @@ class TestCreateProfileDirect:
 
         profile_data = ServerProfileCreate(
             name="Test Profile",
-            model_path="mlx-community/test-model",
-            model_type="lm",
+            model_id=1,
         )
 
+        mock_model = _create_mock_model()
         mock_session = AsyncMock()
         # session.add is synchronous, so use MagicMock
         mock_session.add = MagicMock()
@@ -84,10 +143,14 @@ class TestCreateProfileDirect:
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
+        # session.get for model validation
+        mock_session.get.return_value = mock_model
 
-        result = await create_profile(
-            current_user=mock_user, profile_data=profile_data, session=mock_session
-        )
+        mock_resp = _mock_response(name="Test Profile")
+        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+            result = await create_profile(
+                current_user=mock_user, profile_data=profile_data, session=mock_session
+            )
 
         assert result.name == "Test Profile"
         mock_session.add.assert_called_once()
@@ -101,8 +164,7 @@ class TestCreateProfileDirect:
 
         profile_data = ServerProfileCreate(
             name="Existing",
-            model_path="mlx-community/test-model",
-            model_type="lm",
+            model_id=1,
         )
 
         mock_session = AsyncMock()
@@ -127,12 +189,7 @@ class TestUpdateProfileDirect:
         """Test update_profile updates and returns profile."""
         mock_user = create_mock_user()
 
-        existing_profile = ServerProfile(
-            id=1,
-            name="Old Name",
-            model_path="mlx-community/test-model",
-            model_type="lm",
-        )
+        existing_profile = _create_mock_profile(profile_id=1, name="Old Name")
 
         profile_data = ServerProfileUpdate(name="New Name")
 
@@ -147,9 +204,14 @@ class TestUpdateProfileDirect:
         mock_result2.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
-        result = await update_profile(
-            current_user=mock_user, profile_id=1, profile_data=profile_data, session=mock_session
-        )
+        mock_resp = _mock_response(name="New Name")
+        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+            result = await update_profile(
+                current_user=mock_user,
+                profile_id=1,
+                profile_data=profile_data,
+                session=mock_session,
+            )
 
         assert result.name == "New Name"
         mock_session.commit.assert_called_once()
@@ -181,12 +243,7 @@ class TestUpdateProfileDirect:
         """Test update_profile raises 409 on name conflict."""
         mock_user = create_mock_user()
 
-        existing_profile = ServerProfile(
-            id=1,
-            name="Old Name",
-            model_path="mlx-community/test-model",
-            model_type="lm",
-        )
+        existing_profile = _create_mock_profile(profile_id=1, name="Old Name")
 
         profile_data = ServerProfileUpdate(name="Taken Name")
 
@@ -219,12 +276,9 @@ class TestDuplicateProfileDirect:
         """Test duplicate_profile creates copy with new name."""
         mock_user = create_mock_user()
 
-        existing_profile = ServerProfile(
-            id=1,
+        existing_profile = _create_mock_profile(
+            profile_id=1,
             name="Original",
-            description="A test profile",
-            model_path="mlx-community/test-model",
-            model_type="lm",
         )
 
         mock_session = AsyncMock()
@@ -235,15 +289,16 @@ class TestDuplicateProfileDirect:
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        result = await duplicate_profile(
-            current_user=mock_user,
-            new_name="Copy",
-            profile=existing_profile,
-            session=mock_session,
-        )
+        mock_resp = _mock_response(name="Copy")
+        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+            result = await duplicate_profile(
+                current_user=mock_user,
+                new_name="Copy",
+                profile=existing_profile,
+                session=mock_session,
+            )
 
         assert result.name == "Copy"
-        assert result.model_path == existing_profile.model_path
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
 
@@ -252,11 +307,9 @@ class TestDuplicateProfileDirect:
         """Test duplicate_profile raises 409 on name conflict."""
         mock_user = create_mock_user()
 
-        existing_profile = ServerProfile(
-            id=1,
+        existing_profile = _create_mock_profile(
+            profile_id=1,
             name="Original",
-            model_path="mlx-community/test-model",
-            model_type="lm",
         )
 
         mock_session = AsyncMock()

@@ -6,7 +6,15 @@ import type {
   ServerProfile,
   ServerProfileCreate,
   ServerProfileUpdate,
+  DownloadedModel,
 } from "$api";
+
+// Mock the models API
+vi.mock("$api", () => ({
+  models: {
+    listDownloaded: vi.fn(),
+  },
+}));
 
 // Helper to create mock profile
 function createMockProfile(
@@ -16,7 +24,8 @@ function createMockProfile(
     id: 1,
     name: "Test Profile",
     description: null,
-    model_path: "mlx-community/test-model",
+    model_id: 1,
+    model_repo_id: "mlx-community/test-model",
     model_type: "lm",
     context_length: null,
     auto_start: false,
@@ -25,6 +34,10 @@ function createMockProfile(
     max_tokens: 4096,
     top_p: 1.0,
     enable_prompt_injection: false,
+    tts_default_voice: null,
+    tts_default_speed: null,
+    tts_sample_rate: null,
+    stt_default_language: null,
     launchd_installed: false,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
@@ -38,9 +51,68 @@ describe("ProfileForm", () => {
   ) => Promise<void>;
   let mockOnCancel: () => void;
 
-  beforeEach(() => {
+  const mockModels: DownloadedModel[] = [
+    {
+      id: 1,
+      repo_id: "mlx-community/test-model",
+      model_type: "text-gen",
+      local_path: "/path/to/model",
+      size_bytes: 1000000,
+      size_gb: 1,
+      downloaded_at: "2024-01-01T00:00:00Z",
+      last_used_at: null,
+      probed_at: null,
+      probe_version: null,
+      supports_native_tools: null,
+      supports_thinking: null,
+      tool_format: null,
+      practical_max_tokens: null,
+      model_family: null,
+      tool_parser_id: null,
+      thinking_parser_id: null,
+      supports_multi_image: null,
+      supports_video: null,
+      embedding_dimensions: null,
+      max_sequence_length: null,
+      is_normalized: null,
+      supports_tts: null,
+      supports_stt: null,
+    },
+    {
+      id: 2,
+      repo_id: "mlx-community/audio-model",
+      model_type: "audio",
+      local_path: "/path/to/audio",
+      size_bytes: 2000000,
+      size_gb: 2,
+      downloaded_at: "2024-01-01T00:00:00Z",
+      last_used_at: null,
+      probed_at: null,
+      probe_version: null,
+      supports_native_tools: null,
+      supports_thinking: null,
+      tool_format: null,
+      practical_max_tokens: null,
+      model_family: null,
+      tool_parser_id: null,
+      thinking_parser_id: null,
+      supports_multi_image: null,
+      supports_video: null,
+      embedding_dimensions: null,
+      max_sequence_length: null,
+      is_normalized: null,
+      supports_tts: true,
+      supports_stt: true,
+    },
+  ];
+
+  beforeEach(async () => {
     mockOnSubmit = vi.fn().mockResolvedValue(undefined);
     mockOnCancel = vi.fn();
+
+    // Mock the API call
+    const { models } = await import("$api");
+    vi.mocked(models.listDownloaded).mockResolvedValue(mockModels);
   });
 
   describe("create mode rendering", () => {
@@ -58,7 +130,7 @@ describe("ProfileForm", () => {
       });
     });
 
-    it("renders all required fields", () => {
+    it("renders all required fields", async () => {
       render(ProfileForm, {
         props: {
           onSubmit: mockOnSubmit,
@@ -66,11 +138,15 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(screen.getByLabelText(/Name/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Model Path/)).toBeInTheDocument();
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Name/)).toBeInTheDocument();
+      });
+
+      expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
     });
 
-    it("renders optional fields", () => {
+    it("renders optional fields", async () => {
       render(ProfileForm, {
         props: {
           onSubmit: mockOnSubmit,
@@ -78,12 +154,13 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(screen.getByLabelText(/Description/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/System Prompt/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Model Type/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Description/)).toBeInTheDocument();
+      });
     });
 
-    it("renders generation settings", () => {
+    it("renders generation settings after selecting text-gen model", async () => {
+      const user = userEvent.setup();
       render(ProfileForm, {
         props: {
           onSubmit: mockOnSubmit,
@@ -91,7 +168,20 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(screen.getByText("Generation Settings")).toBeInTheDocument();
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Select the text-gen model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      // Wait for conditional sections to appear
+      await waitFor(() => {
+        expect(screen.getByText("Generation Settings")).toBeInTheDocument();
+      });
+
       expect(screen.getByLabelText(/Temperature/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Max Tokens/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Top P/)).toBeInTheDocument();
@@ -123,24 +213,30 @@ describe("ProfileForm", () => {
       ).toBeInTheDocument();
     });
 
-    it("initializes model path with initialModelPath prop", () => {
+    it("initializes model selection with initialModelId prop", async () => {
       render(ProfileForm, {
         props: {
-          initialModelPath: "mlx-community/initial-model",
+          initialModelId: 1,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
       });
 
-      const modelPathInput = screen.getByLabelText(
-        /Model Path/,
-      ) as HTMLInputElement;
-      expect(modelPathInput.value).toBe("mlx-community/initial-model");
+      // Wait for models to load
+      await waitFor(() => {
+        const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+        expect(modelSelect.value).toBe("1");
+      });
+
+      // Check that the model info is displayed
+      await waitFor(() => {
+        expect(screen.getByText(/Type: text-gen/)).toBeInTheDocument();
+      });
     });
   });
 
   describe("edit mode rendering", () => {
-    it("renders edit profile title", () => {
+    it("renders edit profile title", async () => {
       render(ProfileForm, {
         props: {
           profile: createMockProfile(),
@@ -149,7 +245,9 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(screen.getByText("Edit Profile")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("Edit Profile")).toBeInTheDocument();
+      });
     });
 
     it("renders submit button with Update Profile text", () => {
@@ -166,11 +264,11 @@ describe("ProfileForm", () => {
       ).toBeInTheDocument();
     });
 
-    it("populates form with profile data", () => {
+    it("populates form with profile data", async () => {
       const profile = createMockProfile({
         name: "Existing Profile",
         description: "Test description",
-        model_path: "mlx-community/existing-model",
+        model_id: 1,
       });
 
       render(ProfileForm, {
@@ -181,20 +279,25 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect((screen.getByLabelText(/Name/) as HTMLInputElement).value).toBe(
-        "Existing Profile",
-      );
+      // Wait for models to load and form to populate
+      await waitFor(() => {
+        expect((screen.getByLabelText(/Name/) as HTMLInputElement).value).toBe(
+          "Existing Profile",
+        );
+      });
+
       expect(
         (screen.getByLabelText(/Description/) as HTMLTextAreaElement).value,
       ).toBe("Test description");
-      expect(
-        (screen.getByLabelText(/Model Path/) as HTMLInputElement).value,
-      ).toBe("mlx-community/existing-model");
+
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      expect(modelSelect.value).toBe("1");
     });
 
-    it("populates system prompt", () => {
+    it("populates system prompt", async () => {
       const profile = createMockProfile({
         system_prompt: "You are a helpful assistant",
+        model_id: 1,
       });
 
       render(ProfileForm, {
@@ -205,16 +308,21 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(
-        (screen.getByLabelText(/System Prompt/) as HTMLTextAreaElement).value,
-      ).toBe("You are a helpful assistant");
+      // Wait for models to load and system prompt to appear
+      await waitFor(() => {
+        const systemPromptTextarea = screen.getByLabelText(
+          /System Prompt/,
+        ) as HTMLTextAreaElement;
+        expect(systemPromptTextarea.value).toBe("You are a helpful assistant");
+      });
     });
 
-    it("populates generation settings", () => {
+    it("populates generation settings", async () => {
       const profile = createMockProfile({
         temperature: 0.5,
         max_tokens: 2048,
         top_p: 0.9,
+        model_id: 1,
       });
 
       render(ProfileForm, {
@@ -225,14 +333,18 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(
-        (screen.getByLabelText(/Max Tokens/) as HTMLInputElement).value,
-      ).toBe("2048");
+      // Wait for models to load and generation settings to appear
+      await waitFor(() => {
+        const maxTokensInput = screen.getByLabelText(
+          /Max Tokens/,
+        ) as HTMLInputElement;
+        expect(maxTokensInput.value).toBe("2048");
+      });
     });
   });
 
   describe("advanced options", () => {
-    it("hides advanced options by default", () => {
+    it("hides advanced options by default", async () => {
       render(ProfileForm, {
         props: {
           onSubmit: mockOnSubmit,
@@ -240,9 +352,11 @@ describe("ProfileForm", () => {
         },
       });
 
-      expect(
-        screen.queryByLabelText(/Auto-load on startup/),
-      ).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.queryByLabelText(/Auto-load on startup/),
+        ).not.toBeInTheDocument();
+      });
     });
 
     it("shows advanced options when toggle clicked", async () => {
@@ -254,12 +368,18 @@ describe("ProfileForm", () => {
         },
       });
 
+      await waitFor(() => {
+        expect(screen.getByText("Show Advanced Options")).toBeInTheDocument();
+      });
+
       const toggleButton = screen.getByText("Show Advanced Options");
       await user.click(toggleButton);
 
-      expect(
-        screen.getByLabelText(/Auto-load on startup/),
-      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Auto-load on startup/),
+        ).toBeInTheDocument();
+      });
     });
 
     it("hides advanced options when toggle clicked again", async () => {
@@ -271,13 +391,24 @@ describe("ProfileForm", () => {
         },
       });
 
+      await waitFor(() => {
+        expect(screen.getByText("Show Advanced Options")).toBeInTheDocument();
+      });
+
       const toggleButton = screen.getByText("Show Advanced Options");
       await user.click(toggleButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("Hide Advanced Options")).toBeInTheDocument();
+      });
+
       await user.click(screen.getByText("Hide Advanced Options"));
 
-      expect(
-        screen.queryByLabelText(/Auto-load on startup/),
-      ).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.queryByLabelText(/Auto-load on startup/),
+        ).not.toBeInTheDocument();
+      });
     });
   });
 
@@ -291,11 +422,21 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "New Profile");
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      // Select the model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      // Wait for generation settings to appear (they have defaults)
+      await waitFor(() => {
+        expect(screen.getByText("Generation Settings")).toBeInTheDocument();
+      });
 
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
@@ -303,13 +444,12 @@ describe("ProfileForm", () => {
         expect(mockOnSubmit).toHaveBeenCalledWith({
           name: "New Profile",
           description: undefined,
-          model_path: "mlx-community/model",
-          model_type: "lm",
+          model_id: 1,
           auto_start: false,
           system_prompt: undefined,
-          temperature: 0.7,
-          max_tokens: 4096,
-          top_p: 1.0,
+          temperature: undefined,
+          max_tokens: undefined,
+          top_p: undefined,
           enable_prompt_injection: false,
         });
       });
@@ -324,16 +464,24 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "Full Profile");
       await user.type(screen.getByLabelText(/Description/), "A description");
-      await user.type(
-        screen.getByLabelText(/System Prompt/),
-        "Be helpful",
-      );
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      // Select the model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      // Wait for system prompt to appear
+      await waitFor(() => {
+        expect(screen.getByLabelText(/System Prompt/)).toBeInTheDocument();
+      });
+
+      await user.type(screen.getByLabelText(/System Prompt/), "Be helpful");
 
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
@@ -343,7 +491,7 @@ describe("ProfileForm", () => {
             name: "Full Profile",
             description: "A description",
             system_prompt: "Be helpful",
-            model_path: "mlx-community/model",
+            model_id: 1,
           }),
         );
       });
@@ -364,11 +512,16 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "Test");
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
       expect(screen.getByText("Saving...")).toBeInTheDocument();
@@ -392,11 +545,16 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "Test");
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
       expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled();
@@ -419,11 +577,16 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "Test");
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
       await waitFor(() => {
@@ -442,16 +605,41 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
       await user.type(screen.getByLabelText(/Name/), "Test");
-      await user.type(
-        screen.getByLabelText(/Model Path/),
-        "mlx-community/model",
-      );
+
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
       await user.click(screen.getByRole("button", { name: "Create Profile" }));
 
       await waitFor(() => {
         expect(screen.getByText("Failed to save profile")).toBeInTheDocument();
       });
+    });
+
+    it("disables submit button when no model selected", async () => {
+      render(ProfileForm, {
+        props: {
+          onSubmit: mockOnSubmit,
+          onCancel: mockOnCancel,
+        },
+      });
+
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Submit button should be disabled without model selection
+      const submitButton = screen.getByRole("button", {
+        name: "Create Profile",
+      });
+      expect(submitButton).toBeDisabled();
     });
   });
 
@@ -481,10 +669,26 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Select a text-gen model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      // Wait for system prompt to appear
+      await waitFor(() => {
+        expect(screen.getByLabelText(/System Prompt/)).toBeInTheDocument();
+      });
+
       const prompt = "You are helpful";
       await user.type(screen.getByLabelText(/System Prompt/), prompt);
 
-      expect(screen.getByText(/15 chars/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(/15 chars/)).toBeInTheDocument();
+      });
     });
 
     it("shows warning for long system prompts", async () => {
@@ -496,29 +700,33 @@ describe("ProfileForm", () => {
         },
       });
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Select a text-gen model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      // Wait for system prompt to appear
+      await waitFor(() => {
+        expect(screen.getByLabelText(/System Prompt/)).toBeInTheDocument();
+      });
+
       const longPrompt = "a".repeat(2001);
       await user.type(screen.getByLabelText(/System Prompt/), longPrompt);
 
-      expect(
-        screen.getByText(/long prompt may affect performance/),
-      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.getByText(/long prompt may affect performance/),
+        ).toBeInTheDocument();
+      });
     });
   });
 
-  describe("model type selection", () => {
-    it("defaults to lm model type", () => {
-      render(ProfileForm, {
-        props: {
-          onSubmit: mockOnSubmit,
-          onCancel: mockOnCancel,
-        },
-      });
-
-      const select = screen.getByLabelText(/Model Type/) as HTMLSelectElement;
-      expect(select.value).toBe("lm");
-    });
-
-    it("allows selecting multimodal type", async () => {
+  describe("audio model support", () => {
+    it("shows audio settings when audio model selected", async () => {
       const user = userEvent.setup();
       render(ProfileForm, {
         props: {
@@ -527,28 +735,94 @@ describe("ProfileForm", () => {
         },
       });
 
-      const select = screen.getByLabelText(/Model Type/) as HTMLSelectElement;
-      await user.selectOptions(select, "multimodal");
-
-      expect(select.value).toBe("multimodal");
-    });
-
-    it("maps unsupported model types to lm", () => {
-      const profile = createMockProfile({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model_type: "whisper" as any, // Unsupported type
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
       });
 
+      // Select the audio model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "2");
+
+      // Wait for audio settings to appear
+      await waitFor(() => {
+        expect(screen.getByText("Audio Settings")).toBeInTheDocument();
+      });
+
+      expect(screen.getByLabelText(/Default Voice/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Speech Speed/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Sample Rate/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/STT Language/)).toBeInTheDocument();
+    });
+
+    it("hides generation settings for audio models", async () => {
+      const user = userEvent.setup();
       render(ProfileForm, {
         props: {
-          profile,
           onSubmit: mockOnSubmit,
           onCancel: mockOnCancel,
         },
       });
 
-      const select = screen.getByLabelText(/Model Type/) as HTMLSelectElement;
-      expect(select.value).toBe("lm");
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Select the audio model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "2");
+
+      // Wait for audio settings to appear
+      await waitFor(() => {
+        expect(screen.getByText("Audio Settings")).toBeInTheDocument();
+      });
+
+      // Generation settings should not be present
+      expect(screen.queryByText("Generation Settings")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/System Prompt/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("model type conditional rendering", () => {
+    it("shows system prompt for text-gen models", async () => {
+      const user = userEvent.setup();
+      render(ProfileForm, {
+        props: {
+          onSubmit: mockOnSubmit,
+          onCancel: mockOnCancel,
+        },
+      });
+
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // Select text-gen model
+      const modelSelect = screen.getByLabelText(/Model/) as HTMLSelectElement;
+      await user.selectOptions(modelSelect, "1");
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/System Prompt/)).toBeInTheDocument();
+      });
+    });
+
+    it("hides system prompt before model selection", async () => {
+      render(ProfileForm, {
+        props: {
+          onSubmit: mockOnSubmit,
+          onCancel: mockOnCancel,
+        },
+      });
+
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Model/)).toBeInTheDocument();
+      });
+
+      // System prompt should not be visible yet
+      expect(screen.queryByLabelText(/System Prompt/)).not.toBeInTheDocument();
     });
   });
 });

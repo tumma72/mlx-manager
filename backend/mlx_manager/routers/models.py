@@ -19,8 +19,8 @@ from mlx_manager.dependencies import get_current_user, get_current_user_from_tok
 from mlx_manager.models import (
     Download,
     LocalModel,
-    ModelCapabilities,
-    ModelCapabilitiesResponse,
+    Model,
+    ModelResponse,
     ModelSearchResult,
     User,
 )
@@ -69,6 +69,26 @@ async def list_local_models(
 ):
     """List locally downloaded MLX models."""
     return hf_client.list_local_models()
+
+
+@router.get("/downloaded", response_model=list[ModelResponse])
+async def list_downloaded_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """List all downloaded models from the unified Model table."""
+    from sqlmodel import col, desc
+
+    result = await session.execute(select(Model).order_by(desc(col(Model.downloaded_at))))
+    models = result.scalars().all()
+    # Compute size_gb for response
+    responses = []
+    for m in models:
+        data = m.model_dump()
+        if m.size_bytes:
+            data["size_gb"] = round(m.size_bytes / (1024**3), 2)
+        responses.append(ModelResponse(**data))
+    return responses
 
 
 @router.post("/download")
@@ -242,6 +262,16 @@ async def _update_download_record(
                 download.error = error
             if completed:
                 download.completed_at = datetime.now(tz=UTC)
+                # Register in unified Model table
+                from mlx_manager.services.hf_client import hf_client
+                from mlx_manager.services.model_registry import register_model_from_download
+
+                local_path = hf_client.get_local_path(download.model_id)
+                await register_model_from_download(
+                    repo_id=download.model_id,
+                    local_path=local_path or "",
+                    size_bytes=total_bytes,
+                )
             session.add(download)
             await session.commit()
 
@@ -535,30 +565,41 @@ async def get_probeable_types(
     return [mt.value for mt in registered_model_types()]
 
 
-@router.get("/capabilities", response_model=list[ModelCapabilitiesResponse])
+@router.get("/capabilities", response_model=list[ModelResponse])
 async def get_all_capabilities(
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """Get all stored model capabilities."""
-    result = await session.execute(select(ModelCapabilities))
-    return result.scalars().all()
+    """Get all stored model capabilities from the unified Model table."""
+    from sqlmodel import col
+
+    result = await session.execute(select(Model).where(col(Model.probed_at).is_not(None)))
+    models = result.scalars().all()
+    # Compute size_gb for response
+    responses = []
+    for m in models:
+        data = m.model_dump()
+        if m.size_bytes:
+            data["size_gb"] = round(m.size_bytes / (1024**3), 2)
+        responses.append(ModelResponse(**data))
+    return responses
 
 
-@router.get("/capabilities/{model_id:path}", response_model=ModelCapabilitiesResponse | None)
+@router.get("/capabilities/{model_id:path}", response_model=ModelResponse | None)
 async def get_model_capabilities(
     model_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """Get stored capabilities for a specific model."""
-    result = await session.execute(
-        select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
-    )
-    caps = result.scalar_one_or_none()
-    if not caps:
+    """Get stored capabilities for a specific model from the unified Model table."""
+    result = await session.execute(select(Model).where(Model.repo_id == model_id))
+    model = result.scalar_one_or_none()
+    if not model:
         return None
-    return caps
+    data = model.model_dump()
+    if model.size_bytes:
+        data["size_gb"] = round(model.size_bytes / (1024**3), 2)
+    return ModelResponse(**data)
 
 
 @router.post("/probe/{model_id:path}")

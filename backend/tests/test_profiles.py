@@ -19,7 +19,9 @@ async def test_create_profile(auth_client, sample_profile_data):
 
     data = response.json()
     assert data["name"] == sample_profile_data["name"]
-    assert data["model_path"] == sample_profile_data["model_path"]
+    assert data["model_id"] == sample_profile_data["model_id"]
+    assert data["model_repo_id"] == "mlx-community/test-model-4bit"
+    assert data["model_type"] == "text-gen"
     assert data["temperature"] == sample_profile_data["temperature"]
     assert data["max_tokens"] == sample_profile_data["max_tokens"]
     assert data["top_p"] == sample_profile_data["top_p"]
@@ -84,7 +86,7 @@ async def test_update_profile(auth_client, sample_profile_data):
     assert data["name"] == "Updated Profile"
     assert data["description"] == "Updated description"
     # Original fields should remain unchanged
-    assert data["model_path"] == sample_profile_data["model_path"]
+    assert data["model_id"] == sample_profile_data["model_id"]
 
 
 @pytest.mark.asyncio
@@ -162,7 +164,8 @@ async def test_duplicate_profile(auth_client, sample_profile_data):
 
     data = response.json()
     assert data["name"] == "Duplicated Profile"
-    assert data["model_path"] == sample_profile_data["model_path"]
+    assert data["model_id"] == sample_profile_data["model_id"]
+    assert data["model_repo_id"] == "mlx-community/test-model-4bit"
     assert data["temperature"] == sample_profile_data["temperature"]
     # Should have new ID
     assert data["id"] != profile_id
@@ -203,8 +206,7 @@ async def test_update_profile_all_fields(auth_client, sample_profile_data):
     update_data = {
         "name": "Updated Profile",
         "description": "Updated description",
-        "model_path": "mlx-community/updated-model",
-        "model_type": "multimodal",
+        "model_id": 4,  # mlx-community/updated-model from fixtures
         "auto_start": True,
         "context_length": 4096,
         "temperature": 0.5,
@@ -217,8 +219,8 @@ async def test_update_profile_all_fields(auth_client, sample_profile_data):
     data = response.json()
     assert data["name"] == "Updated Profile"
     assert data["description"] == "Updated description"
-    assert data["model_path"] == "mlx-community/updated-model"
-    assert data["model_type"] == "multimodal"
+    assert data["model_id"] == 4
+    assert data["model_repo_id"] == "mlx-community/updated-model"
     assert data["auto_start"] is True
     assert data["context_length"] == 4096
     assert data["temperature"] == 0.5
@@ -233,8 +235,7 @@ async def test_duplicate_profile_copies_all_fields(auth_client):
     profile_data = {
         "name": "Full Profile",
         "description": "Full description",
-        "model_path": "mlx-community/full-model",
-        "model_type": "multimodal",
+        "model_id": 3,  # mlx-community/full-model (vision) from fixtures
         "context_length": 8192,
         "system_prompt": "You are a helpful assistant.",
         "temperature": 0.5,
@@ -255,8 +256,9 @@ async def test_duplicate_profile_copies_all_fields(auth_client):
     # Verify all fields were copied (except name, auto_start)
     assert data["name"] == "Duplicated Full Profile"
     assert data["description"] == profile_data["description"]
-    assert data["model_path"] == profile_data["model_path"]
-    assert data["model_type"] == profile_data["model_type"]
+    assert data["model_id"] == profile_data["model_id"]
+    assert data["model_repo_id"] == "mlx-community/full-model"
+    assert data["model_type"] == "vision"
     assert data["context_length"] == profile_data["context_length"]
     assert data["system_prompt"] == profile_data["system_prompt"]
     assert data["temperature"] == profile_data["temperature"]
@@ -284,7 +286,7 @@ async def test_update_profile_same_name_allowed(auth_client, sample_profile_data
 @pytest.mark.asyncio
 async def test_create_profile_validates_required_fields(auth_client):
     """Test that creating a profile without required fields fails."""
-    # Missing model_path
+    # Missing model_id
     response = await auth_client.post("/api/profiles", json={"name": "Test"})
     assert response.status_code == 422
 
@@ -311,15 +313,16 @@ async def test_profile_generation_parameters_defaults(auth_client):
     # Create profile with minimal data
     minimal_data = {
         "name": "Minimal Profile",
-        "model_path": "mlx-community/test-model",
+        "model_id": 1,
     }
     response = await auth_client.post("/api/profiles", json=minimal_data)
     assert response.status_code == 201
 
     data = response.json()
-    assert data["temperature"] == 0.7
-    assert data["max_tokens"] == 4096
-    assert data["top_p"] == 1.0
+    # Generation params are now nullable (only meaningful for text/vision)
+    assert data["temperature"] is None
+    assert data["max_tokens"] is None
+    assert data["top_p"] is None
 
 
 @pytest.mark.asyncio
@@ -328,8 +331,36 @@ async def test_profile_generation_parameters_validation(auth_client):
     # Temperature out of range
     invalid_data = {
         "name": "Invalid Profile",
-        "model_path": "mlx-community/test-model",
+        "model_id": 1,
         "temperature": 3.0,  # Max is 2.0
     }
     response = await auth_client.post("/api/profiles", json=invalid_data)
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_profile_invalid_model_id(auth_client):
+    """Test that creating a profile with non-existent model_id fails."""
+    data = {
+        "name": "Bad Model Profile",
+        "model_id": 999,
+    }
+    response = await auth_client.post("/api/profiles", json=data)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Model not found"
+
+
+@pytest.mark.asyncio
+async def test_update_profile_invalid_model_id(auth_client, sample_profile_data):
+    """Test that updating a profile with non-existent model_id fails."""
+    # Create a profile
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    # Try to update with invalid model_id
+    response = await auth_client.put(
+        f"/api/profiles/{profile_id}",
+        json={"model_id": 999},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Model not found"

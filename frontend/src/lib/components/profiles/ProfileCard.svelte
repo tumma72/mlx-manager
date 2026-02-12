@@ -340,7 +340,7 @@
 				<p class="text-sm text-muted-foreground mt-1">{profile.description}</p>
 			{/if}
 			<div class="mt-2 text-sm text-muted-foreground truncate">
-				<span class="font-mono">{profile.model_path}</span>
+				<span class="font-mono">{profile.model_repo_id ?? 'Unknown model'}</span>
 			</div>
 		</div>
 
@@ -411,7 +411,7 @@
 		<div class="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
 			<div class="flex items-center gap-2">
 				<span>Type:</span>
-				<span>{profile.model_type}</span>
+				<span>{profile.model_type ?? 'unknown'}</span>
 			</div>
 		</div>
 	{/if}

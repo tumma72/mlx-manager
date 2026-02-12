@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
@@ -155,14 +154,12 @@ async def probe_model(model_id: str):
         # Update capabilities on the already-loaded model
         try:
             from mlx_manager.database import get_session
-            from mlx_manager.models import ModelCapabilities
+            from mlx_manager.models import Model
 
             async with get_session() as session:
                 from sqlmodel import select
 
-                caps_result = await session.execute(
-                    select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
-                )
+                caps_result = await session.execute(select(Model).where(Model.repo_id == model_id))
                 caps = caps_result.scalar_one_or_none()
                 if caps:
                     loaded.capabilities = caps
@@ -242,34 +239,16 @@ def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
 
 
 async def _save_capabilities(model_id: str, result: ProbeResult) -> None:
-    """Upsert model capabilities in the database."""
-    from mlx_manager.database import get_session
-    from mlx_manager.models import ModelCapabilities
+    """Save model capabilities to the unified Model table."""
+    from mlx_manager.services.model_registry import update_model_capabilities
 
-    async with get_session() as session:
-        from sqlmodel import select
-
-        existing = await session.execute(
-            select(ModelCapabilities).where(ModelCapabilities.model_id == model_id)
-        )
-        caps = existing.scalar_one_or_none()
-
-        if caps:
-            # Update existing
-            caps.supports_native_tools = result.supports_native_tools
-            caps.supports_thinking = result.supports_thinking
-            caps.practical_max_tokens = result.practical_max_tokens
-            caps.probed_at = datetime.now(tz=UTC)
-            session.add(caps)
-        else:
-            # Create new
-            caps = ModelCapabilities(
-                model_id=model_id,
-                supports_native_tools=result.supports_native_tools,
-                supports_thinking=result.supports_thinking,
-                practical_max_tokens=result.practical_max_tokens,
-            )
-            session.add(caps)
-
-        await session.commit()
-        logger.info(f"Saved capabilities for {model_id}")
+    caps_dict: dict[str, object] = {}
+    if result.supports_native_tools is not None:
+        caps_dict["supports_native_tools"] = result.supports_native_tools
+    if result.supports_thinking is not None:
+        caps_dict["supports_thinking"] = result.supports_thinking
+    if result.practical_max_tokens is not None:
+        caps_dict["practical_max_tokens"] = result.practical_max_tokens
+    caps_dict["probe_version"] = 2
+    await update_model_capabilities(model_id, **caps_dict)
+    logger.info(f"Saved capabilities for {model_id}")

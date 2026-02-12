@@ -77,7 +77,7 @@
 
 	// Determine if current profile supports multimodal
 	const isMultimodal = $derived(
-		selectedProfile?.model_type === 'multimodal'
+		selectedProfile?.model_type === 'vision'
 	);
 
 	// Accept string based on model capabilities - CHANGE 2
@@ -665,7 +665,7 @@
 
 		const parts: string[] = [];
 		parts.push(`# Chat Transcript`);
-		parts.push(`Model: ${selectedProfile?.model_path || 'Unknown'}`);
+		parts.push(`Model: ${selectedProfile?.model_repo_id || 'Unknown'}`);
 		parts.push(`Date: ${new Date().toISOString()}`);
 		parts.push('');
 
@@ -827,7 +827,7 @@
 				<option value="">Select a profile...</option>
 				{#each availableProfiles as profile (profile.id)}
 					<option value={profile.id.toString()}>
-						{profile.name} ({getModelShortName(profile.model_path)})
+						{profile.name} ({getModelShortName(profile.model_repo_id ?? profile.name)})
 					</option>
 				{/each}
 			</Select>
@@ -875,7 +875,7 @@
 						<div class="text-center text-muted-foreground">
 							<Bot class="w-12 h-12 mx-auto mb-4" />
 							<p>Start a conversation with <strong>{selectedProfile.name}</strong></p>
-							<p class="text-sm mt-1">Model: {selectedProfile.model_path}</p>
+							<p class="text-sm mt-1">Model: {selectedProfile.model_repo_id ?? 'Unknown'}</p>
 						</div>
 					</div>
 				{:else}

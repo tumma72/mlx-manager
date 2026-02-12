@@ -33,6 +33,7 @@ import type {
   AuditLogFilter,
   AuditStats,
   ModelCapabilities,
+  DownloadedModel,
 } from "./types";
 import { authStore } from "$lib/stores";
 
@@ -378,6 +379,13 @@ export const models = {
     });
     if (!res.ok) return [];
     return res.json();
+  },
+
+  listDownloaded: async (): Promise<DownloadedModel[]> => {
+    const res = await fetch(`${API_BASE}/models/downloaded`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
   },
 };
 

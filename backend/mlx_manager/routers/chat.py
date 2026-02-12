@@ -14,6 +14,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..database import get_db
@@ -62,12 +64,17 @@ async def chat_completions(
     delta.reasoning_content field (following OpenAI o1/o3 API spec).
     This endpoint simply forwards the structured data without tag parsing.
     """
-    # Get profile
-    profile = await db.get(ServerProfile, request.profile_id)
+    # Get profile with model relationship
+    result = await db.execute(
+        select(ServerProfile)
+        .where(ServerProfile.id == request.profile_id)
+        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+    )
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    model_id = profile.model_path
+    model_id = profile.model.repo_id
 
     # Detect if request has images (multimodal request)
     has_images = _has_images_in_messages(request.messages)

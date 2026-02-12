@@ -54,20 +54,13 @@ async def migrate_schema() -> None:
         ("cloud_credentials", "name", "TEXT", "''"),
         # Tool calling settings
         ("server_profiles", "force_tool_injection", "INTEGER", "0"),
-        # Model capabilities: type-specific probe fields (probe v2)
-        ("model_capabilities", "model_type", "TEXT", None),
-        ("model_capabilities", "supports_multi_image", "INTEGER", None),
-        ("model_capabilities", "supports_video", "INTEGER", None),
-        ("model_capabilities", "embedding_dimensions", "INTEGER", None),
-        ("model_capabilities", "max_sequence_length", "INTEGER", None),
-        ("model_capabilities", "is_normalized", "INTEGER", None),
-        ("model_capabilities", "supports_tts", "INTEGER", None),
-        ("model_capabilities", "supports_stt", "INTEGER", None),
-        ("model_capabilities", "tool_format", "TEXT", None),
-        # Composable adapter: model family + parser IDs
-        ("model_capabilities", "model_family", "TEXT", None),
-        ("model_capabilities", "tool_parser_id", "TEXT", None),
-        ("model_capabilities", "thinking_parser_id", "TEXT", None),
+        # Audio params on server_profiles
+        ("server_profiles", "tts_default_voice", "TEXT", None),
+        ("server_profiles", "tts_default_speed", "REAL", None),
+        ("server_profiles", "tts_sample_rate", "INTEGER", None),
+        ("server_profiles", "stt_default_language", "TEXT", None),
+        # FK to models table
+        ("server_profiles", "model_id", "INTEGER", None),
     ]
 
     # Obsolete columns to drop from server_profiles (unified server approach)
@@ -83,6 +76,8 @@ async def migrate_schema() -> None:
         "log_level",
         "log_file",
         "no_log_file",
+        "model_path",
+        "model_type",
     ]
 
     async with engine.begin() as conn:
@@ -103,12 +98,69 @@ async def migrate_schema() -> None:
                 logger.info(f"Migrating database: {sql}")
                 await conn.execute(text(sql))
 
+        # Migrate model_path → model_id for existing profiles
+        result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
+        sp_columns = [row[1] for row in result.fetchall()]
+
+        if "model_path" in sp_columns and "model_id" in sp_columns:
+            # Read profiles that need migration (have model_path but no model_id)
+            rows = await conn.execute(
+                text(
+                    "SELECT id, model_path, model_type FROM server_profiles "
+                    "WHERE model_path IS NOT NULL AND (model_id IS NULL OR model_id = 0)"
+                )
+            )
+            profiles_to_migrate = rows.fetchall()
+
+            for profile_id, model_path, model_type in profiles_to_migrate:
+                # Find existing Model record by repo_id
+                model_row = await conn.execute(
+                    text("SELECT id FROM models WHERE repo_id = :repo_id"),
+                    {"repo_id": model_path},
+                )
+                model = model_row.fetchone()
+
+                if model:
+                    model_id = model[0]
+                else:
+                    # Create a Model record for this profile's model
+                    # Map old model_type to new: "lm" -> "text-gen", "multimodal" -> "vision"
+                    mapped_type = "text-gen"
+                    if model_type == "multimodal":
+                        mapped_type = "vision"
+                    elif model_type in ("text-gen", "vision", "embeddings", "audio"):
+                        mapped_type = model_type
+
+                    await conn.execute(
+                        text("INSERT INTO models (repo_id, model_type) VALUES (:repo_id, :model_type)"),
+                        {"repo_id": model_path, "model_type": mapped_type},
+                    )
+
+                    # Get the ID of the just-inserted model
+                    id_row = await conn.execute(text("SELECT last_insert_rowid()"))
+                    model_id = id_row.fetchone()[0]
+
+                # Update the profile's model_id
+                await conn.execute(
+                    text("UPDATE server_profiles SET model_id = :model_id WHERE id = :profile_id"),
+                    {"model_id": model_id, "profile_id": profile_id},
+                )
+                logger.info(f"Migrated profile {profile_id}: model_path={model_path} → model_id={model_id}")
+
         # Drop obsolete columns from server_profiles (SQLite 3.35+ supports DROP COLUMN)
         result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
         existing_columns = [row[1] for row in result.fetchall()]
         for column in obsolete_columns:
             if column in existing_columns:
                 sql = f"ALTER TABLE server_profiles DROP COLUMN {column}"
+                logger.info(f"Migrating database: {sql}")
+                await conn.execute(text(sql))
+
+        # Drop legacy tables replaced by unified 'models' table
+        for table in ("downloaded_models", "model_capabilities"):
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            if result.fetchall():  # Table exists
+                sql = f"DROP TABLE {table}"
                 logger.info(f"Migrating database: {sql}")
                 await conn.execute(text(sql))
 
@@ -152,6 +204,64 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
     return pending_downloads
 
 
+async def _repair_orphaned_profiles() -> None:
+    """Fix profiles with NULL model_id after migration from model_path.
+
+    Tries to match orphaned profiles to existing models by checking if
+    the profile name contains a model repo_id pattern. If no match is
+    found, the profile is left with model_id=NULL (will show as
+    'Unknown model' in the UI and can be reassigned manually).
+    """
+    async with engine.begin() as conn:
+        # Find profiles missing model_id
+        rows = await conn.execute(text(
+            "SELECT id, name FROM server_profiles WHERE model_id IS NULL"
+        ))
+        orphans = rows.fetchall()
+        if not orphans:
+            return
+
+        # Get all available models
+        model_rows = await conn.execute(text("SELECT id, repo_id FROM models"))
+        models = model_rows.fetchall()
+        if not models:
+            logger.warning(
+                f"{len(orphans)} profile(s) have no model assigned and no models "
+                "are available. Edit these profiles to assign a model."
+            )
+            return
+
+        repaired = 0
+        for profile_id, profile_name in orphans:
+            # Try to match: check if any model repo_id appears in the profile name
+            # or if profile name appears in a model repo_id (case-insensitive)
+            matched_model_id = None
+            name_lower = profile_name.lower()
+            for model_id, repo_id in models:
+                # Extract short name from repo_id (e.g., "Qwen3-0.6B-4bit-DWQ" from
+                # "mlx-community/Qwen3-0.6B-4bit-DWQ")
+                short_name = repo_id.split("/")[-1].lower()
+                if short_name in name_lower or name_lower in short_name:
+                    matched_model_id = model_id
+                    break
+
+            if matched_model_id:
+                await conn.execute(text(
+                    "UPDATE server_profiles SET model_id = :model_id WHERE id = :pid"
+                ), {"model_id": matched_model_id, "pid": profile_id})
+                repaired += 1
+                logger.info(f"Repaired profile '{profile_name}' (id={profile_id}) → model_id={matched_model_id}")
+
+        if repaired:
+            logger.info(f"Repaired {repaired}/{len(orphans)} orphaned profiles")
+        remaining = len(orphans) - repaired
+        if remaining:
+            logger.warning(
+                f"{remaining} profile(s) still have no model assigned. "
+                "Edit these profiles in the UI to assign a model."
+            )
+
+
 async def init_db() -> None:
     """Initialize the database and create tables."""
     ensure_data_dir()
@@ -163,6 +273,14 @@ async def init_db() -> None:
 
     # Recover any incomplete downloads from previous runs
     await recover_incomplete_downloads()
+
+    # Sync models from HuggingFace cache into models table
+    from mlx_manager.services.model_registry import sync_models_from_cache
+
+    await sync_models_from_cache()
+
+    # Fix orphaned profiles (model_id is NULL after migration from model_path)
+    await _repair_orphaned_profiles()
 
     # Insert default settings if not present
     async with get_session() as session:

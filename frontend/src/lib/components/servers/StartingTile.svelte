@@ -209,7 +209,7 @@
 				{/if}
 				<h3 class="truncate font-semibold">{profile.name}</h3>
 			</div>
-			<p class="truncate text-sm text-muted-foreground">{profile.model_path}</p>
+			<p class="truncate text-sm text-muted-foreground">{profile.model_repo_id ?? 'Unknown model'}</p>
 		</div>
 
 		<div class="flex shrink-0 gap-1">
