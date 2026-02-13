@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, computed_field
 
 from mlx_manager.models.capabilities import CapabilitiesResponse
+from mlx_manager.models.enums import DownloadStatusEnum
 
 __all__ = [
     "ModelResponse",
@@ -141,7 +142,7 @@ class ModelCharacteristics(BaseModel):
 class DownloadStatus(BaseModel):
     """Status update for model download progress."""
 
-    status: str | None = None
+    status: DownloadStatusEnum | None = None
     model_id: str | None = None
     total_size_gb: float | None = None
     total_bytes: int | None = None

@@ -15,6 +15,7 @@ from tqdm.auto import tqdm  # type: ignore[import-untyped]
 
 from mlx_manager.config import settings
 from mlx_manager.models.dto.models import DownloadStatus, LocalModel, ModelSearchResult
+from mlx_manager.models.enums import DownloadStatusEnum
 from mlx_manager.services.hf_api import (
     estimate_size_from_name,
     get_model_size_gb,
@@ -250,7 +251,7 @@ class HuggingFaceClient:
         if settings.offline_mode:
             logger.warning(f"Download blocked for {model_id} - offline mode enabled")
             yield DownloadStatus(
-                status="failed",
+                status=DownloadStatusEnum.FAILED,
                 model_id=model_id,
                 error="Offline mode - cannot download models",
             )
@@ -259,7 +260,7 @@ class HuggingFaceClient:
         # Yield immediate status so SSE connection gets a response before dry_run
         # This prevents the frontend from showing a hung connection
         yield DownloadStatus(
-            status="starting",
+            status=DownloadStatusEnum.STARTING,
             model_id=model_id,
             total_bytes=0,
             downloaded_bytes=0,
@@ -305,7 +306,7 @@ class HuggingFaceClient:
         # Yield status with size information (this is the second yield after dry_run)
         logger.info(f"Size check complete for {model_id}: {total_size_gb:.2f} GB")
         yield DownloadStatus(
-            status="starting",
+            status=DownloadStatusEnum.STARTING,
             model_id=model_id,
             total_size_gb=total_size_gb,
             total_bytes=total_bytes,
@@ -317,7 +318,7 @@ class HuggingFaceClient:
         if cancel_event and cancel_event.is_set():
             logger.info(f"Download already cancelled before start for {model_id}")
             yield DownloadStatus(
-                status="cancelled",
+                status=DownloadStatusEnum.CANCELLED,
                 model_id=model_id,
                 total_bytes=total_bytes,
                 downloaded_bytes=0,
@@ -355,7 +356,7 @@ class HuggingFaceClient:
                     except (DownloadCancelledError, asyncio.CancelledError, Exception):
                         pass
                     yield DownloadStatus(
-                        status="cancelled",
+                        status=DownloadStatusEnum.CANCELLED,
                         model_id=model_id,
                         total_bytes=total_bytes,
                         downloaded_bytes=self._get_directory_size(download_dir),
@@ -374,7 +375,7 @@ class HuggingFaceClient:
                     )
 
                 yield DownloadStatus(
-                    status="downloading",
+                    status=DownloadStatusEnum.DOWNLOADING,
                     model_id=model_id,
                     total_size_gb=total_size_gb,
                     total_bytes=total_bytes,
@@ -387,7 +388,7 @@ class HuggingFaceClient:
             logger.info(f"Download completed for {model_id}: {local_dir}")
 
             yield DownloadStatus(
-                status="completed",
+                status=DownloadStatusEnum.COMPLETED,
                 model_id=model_id,
                 local_path=local_dir,
                 total_bytes=total_bytes,
@@ -400,7 +401,7 @@ class HuggingFaceClient:
             # polling loop detected the cancel event.
             logger.info(f"Download interrupted by cancellation for {model_id}")
             yield DownloadStatus(
-                status="cancelled",
+                status=DownloadStatusEnum.CANCELLED,
                 model_id=model_id,
                 total_bytes=total_bytes,
                 downloaded_bytes=self._get_directory_size(download_dir),
@@ -408,7 +409,7 @@ class HuggingFaceClient:
             )
         except Exception as e:
             logger.exception(f"Download failed for {model_id}: {e}")
-            yield DownloadStatus(status="failed", model_id=model_id, error=str(e))
+            yield DownloadStatus(status=DownloadStatusEnum.FAILED, model_id=model_id, error=str(e))
 
     def _download_with_progress(
         self, model_id: str, cancel_event: threading.Event | None = None

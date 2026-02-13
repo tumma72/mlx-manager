@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
-from mlx_manager.models.enums import UserStatus
+from mlx_manager.models.enums import (
+    DownloadStatusEnum,
+    EvictionPolicy,
+    MemoryLimitMode,
+    UserStatus,
+)
 
 if TYPE_CHECKING:
     from mlx_manager.models.capabilities import ModelCapabilities
@@ -84,7 +89,7 @@ class Download(SQLModel, table=True):
     # Status flow: pending -> downloading -> completed/failed
     #              downloading -> paused -> downloading (resume)
     #              downloading/paused/pending -> cancelled
-    status: str = Field(default="pending")
+    status: DownloadStatusEnum = Field(default=DownloadStatusEnum.PENDING)
     total_bytes: int | None = None
     downloaded_bytes: int = Field(default=0)
     error: str | None = None
@@ -104,8 +109,8 @@ class ServerConfig(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     # Model pool settings
-    memory_limit_mode: str = Field(default="percent")  # "percent" or "gb"
+    memory_limit_mode: MemoryLimitMode = Field(default=MemoryLimitMode.PERCENT)  # "percent" or "gb"
     memory_limit_value: int = Field(default=80)  # % or GB depending on mode
-    eviction_policy: str = Field(default="lru")  # "lru", "lfu", "ttl"
+    eviction_policy: EvictionPolicy = Field(default=EvictionPolicy.LRU)  # "lru", "lfu", "ttl"
     preload_models: str = Field(default="[]")  # JSON array of model paths
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

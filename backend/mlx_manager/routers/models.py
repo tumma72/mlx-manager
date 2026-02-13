@@ -25,6 +25,7 @@ from mlx_manager.models import (
 )
 from mlx_manager.models.capabilities import capabilities_to_response
 from mlx_manager.models.dto.models import DownloadRequest
+from mlx_manager.models.enums import DownloadStatusEnum
 from mlx_manager.services.hf_client import (
     cleanup_cancel_event,
     cleanup_partial_download,
@@ -266,7 +267,7 @@ async def _update_download_record(
         result = await session.execute(select(Download).where(Download.id == download_id))
         download = result.scalars().first()
         if download:
-            download.status = status
+            download.status = DownloadStatusEnum(status)
             download.downloaded_bytes = downloaded_bytes
             if total_bytes is not None:
                 download.total_bytes = total_bytes
@@ -381,7 +382,7 @@ async def pause_download(
     request_cancel(str(download_id))
 
     # Update status to paused
-    download.status = "paused"
+    download.status = DownloadStatusEnum.PAUSED
     db.add(download)
     await db.flush()
 
@@ -417,7 +418,7 @@ async def resume_download(
         )
 
     # Update status to downloading
-    download.status = "downloading"
+    download.status = DownloadStatusEnum.DOWNLOADING
     db.add(download)
     await db.flush()
 
@@ -473,7 +474,7 @@ async def cancel_download(
         request_cancel(str(download_id))
 
     # Update status to cancelled
-    download.status = "cancelled"
+    download.status = DownloadStatusEnum.CANCELLED
     download.completed_at = datetime.now(tz=UTC)
     db.add(download)
     await db.flush()

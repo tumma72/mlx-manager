@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
-from mlx_manager.models.enums import ApiType, BackendType
+from mlx_manager.models.enums import ApiType, BackendType, PatternType
 
 # Default base URLs for known providers
 DEFAULT_BASE_URLS: dict[BackendType, str] = {
@@ -42,7 +42,7 @@ class BackendMapping(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     model_pattern: str = Field(index=True)  # e.g., "gpt-*" or exact model name
-    pattern_type: str = Field(default="exact")  # "exact", "prefix", or "regex"
+    pattern_type: PatternType = Field(default=PatternType.EXACT)  # "exact", "prefix", or "regex"
     backend_type: BackendType
     backend_model: str | None = None  # Override model name for cloud
     fallback_backend: BackendType | None = None  # Optional fallback on failure

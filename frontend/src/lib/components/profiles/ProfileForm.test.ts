@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import ProfileForm from "./ProfileForm.svelte";
 import type {
   ExecutionProfile,
-  ServerProfileCreate,
-  ServerProfileUpdate,
+  ExecutionProfileCreate,
+  ExecutionProfileUpdate,
   DownloadedModel,
 } from "$api";
 
@@ -41,7 +41,7 @@ function createMockProfile(
 
 describe("ProfileForm", () => {
   let mockOnSubmit: (
-    data: ServerProfileCreate | ServerProfileUpdate,
+    data: ExecutionProfileCreate | ExecutionProfileUpdate,
   ) => Promise<void>;
   let mockOnCancel: () => void;
 

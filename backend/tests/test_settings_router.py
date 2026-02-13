@@ -463,7 +463,7 @@ class TestCreateRule:
                 "backend_type": "openai",
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == 422  # Pydantic validation error for invalid enum
 
     async def test_create_rule_with_fallback(self, auth_client):
         """Creates a rule with fallback backend."""
@@ -562,8 +562,8 @@ class TestUpdateRule:
             f"/api/settings/rules/{rule_id}",
             json={"pattern_type": "invalid_type"},
         )
-        assert response.status_code == 400
-        assert "pattern_type must be" in response.json()["detail"]
+        assert response.status_code == 422  # Pydantic validation error for invalid enum
+        # Pydantic provides its own validation error message for enums
 
     async def test_update_rule_change_pattern_type_to_regex(self, auth_client):
         """Updates rule from exact to regex pattern type."""
@@ -1041,8 +1041,8 @@ class TestUpdatePoolConfig:
             "/api/settings/pool",
             json={"memory_limit_mode": "invalid"},
         )
-        assert response.status_code == 400
-        assert "memory_limit_mode" in response.json()["detail"]
+        assert response.status_code == 422  # Pydantic validation error for invalid enum
+        # Pydantic provides its own validation error structure for enums
 
     async def test_update_invalid_eviction_policy(self, auth_client):
         """Rejects invalid eviction policy."""
@@ -1050,8 +1050,8 @@ class TestUpdatePoolConfig:
             "/api/settings/pool",
             json={"eviction_policy": "invalid"},
         )
-        assert response.status_code == 400
-        assert "eviction_policy" in response.json()["detail"]
+        assert response.status_code == 422  # Pydantic validation error for invalid enum
+        # Pydantic provides its own validation error structure for enums
 
     async def test_partial_update(self, auth_client):
         """Can update single field without affecting others."""

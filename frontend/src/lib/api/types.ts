@@ -3,7 +3,7 @@
 export type ModelType = "text-gen" | "vision" | "embeddings" | "audio";
 
 export interface CapabilitiesData {
-  capability_type: string;
+  capability_type: ModelType;
   probed_at: string | null;
   probe_version: number | null;
   model_family: string | null;
@@ -114,11 +114,6 @@ export interface ExecutionProfileUpdate {
   context?: InferenceContext;
   audio?: AudioDefaults;
 }
-
-// Backward-compatible aliases
-export type ServerProfile = ExecutionProfile;
-export type ServerProfileCreate = ExecutionProfileCreate;
-export type ServerProfileUpdate = ExecutionProfileUpdate;
 
 export interface RunningServer {
   profile_id: number;
@@ -452,7 +447,7 @@ export interface AuditStats {
 
 export interface ModelCapabilities {
   model_id: string;
-  model_type?: string | null;
+  model_type?: ModelType | null;
   probed_at?: string | null;
   probe_version?: number;
   // Text-gen

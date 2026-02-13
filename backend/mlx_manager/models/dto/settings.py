@@ -4,7 +4,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from mlx_manager.models.enums import ApiType, BackendType
+from mlx_manager.models.enums import (
+    ApiType,
+    BackendType,
+    EvictionPolicy,
+    MemoryLimitMode,
+    PatternType,
+)
 
 __all__ = [
     "BackendMappingCreate",
@@ -25,7 +31,7 @@ class BackendMappingCreate(BaseModel):
     """Schema for creating a backend mapping."""
 
     model_pattern: str
-    pattern_type: str = "exact"  # "exact", "prefix", or "regex"
+    pattern_type: PatternType = PatternType.EXACT  # "exact", "prefix", or "regex"
     backend_type: BackendType
     backend_model: str | None = None
     fallback_backend: BackendType | None = None
@@ -36,7 +42,7 @@ class BackendMappingUpdate(BaseModel):
     """Schema for updating a backend mapping."""
 
     model_pattern: str | None = None
-    pattern_type: str | None = None
+    pattern_type: PatternType | None = None
     backend_type: BackendType | None = None
     backend_model: str | None = None
     fallback_backend: BackendType | None = None
@@ -49,7 +55,7 @@ class BackendMappingResponse(BaseModel):
 
     id: int
     model_pattern: str
-    pattern_type: str
+    pattern_type: PatternType
     backend_type: BackendType
     backend_model: str | None
     fallback_backend: BackendType | None
@@ -81,18 +87,18 @@ class CloudCredentialResponse(BaseModel):
 class ServerConfigUpdate(BaseModel):
     """Schema for updating server configuration."""
 
-    memory_limit_mode: str | None = None
+    memory_limit_mode: MemoryLimitMode | None = None
     memory_limit_value: int | None = None
-    eviction_policy: str | None = None
+    eviction_policy: EvictionPolicy | None = None
     preload_models: list[str] | None = None
 
 
 class ServerConfigResponse(BaseModel):
     """Response model for server configuration."""
 
-    memory_limit_mode: str
+    memory_limit_mode: MemoryLimitMode
     memory_limit_value: int
-    eviction_policy: str
+    eviction_policy: EvictionPolicy
     preload_models: list[str]  # Parsed from JSON
 
 

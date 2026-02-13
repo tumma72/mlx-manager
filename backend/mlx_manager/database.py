@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlmodel import SQLModel, col
 
 from mlx_manager.config import ensure_data_dir, settings
+from mlx_manager.models.enums import DownloadStatusEnum
 
 # SQLAlchemy echo is controlled by a dedicated env var, NOT by settings.debug.
 # Debug mode enables application-level debug logging via Loguru, but SQLAlchemy's
@@ -206,7 +207,7 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
 
         for download in incomplete:
             # Mark as pending for retry - HF Hub will resume partial downloads
-            download.status = "pending"
+            download.status = DownloadStatusEnum.PENDING
             download.error = None
             session.add(download)
             if download.id is not None:
