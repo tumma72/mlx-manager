@@ -1,7 +1,7 @@
 # Data Model Redesign
 
-> **Status**: Approved
-> **Date**: 2026-02-12
+> **Status**: Complete (all 6 phases implemented)
+> **Date**: 2026-02-12 (approved) / 2026-02-13 (completed)
 > **Scope**: Backend data model unification across `mlx_manager` and `mlx_server`
 
 ## Table of Contents
@@ -1032,22 +1032,22 @@ The `Usage` class existing in both `openai.py` and `anthropic.py` with different
 
 ## 9. Deletion Candidates
 
-### 9.1 Dead Code (delete immediately)
+### 9.1 Dead Code ~~(delete immediately)~~ `DELETED in Phase 1`
 
 | Class | File | Reason |
 |-------|------|--------|
-| `HealthCheckResult` | `types.py:5` | Zero references |
-| `ServerStats` | `types.py:15` | Zero references |
-| `RunningServerInfo` | `types.py:26` | Zero references |
+| ~~`HealthCheckResult`~~ | ~~`types.py:5`~~ | Zero references |
+| ~~`ServerStats`~~ | ~~`types.py:15`~~ | Zero references |
+| ~~`RunningServerInfo`~~ | ~~`types.py:26`~~ | Zero references |
 
-### 9.2 Duplicate Definitions (merge into one)
+### 9.2 Duplicate Definitions ~~(merge into one)~~ `MERGED in Phases 1 + 6`
 
 | Keep | Delete | Reason |
 |------|--------|--------|
-| `probe/steps.py:ProbeStep` | `model_probe.py:ProbeStep` | Old probe duplicate |
-| `probe/steps.py:ProbeResult` | `model_probe.py:ProbeResult` | Old probe duplicate |
-| `ModelResponse` (new BaseModel) | `ModelSearchResult` (types.py TypedDict) | SQLModel version in models.py replaces TypedDict |
-| `LaunchdStatus` (new BaseModel) | `LaunchdStatus` (types.py TypedDict) | Same name, slightly different fields |
+| ~~`probe/steps.py:ProbeStep`~~ | ~~`model_probe.py:ProbeStep`~~ | Merged Phase 1 |
+| ~~`probe/steps.py:ProbeResult`~~ | ~~`model_probe.py:ProbeResult`~~ | Merged Phase 1 |
+| ~~`ModelSearchResult` (BaseModel)~~ | ~~`ModelSearchResult` (TypedDict)~~ | TypedDict deleted Phase 6 |
+| ~~`LaunchdStatus` (BaseModel)~~ | ~~`LaunchdStatus` (TypedDict)~~ | TypedDict deleted Phase 6 |
 
 ### 9.3 Replaced by Composition / Polymorphism
 
@@ -1061,29 +1061,35 @@ The `Usage` class existing in both `openai.py` and `anthropic.py` with different
 | `RunningServer(BaseModel)` | Merged into `RunningServerResponse(BaseModel)` | Semantic duplicate |
 | `ServerHealthStatus(BaseModel)` | Merged into `HealthStatus(BaseModel)` | Semantic duplicate |
 
-### 9.4 TypedDicts to Convert
+### 9.4 TypedDicts ~~to Convert~~ `ALL ELIMINATED in Phases 1 + 6`
 
-| TypedDict | Replacement | Used By |
-|-----------|------------|---------|
-| `DownloadStatus` | `DownloadProgress(BaseModel)` | `hf_client.py` SSE streaming |
-| `LocalModelInfo` | `LocalModel(BaseModel)` (already exists) | `hf_client.py` |
-| `ModelSearchResult` | `ModelSearchResult(BaseModel)` | `hf_client.py` |
-| `ModelCharacteristics` | `ModelCharacteristics(BaseModel)` | `model_detection.py` |
+| TypedDict | Replacement | Status |
+|-----------|------------|--------|
+| ~~`DownloadStatus`~~ | `DownloadStatus(BaseModel)` in `dto/models.py` | Phase 6 |
+| ~~`LocalModelInfo`~~ | Consolidated into `LocalModel(BaseModel)` in `dto/models.py` | Phase 6 |
+| ~~`ModelSearchResult`~~ | `ModelSearchResult(BaseModel)` already existed in `dto/models.py` | Phase 6 |
+| ~~`ModelCharacteristics`~~ | `ModelCharacteristics(BaseModel)` in `dto/models.py` | Phase 6 |
+| ~~`LaunchdStatus`~~ | `LaunchdStatus(BaseModel)` already existed in `dto/system.py` | Phase 6 |
+| ~~`HealthCheckResult`~~ | Deleted (dead code) | Phase 1 |
+| ~~`ServerStats`~~ | Deleted (dead code) | Phase 1 |
+| ~~`RunningServerInfo`~~ | Deleted (dead code) | Phase 1 |
 
-### 9.5 Net Effect
+**`types.py` deleted** — zero TypedDicts remain in the codebase.
+
+### 9.5 Net Effect (Actual, Phase 6 Complete)
 
 | Category | Before | After | Delta |
 |----------|-------:|------:|------:|
-| SQLModel tables | 10 | 14 | +4 (JTI subclass tables) |
+| SQLModel tables | 10 | 10 | 0 (STI, not JTI — no subclass tables) |
 | SQLModel non-table (response DTOs) | 32 | **0** | -32 |
-| Pydantic BaseModel (DTOs) | 58 | ~45 | -13 |
-| Pydantic BaseModel (value objects) | 0 | ~6 | +6 |
+| Pydantic BaseModel (DTOs + runtime) | 58 | ~54 | -4 (consolidated duplicates, +9 from dataclass conversion) |
+| Pydantic BaseModel (value objects) | 0 | 3 | +3 |
 | BaseSettings | 2 | 2 | 0 |
-| Dataclasses | 19 | ~8 | -11 |
-| TypedDict | 8 | **0** | -8 |
+| Dataclasses | 19 | **6** | -13 (9 converted to Pydantic, 4 deleted as dead code) |
+| TypedDict | 8 | **0** | -8 (3 dead deleted Phase 1, 5 migrated Phase 6) |
 | **Total** | **~135** | **~75** | **-60** |
 
-The +4 tables from JTI are worth it: they replace 23 nullable columns with properly typed, queryable, validated fields in dedicated tables.
+The 6 remaining dataclasses are justified: `LoadedModel` (mutable + Any-typed model/tokenizer), `StreamEvent` (hot path performance), `QueueEntry` (`order=True` for heapq), `KVBlock`/`BlockTable` (memory management primitives), `BatchRequest` (stateful lifecycle with asyncio.Queue).
 
 ---
 
@@ -1093,8 +1099,12 @@ The +4 tables from JTI are worth it: they replace 23 nullable columns with prope
 
 ```
 backend/mlx_manager/
+    shared/                      # ✅ shared entities (imported by both mlx_manager and mlx_server)
+        __init__.py              # re-exports from cloud_entities.py
+        cloud_entities.py        # BackendMapping, CloudCredential, DEFAULT_BASE_URLS, API_TYPE_FOR_BACKEND
+
     models/
-        __init__.py              # re-exports for backward compat
+        __init__.py              # re-exports for backward compat (+ lazy __getattr__ for shared entities)
         enums.py                 # all enums (ModelType, UserStatus, BackendType, ...) ✅
         entities.py              # SQLModel table entities (Model, User, Setting, etc.) ✅
         capabilities.py          # ModelCapabilities entity + CapabilitiesResponse DTO ✅
@@ -1105,7 +1115,8 @@ backend/mlx_manager/
             auth.py              # UserCreate, UserPublic, Token, ...
             chat.py              # ChatRequest
             mcp.py               # ToolExecuteRequest
-            models.py            # ModelResponse, ModelSearchResult, LocalModel, DownloadRequest
+            models.py            # ModelResponse, ModelSearchResult, LocalModel, DownloadRequest,
+                                 #   ModelCharacteristics, DownloadStatus
             servers.py           # RunningServerResponse, HealthStatus, EmbeddedServerStatus, ...
             settings.py          # BackendMapping*, CloudCredential*, ServerConfig*, Timeout* DTOs
             system.py            # SystemInfo, SystemMemory, LaunchdStatus
@@ -1115,11 +1126,13 @@ backend/mlx_manager/
             openai.py            # unchanged (external protocol)
             anthropic.py         # unchanged (external protocol)
         models/
-            pool.py              # LoadedModel (Pydantic BaseModel)
-            types.py             # re-exports ModelType from models/enums.py
+            pool.py              # LoadedModel (dataclass - mutable + Any fields)
+            types.py             # ModelType re-export, AdapterInfo (Pydantic BaseModel)
             audit.py             # AuditLog entity + DTOs
         services/
-            protocol.py          # InternalRequest (uses InferenceParams)
+            cloud/router.py      # imports from mlx_manager.shared (not mlx_manager.models)
+            audit.py             # RequestContext (Pydantic BaseModel)
+            probe/steps.py       # ProbeStep, ProbeResult (Pydantic BaseModel)
             ...
 ```
 
@@ -1271,12 +1284,68 @@ backend/mlx_manager/
 - [x] `npm run check` — 0 errors, 0 warnings
 - [x] No frontend changes needed (API contracts unchanged)
 
-**Phase 6 - Runtime Model Cleanup**
-- [ ] Convert remaining dataclasses to Pydantic BaseModel
-- [ ] Eliminate `types.py` (TypedDict file)
-- [ ] Move `BackendMapping`/`CloudCredential` to shared models
+**Phase 6 - Runtime Model Cleanup** `COMPLETE` *(commit ff5b477)*
 
-### 10.3 DB Migrations (Applied)
+> **Goal**: Eliminate the last non-Pydantic model classes (TypedDicts, dataclasses) and decouple
+> `mlx_server` from `mlx_manager.models` by introducing a shared package.
+
+*Step 1 — Eliminate `types.py` (5 TypedDicts):*
+- [x] `ModelSearchResult` TypedDict deleted — Pydantic version already existed in `dto/models.py`
+- [x] `LaunchdStatus` TypedDict deleted — Pydantic version already existed in `dto/system.py`
+- [x] Created `ModelCharacteristics(BaseModel)` in `dto/models.py` (14 optional fields from config.json)
+- [x] Created `DownloadStatus(BaseModel)` in `dto/models.py` (9 optional fields for SSE progress)
+- [x] Consolidated `LocalModelInfo` TypedDict into existing `LocalModel(BaseModel)` — updated `characteristics` field type from `dict | None` to `ModelCharacteristics | None`
+- [x] Updated 3 import sites: `hf_client.py`, `launchd.py`, `model_detection.py`
+- [x] Updated all consumers: dict subscript access → attribute access, `.get()` → direct field, `.update()` → `.model_dump()`
+- [x] Updated 5 test files to use Pydantic objects instead of dicts
+- [x] Deleted `backend/mlx_manager/types.py`
+
+*Step 2 — Convert 9 dataclasses to Pydantic BaseModel:*
+- [x] `ModelInfo` (`services/hf_api.py`) — HuggingFace API response DTO
+- [x] `ProbeStep` (`services/probe/steps.py`) — SSE event, preserved `to_sse()` method
+- [x] `ProbeResult` (`services/probe/steps.py`) — accumulated probe results, `field()` → `Field()`
+- [x] `AdapterInfo` (`mlx_server/models/types.py`) — LoRA adapter metadata
+- [x] `ValidationResult` (`mlx_server/services/structured_output.py`) — JSON Schema result
+- [x] `BenchmarkResult` (`mlx_server/benchmark/runner.py`) — benchmark DTO, preserved `@property` methods
+- [x] `BenchmarkSummary` (`mlx_server/benchmark/runner.py`) — benchmark aggregate, preserved `to_dict()`
+- [x] `BenchmarkResult` (`mlx_server/services/batching/benchmark.py`) — batching benchmark, preserved `__str__()`
+- [x] `RequestContext` (`mlx_server/services/audit.py`) — audit context, `field(default_factory=time.time)` → `Field(default_factory=time.time)`
+- [x] Kept 6 as dataclass (justified): `LoadedModel` (mutable + Any fields), `StreamEvent` (perf), `QueueEntry` (`order=True` for heapq), `KVBlock`/`BlockTable` (memory primitives), `BatchRequest` (stateful lifecycle with asyncio.Queue)
+
+*Step 3 — Create shared package for backend entities:*
+- [x] Created `mlx_manager/shared/__init__.py` + `shared/cloud_entities.py`
+- [x] Moved `BackendMapping`, `CloudCredential`, `DEFAULT_BASE_URLS`, `API_TYPE_FOR_BACKEND` from `models/entities.py` → `shared/cloud_entities.py`
+- [x] Updated `mlx_server/services/cloud/router.py` to import from `mlx_manager.shared` (decoupled from `mlx_manager.models`)
+- [x] Added lazy `__getattr__` in `models/__init__.py` for backward-compatible re-exports (avoids circular import: `shared` → `models.enums` → `models.__init__` → `shared`)
+
+*Step 4 — Quality gate:*
+- [x] `ruff check . && ruff format --check .` — 0 errors
+- [x] `mypy mlx_manager` — 0 errors (128 source files)
+- [x] `pytest` — 2142 passed, 36 deselected
+- [x] 26 files changed, 325 insertions, 344 deletions (net -19 lines)
+
+### 10.3 What's Next
+
+The data model redesign (Phases 1-6) is **complete**. The codebase now has clean layer separation, consistent model types, and proper dependency direction. Possible follow-on work:
+
+**Immediate opportunities (low risk, high value):**
+
+1. **Enum enforcement for raw strings** — Several fields still use raw strings where enums exist: `BackendMapping.pattern_type` (should use `PatternType`), `ServerConfig.memory_limit_mode` / `eviction_policy` (should use `MemoryLimitMode` / `EvictionPolicy`), download `status` in `Download` entity (should use `DownloadStatusEnum`). These enums already exist in `models/enums.py` but aren't wired up to the entities yet.
+
+2. **Remove backward-compat aliases** — The `ServerProfile` aliases in `models/__init__.py` and `types.ts` can be removed once all code consistently uses `ExecutionProfile`. A grep for `ServerProfile` will show remaining usages.
+
+3. **Typed `CapabilitiesResponse.fields`** — Currently returns type-specific fields as `dict[str, Any]`. Could use a discriminated union (`TextGenFields | VisionFields | ...`) for type safety on both backend and frontend.
+
+**Larger initiatives (separate RFCs):**
+
+4. **JTI migration (if needed)** — Phase 3-4 used STI due to SQLModel limitations. If a future SQLAlchemy/SQLModel version fixes JTI with `table=True` subclasses, migrating to JTI would add proper NOT NULL constraints and table-level separation. Not urgent — STI works well for the current scale.
+
+5. **`InternalRequest` refactor** — The protocol translation layer (`ProtocolTranslator`) could compose `InferenceParams` more deeply into the request pipeline, replacing the current field-by-field parameter passing in `generate_chat_completion()`.
+
+6. **Frontend type generation** — Auto-generate TypeScript types from Pydantic models (via `pydantic-to-typescript` or OpenAPI schema) to keep frontend types in sync automatically.
+
+### 10.4 DB Migrations (Applied)
+
 
 Both schema-changing phases have completed migrations:
 
@@ -1294,29 +1363,33 @@ Phase 4 (migration c7e4a1b2d3f5 — APPLIED):
   Dropped legacy columns (tool_call_parser, reasoning_parser, message_converter).
 ```
 
-Phase 5 and 6 are pure code reorganization — no DB migrations needed.
+Phases 5 and 6 are pure code reorganization — no DB migrations needed.
 
-### 10.4 Backward Compatibility
+### 10.5 Backward Compatibility (Current State)
 
-`models/__init__.py` re-exports everything under old names:
+`models/__init__.py` re-exports everything under old names via star imports and lazy `__getattr__`:
 
 ```python
-# models/__init__.py - backward compat (current state)
-from ._domain import *
-from .capabilities import *
-from .enums import *
-from .profiles import *
-from .value_objects import *
+# models/__init__.py - backward compat (final state after Phase 6)
+from mlx_manager.models.capabilities import *   # ModelCapabilities, CapabilitiesResponse
+from mlx_manager.models.dto import *            # all DTOs from dto/ submodules
+from mlx_manager.models.entities import *        # User, Model, Download, Setting, etc.
+from mlx_manager.models.enums import *           # ModelType, BackendType, ApiType, etc.
+from mlx_manager.models.profiles import *        # ExecutionProfile, Profile DTOs
+from mlx_manager.models.value_objects import *   # InferenceParams, AudioDefaults, etc.
 
 # Aliases for renamed entities
-ExecutionProfile as ServerProfile
-ExecutionProfileCreate as ServerProfileCreate
-ExecutionProfileResponse as ServerProfileResponse
-ExecutionProfileUpdate as ServerProfileUpdate
+from mlx_manager.models.profiles import ExecutionProfile as ServerProfile
+from mlx_manager.models.profiles import ExecutionProfileCreate as ServerProfileCreate
+from mlx_manager.models.profiles import ExecutionProfileResponse as ServerProfileResponse
+from mlx_manager.models.profiles import ExecutionProfileUpdate as ServerProfileUpdate
+
+# Lazy __getattr__ for shared entities (avoids circular import)
+# BackendMapping, CloudCredential, DEFAULT_BASE_URLS, API_TYPE_FOR_BACKEND
+# → imported from mlx_manager.shared on first access
 ```
 
-After Phase 5, the re-exports will additionally pull from `dto/` submodules. All existing import paths
-(`from mlx_manager.models import ModelResponse`) will continue to work.
+All existing import paths (`from mlx_manager.models import ModelResponse`, `BackendMapping`, etc.) continue to work. New code in `mlx_server` should import from `mlx_manager.shared` directly.
 
 ---
 
