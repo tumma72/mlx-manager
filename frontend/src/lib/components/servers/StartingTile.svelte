@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ServerProfile } from '$api';
+	import type { ExecutionProfile } from '$api';
 	import { servers as serversApi, servers } from '$api';
 	import { serverStore } from '$stores';
 	import { Card, Button, Badge } from '$components/ui';
@@ -10,7 +10,7 @@
 	const POLL_INTERVAL_MS = 3_000; // Poll every 3 seconds during startup
 
 	interface Props {
-		profile: ServerProfile;
+		profile: ExecutionProfile;
 	}
 
 	let { profile }: Props = $props();

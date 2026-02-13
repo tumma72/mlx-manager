@@ -5,7 +5,6 @@ and all type-specific probe strategies.
 """
 
 import json
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1507,7 +1506,7 @@ async def test_save_capabilities_updates_existing():
 
 @pytest.mark.asyncio
 async def test_save_capabilities_all_fields():
-    """Test _save_capabilities handles all field types."""
+    """Test _save_capabilities passes all field types to update_model_capabilities."""
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.service import _save_capabilities
 
@@ -1529,32 +1528,28 @@ async def test_save_capabilities_all_fields():
         supports_stt=False,
     )
 
-    mock_session = MagicMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = None
-    mock_session.execute = AsyncMock(return_value=mock_result)
-    mock_session.add = MagicMock()  # NOT async
-    mock_session.commit = AsyncMock()
-
-    @asynccontextmanager
-    async def mock_get_session():
-        yield mock_session
-
-    with patch("mlx_manager.database.get_session", mock_get_session):
+    with patch(
+        "mlx_manager.services.model_registry.update_model_capabilities",
+        new_callable=AsyncMock,
+    ) as mock_update_caps:
         await _save_capabilities("test/all-model", result)
 
-        added_caps = mock_session.add.call_args[0][0]
-        assert added_caps.model_type == "embeddings"
-        assert added_caps.supports_native_tools is True
-        assert added_caps.supports_thinking is True
-        assert added_caps.practical_max_tokens == 2048
-        assert added_caps.supports_multi_image is True
-        assert added_caps.supports_video is True
-        assert added_caps.embedding_dimensions == 768
-        assert added_caps.max_sequence_length == 512
-        assert added_caps.is_normalized is True
-        assert added_caps.supports_tts is True
-        assert added_caps.supports_stt is False
+        assert mock_update_caps.called
+        call_args = mock_update_caps.call_args
+        assert call_args[0][0] == "test/all-model"
+        kwargs = call_args[1]
+        assert kwargs["model_type"] == "embeddings"
+        assert kwargs["supports_native_tools"] is True
+        assert kwargs["supports_thinking"] is True
+        assert kwargs["practical_max_tokens"] == 2048
+        assert kwargs["supports_multi_image"] is True
+        assert kwargs["supports_video"] is True
+        assert kwargs["embedding_dimensions"] == 768
+        assert kwargs["max_sequence_length"] == 512
+        assert kwargs["is_normalized"] is True
+        assert kwargs["supports_tts"] is True
+        assert kwargs["supports_stt"] is False
+        assert kwargs["probe_version"] == 2
 
 
 # ============================================================================

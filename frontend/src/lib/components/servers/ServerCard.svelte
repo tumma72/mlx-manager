@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ServerProfile, RunningServer } from '$api';
+	import type { ExecutionProfile, RunningServer } from '$api';
 	import { serverStore } from '$stores';
 	import { formatDuration, formatBytes } from '$lib/utils/format';
 	import { Card, Button } from '$components/ui';
@@ -13,7 +13,7 @@
 	} from 'lucide-svelte';
 
 	interface Props {
-		profile: ServerProfile;
+		profile: ExecutionProfile;
 		server?: RunningServer;
 	}
 

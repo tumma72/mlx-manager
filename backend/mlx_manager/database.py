@@ -132,20 +132,26 @@ async def migrate_schema() -> None:
                         mapped_type = model_type
 
                     await conn.execute(
-                        text("INSERT INTO models (repo_id, model_type) VALUES (:repo_id, :model_type)"),
+                        text(
+                            "INSERT INTO models (repo_id, model_type) "
+                            "VALUES (:repo_id, :model_type)"
+                        ),
                         {"repo_id": model_path, "model_type": mapped_type},
                     )
 
                     # Get the ID of the just-inserted model
                     id_row = await conn.execute(text("SELECT last_insert_rowid()"))
-                    model_id = id_row.fetchone()[0]
+                    row = id_row.fetchone()
+                    model_id = row[0] if row else None
 
                 # Update the profile's model_id
                 await conn.execute(
                     text("UPDATE server_profiles SET model_id = :model_id WHERE id = :profile_id"),
                     {"model_id": model_id, "profile_id": profile_id},
                 )
-                logger.info(f"Migrated profile {profile_id}: model_path={model_path} → model_id={model_id}")
+                logger.info(
+                    f"Migrated profile {profile_id}: model_path={model_path} → model_id={model_id}"
+                )
 
         # Drop obsolete columns from server_profiles (SQLite 3.35+ supports DROP COLUMN)
         result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
@@ -157,12 +163,21 @@ async def migrate_schema() -> None:
                 await conn.execute(text(sql))
 
         # Drop legacy tables replaced by unified 'models' table
-        for table in ("downloaded_models", "model_capabilities"):
+        # Note: model_capabilities is now a real JTI table — only drop the
+        # old legacy table if it has the wrong schema (no capability_type column).
+        for table in ("downloaded_models",):
             result = await conn.execute(text(f"PRAGMA table_info({table})"))
             if result.fetchall():  # Table exists
                 sql = f"DROP TABLE {table}"
                 logger.info(f"Migrating database: {sql}")
                 await conn.execute(text(sql))
+
+        # Drop old-format model_capabilities table (lacks capability_type column)
+        result = await conn.execute(text("PRAGMA table_info(model_capabilities)"))
+        mc_columns = {row[1] for row in result.fetchall()}
+        if mc_columns and "capability_type" not in mc_columns:
+            logger.info("Migrating database: DROP TABLE model_capabilities (legacy format)")
+            await conn.execute(text("DROP TABLE model_capabilities"))
 
 
 async def recover_incomplete_downloads() -> list[tuple[int, str]]:
@@ -213,10 +228,27 @@ async def _repair_orphaned_profiles() -> None:
     'Unknown model' in the UI and can be reassigned manually).
     """
     async with engine.begin() as conn:
+        # Check if server_profiles table exists (legacy) or execution_profiles (new)
+        sql_check_server = (
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='server_profiles'"
+        )
+        result = await conn.execute(text(sql_check_server))
+        has_server_profiles = result.fetchone() is not None
+
+        sql_check_execution = (
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='execution_profiles'"
+        )
+        result = await conn.execute(text(sql_check_execution))
+        has_execution_profiles = result.fetchone() is not None
+
+        # Determine which table to query
+        table_name = "server_profiles" if has_server_profiles else "execution_profiles"
+        if not (has_server_profiles or has_execution_profiles):
+            return  # No profiles table exists yet (fresh install)
+
         # Find profiles missing model_id
-        rows = await conn.execute(text(
-            "SELECT id, name FROM server_profiles WHERE model_id IS NULL"
-        ))
+        sql_orphans = f"SELECT id, name FROM {table_name} WHERE model_id IS NULL"
+        rows = await conn.execute(text(sql_orphans))
         orphans = rows.fetchall()
         if not orphans:
             return
@@ -246,11 +278,15 @@ async def _repair_orphaned_profiles() -> None:
                     break
 
             if matched_model_id:
-                await conn.execute(text(
-                    "UPDATE server_profiles SET model_id = :model_id WHERE id = :pid"
-                ), {"model_id": matched_model_id, "pid": profile_id})
+                await conn.execute(
+                    text(f"UPDATE {table_name} SET model_id = :model_id WHERE id = :pid"),
+                    {"model_id": matched_model_id, "pid": profile_id},
+                )
                 repaired += 1
-                logger.info(f"Repaired profile '{profile_name}' (id={profile_id}) → model_id={matched_model_id}")
+                logger.info(
+                    f"Repaired profile '{profile_name}' (id={profile_id}) "
+                    f"→ model_id={matched_model_id}"
+                )
 
         if repaired:
             logger.info(f"Repaired {repaired}/{len(orphans)} orphaned profiles")

@@ -109,12 +109,18 @@ graph TB
 
 ### 4.1 Polymorphic Architecture Overview
 
-Both `ModelCapabilities` and `ExecutionProfile` use **Joined Table Inheritance (JTI)** with `model_type` as the discriminator. This means:
+> **Implementation Note (Phase 3 finding)**: The original design specified Joined Table Inheritance (JTI).
+> During Phase 3 implementation, we discovered that **JTI with SQLModel `table=True` subclasses does not work**
+> — SQLAlchemy raises `Mapped` type errors on inherited `Relationship` fields. Both `ModelCapabilities`
+> and `ExecutionProfile` therefore use **Single Table Inheritance (STI)** instead: one table per hierarchy
+> with a `discriminator` column and all type-specific fields nullable.
 
-- A **base table** holds shared fields and a `discriminator` column
-- **Subclass tables** hold type-specific fields with a FK back to the base
-- SQLAlchemy automatically JOINs and returns the correct Python subclass
-- Queries can filter on type-specific columns using standard SQL (no JSON parsing)
+Both `ModelCapabilities` and `ExecutionProfile` use **Single Table Inheritance (STI)** with a discriminator column. This means:
+
+- A **single table** holds shared fields, a discriminator column, and all type-specific fields (nullable)
+- The discriminator (`capability_type` / `profile_type`) identifies which subset of columns is populated
+- Consumers branch on the discriminator to interpret type-specific fields
+- Queries can filter on any column directly (no JSON parsing)
 
 ```mermaid
 graph LR
@@ -122,28 +128,16 @@ graph LR
         MODEL[Model<br/>repo_id, model_type<br/>local_path, size_bytes]
     end
 
-    subgraph "Capabilities (JTI on model_type)"
-        CAP_BASE[ModelCapabilities<br/>model_family, probed_at]
-        CAP_TEXT[TextGenCapabilities<br/>tools, thinking, parsers]
-        CAP_VIS[VisionCapabilities<br/>multi_image, video]
-        CAP_EMB[EmbeddingCapabilities<br/>dimensions, normalized]
-        CAP_AUD[AudioCapabilities<br/>tts, stt]
-        CAP_BASE --- CAP_TEXT
-        CAP_BASE --- CAP_VIS
-        CAP_BASE --- CAP_EMB
-        CAP_BASE --- CAP_AUD
+    subgraph "Capabilities (STI: model_capabilities)"
+        CAP["ModelCapabilities<br/>capability_type discriminator<br/>shared: model_family, probed_at<br/>text: tools, thinking, parsers<br/>vision: multi_image, video<br/>embed: dimensions, normalized<br/>audio: tts, stt"]
     end
 
-    subgraph "Profiles (JTI on profile_type)"
-        PROF_BASE["ExecutionProfile<br/>name, model_id, auto_start"]
-        PROF_INF["InferenceProfile<br/>temperature, max_tokens<br/>system_prompt"]
-        PROF_AUD["AudioProfile<br/>tts_voice, tts_speed<br/>stt_language"]
-        PROF_BASE --- PROF_INF
-        PROF_BASE --- PROF_AUD
+    subgraph "Profiles (STI: execution_profiles)"
+        PROF["ExecutionProfile<br/>profile_type discriminator<br/>shared: name, model_id, auto_start<br/>inference: temperature, max_tokens,<br/>system_prompt, tool_injection<br/>audio: tts_voice, tts_speed,<br/>stt_language"]
     end
 
-    MODEL -- "1:0..1" --> CAP_BASE
-    MODEL -- "1:0..N" --> PROF_BASE
+    MODEL -- "1:0..1" --> CAP
+    MODEL -- "1:0..N" --> PROF
 ```
 
 ### 4.2 Entity Relationship Diagram
@@ -1095,25 +1089,26 @@ The +4 tables from JTI are worth it: they replace 23 nullable columns with prope
 
 ## 10. Migration Strategy
 
-### 10.1 File Layout (Target)
+### 10.1 File Layout
 
 ```
 backend/mlx_manager/
     models/
         __init__.py              # re-exports for backward compat
-        enums.py                 # all enums (ModelType, UserStatus, BackendType, ...)
-        domain.py                # SQLModel table entities (Model, User, Setting, etc.)
-        capabilities.py          # ModelCapabilities + JTI subclasses
-        profiles.py              # ExecutionProfile + JTI subclasses
-        value_objects.py         # InferenceParams, AudioDefaults, etc.
-        dto/
-            __init__.py
+        enums.py                 # all enums (ModelType, UserStatus, BackendType, ...) ✅
+        entities.py              # SQLModel table entities (Model, User, Setting, etc.) ✅
+        capabilities.py          # ModelCapabilities entity + CapabilitiesResponse DTO ✅
+        profiles.py              # ExecutionProfile entity + Profile DTOs ✅
+        value_objects.py         # InferenceParams, AudioDefaults, etc. ✅
+        dto/                     # ✅
+            __init__.py          # re-exports all DTOs
             auth.py              # UserCreate, UserPublic, Token, ...
-            profiles.py          # ProfileCreate, ProfileUpdate, ProfileResponse
-            models.py            # ModelResponse, CapabilitiesResponse, ...
-            servers.py           # RunningServerResponse, HealthStatus, ...
-            settings.py          # BackendMappingCreate, CloudCredentialCreate, ...
-            system.py            # SystemInfo, SystemMemory, ...
+            chat.py              # ChatRequest
+            mcp.py               # ToolExecuteRequest
+            models.py            # ModelResponse, ModelSearchResult, LocalModel, DownloadRequest
+            servers.py           # RunningServerResponse, HealthStatus, EmbeddedServerStatus, ...
+            settings.py          # BackendMapping*, CloudCredential*, ServerConfig*, Timeout* DTOs
+            system.py            # SystemInfo, SystemMemory, LaunchdStatus
 
     mlx_server/
         schemas/
@@ -1130,67 +1125,198 @@ backend/mlx_manager/
 
 ### 10.2 Phased Migration
 
-**Phase 1 - Cleanup (no behavior change)**
-- Delete dead TypedDicts (3 classes)
-- Delete duplicate `ProbeStep`/`ProbeResult` in `model_probe.py`
-- Change non-table SQLModel response classes to BaseModel
-- Merge duplicate health/server status classes
+**Phase 1 - Cleanup (no behavior change)** `COMPLETE` *(commit c4bd410)*
+- [x] Delete dead TypedDicts (3 classes: `HealthCheckResult`, `ServerStats`, `RunningServerInfo`)
+- [x] Delete duplicate `ProbeStep`/`ProbeResult` in `model_probe.py` (now re-exports from `probe/steps.py`)
+- [x] Change 25+ non-table SQLModel response classes to BaseModel
+- [x] Merge duplicate health/server status classes (`ProfileServerStatus`, `ProfileHealthStatus`, `RunningServer`)
 
-**Phase 2 - Foundation**
-- Create `models/enums.py` - consolidate all enums
-- Create `models/value_objects.py` with `InferenceParams`, `AudioDefaults`, etc.
-- Update `InternalRequest` to use `InferenceParams`
+**Phase 2 - Foundation** `COMPLETE` *(commit bd90431)*
+- [x] Convert `models.py` to `models/` package with `_domain.py`, `enums.py`, `value_objects.py`
+- [x] Create `models/enums.py` - consolidate 9 enums (`ModelType`, `UserStatus`, `BackendType`, `ApiType`, `PatternType`, `MemoryLimitMode`, `EvictionPolicy`, `DownloadStatusEnum`, `ProfileType`)
+- [x] Create `models/value_objects.py` with `InferenceParams`, `InferenceContext`, `AudioDefaults`
+- [x] Update `InternalRequest` to use `InferenceParams` composition
+- [x] Backward-compatible re-exports via `models/__init__.py`
 
-**Phase 3 - Capability Polymorphism**
-- Create `models/capabilities.py` with JTI hierarchy
-- Split `Model` table: move capability fields to `ModelCapabilities` + subclasses
-- DB migration: extract capability data from `Model` into new tables
-- Update probe service to write to new tables
-- Update pool to read from new relationship
+**Phase 3 - Capability Polymorphism** `COMPLETE`
 
-**Phase 4 - Profile Polymorphism**
-- Create `models/profiles.py` with JTI hierarchy
-- Rename `ServerProfile` -> `ExecutionProfile` + subclasses
-- DB migration: extract profile-specific fields into new tables
-- Update routers to use polymorphic profiles
+> **Design pivot**: JTI was abandoned in favor of **Single Table Inheritance** (STI) because
+> SQLModel `table=True` subclasses raise `Mapped` type errors on inherited `Relationship` fields.
+> All capability fields live in one `model_capabilities` table with `capability_type` discriminator.
 
-**Phase 5 - DTO Migration**
-- Create `models/dto/` package
-- Migrate all response/request models to plain BaseModel with value object composition
-- Update routers to use new DTOs
-- Update frontend types to match new nested structure
+- [x] Create `models/capabilities.py` with STI hierarchy (single `model_capabilities` table)
+- [x] Add `Model.capabilities` one-to-one relationship (uselist=False, cascade delete-orphan)
+- [x] Update probe service to write to `ModelCapabilities` via `update_model_capabilities()`
+- [x] Update `model_registry` to work with capabilities relationship
+- [x] Update pool to read capabilities (eager `selectinload`)
+- [x] Update `ModelResponse` DTO with nested `CapabilitiesResponse` + backward-compat accessors
+- [x] Update frontend types (`CapabilitiesData` interface in `types.ts`)
+- [x] Create Alembic migration `b3f7a2c91d4e` (data migration from `models` columns)
+- [x] Run migration (`alembic upgrade head`) — applied successfully, 2 rows migrated
+- [x] Drop old capability columns from `models` table (handled by migration)
+
+**Phase 4 - Profile Polymorphism** `COMPLETE`
+
+> **Approach**: Single Table Inheritance (matching Phase 3). One `execution_profiles` table with
+> `profile_type` discriminator. All type-specific fields remain nullable columns. The Python entity
+> is renamed from `ServerProfile` to `ExecutionProfile` with backward-compatible re-exports.
+>
+> **Implementation note**: Column names use `default_` prefix (e.g. `default_temperature`) to
+> distinguish profile defaults from request-time overrides. DTOs use nested value objects
+> (`InferenceParams`, `InferenceContext`, `AudioDefaults`) for clean API contracts.
+
+*Step 1 — Entity + DTO layer:*
+- [x] Create `models/profiles.py` with `ExecutionProfile(SQLModel, table=True)`:
+  - Table: `execution_profiles` (renamed from `server_profiles`)
+  - Discriminator: `profile_type` (str, values: `"inference"` / `"audio"` / `"base"`)
+  - Shared fields: `id`, `name`, `description`, `model_id`, `auto_start`, `launchd_installed`, `created_at`, `updated_at`
+  - Inference fields (TEXT_GEN/VISION): `default_context_length`, `default_system_prompt`, `default_temperature`, `default_max_tokens`, `default_top_p`, `default_enable_tool_injection`
+  - Audio fields (AUDIO): `default_tts_voice`, `default_tts_speed`, `default_tts_sample_rate`, `default_stt_language`
+  - Relationship: `model: Model | None` (back_populates=`"profiles"`)
+- [x] Create DTOs with value object composition:
+  - `ExecutionProfileCreate(BaseModel)` — nested `inference: InferenceParams | None`, `context: InferenceContext | None`, `audio: AudioDefaults | None`
+  - `ExecutionProfileUpdate(BaseModel)` — same nesting, all optional
+  - `ExecutionProfileResponse(BaseModel)` — nested VOs + denormalized `model_repo_id`, `model_type`, `profile_type`
+- [x] Add backward-compatible re-exports in `models/__init__.py`:
+  - `ServerProfile = ExecutionProfile`
+  - `ServerProfileCreate`, `ServerProfileUpdate`, `ServerProfileResponse` as aliases
+- [x] Remove old `ServerProfile*` classes from `_domain.py`
+
+*Step 2 — DB migration:*
+- [x] Create Alembic migration `c7e4a1b2d3f5`:
+  - Rename table `server_profiles` → `execution_profiles`
+  - Add `profile_type` column, populate from joined `models.model_type`
+  - Rename columns with `default_` prefix using batch mode (`recreate="always"` for SQLite)
+  - Drop legacy columns (`tool_call_parser`, `reasoning_parser`, `message_converter`)
+  - 13 rows migrated successfully, all populated as `"inference"`
+
+*Step 3 — Update backend consumers:*
+- [x] `routers/profiles.py`: Full rewrite with ExecutionProfile, nested DTOs, auto profile_type, cross-type validation
+- [x] `routers/chat.py`: Updated field references to `default_temperature`, `default_max_tokens`, etc.
+- [x] `routers/servers.py`: Updated imports, added null-guard for `profile.model`
+- [x] `routers/system.py`: Updated imports
+- [x] `services/launchd.py`: Updated type hints
+- [x] `dependencies.py`: Updated to `ExecutionProfile`
+- [x] `database.py`: Updated `_repair_orphaned_profiles()` for both table names
+
+*Step 4 — Update frontend:*
+- [x] `types.ts`: New `ExecutionProfile`, `InferenceParams`, `InferenceContext`, `AudioDefaults` types + backward-compat aliases
+- [x] `client.ts`: Updated API client types
+- [x] `ProfileForm.svelte`: Reads/writes nested param structure
+- [x] `ProfileCard.svelte`: Updated type references
+- [x] Stores, route pages, server components: All updated
+- [x] `svelte-check`: 0 errors, 0 warnings
+
+*Step 5 — Tests:*
+- [x] Updated `conftest.py` fixtures to nested DTO format
+- [x] Updated `test_profiles.py`, `test_routers_profiles_direct.py`, `test_dependencies.py`, `test_services_launchd.py`, `test_database.py`
+- [x] Updated `ProfileForm.test.ts`, `ProfileCard.test.ts`, `ServerCard.test.ts`, `profiles.svelte.test.ts`, `ProfileSelector.test.ts`, `StartingTile.test.ts`
+- [x] Quality gate: `ruff check` + `ruff format` + `mypy` + `pytest` all pass (2142 tests, 1050 frontend tests)
+
+**Phase 5 - DTO Migration (no behavior change, no DB migration)** `COMPLETE`
+
+> **Goal**: Separate DTOs from domain entities. `entities.py` contains ONLY `table=True` entities.
+> DTOs live in `models/dto/` package organized by domain. Inline router DTOs also extracted.
+>
+> **Design note**: `capabilities.py` and `profiles.py` keep their co-located DTOs (entity + DTOs + factory
+> helpers together). This is a valid DDD pattern and avoids unnecessary cross-file coupling. The `dto/`
+> package holds DTOs that were mixed into `_domain.py` and scattered across router files.
+
+*Step 1 — Create `dto/` package scaffold:*
+- [x] Created `models/dto/__init__.py` with re-exports from all submodules
+- [x] Created `dto/auth.py`, `dto/models.py`, `dto/servers.py`, `dto/settings.py`, `dto/system.py`, `dto/chat.py`, `dto/mcp.py`
+- [x] All modules have `__all__` to control star-exports and prevent leaking imports
+
+*Step 2 — Move auth DTOs (`entities.py` → `dto/auth.py`):*
+- [x] Moved `UserCreate`, `UserLogin`, `UserUpdate`, `UserPublic`, `Token`, `PasswordReset` to `dto/auth.py`
+- [x] `UserBase(SQLModel)` stays in `entities.py` (shared base for `User` entity and `UserPublic` DTO)
+- [x] `dto/auth.py` imports `UserBase` from `entities.py`
+
+*Step 3 — Move model DTOs (`entities.py` → `dto/models.py`):*
+- [x] Moved `ModelResponse`, `ModelSearchResult`, `LocalModel` to `dto/models.py`
+- [x] Moved `DownloadRequest` from `routers/models.py` → `dto/models.py`
+- [x] `dto/models.py` imports `CapabilitiesResponse` from `capabilities.py`
+
+*Step 4 — Move server DTOs (`entities.py` + routers → `dto/servers.py` + `dto/chat.py`):*
+- [x] Moved `RunningServerResponse`, `HealthStatus`, `ServerStatus` from `entities.py`
+- [x] Moved `EmbeddedServerStatus`, `LoadedModelInfo`, `ServerHealthStatus` from `routers/servers.py`
+- [x] Moved `ChatRequest` from `routers/chat.py` → `dto/chat.py`
+
+*Step 5 — Move settings DTOs (`entities.py` + routers → `dto/settings.py`):*
+- [x] Moved `BackendMappingCreate/Update/Response`, `CloudCredentialCreate/Response` from `entities.py`
+- [x] Moved `ServerConfigUpdate/Response`, `RulePriorityUpdate`, `RuleMatchResult` from `entities.py`
+- [x] Moved `TimeoutSettings`, `TimeoutSettingsUpdate` from `routers/settings.py`
+- [x] Constants `DEFAULT_BASE_URLS`, `API_TYPE_FOR_BACKEND` remain in `entities.py` (used by entity logic)
+
+*Step 6 — Move system DTOs (`entities.py` → `dto/system.py`):*
+- [x] Moved `SystemMemory`, `SystemInfo`, `LaunchdStatus` to `dto/system.py`
+
+*Step 7 — Move MCP DTOs (routers → `dto/mcp.py`):*
+- [x] Moved `ToolExecuteRequest` from `routers/mcp.py` → `dto/mcp.py`
+
+*Step 8 — Clean up and rename:*
+- [x] `entities.py` contains ONLY `table=True` entities + shared bases + constants
+- [x] Renamed `_domain.py` → `entities.py`
+- [x] Updated all 4 internal references (capabilities.py, profiles.py, dto/auth.py, __init__.py)
+
+*Step 9 — Update re-exports:*
+- [x] `models/__init__.py` re-exports from `dto/` submodules via `from .dto import *`
+- [x] All existing import paths (`from mlx_manager.models import ModelResponse`) still work
+- [x] All router imports resolve correctly
+
+*Step 10 — Quality gate:*
+- [x] `ruff check . && ruff format --check .` — 0 errors
+- [x] `mypy mlx_manager` — 0 errors (127 source files)
+- [x] `pytest` — 2142 passed, 36 deselected
+- [x] `npm run check` — 0 errors, 0 warnings
+- [x] No frontend changes needed (API contracts unchanged)
 
 **Phase 6 - Runtime Model Cleanup**
-- Convert remaining dataclasses to Pydantic BaseModel
-- Eliminate `types.py` (TypedDict file)
-- Move `BackendMapping`/`CloudCredential` to shared models
+- [ ] Convert remaining dataclasses to Pydantic BaseModel
+- [ ] Eliminate `types.py` (TypedDict file)
+- [ ] Move `BackendMapping`/`CloudCredential` to shared models
 
-### 10.3 DB Migration
+### 10.3 DB Migrations (Applied)
 
-Each phase that changes the schema includes an Alembic migration:
+Both schema-changing phases have completed migrations:
 
 ```
-Phase 3: create model_capabilities, text_gen_capabilities, vision_capabilities,
-         embedding_capabilities, audio_capabilities tables.
-         Migrate data from models.supports_* columns.
-         Drop old columns from models table.
+Phase 3 (migration b3f7a2c91d4e — APPLIED):
+  Created single `model_capabilities` table (STI, not JTI).
+  Migrated data from `models.supports_*` columns (2 rows).
+  Dropped old capability columns from `models` table.
 
-Phase 4: create execution_profiles, inference_profiles, audio_profiles tables.
-         Migrate data from server_profiles table.
-         Drop old server_profiles table.
+Phase 4 (migration c7e4a1b2d3f5 — APPLIED):
+  Renamed `server_profiles` → `execution_profiles`.
+  Added `profile_type` discriminator column (STI).
+  Populated `profile_type` from joined `models.model_type` (13 rows, all "inference").
+  Renamed columns with `default_` prefix.
+  Dropped legacy columns (tool_call_parser, reasoning_parser, message_converter).
 ```
+
+Phase 5 and 6 are pure code reorganization — no DB migrations needed.
 
 ### 10.4 Backward Compatibility
 
-During migration, `models/__init__.py` re-exports everything under old names:
+`models/__init__.py` re-exports everything under old names:
 
 ```python
-# models/__init__.py - temporary backward compat
-from .domain import Model, ExecutionProfile as ServerProfile, ...
-from .dto.profiles import ProfileCreate as ServerProfileCreate, ...
+# models/__init__.py - backward compat (current state)
+from ._domain import *
+from .capabilities import *
+from .enums import *
+from .profiles import *
+from .value_objects import *
+
+# Aliases for renamed entities
+ExecutionProfile as ServerProfile
+ExecutionProfileCreate as ServerProfileCreate
+ExecutionProfileResponse as ServerProfileResponse
+ExecutionProfileUpdate as ServerProfileUpdate
 ```
 
-This allows incremental migration without breaking all imports at once. Remove re-exports once all consumers are updated.
+After Phase 5, the re-exports will additionally pull from `dto/` submodules. All existing import paths
+(`from mlx_manager.models import ModelResponse`) will continue to work.
 
 ---
 

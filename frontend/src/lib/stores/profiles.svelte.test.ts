@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { ServerProfile } from "$lib/api/types";
+import type { ExecutionProfile } from "$lib/api/types";
 
 // Mock the API module before importing the store
 vi.mock("$api", () => ({
@@ -24,26 +24,21 @@ vi.mock("$lib/services", () => ({
 
 // Helper to create a mock profile
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {},
-): ServerProfile {
+  overrides: Partial<ExecutionProfile> = {},
+): ExecutionProfile {
   return {
     id: 1,
     name: "Test Profile",
     description: "A test profile",
-    model_id: 1, model_repo_id: "mlx-community/test-model",
+    model_id: 1,
+    model_repo_id: "mlx-community/test-model",
     model_type: "lm",
-    context_length: 4096,
+    profile_type: "inference",
     auto_start: false,
-    system_prompt: null,
-    temperature: 0.7,
-    max_tokens: 4096,
-    top_p: 1.0,
-    enable_prompt_injection: false,
-    tts_default_voice: null,
-    tts_default_speed: null,
-    tts_sample_rate: null,
-    stt_default_language: null,
     launchd_installed: false,
+    inference: { temperature: 0.7, max_tokens: 4096, top_p: 1.0 },
+    context: { context_length: 4096, system_prompt: null, enable_tool_injection: false },
+    audio: null,
     created_at: "2024-01-01T00:00:00",
     updated_at: "2024-01-01T00:00:00",
     ...overrides,
@@ -411,7 +406,7 @@ describe("ProfileStore", () => {
 
     it("updates profile when temperature changes", async () => {
       mockProfilesApi.list.mockResolvedValue([
-        createMockProfile({ id: 1, temperature: 0.7 }),
+        createMockProfile({ id: 1, inference: { temperature: 0.7, max_tokens: 4096, top_p: 1.0 } }),
       ]);
 
       const registerCall = mockPollingCoordinator.register.mock.calls[0];
@@ -420,11 +415,11 @@ describe("ProfileStore", () => {
       await refreshFn();
 
       mockProfilesApi.list.mockResolvedValue([
-        createMockProfile({ id: 1, temperature: 0.5 }),
+        createMockProfile({ id: 1, inference: { temperature: 0.5, max_tokens: 4096, top_p: 1.0 } }),
       ]);
       await refreshFn();
 
-      expect(profileStore.profiles[0].temperature).toBe(0.5);
+      expect(profileStore.profiles[0].inference?.temperature).toBe(0.5);
     });
 
     it("updates profile when model_type changes", async () => {

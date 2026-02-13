@@ -14,7 +14,7 @@ from pathlib import Path
 from loguru import logger
 
 from mlx_manager.config import DEFAULT_PORT
-from mlx_manager.models import ServerProfile
+from mlx_manager.models import ExecutionProfile
 from mlx_manager.types import LaunchdStatus
 
 
@@ -25,7 +25,7 @@ class LaunchdManager:
         self.launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
         self.label_prefix = "com.mlx-manager"
 
-    def get_label(self, profile: ServerProfile) -> str:
+    def get_label(self, profile: ExecutionProfile) -> str:
         """Get the launchd label for a profile."""
         # Sanitize profile name for use in label
         safe_name = profile.name.lower().replace(" ", "-").replace("_", "-")
@@ -33,11 +33,11 @@ class LaunchdManager:
         safe_name = "".join(c for c in safe_name if c.isalnum() or c == "-")
         return f"{self.label_prefix}.{safe_name}"
 
-    def get_plist_path(self, profile: ServerProfile) -> Path:
+    def get_plist_path(self, profile: ExecutionProfile) -> Path:
         """Get the plist file path for a profile."""
         return self.launch_agents_dir / f"{self.get_label(profile)}.plist"
 
-    def generate_plist(self, profile: ServerProfile, port: int = DEFAULT_PORT) -> dict:
+    def generate_plist(self, profile: ExecutionProfile, port: int = DEFAULT_PORT) -> dict:
         """Generate a launchd plist dictionary for a profile.
 
         NOTE: With the embedded MLX Server, this generates a plist
@@ -73,7 +73,7 @@ class LaunchdManager:
 
         return plist
 
-    def install(self, profile: ServerProfile) -> str:
+    def install(self, profile: ExecutionProfile) -> str:
         """Install a launchd service for a profile."""
         # Ensure LaunchAgents directory exists
         self.launch_agents_dir.mkdir(parents=True, exist_ok=True)
@@ -90,7 +90,7 @@ class LaunchdManager:
 
         return str(plist_path)
 
-    def uninstall(self, profile: ServerProfile) -> bool:
+    def uninstall(self, profile: ExecutionProfile) -> bool:
         """Uninstall a launchd service."""
         plist_path = self.get_plist_path(profile)
 
@@ -110,11 +110,11 @@ class LaunchdManager:
 
         return True
 
-    def is_installed(self, profile: ServerProfile) -> bool:
+    def is_installed(self, profile: ExecutionProfile) -> bool:
         """Check if a launchd service is installed."""
         return self.get_plist_path(profile).exists()
 
-    def is_running(self, profile: ServerProfile) -> bool:
+    def is_running(self, profile: ExecutionProfile) -> bool:
         """Check if a launchd service is running."""
         label = self.get_label(profile)
 
@@ -122,7 +122,7 @@ class LaunchdManager:
 
         return result.returncode == 0
 
-    def start(self, profile: ServerProfile) -> bool:
+    def start(self, profile: ExecutionProfile) -> bool:
         """Start a launchd service."""
         label = self.get_label(profile)
 
@@ -130,7 +130,7 @@ class LaunchdManager:
 
         return result.returncode == 0
 
-    def stop(self, profile: ServerProfile) -> bool:
+    def stop(self, profile: ExecutionProfile) -> bool:
         """Stop a launchd service."""
         label = self.get_label(profile)
 
@@ -138,7 +138,7 @@ class LaunchdManager:
 
         return result.returncode == 0
 
-    def get_status(self, profile: ServerProfile) -> LaunchdStatus:
+    def get_status(self, profile: ExecutionProfile) -> LaunchdStatus:
         """Get detailed status of a launchd service."""
         label = self.get_label(profile)
         plist_path = str(self.get_plist_path(profile))

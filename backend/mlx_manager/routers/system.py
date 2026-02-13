@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mlx_manager.config import settings
 from mlx_manager.database import get_db, get_session
 from mlx_manager.dependencies import get_current_user, get_profile_or_404
-from mlx_manager.models import LaunchdStatus, ServerProfile, SystemInfo, SystemMemory, User
+from mlx_manager.models import ExecutionProfile, LaunchdStatus, SystemInfo, SystemMemory, User
 from mlx_manager.services.launchd import launchd_manager
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -122,7 +122,7 @@ async def get_system_info(
 @router.post("/launchd/install/{profile_id}")
 async def install_launchd_service(
     current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
+    profile: ExecutionProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
     """Install profile as launchd service."""
@@ -142,7 +142,7 @@ async def install_launchd_service(
 @router.post("/launchd/uninstall/{profile_id}", status_code=204)
 async def uninstall_launchd_service(
     current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
+    profile: ExecutionProfile = Depends(get_profile_or_404),
     session: AsyncSession = Depends(get_db),
 ):
     """Uninstall launchd service."""
@@ -157,7 +157,7 @@ async def uninstall_launchd_service(
 @router.get("/launchd/status/{profile_id}", response_model=LaunchdStatus)
 async def get_launchd_status(
     current_user: Annotated[User, Depends(get_current_user)],
-    profile: ServerProfile = Depends(get_profile_or_404),
+    profile: ExecutionProfile = Depends(get_profile_or_404),
 ):
     """Get launchd service status."""
     status = launchd_manager.get_status(profile)

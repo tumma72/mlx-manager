@@ -396,8 +396,8 @@
 		const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string | ContentPart[] }> = [];
 
 		// Add system prompt as first message if present
-		if (selectedProfile.system_prompt) {
-			apiMessages.push({ role: 'system', content: selectedProfile.system_prompt });
+		if (selectedProfile.context?.system_prompt) {
+			apiMessages.push({ role: 'system', content: selectedProfile.context.system_prompt });
 		}
 
 		// Add conversation history (exclude last user message since we're about to add it)
@@ -880,7 +880,7 @@
 					</div>
 				{:else}
 					<!-- System Prompt (pinned first message) -->
-					{#if selectedProfile?.system_prompt}
+					{#if selectedProfile?.context?.system_prompt}
 						<div class="flex gap-3 opacity-60">
 							<div class="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
 								<Bot class="w-4 h-4 text-muted-foreground" />
@@ -888,11 +888,11 @@
 							<div class="flex-1 min-w-0">
 								<p class="text-xs text-muted-foreground mb-1 italic">System Prompt</p>
 								<div class="text-sm text-muted-foreground italic whitespace-pre-wrap">
-									{selectedProfile.system_prompt}
+									{selectedProfile.context.system_prompt}
 								</div>
 							</div>
 						</div>
-					{:else if selectedProfile && !selectedProfile.system_prompt}
+					{:else if selectedProfile && !selectedProfile.context?.system_prompt}
 						<div class="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2" id="system-prompt-hint">
 							<AlertCircle class="w-3 h-3" />
 							<span>No system prompt set.</span>

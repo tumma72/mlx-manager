@@ -13,29 +13,16 @@ from typing import cast
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..database import get_db
 from ..dependencies import get_current_user
-from ..models import ServerProfile
+from ..models import ExecutionProfile
+from ..models.dto.chat import ChatRequest
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
-
-
-class ChatRequest(BaseModel):
-    """Chat completion request."""
-
-    profile_id: int
-    messages: list[dict]  # OpenAI-compatible message format
-    tools: list[dict] | None = None  # OpenAI function definitions array
-    tool_choice: str | None = None  # "auto", "none", or specific function
-    # Generation parameters - override profile defaults if provided
-    temperature: float | None = None
-    max_tokens: int | None = None
-    top_p: float | None = None
 
 
 @router.post("/completions")
@@ -66,9 +53,9 @@ async def chat_completions(
     """
     # Get profile with model relationship
     result = await db.execute(
-        select(ServerProfile)
-        .where(ServerProfile.id == request.profile_id)
-        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        select(ExecutionProfile)
+        .where(ExecutionProfile.id == request.profile_id)
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
     )
     profile = result.scalar_one_or_none()
     if not profile:
@@ -96,9 +83,15 @@ async def chat_completions(
             model_type = detect_model_type(model_id)
 
             # Get generation parameters: request overrides profile defaults
-            temp = request.temperature if request.temperature is not None else profile.temperature
-            max_tok = request.max_tokens if request.max_tokens is not None else profile.max_tokens
-            top_p_val = request.top_p if request.top_p is not None else profile.top_p
+            temp = (
+                request.temperature
+                if request.temperature is not None
+                else profile.default_temperature
+            )
+            max_tok = (
+                request.max_tokens if request.max_tokens is not None else profile.default_max_tokens
+            )
+            top_p_val = request.top_p if request.top_p is not None else profile.default_top_p
 
             # Lower temperature when tools are enabled for more reliable tool calling
             # Some models (like GLM-4.7) are verbose at higher temps and may not call tools
@@ -129,7 +122,7 @@ async def chat_completions(
                     top_p=top_p_val,
                     stream=True,
                     tools=request.tools,
-                    enable_prompt_injection=profile.enable_prompt_injection,
+                    enable_prompt_injection=profile.default_enable_tool_injection,
                 )
 
             # Cast to async generator (both functions return AsyncGenerator when stream=True)

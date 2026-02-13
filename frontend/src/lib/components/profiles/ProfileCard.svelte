@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ServerProfile, RunningServer } from '$api';
+	import type { ExecutionProfile, RunningServer } from '$api';
 	import { servers as serversApi } from '$api';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -28,7 +28,7 @@
 	const POLL_INTERVAL_MS = 2_000; // Poll every 2 seconds during startup
 
 	interface Props {
-		profile: ServerProfile;
+		profile: ExecutionProfile;
 		server?: RunningServer;
 	}
 

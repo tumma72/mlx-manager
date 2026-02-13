@@ -12,7 +12,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loguru import logger
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -22,47 +21,19 @@ from mlx_manager.database import get_db
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.models import (
+    ExecutionProfile,
     HealthStatus,
     RunningServerResponse,
-    ServerProfile,
     ServerStatus,
     User,
 )
+from mlx_manager.models.dto.servers import (
+    EmbeddedServerStatus,
+    LoadedModelInfo,
+    ServerHealthStatus,
+)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
-
-
-class EmbeddedServerStatus(BaseModel):
-    """Status of the embedded MLX Server."""
-
-    status: str  # "running", "not_initialized"
-    type: str = "embedded"
-    uptime_seconds: float = 0.0
-    loaded_models: list[str] = []
-    memory_used_gb: float = 0.0
-    memory_limit_gb: float = 0.0
-
-
-class LoadedModelInfo(BaseModel):
-    """Information about a loaded model."""
-
-    model_id: str
-    model_type: str
-    size_gb: float
-    loaded_at: float
-    last_used: float
-    preloaded: bool
-
-
-class ServerHealthStatus(BaseModel):
-    """Health status of the embedded server."""
-
-    status: str  # "healthy", "degraded", "unhealthy"
-    model_pool_initialized: bool = False
-    loaded_model_count: int = 0
-    memory_used_gb: float = 0.0
-    memory_available_gb: float = 0.0
-
 
 # Server start time for uptime calculation
 _server_start_time = time.time()
@@ -87,7 +58,7 @@ async def list_servers(
 
         # Get all profiles and find which ones have loaded models
         result = await db.execute(
-            select(ServerProfile).options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+            select(ExecutionProfile).options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
         )
         profiles = result.scalars().all()
 
@@ -293,13 +264,15 @@ async def start_server(
 
     # Get the profile to find which model it uses
     result = await db.execute(
-        select(ServerProfile)
-        .where(ServerProfile.id == profile_id)
-        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        select(ExecutionProfile)
+        .where(ExecutionProfile.id == profile_id)
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
     )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if not profile.model:
+        raise HTTPException(status_code=400, detail="Profile has no model assigned")
 
     model_id = profile.model.repo_id
 
@@ -341,13 +314,15 @@ async def stop_server(
     """
     # Get the profile to find which model it uses
     result = await db.execute(
-        select(ServerProfile)
-        .where(ServerProfile.id == profile_id)
-        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        select(ExecutionProfile)
+        .where(ExecutionProfile.id == profile_id)
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
     )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if not profile.model:
+        raise HTTPException(status_code=400, detail="Profile has no model assigned")
 
     try:
         pool = get_model_pool()
@@ -434,13 +409,15 @@ async def get_server_health(
     """
     # Get the profile to find which model it uses
     result = await db.execute(
-        select(ServerProfile)
-        .where(ServerProfile.id == profile_id)
-        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        select(ExecutionProfile)
+        .where(ExecutionProfile.id == profile_id)
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
     )
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    if not profile.model:
+        raise HTTPException(status_code=400, detail="Profile has no model assigned")
 
     model_id = profile.model.repo_id
 

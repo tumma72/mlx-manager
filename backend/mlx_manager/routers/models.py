@@ -10,7 +10,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -24,6 +23,8 @@ from mlx_manager.models import (
     ModelSearchResult,
     User,
 )
+from mlx_manager.models.capabilities import capabilities_to_response
+from mlx_manager.models.dto.models import DownloadRequest
 from mlx_manager.services.hf_client import (
     cleanup_cancel_event,
     cleanup_partial_download,
@@ -36,10 +37,23 @@ from mlx_manager.utils.model_detection import get_model_detection_info
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-class DownloadRequest(BaseModel):
-    """Request body for model download."""
+def _serialize_model_response(model: Model) -> ModelResponse:
+    """Build a ModelResponse from a Model with its capabilities relationship."""
+    caps_response = None
+    if model.capabilities:
+        caps_response = capabilities_to_response(model.capabilities)
 
-    model_id: str
+    return ModelResponse(
+        id=model.id,  # type: ignore[arg-type]
+        repo_id=model.repo_id,
+        model_type=model.model_type,
+        local_path=model.local_path,
+        size_bytes=model.size_bytes,
+        size_gb=round(model.size_bytes / (1024**3), 2) if model.size_bytes else None,
+        downloaded_at=model.downloaded_at,
+        last_used_at=model.last_used_at,
+        capabilities=caps_response,
+    )
 
 
 # Store for download tasks
@@ -77,18 +91,16 @@ async def list_downloaded_models(
     session: AsyncSession = Depends(get_db),
 ):
     """List all downloaded models from the unified Model table."""
+    from sqlalchemy.orm import selectinload
     from sqlmodel import col, desc
 
-    result = await session.execute(select(Model).order_by(desc(col(Model.downloaded_at))))
+    result = await session.execute(
+        select(Model)
+        .options(selectinload(Model.capabilities))  # type: ignore[arg-type]
+        .order_by(desc(col(Model.downloaded_at)))
+    )
     models = result.scalars().all()
-    # Compute size_gb for response
-    responses = []
-    for m in models:
-        data = m.model_dump()
-        if m.size_bytes:
-            data["size_gb"] = round(m.size_bytes / (1024**3), 2)
-        responses.append(ModelResponse(**data))
-    return responses
+    return [_serialize_model_response(m) for m in models]
 
 
 @router.post("/download")
@@ -570,19 +582,18 @@ async def get_all_capabilities(
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """Get all stored model capabilities from the unified Model table."""
-    from sqlmodel import col
+    """Get all stored model capabilities (only models that have been probed)."""
+    from sqlalchemy.orm import selectinload
 
-    result = await session.execute(select(Model).where(col(Model.probed_at).is_not(None)))
+    from mlx_manager.models.capabilities import ModelCapabilities
+
+    result = await session.execute(
+        select(Model)
+        .join(ModelCapabilities, Model.id == ModelCapabilities.model_id)  # type: ignore[arg-type]
+        .options(selectinload(Model.capabilities))  # type: ignore[arg-type]
+    )
     models = result.scalars().all()
-    # Compute size_gb for response
-    responses = []
-    for m in models:
-        data = m.model_dump()
-        if m.size_bytes:
-            data["size_gb"] = round(m.size_bytes / (1024**3), 2)
-        responses.append(ModelResponse(**data))
-    return responses
+    return [_serialize_model_response(m) for m in models]
 
 
 @router.get("/capabilities/{model_id:path}", response_model=ModelResponse | None)
@@ -591,15 +602,16 @@ async def get_model_capabilities(
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """Get stored capabilities for a specific model from the unified Model table."""
-    result = await session.execute(select(Model).where(Model.repo_id == model_id))
+    """Get stored capabilities for a specific model."""
+    from sqlalchemy.orm import selectinload
+
+    result = await session.execute(
+        select(Model).where(Model.repo_id == model_id).options(selectinload(Model.capabilities))  # type: ignore[arg-type]
+    )
     model = result.scalar_one_or_none()
     if not model:
         return None
-    data = model.model_dump()
-    if model.size_bytes:
-        data["size_gb"] = round(model.size_bytes / (1024**3), 2)
-    return ModelResponse(**data)
+    return _serialize_model_response(model)
 
 
 @router.post("/probe/{model_id:path}")

@@ -3,6 +3,28 @@
 import pytest
 
 from mlx_manager.models import Model
+from mlx_manager.models.capabilities import ModelCapabilities
+
+
+async def _create_model_with_caps(
+    session, repo_id: str, capability_type: str = "text-gen", **cap_fields
+) -> tuple[Model, ModelCapabilities]:
+    """Helper to create a Model + linked ModelCapabilities record."""
+    from datetime import UTC, datetime
+
+    model = Model(repo_id=repo_id, model_type=capability_type)
+    session.add(model)
+    await session.flush()  # Get the ID
+
+    caps = ModelCapabilities(
+        model_id=model.id,
+        capability_type=capability_type,
+        probed_at=datetime.now(tz=UTC),
+        **cap_fields,
+    )
+    session.add(caps)
+    await session.commit()
+    return model, caps
 
 
 @pytest.mark.asyncio
@@ -27,17 +49,13 @@ async def test_get_capabilities_not_found(client, test_user, auth_headers):
 @pytest.mark.asyncio
 async def test_get_capabilities_after_insert(client, test_user, auth_headers, test_session):
     """Test getting capabilities after manual DB insert."""
-    from datetime import UTC, datetime
-
-    cap = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="test/model",
         supports_native_tools=True,
         supports_thinking=True,
         practical_max_tokens=4096,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap)
-    await test_session.commit()
 
     response = await client.get(
         "/api/models/capabilities/test/model",
@@ -55,25 +73,20 @@ async def test_get_capabilities_after_insert(client, test_user, auth_headers, te
 @pytest.mark.asyncio
 async def test_get_all_capabilities(client, test_user, auth_headers, test_session):
     """Test listing all capabilities."""
-    from datetime import UTC, datetime
-
-    cap1 = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="model/a",
         supports_native_tools=True,
         supports_thinking=False,
         practical_max_tokens=8192,
-        probed_at=datetime.now(tz=UTC),
     )
-    cap2 = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="model/b",
         supports_native_tools=False,
         supports_thinking=True,
         practical_max_tokens=16384,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap1)
-    test_session.add(cap2)
-    await test_session.commit()
 
     response = await client.get("/api/models/capabilities", headers=auth_headers)
     assert response.status_code == 200
@@ -92,17 +105,13 @@ async def test_get_all_capabilities(client, test_user, auth_headers, test_sessio
 @pytest.mark.asyncio
 async def test_get_capabilities_with_all_fields(client, test_user, auth_headers, test_session):
     """Test getting capabilities with all fields populated."""
-    from datetime import UTC, datetime
-
-    cap = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="test/full-model",
         supports_native_tools=True,
         supports_thinking=True,
         practical_max_tokens=32768,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap)
-    await test_session.commit()
 
     response = await client.get(
         "/api/models/capabilities/test/full-model",
@@ -122,17 +131,13 @@ async def test_get_capabilities_with_all_fields(client, test_user, auth_headers,
 @pytest.mark.asyncio
 async def test_get_capabilities_with_partial_fields(client, test_user, auth_headers, test_session):
     """Test getting capabilities with some fields as None."""
-    from datetime import UTC, datetime
-
-    cap = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="test/partial-model",
         supports_native_tools=None,
         supports_thinking=True,
         practical_max_tokens=None,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap)
-    await test_session.commit()
 
     response = await client.get(
         "/api/models/capabilities/test/partial-model",
@@ -170,17 +175,13 @@ async def test_probe_endpoint_requires_auth(client):
 @pytest.mark.asyncio
 async def test_get_capabilities_url_encoding(client, test_user, auth_headers, test_session):
     """Test getting capabilities for model with slashes in ID."""
-    from datetime import UTC, datetime
-
-    cap = Model(
+    await _create_model_with_caps(
+        test_session,
         repo_id="mlx-community/Qwen3-0.6B-4bit-DWQ",
         supports_native_tools=True,
         supports_thinking=False,
         practical_max_tokens=2048,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap)
-    await test_session.commit()
 
     # Test with URL-encoded path
     response = await client.get(
@@ -198,22 +199,18 @@ async def test_get_all_capabilities_empty_after_delete(
     client, test_user, auth_headers, test_session
 ):
     """Test that deleted capabilities don't appear in list."""
-    from datetime import UTC, datetime
-
-    cap = Model(
+    model, caps = await _create_model_with_caps(
+        test_session,
         repo_id="test/deleted",
         supports_native_tools=True,
-        probed_at=datetime.now(tz=UTC),
     )
-    test_session.add(cap)
-    await test_session.commit()
 
     # Verify it exists
     response = await client.get("/api/models/capabilities", headers=auth_headers)
     assert len(response.json()) == 1
 
-    # Delete it
-    await test_session.delete(cap)
+    # Delete the model (cascades to capabilities)
+    await test_session.delete(model)
     await test_session.commit()
 
     # Verify it's gone

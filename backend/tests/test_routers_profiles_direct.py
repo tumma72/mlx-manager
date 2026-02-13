@@ -11,11 +11,11 @@ import pytest
 from fastapi import HTTPException
 
 from mlx_manager.models import (
+    ExecutionProfile,
+    ExecutionProfileCreate,
+    ExecutionProfileResponse,
+    ExecutionProfileUpdate,
     Model,
-    ServerProfile,
-    ServerProfileCreate,
-    ServerProfileResponse,
-    ServerProfileUpdate,
     User,
     UserStatus,
 )
@@ -54,25 +54,26 @@ def _create_mock_profile(
     model_id=1,
     model=None,
 ):
-    """Create a mock ServerProfile with model relationship for testing."""
+    """Create a mock ExecutionProfile with model relationship for testing."""
     mock_model = model or _create_mock_model(model_id=model_id)
-    profile = MagicMock(spec=ServerProfile)
+    profile = MagicMock(spec=ExecutionProfile)
     profile.id = profile_id
     profile.name = name
     profile.description = None
     profile.model_id = model_id
     profile.model = mock_model
-    profile.context_length = None
+    profile.profile_type = "inference"
+    profile.default_context_length = None
     profile.auto_start = False
-    profile.system_prompt = None
-    profile.temperature = None
-    profile.max_tokens = None
-    profile.top_p = None
-    profile.enable_prompt_injection = False
-    profile.tts_default_voice = None
-    profile.tts_default_speed = None
-    profile.tts_sample_rate = None
-    profile.stt_default_language = None
+    profile.default_system_prompt = None
+    profile.default_temperature = None
+    profile.default_max_tokens = None
+    profile.default_top_p = None
+    profile.default_enable_tool_injection = False
+    profile.default_tts_voice = None
+    profile.default_tts_speed = None
+    profile.default_tts_sample_rate = None
+    profile.default_stt_language = None
     profile.launchd_installed = False
     profile.created_at = datetime.now(tz=UTC)
     profile.updated_at = datetime.now(tz=UTC)
@@ -80,15 +81,15 @@ def _create_mock_profile(
 
 
 def _mock_response(profile_id=1, name="Test Profile"):
-    """Create a mock ServerProfileResponse."""
-    return ServerProfileResponse(
+    """Create a mock ExecutionProfileResponse."""
+    return ExecutionProfileResponse(
         id=profile_id,
         name=name,
         model_id=1,
         model_repo_id="mlx-community/test-model",
         model_type="text-gen",
+        profile_type="inference",
         auto_start=False,
-        enable_prompt_injection=False,
         launchd_installed=False,
         created_at=datetime.now(tz=UTC),
         updated_at=datetime.now(tz=UTC),
@@ -130,7 +131,7 @@ class TestCreateProfileDirect:
         """Test create_profile creates and returns new profile."""
         mock_user = create_mock_user()
 
-        profile_data = ServerProfileCreate(
+        profile_data = ExecutionProfileCreate(
             name="Test Profile",
             model_id=1,
         )
@@ -146,8 +147,15 @@ class TestCreateProfileDirect:
         # session.get for model validation
         mock_session.get.return_value = mock_model
 
+        # Create a side effect that sets the ID on the profile when add is called
+        def set_profile_id(profile):
+            # Set attributes directly on the instance without going through SQLAlchemy
+            object.__setattr__(profile, "id", 1)
+
+        mock_session.add.side_effect = set_profile_id
+
         mock_resp = _mock_response(name="Test Profile")
-        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+        with patch("mlx_manager.models.profiles.profile_to_response", return_value=mock_resp):
             result = await create_profile(
                 current_user=mock_user, profile_data=profile_data, session=mock_session
             )
@@ -162,7 +170,7 @@ class TestCreateProfileDirect:
         """Test create_profile raises 409 on name conflict."""
         mock_user = create_mock_user()
 
-        profile_data = ServerProfileCreate(
+        profile_data = ExecutionProfileCreate(
             name="Existing",
             model_id=1,
         )
@@ -191,7 +199,7 @@ class TestUpdateProfileDirect:
 
         existing_profile = _create_mock_profile(profile_id=1, name="Old Name")
 
-        profile_data = ServerProfileUpdate(name="New Name")
+        profile_data = ExecutionProfileUpdate(name="New Name")
 
         mock_session = AsyncMock()
         # session.add is synchronous, so use MagicMock
@@ -205,7 +213,7 @@ class TestUpdateProfileDirect:
         mock_session.execute.side_effect = [mock_result1, mock_result2]
 
         mock_resp = _mock_response(name="New Name")
-        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+        with patch("mlx_manager.models.profiles.profile_to_response", return_value=mock_resp):
             result = await update_profile(
                 current_user=mock_user,
                 profile_id=1,
@@ -221,7 +229,7 @@ class TestUpdateProfileDirect:
         """Test update_profile raises 404 when profile not found."""
         mock_user = create_mock_user()
 
-        profile_data = ServerProfileUpdate(name="New Name")
+        profile_data = ExecutionProfileUpdate(name="New Name")
 
         mock_session = AsyncMock()
         mock_result = MagicMock()
@@ -245,7 +253,7 @@ class TestUpdateProfileDirect:
 
         existing_profile = _create_mock_profile(profile_id=1, name="Old Name")
 
-        profile_data = ServerProfileUpdate(name="Taken Name")
+        profile_data = ExecutionProfileUpdate(name="Taken Name")
 
         mock_session = AsyncMock()
         # First query - find existing profile
@@ -289,8 +297,15 @@ class TestDuplicateProfileDirect:
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        mock_resp = _mock_response(name="Copy")
-        with patch("mlx_manager.routers.profiles._profile_to_response", return_value=mock_resp):
+        # Create a side effect that sets the ID on the profile when add is called
+        def set_profile_id(profile):
+            # Set attributes directly on the instance without going through SQLAlchemy
+            object.__setattr__(profile, "id", 2)
+
+        mock_session.add.side_effect = set_profile_id
+
+        mock_resp = _mock_response(profile_id=2, name="Copy")
+        with patch("mlx_manager.models.profiles.profile_to_response", return_value=mock_resp):
             result = await duplicate_profile(
                 current_user=mock_user,
                 new_name="Copy",

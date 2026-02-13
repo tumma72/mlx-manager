@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import ProfileForm from "./ProfileForm.svelte";
 import type {
-  ServerProfile,
+  ExecutionProfile,
   ServerProfileCreate,
   ServerProfileUpdate,
   DownloadedModel,
@@ -18,8 +18,8 @@ vi.mock("$api", () => ({
 
 // Helper to create mock profile
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {},
-): ServerProfile {
+  overrides: Partial<ExecutionProfile> = {},
+): ExecutionProfile {
   return {
     id: 1,
     name: "Test Profile",
@@ -27,18 +27,12 @@ function createMockProfile(
     model_id: 1,
     model_repo_id: "mlx-community/test-model",
     model_type: "lm",
-    context_length: null,
+    profile_type: "inference",
     auto_start: false,
-    system_prompt: null,
-    temperature: 0.7,
-    max_tokens: 4096,
-    top_p: 1.0,
-    enable_prompt_injection: false,
-    tts_default_voice: null,
-    tts_default_speed: null,
-    tts_sample_rate: null,
-    stt_default_language: null,
     launchd_installed: false,
+    inference: { temperature: 0.7, max_tokens: 4096, top_p: 1.0 },
+    context: { context_length: null, system_prompt: null, enable_tool_injection: false },
+    audio: null,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides,
@@ -77,6 +71,7 @@ describe("ProfileForm", () => {
       is_normalized: null,
       supports_tts: null,
       supports_stt: null,
+      capabilities: null,
     },
     {
       id: 2,
@@ -103,6 +98,7 @@ describe("ProfileForm", () => {
       is_normalized: null,
       supports_tts: true,
       supports_stt: true,
+      capabilities: null,
     },
   ];
 
@@ -296,7 +292,7 @@ describe("ProfileForm", () => {
 
     it("populates system prompt", async () => {
       const profile = createMockProfile({
-        system_prompt: "You are a helpful assistant",
+        context: { context_length: null, system_prompt: "You are a helpful assistant", enable_tool_injection: false },
         model_id: 1,
       });
 
@@ -319,9 +315,7 @@ describe("ProfileForm", () => {
 
     it("populates generation settings", async () => {
       const profile = createMockProfile({
-        temperature: 0.5,
-        max_tokens: 2048,
-        top_p: 0.9,
+        inference: { temperature: 0.5, max_tokens: 2048, top_p: 0.9 },
         model_id: 1,
       });
 
@@ -446,11 +440,17 @@ describe("ProfileForm", () => {
           description: undefined,
           model_id: 1,
           auto_start: false,
-          system_prompt: undefined,
-          temperature: undefined,
-          max_tokens: undefined,
-          top_p: undefined,
-          enable_prompt_injection: false,
+          inference: {
+            temperature: null,
+            max_tokens: null,
+            top_p: null,
+          },
+          context: {
+            context_length: null,
+            system_prompt: null,
+            enable_tool_injection: false,
+          },
+          audio: undefined,
         });
       });
     });
@@ -490,8 +490,10 @@ describe("ProfileForm", () => {
           expect.objectContaining({
             name: "Full Profile",
             description: "A description",
-            system_prompt: "Be helpful",
             model_id: 1,
+            context: expect.objectContaining({
+              system_prompt: "Be helpful",
+            }),
           }),
         );
       });

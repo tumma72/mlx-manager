@@ -22,9 +22,14 @@ async def test_create_profile(auth_client, sample_profile_data):
     assert data["model_id"] == sample_profile_data["model_id"]
     assert data["model_repo_id"] == "mlx-community/test-model-4bit"
     assert data["model_type"] == "text-gen"
-    assert data["temperature"] == sample_profile_data["temperature"]
-    assert data["max_tokens"] == sample_profile_data["max_tokens"]
-    assert data["top_p"] == sample_profile_data["top_p"]
+    assert data["profile_type"] == "inference"
+    assert data["inference"]["temperature"] == sample_profile_data["inference"]["temperature"]
+    assert data["inference"]["max_tokens"] == sample_profile_data["inference"]["max_tokens"]
+    assert data["inference"]["top_p"] == sample_profile_data["inference"]["top_p"]
+    assert data["context"]["context_length"] is None
+    assert data["context"]["system_prompt"] is None
+    assert data["context"]["enable_tool_injection"] is False
+    assert data["audio"] is None
     assert "id" in data
     assert "created_at" in data
     assert "updated_at" in data
@@ -87,6 +92,7 @@ async def test_update_profile(auth_client, sample_profile_data):
     assert data["description"] == "Updated description"
     # Original fields should remain unchanged
     assert data["model_id"] == sample_profile_data["model_id"]
+    assert data["inference"]["temperature"] == sample_profile_data["inference"]["temperature"]
 
 
 @pytest.mark.asyncio
@@ -166,7 +172,7 @@ async def test_duplicate_profile(auth_client, sample_profile_data):
     assert data["name"] == "Duplicated Profile"
     assert data["model_id"] == sample_profile_data["model_id"]
     assert data["model_repo_id"] == "mlx-community/test-model-4bit"
-    assert data["temperature"] == sample_profile_data["temperature"]
+    assert data["inference"]["temperature"] == sample_profile_data["inference"]["temperature"]
     # Should have new ID
     assert data["id"] != profile_id
 
@@ -208,10 +214,8 @@ async def test_update_profile_all_fields(auth_client, sample_profile_data):
         "description": "Updated description",
         "model_id": 4,  # mlx-community/updated-model from fixtures
         "auto_start": True,
-        "context_length": 4096,
-        "temperature": 0.5,
-        "max_tokens": 2048,
-        "top_p": 0.9,
+        "context": {"context_length": 4096},
+        "inference": {"temperature": 0.5, "max_tokens": 2048, "top_p": 0.9},
     }
     response = await auth_client.put(f"/api/profiles/{profile_id}", json=update_data)
     assert response.status_code == 200
@@ -222,10 +226,10 @@ async def test_update_profile_all_fields(auth_client, sample_profile_data):
     assert data["model_id"] == 4
     assert data["model_repo_id"] == "mlx-community/updated-model"
     assert data["auto_start"] is True
-    assert data["context_length"] == 4096
-    assert data["temperature"] == 0.5
-    assert data["max_tokens"] == 2048
-    assert data["top_p"] == 0.9
+    assert data["context"]["context_length"] == 4096
+    assert data["inference"]["temperature"] == 0.5
+    assert data["inference"]["max_tokens"] == 2048
+    assert data["inference"]["top_p"] == 0.9
 
 
 @pytest.mark.asyncio
@@ -236,11 +240,8 @@ async def test_duplicate_profile_copies_all_fields(auth_client):
         "name": "Full Profile",
         "description": "Full description",
         "model_id": 3,  # mlx-community/full-model (vision) from fixtures
-        "context_length": 8192,
-        "system_prompt": "You are a helpful assistant.",
-        "temperature": 0.5,
-        "max_tokens": 2048,
-        "top_p": 0.9,
+        "context": {"context_length": 8192, "system_prompt": "You are a helpful assistant."},
+        "inference": {"temperature": 0.5, "max_tokens": 2048, "top_p": 0.9},
     }
     create_response = await auth_client.post("/api/profiles", json=profile_data)
     assert create_response.status_code == 201
@@ -259,11 +260,11 @@ async def test_duplicate_profile_copies_all_fields(auth_client):
     assert data["model_id"] == profile_data["model_id"]
     assert data["model_repo_id"] == "mlx-community/full-model"
     assert data["model_type"] == "vision"
-    assert data["context_length"] == profile_data["context_length"]
-    assert data["system_prompt"] == profile_data["system_prompt"]
-    assert data["temperature"] == profile_data["temperature"]
-    assert data["max_tokens"] == profile_data["max_tokens"]
-    assert data["top_p"] == profile_data["top_p"]
+    assert data["context"]["context_length"] == profile_data["context"]["context_length"]
+    assert data["context"]["system_prompt"] == profile_data["context"]["system_prompt"]
+    assert data["inference"]["temperature"] == profile_data["inference"]["temperature"]
+    assert data["inference"]["max_tokens"] == profile_data["inference"]["max_tokens"]
+    assert data["inference"]["top_p"] == profile_data["inference"]["top_p"]
     assert data["auto_start"] is False  # auto_start should NOT be copied
 
 
@@ -320,9 +321,9 @@ async def test_profile_generation_parameters_defaults(auth_client):
 
     data = response.json()
     # Generation params are now nullable (only meaningful for text/vision)
-    assert data["temperature"] is None
-    assert data["max_tokens"] is None
-    assert data["top_p"] is None
+    assert data["inference"] is None or data["inference"]["temperature"] is None
+    assert data["inference"] is None or data["inference"]["max_tokens"] is None
+    assert data["inference"] is None or data["inference"]["top_p"] is None
 
 
 @pytest.mark.asyncio
@@ -332,7 +333,7 @@ async def test_profile_generation_parameters_validation(auth_client):
     invalid_data = {
         "name": "Invalid Profile",
         "model_id": 1,
-        "temperature": 3.0,  # Max is 2.0
+        "inference": {"temperature": 3.0},  # Max is 2.0
     }
     response = await auth_client.post("/api/profiles", json=invalid_data)
     assert response.status_code == 422

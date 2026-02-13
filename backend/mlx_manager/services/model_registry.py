@@ -91,17 +91,20 @@ async def register_model_from_download(
 
 
 async def update_model_capabilities(repo_id: str, **caps: object) -> None:
-    """Update capability fields on a Model record.
+    """Update capability fields for a model.
 
-    Called by the probe service after probing completes.
-    Creates the Model record if it doesn't exist.
+    Creates a ModelCapabilities record (upsert pattern: delete + insert).
 
     Args:
         repo_id: HuggingFace model ID
-        **caps: Capability fields to update (e.g., supports_native_tools=True)
+        **caps: Capability fields (e.g., supports_native_tools=True, model_type="text-gen")
     """
+    from sqlalchemy import delete
+    from sqlmodel import select
+
     from mlx_manager.database import get_session
     from mlx_manager.models import Model
+    from mlx_manager.models.capabilities import ModelCapabilities
 
     async with get_session() as session:
         result = await session.execute(select(Model).where(Model.repo_id == repo_id))
@@ -110,12 +113,36 @@ async def update_model_capabilities(repo_id: str, **caps: object) -> None:
         if not model:
             model = Model(repo_id=repo_id)
             session.add(model)
+            await session.flush()  # Get the ID
 
+        # Update model_type on Model if provided
+        model_type = caps.pop("model_type", None) or model.model_type or "text-gen"
+        if isinstance(model_type, str):
+            model.model_type = model_type
+
+        # Delete existing capabilities (upsert)
+        await session.execute(
+            delete(ModelCapabilities).where(
+                ModelCapabilities.model_id == model.id  # type: ignore[arg-type]
+            )
+        )
+        await session.flush()
+
+        # Build kwargs for ModelCapabilities
+        cap_kwargs: dict[str, object] = {
+            "model_id": model.id,
+            "capability_type": str(model_type),
+            "probed_at": datetime.now(tz=UTC),
+            "probe_version": caps.pop("probe_version", 2),
+            "model_family": caps.pop("model_family", None),
+        }
+
+        # Add remaining capability fields that exist on the model
         for key, value in caps.items():
-            if hasattr(model, key):
-                setattr(model, key, value)
+            if hasattr(ModelCapabilities, key):
+                cap_kwargs[key] = value
 
-        model.probed_at = datetime.now(tz=UTC)
-        session.add(model)
+        capability = ModelCapabilities(**cap_kwargs)
+        session.add(capability)
         await session.commit()
-        logger.info(f"Updated capabilities for {repo_id}")
+        logger.info(f"Updated capabilities for {repo_id} (type={model_type})")

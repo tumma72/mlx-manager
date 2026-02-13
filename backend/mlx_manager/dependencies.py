@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from mlx_manager.database import get_db
-from mlx_manager.models import ServerProfile, User, UserStatus
+from mlx_manager.models import ExecutionProfile, User, UserStatus
 from mlx_manager.services.auth_service import decode_token
 
 # OAuth2 password bearer for JWT token extraction
@@ -18,14 +18,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 async def get_profile_or_404(
     profile_id: int,
     session: AsyncSession = Depends(get_db),
-) -> ServerProfile:
+) -> ExecutionProfile:
     """Get a profile by ID or raise 404."""
     from sqlalchemy.orm import selectinload
 
     result = await session.execute(
-        select(ServerProfile)
-        .where(ServerProfile.id == profile_id)
-        .options(selectinload(ServerProfile.model))  # type: ignore[arg-type]
+        select(ExecutionProfile)
+        .where(ExecutionProfile.id == profile_id)
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
     )
     profile = result.scalar_one_or_none()
     if not profile:

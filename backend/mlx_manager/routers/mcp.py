@@ -6,10 +6,10 @@ from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from mlx_manager.dependencies import get_current_user
 from mlx_manager.models import User
+from mlx_manager.models.dto.mcp import ToolExecuteRequest
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -111,13 +111,6 @@ TOOL_EXECUTORS = {
     "get_weather": execute_get_weather,
     "calculate": execute_calculate,
 }
-
-
-class ToolExecuteRequest(BaseModel):
-    """Request model for tool execution."""
-
-    name: str
-    arguments: dict[str, Any]
 
 
 @router.get("/tools")

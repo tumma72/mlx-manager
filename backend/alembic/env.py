@@ -11,7 +11,11 @@ from alembic import context
 from mlx_manager.config import settings
 
 # Import all models to ensure they are registered with SQLModel.metadata
-from mlx_manager.models import RunningInstance, ServerProfile, Setting  # noqa: F401
+from mlx_manager.models import (  # noqa: F401
+    ExecutionProfile,
+    ModelCapabilities,
+    Setting,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

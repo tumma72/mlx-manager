@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Combobox } from 'bits-ui';
-	import type { ServerProfile } from '$api';
+	import type { ExecutionProfile } from '$api';
 	import { Button } from '$components/ui';
 	import { Play, ChevronDown, Loader2 } from 'lucide-svelte';
 
 	interface Props {
-		profiles: ServerProfile[];
-		onStart: (profile: ServerProfile) => Promise<void>;
+		profiles: ExecutionProfile[];
+		onStart: (profile: ExecutionProfile) => Promise<void>;
 		disabled?: boolean;
 	}
 
@@ -19,7 +19,7 @@
 
 	// Stabilize profiles array: only update reference when IDs actually change.
 	// This prevents the Combobox from resetting its internal state on every poll.
-	let stableProfiles = $state<ServerProfile[]>([]);
+	let stableProfiles = $state<ExecutionProfile[]>([]);
 	let lastProfileIds = $state<string>('');
 
 	$effect(() => {

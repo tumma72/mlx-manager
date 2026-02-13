@@ -8,18 +8,18 @@
 
 import { profiles as profilesApi } from "$api";
 import type {
-  ServerProfile,
-  ServerProfileCreate,
-  ServerProfileUpdate,
+  ExecutionProfile,
+  ExecutionProfileCreate,
+  ExecutionProfileUpdate,
 } from "$api";
 import { reconcileArray } from "$lib/utils/reconcile";
 import { pollingCoordinator } from "$lib/services";
 
 /**
- * Custom equality function for ServerProfile.
+ * Custom equality function for ExecutionProfile.
  * Compares all fields that affect the UI.
  */
-function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
+function profilesEqual(a: ExecutionProfile, b: ExecutionProfile): boolean {
   return (
     a.id === b.id &&
     a.name === b.name &&
@@ -27,14 +27,12 @@ function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
     a.model_id === b.model_id &&
     a.model_repo_id === b.model_repo_id &&
     a.model_type === b.model_type &&
-    a.context_length === b.context_length &&
+    a.profile_type === b.profile_type &&
     a.auto_start === b.auto_start &&
-    a.system_prompt === b.system_prompt &&
-    a.temperature === b.temperature &&
-    a.max_tokens === b.max_tokens &&
-    a.top_p === b.top_p &&
-    a.enable_prompt_injection === b.enable_prompt_injection &&
     a.launchd_installed === b.launchd_installed &&
+    JSON.stringify(a.inference) === JSON.stringify(b.inference) &&
+    JSON.stringify(a.context) === JSON.stringify(b.context) &&
+    JSON.stringify(a.audio) === JSON.stringify(b.audio) &&
     a.created_at === b.created_at &&
     a.updated_at === b.updated_at
   );
@@ -42,7 +40,7 @@ function profilesEqual(a: ServerProfile, b: ServerProfile): boolean {
 
 class ProfileStore {
   // Single array instance - mutated in-place by reconcileArray
-  profiles = $state<ServerProfile[]>([]);
+  profiles = $state<ExecutionProfile[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
 
@@ -126,13 +124,13 @@ class ProfileStore {
     this.pollingInitialized = false;
   }
 
-  async create(data: ServerProfileCreate): Promise<ServerProfile> {
+  async create(data: ExecutionProfileCreate): Promise<ExecutionProfile> {
     const profile = await profilesApi.create(data);
     await this.refresh();
     return profile;
   }
 
-  async update(id: number, data: ServerProfileUpdate): Promise<ServerProfile> {
+  async update(id: number, data: ExecutionProfileUpdate): Promise<ExecutionProfile> {
     const profile = await profilesApi.update(id, data);
     await this.refresh();
     return profile;
@@ -143,13 +141,13 @@ class ProfileStore {
     await this.refresh();
   }
 
-  async duplicate(id: number, newName: string): Promise<ServerProfile> {
+  async duplicate(id: number, newName: string): Promise<ExecutionProfile> {
     const profile = await profilesApi.duplicate(id, newName);
     await this.refresh();
     return profile;
   }
 
-  getProfile(id: number): ServerProfile | undefined {
+  getProfile(id: number): ExecutionProfile | undefined {
     return this.profiles.find((p) => p.id === id);
   }
 }

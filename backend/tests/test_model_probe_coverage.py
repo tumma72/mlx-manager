@@ -233,9 +233,6 @@ async def test_probe_cleanup_failure():
 @pytest.mark.asyncio
 async def test_probe_preloaded_model_updates_capabilities():
     """Test that pre-loaded models get their capabilities updated."""
-    from datetime import UTC, datetime
-
-    from mlx_manager.models import Model
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
@@ -247,18 +244,20 @@ async def test_probe_preloaded_model_updates_capabilities():
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
     mock_pool._models = {"test/model": mock_loaded}  # Pre-loaded
 
-    # Mock DB capabilities
-    mock_caps = Model(
-        repo_id="test/model",
-        supports_native_tools=True,
-        supports_thinking=False,
-        practical_max_tokens=4096,
-        downloaded_at=datetime.now(tz=UTC),
-    )
+    # Mock DB capabilities — probe now loads Model with selectinload(capabilities)
+    # and assigns model_record.capabilities to loaded.capabilities
+    mock_caps = MagicMock()
+    mock_caps.supports_native_tools = True
+    mock_caps.supports_thinking = False
+    mock_caps.practical_max_tokens = 4096
+
+    mock_model_record = MagicMock()
+    mock_model_record.repo_id = "test/model"
+    mock_model_record.capabilities = mock_caps
 
     mock_session = AsyncMock()
     mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = mock_caps
+    mock_result.scalar_one_or_none.return_value = mock_model_record
     mock_session.execute.return_value = mock_result
     mock_session.__aenter__.return_value = mock_session
     mock_session.__aexit__.return_value = AsyncMock()

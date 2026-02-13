@@ -124,12 +124,20 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
             from mlx_manager.models import Model
 
             async with get_session() as session:
+                from sqlalchemy.orm import selectinload
                 from sqlmodel import select
 
-                caps_result = await session.execute(select(Model).where(Model.repo_id == model_id))
-                caps = caps_result.scalar_one_or_none()
-                if caps:
-                    loaded.capabilities = caps
+                stmt = (
+                    select(Model)
+                    .where(Model.repo_id == model_id)
+                    .options(
+                        selectinload(Model.capabilities)  # type: ignore[arg-type]
+                    )
+                )
+                caps_result = await session.execute(stmt)
+                model_record = caps_result.scalar_one_or_none()
+                if model_record and model_record.capabilities:
+                    loaded.capabilities = model_record.capabilities
         except Exception:
             pass
         yield ProbeStep(step="cleanup", status="skipped")
@@ -175,48 +183,3 @@ async def _save_capabilities(model_id: str, result: ProbeResult) -> None:
     caps_dict["probe_version"] = 2
     await update_model_capabilities(model_id, **caps_dict)
     logger.info(f"Saved capabilities for {model_id}")
-
-
-def _apply_result_to_caps(caps: object, result: ProbeResult) -> None:
-    """Apply probe result fields to a ModelCapabilities instance."""
-    # Common
-    if result.model_type is not None:
-        caps.model_type = result.model_type  # type: ignore[attr-defined]
-
-    # Text-gen
-    if result.supports_native_tools is not None:
-        caps.supports_native_tools = result.supports_native_tools  # type: ignore[attr-defined]
-    if result.supports_thinking is not None:
-        caps.supports_thinking = result.supports_thinking  # type: ignore[attr-defined]
-    if result.practical_max_tokens is not None:
-        caps.practical_max_tokens = result.practical_max_tokens  # type: ignore[attr-defined]
-
-    # Vision
-    if result.supports_multi_image is not None:
-        caps.supports_multi_image = result.supports_multi_image  # type: ignore[attr-defined]
-    if result.supports_video is not None:
-        caps.supports_video = result.supports_video  # type: ignore[attr-defined]
-
-    # Embeddings
-    if result.embedding_dimensions is not None:
-        caps.embedding_dimensions = result.embedding_dimensions  # type: ignore[attr-defined]
-    if result.max_sequence_length is not None:
-        caps.max_sequence_length = result.max_sequence_length  # type: ignore[attr-defined]
-    if result.is_normalized is not None:
-        caps.is_normalized = result.is_normalized  # type: ignore[attr-defined]
-
-    # Audio
-    if result.supports_tts is not None:
-        caps.supports_tts = result.supports_tts  # type: ignore[attr-defined]
-    if result.supports_stt is not None:
-        caps.supports_stt = result.supports_stt  # type: ignore[attr-defined]
-
-    # Composable adapter
-    if result.tool_format is not None:
-        caps.tool_format = result.tool_format  # type: ignore[attr-defined]
-    if result.model_family is not None:
-        caps.model_family = result.model_family  # type: ignore[attr-defined]
-    if result.tool_parser_id is not None:
-        caps.tool_parser_id = result.tool_parser_id  # type: ignore[attr-defined]
-    if result.thinking_parser_id is not None:
-        caps.thinking_parser_id = result.thinking_parser_id  # type: ignore[attr-defined]

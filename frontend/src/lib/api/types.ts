@@ -2,6 +2,30 @@
 
 export type ModelType = "text-gen" | "vision" | "embeddings" | "audio";
 
+export interface CapabilitiesData {
+  capability_type: string;
+  probed_at: string | null;
+  probe_version: number | null;
+  model_family: string | null;
+  // Text-gen / Vision
+  supports_native_tools: boolean | null;
+  supports_thinking: boolean | null;
+  tool_format: string | null;
+  practical_max_tokens: number | null;
+  tool_parser_id: string | null;
+  thinking_parser_id: string | null;
+  // Vision
+  supports_multi_image: boolean | null;
+  supports_video: boolean | null;
+  // Embeddings
+  embedding_dimensions: number | null;
+  max_sequence_length: number | null;
+  is_normalized: boolean | null;
+  // Audio
+  supports_tts: boolean | null;
+  supports_stt: boolean | null;
+}
+
 export interface DownloadedModel {
   id: number;
   repo_id: string;
@@ -11,6 +35,9 @@ export interface DownloadedModel {
   size_gb: number | null;
   downloaded_at: string | null;
   last_used_at: string | null;
+  // Nested capabilities (JTI hierarchy)
+  capabilities: CapabilitiesData | null;
+  // Backward-compatible flat accessors (computed by backend)
   probed_at: string | null;
   probe_version: number | null;
   supports_native_tools: boolean | null;
@@ -29,72 +56,69 @@ export interface DownloadedModel {
   supports_stt: boolean | null;
 }
 
-export interface ServerProfile {
-  id: number;
-  name: string;
-  description: string | null;
-  model_id: number;
-  model_repo_id: string | null;
-  model_type: string | null;
-  context_length: number | null;
-  auto_start: boolean;
-  system_prompt: string | null;
-  // Generation parameters
+// Value objects for profile composition
+export type ProfileType = "inference" | "audio" | "base";
+
+export interface InferenceParams {
   temperature: number | null;
   max_tokens: number | null;
   top_p: number | null;
-  // Tool calling
-  enable_prompt_injection: boolean;
-  // Audio parameters
-  tts_default_voice: string | null;
-  tts_default_speed: number | null;
+}
+
+export interface InferenceContext {
+  context_length: number | null;
+  system_prompt: string | null;
+  enable_tool_injection: boolean;
+}
+
+export interface AudioDefaults {
+  tts_voice: string | null;
+  tts_speed: number | null;
   tts_sample_rate: number | null;
-  stt_default_language: string | null;
-  // Metadata
+  stt_language: string | null;
+}
+
+export interface ExecutionProfile {
+  id: number;
+  name: string;
+  description: string | null;
+  model_id: number | null;
+  model_repo_id: string | null;
+  model_type: string | null;
+  profile_type: ProfileType;
+  auto_start: boolean;
   launchd_installed: boolean;
+  inference: InferenceParams | null;
+  context: InferenceContext | null;
+  audio: AudioDefaults | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface ServerProfileCreate {
+export interface ExecutionProfileCreate {
   name: string;
   description?: string;
   model_id: number;
-  context_length?: number;
   auto_start?: boolean;
-  system_prompt?: string;
-  // Generation parameters
-  temperature?: number;
-  max_tokens?: number;
-  top_p?: number;
-  // Tool calling
-  enable_prompt_injection?: boolean;
-  // Audio parameters
-  tts_default_voice?: string;
-  tts_default_speed?: number;
-  tts_sample_rate?: number;
-  stt_default_language?: string;
+  inference?: InferenceParams;
+  context?: InferenceContext;
+  audio?: AudioDefaults;
 }
 
-export interface ServerProfileUpdate {
+export interface ExecutionProfileUpdate {
   name?: string;
   description?: string;
   model_id?: number;
-  context_length?: number | null;
   auto_start?: boolean;
-  system_prompt?: string | null;
-  // Generation parameters
-  temperature?: number | null;
-  max_tokens?: number | null;
-  top_p?: number | null;
-  // Tool calling
-  enable_prompt_injection?: boolean;
-  // Audio parameters
-  tts_default_voice?: string | null;
-  tts_default_speed?: number | null;
-  tts_sample_rate?: number | null;
-  stt_default_language?: string | null;
+  inference?: InferenceParams;
+  context?: InferenceContext;
+  audio?: AudioDefaults;
 }
+
+// Backward-compatible aliases
+export type ServerProfile = ExecutionProfile;
+export type ServerProfileCreate = ExecutionProfileCreate;
+export type ServerProfileUpdate = ExecutionProfileUpdate;
 
 export interface RunningServer {
   profile_id: number;

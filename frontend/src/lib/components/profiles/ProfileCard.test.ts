@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import ProfileCard from "./ProfileCard.svelte";
-import type { ServerProfile, RunningServer } from "$api";
+import type { ExecutionProfile, RunningServer } from "$api";
 
 // Mock stores
 vi.mock("$stores", () => ({
@@ -63,26 +63,21 @@ import { goto } from "$app/navigation";
 
 // Helper to create mock profile
 function createMockProfile(
-  overrides: Partial<ServerProfile> = {},
-): ServerProfile {
+  overrides: Partial<ExecutionProfile> = {},
+): ExecutionProfile {
   return {
     id: 1,
     name: "Test Profile",
     description: null,
-    model_id: 1, model_repo_id: "mlx-community/test-model",
+    model_id: 1,
+    model_repo_id: "mlx-community/test-model",
     model_type: "lm",
-    context_length: null,
+    profile_type: "inference",
     auto_start: false,
-    system_prompt: null,
-    temperature: 0.7,
-    max_tokens: 4096,
-    top_p: 1.0,
-    enable_prompt_injection: false,
-    tts_default_voice: null,
-    tts_default_speed: null,
-    tts_sample_rate: null,
-    stt_default_language: null,
     launchd_installed: false,
+    inference: { temperature: 0.7, max_tokens: 4096, top_p: 1.0 },
+    context: { context_length: null, system_prompt: null, enable_tool_injection: false },
+    audio: null,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides,

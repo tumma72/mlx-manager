@@ -85,14 +85,13 @@ async def client(test_engine):
 
 @pytest.fixture
 def sample_profile_data():
-    """Sample profile data for testing."""
+    """Sample profile data for testing (new nested DTO format)."""
     return {
         "name": "Test Profile",
         "description": "A test profile",
         "model_id": 1,  # References test Model record (mlx-community/test-model-4bit)
-        "temperature": 0.7,
-        "max_tokens": 4096,
-        "top_p": 1.0,
+        "inference": {"temperature": 0.7, "max_tokens": 4096, "top_p": 1.0},
+        "context": {"context_length": None, "system_prompt": None, "enable_tool_injection": False},
     }
 
 
@@ -103,9 +102,7 @@ def sample_profile_data_alt():
         "name": "Another Profile",
         "description": "Another test profile",
         "model_id": 2,  # References test Model record (mlx-community/another-model-4bit)
-        "temperature": 0.5,
-        "max_tokens": 2048,
-        "top_p": 0.9,
+        "inference": {"temperature": 0.5, "max_tokens": 2048, "top_p": 0.9},
     }
 
 
@@ -424,9 +421,23 @@ async def test_profile(test_session, sample_profile_data, test_models):
     For use with test_session-based tests (not auth_client tests).
     Uses test_models fixture for FK constraint.
     """
-    from mlx_manager.models import ServerProfile
+    from mlx_manager.models import ExecutionProfile
 
-    profile = ServerProfile(**sample_profile_data)
+    # Flatten nested DTO format into entity columns
+    inf = sample_profile_data.get("inference", {}) or {}
+    ctx = sample_profile_data.get("context", {}) or {}
+    profile = ExecutionProfile(
+        name=sample_profile_data["name"],
+        description=sample_profile_data.get("description"),
+        model_id=sample_profile_data["model_id"],
+        profile_type="inference",
+        default_temperature=inf.get("temperature"),
+        default_max_tokens=inf.get("max_tokens"),
+        default_top_p=inf.get("top_p"),
+        default_context_length=ctx.get("context_length"),
+        default_system_prompt=ctx.get("system_prompt"),
+        default_enable_tool_injection=ctx.get("enable_tool_injection", False),
+    )
     test_session.add(profile)
     await test_session.commit()
     await test_session.refresh(profile)

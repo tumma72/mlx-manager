@@ -11,7 +11,7 @@ os.environ["MLX_MANAGER_DATABASE_PATH"] = ":memory:"
 os.environ["MLX_MANAGER_DEBUG"] = "false"
 
 from mlx_manager.dependencies import get_profile_or_404
-from mlx_manager.models import ServerProfile
+from mlx_manager.models import ExecutionProfile
 
 
 class TestGetProfileOr404:
@@ -21,9 +21,10 @@ class TestGetProfileOr404:
     async def test_returns_profile_when_exists(self, test_session, test_models):
         """Test returns profile when it exists in database."""
         # Create a profile
-        profile = ServerProfile(
+        profile = ExecutionProfile(
             name="Test Profile",
             model_id=test_models["model1"].id,
+            profile_type="inference",
         )
         test_session.add(profile)
         await test_session.commit()
@@ -52,9 +53,10 @@ class TestGetProfileOr404:
         # Create multiple profiles
         profiles = []
         for i in range(5):
-            profile = ServerProfile(
+            profile = ExecutionProfile(
                 name=f"Profile {i}",
                 model_id=test_models["model1"].id,
+                profile_type="inference",
             )
             test_session.add(profile)
             profiles.append(profile)
@@ -92,17 +94,18 @@ class TestGetProfileOr404:
     async def test_returns_all_profile_fields(self, test_session, test_models):
         """Test returns profile with all fields populated."""
         # Create a profile with all current fields
-        profile = ServerProfile(
+        profile = ExecutionProfile(
             name="Complete Profile",
             description="A complete test profile",
             model_id=test_models["model1"].id,
-            context_length=4096,
+            profile_type="inference",
+            default_context_length=4096,
             auto_start=True,
-            system_prompt="You are a helpful assistant.",
+            default_system_prompt="You are a helpful assistant.",
             # Generation parameters
-            temperature=0.8,
-            max_tokens=8192,
-            top_p=0.9,
+            default_temperature=0.8,
+            default_max_tokens=8192,
+            default_top_p=0.9,
         )
         test_session.add(profile)
         await test_session.commit()
@@ -115,21 +118,22 @@ class TestGetProfileOr404:
         assert result.name == "Complete Profile"
         assert result.description == "A complete test profile"
         assert result.model_id == test_models["model1"].id
-        assert result.context_length == 4096
+        assert result.default_context_length == 4096
         assert result.auto_start is True
-        assert result.system_prompt == "You are a helpful assistant."
+        assert result.default_system_prompt == "You are a helpful assistant."
         # Generation parameters
-        assert result.temperature == 0.8
-        assert result.max_tokens == 8192
-        assert result.top_p == 0.9
+        assert result.default_temperature == 0.8
+        assert result.default_max_tokens == 8192
+        assert result.default_top_p == 0.9
 
     @pytest.mark.asyncio
     async def test_profile_after_deletion_raises_404(self, test_session, test_models):
         """Test raises 404 after profile is deleted."""
         # Create and delete a profile
-        profile = ServerProfile(
+        profile = ExecutionProfile(
             name="Deleted Profile",
             model_id=test_models["model1"].id,
+            profile_type="inference",
         )
         test_session.add(profile)
         await test_session.commit()

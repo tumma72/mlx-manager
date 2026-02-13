@@ -1,14 +1,14 @@
 <script lang="ts">
-	import type { ServerProfile, ServerProfileCreate, ServerProfileUpdate, DownloadedModel } from '$api';
+	import type { ExecutionProfile, ExecutionProfileCreate, ExecutionProfileUpdate, DownloadedModel } from '$api';
 	import { models as modelsApi } from '$api';
 	import { Card, Button, Input } from '$components/ui';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	interface Props {
-		profile?: ServerProfile;
+		profile?: ExecutionProfile;
 		initialModelId?: number;
-		onSubmit: (data: ServerProfileCreate | ServerProfileUpdate) => Promise<void>;
+		onSubmit: (data: ExecutionProfileCreate | ExecutionProfileUpdate) => Promise<void>;
 		onCancel: () => void;
 	}
 
@@ -63,20 +63,20 @@
 	$effect(() => {
 		name = profile?.name ?? '';
 		description = profile?.description ?? '';
-		systemPrompt = profile?.system_prompt ?? '';
+		systemPrompt = profile?.context?.system_prompt ?? '';
 		modelId = profile?.model_id ?? initialModelId ?? null;
 		autoStart = profile?.auto_start ?? false;
 		// Generation parameters
-		temperature = profile?.temperature ?? null;
-		maxTokens = profile?.max_tokens ?? null;
-		topP = profile?.top_p ?? null;
+		temperature = profile?.inference?.temperature ?? null;
+		maxTokens = profile?.inference?.max_tokens ?? null;
+		topP = profile?.inference?.top_p ?? null;
 		// Tool calling
-		enablePromptInjection = profile?.enable_prompt_injection ?? false;
+		enablePromptInjection = profile?.context?.enable_tool_injection ?? false;
 		// Audio parameters
-		ttsDefaultVoice = profile?.tts_default_voice ?? null;
-		ttsDefaultSpeed = profile?.tts_default_speed ?? null;
-		ttsSampleRate = profile?.tts_sample_rate ?? null;
-		sttDefaultLanguage = profile?.stt_default_language ?? null;
+		ttsDefaultVoice = profile?.audio?.tts_voice ?? null;
+		ttsDefaultSpeed = profile?.audio?.tts_speed ?? null;
+		ttsSampleRate = profile?.audio?.tts_sample_rate ?? null;
+		sttDefaultLanguage = profile?.audio?.stt_language ?? null;
 	});
 
 	async function handleSubmit(e: Event) {
@@ -90,31 +90,36 @@
 		error = null;
 
 		try {
-			const data: ServerProfileCreate | ServerProfileUpdate = {
+			const data: ExecutionProfileCreate | ExecutionProfileUpdate = {
 				name,
 				description: description || undefined,
 				model_id: numericModelId,
 				auto_start: autoStart,
-				system_prompt: systemPrompt || undefined,
-				// Generation parameters (only for text/vision)
-				...(isTextOrVision
+				// Nest inference parameters (only for text/vision)
+				inference: isTextOrVision
 					? {
-							temperature: temperature ?? undefined,
-							max_tokens: maxTokens ?? undefined,
-							top_p: topP ?? undefined,
+							temperature: temperature ?? null,
+							max_tokens: maxTokens ?? null,
+							top_p: topP ?? null,
 						}
-					: {}),
-				// Tool calling (only for text/vision)
-				...(isTextOrVision ? { enable_prompt_injection: enablePromptInjection } : {}),
-				// Audio parameters (only for audio)
-				...(isAudio
+					: undefined,
+				// Nest context (only for text/vision)
+				context: isTextOrVision
 					? {
-							tts_default_voice: ttsDefaultVoice ?? undefined,
-							tts_default_speed: ttsDefaultSpeed ?? undefined,
-							tts_sample_rate: ttsSampleRate ?? undefined,
-							stt_default_language: sttDefaultLanguage ?? undefined,
+							context_length: null,
+							system_prompt: systemPrompt || null,
+							enable_tool_injection: enablePromptInjection,
 						}
-					: {}),
+					: undefined,
+				// Nest audio parameters (only for audio)
+				audio: isAudio
+					? {
+							tts_voice: ttsDefaultVoice ?? null,
+							tts_speed: ttsDefaultSpeed ?? null,
+							tts_sample_rate: ttsSampleRate ?? null,
+							stt_language: sttDefaultLanguage ?? null,
+						}
+					: undefined,
 			};
 
 			await onSubmit(data);

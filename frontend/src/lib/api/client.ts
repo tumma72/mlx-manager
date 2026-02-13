@@ -1,9 +1,9 @@
 // API Client for MLX Model Manager
 
 import type {
-  ServerProfile,
-  ServerProfileCreate,
-  ServerProfileUpdate,
+  ExecutionProfile,
+  ExecutionProfileCreate,
+  ExecutionProfileUpdate,
   RunningServer,
   ModelSearchResult,
   LocalModel,
@@ -178,21 +178,21 @@ export const auth = {
 
 // Profiles API
 export const profiles = {
-  list: async (): Promise<ServerProfile[]> => {
+  list: async (): Promise<ExecutionProfile[]> => {
     const res = await fetch(`${API_BASE}/profiles`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
-  get: async (id: number): Promise<ServerProfile> => {
+  get: async (id: number): Promise<ExecutionProfile> => {
     const res = await fetch(`${API_BASE}/profiles/${id}`, {
       headers: getAuthHeaders(),
     });
     return handleResponse(res);
   },
 
-  create: async (data: ServerProfileCreate): Promise<ServerProfile> => {
+  create: async (data: ExecutionProfileCreate): Promise<ExecutionProfile> => {
     const res = await fetch(`${API_BASE}/profiles`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -203,8 +203,8 @@ export const profiles = {
 
   update: async (
     id: number,
-    data: ServerProfileUpdate,
-  ): Promise<ServerProfile> => {
+    data: ExecutionProfileUpdate,
+  ): Promise<ExecutionProfile> => {
     const res = await fetch(`${API_BASE}/profiles/${id}`, {
       method: "PUT",
       headers: getAuthHeaders(),
@@ -221,7 +221,7 @@ export const profiles = {
     return handleResponse(res);
   },
 
-  duplicate: async (id: number, newName: string): Promise<ServerProfile> => {
+  duplicate: async (id: number, newName: string): Promise<ExecutionProfile> => {
     const res = await fetch(
       `${API_BASE}/profiles/${id}/duplicate?new_name=${encodeURIComponent(newName)}`,
       {

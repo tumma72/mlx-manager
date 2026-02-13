@@ -194,7 +194,7 @@ class TestInitDb:
         # Tables should already be created by test_engine fixture
         # Just verify the metadata has our tables
         table_names = SQLModel.metadata.tables.keys()
-        assert "server_profiles" in table_names
+        assert "execution_profiles" in table_names
         assert "settings" in table_names
 
     @pytest.mark.asyncio

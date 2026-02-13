@@ -8,7 +8,6 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
@@ -36,6 +35,7 @@ from mlx_manager.models import (
     Setting,
     User,
 )
+from mlx_manager.models.dto.settings import TimeoutSettings, TimeoutSettingsUpdate
 from mlx_manager.services.encryption_service import (
     InvalidToken,
     decrypt_api_key,
@@ -43,27 +43,6 @@ from mlx_manager.services.encryption_service import (
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
-
-
-# ============================================================================
-# Timeout Configuration Models
-# ============================================================================
-
-
-class TimeoutSettings(BaseModel):
-    """Timeout configuration for MLX Server endpoints."""
-
-    chat_seconds: float = Field(default=900.0, ge=60, le=7200)
-    completions_seconds: float = Field(default=600.0, ge=60, le=7200)
-    embeddings_seconds: float = Field(default=120.0, ge=30, le=600)
-
-
-class TimeoutSettingsUpdate(BaseModel):
-    """Update model for timeout settings."""
-
-    chat_seconds: float | None = Field(default=None, ge=60, le=7200)
-    completions_seconds: float | None = Field(default=None, ge=60, le=7200)
-    embeddings_seconds: float | None = Field(default=None, ge=30, le=600)
 
 
 # ============================================================================

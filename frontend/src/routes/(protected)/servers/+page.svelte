@@ -3,7 +3,7 @@
 	import { serverStore, profileStore } from '$stores';
 	import { ProfileSelector, ServerTile, StartingTile } from '$components/servers';
 	import { Button } from '$components/ui';
-	import type { ServerProfile } from '$api';
+	import type { ExecutionProfile } from '$api';
 	import { RefreshCw, Plus } from 'lucide-svelte';
 	let refreshing = $state(false);
 
@@ -78,7 +78,7 @@
 	// Total active count (starting + running) - no duplicates since starting excludes running
 	const activeCount = $derived(startingOrFailedProfiles.length + runningServers.length);
 
-	async function handleStartProfile(profile: ServerProfile) {
+	async function handleStartProfile(profile: ExecutionProfile) {
 		await serverStore.start(profile.id);
 	}
 </script>

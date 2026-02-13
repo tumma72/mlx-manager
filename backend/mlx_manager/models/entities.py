@@ -1,0 +1,173 @@
+"""SQLModel database entities.
+
+This module contains ONLY table=True entities and shared base classes.
+DTOs (request/response models) live in the dto/ package.
+"""
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Optional
+
+from sqlmodel import Field, Relationship, SQLModel
+
+from mlx_manager.models.enums import ApiType, BackendType, UserStatus
+
+if TYPE_CHECKING:
+    from mlx_manager.models.capabilities import ModelCapabilities
+    from mlx_manager.models.profiles import ExecutionProfile
+
+
+class UserBase(SQLModel):
+    """Base model for users. Shared by User entity and UserPublic DTO."""
+
+    email: str = Field(unique=True, index=True)
+
+
+class User(UserBase, table=True):
+    """User database model."""
+
+    __tablename__ = "users"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    hashed_password: str
+    is_admin: bool = Field(default=False)
+    status: UserStatus = Field(default=UserStatus.PENDING)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    approved_at: datetime | None = None
+    approved_by: int | None = Field(default=None, foreign_key="users.id")
+
+
+class Model(SQLModel, table=True):
+    """Unified model entity for catalog metadata.
+
+    Created when a model is discovered in HuggingFace cache or downloaded.
+    Capability data lives in the ``ModelCapabilities`` table (STI),
+    linked via the ``capabilities`` relationship.
+    """
+
+    __tablename__ = "models"
+
+    id: int | None = Field(default=None, primary_key=True)
+    repo_id: str = Field(unique=True, index=True)
+    model_type: str | None = Field(default=None)
+
+    # Download info
+    local_path: str | None = None
+    size_bytes: int | None = None
+    downloaded_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    last_used_at: datetime | None = None
+
+    # Relationships
+    profiles: list["ExecutionProfile"] = Relationship(back_populates="model")
+    capabilities: Optional["ModelCapabilities"] = Relationship(
+        back_populates="model",
+        sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"},
+    )
+
+
+class Setting(SQLModel, table=True):
+    """Application settings."""
+
+    __tablename__ = "settings"  # type: ignore
+
+    key: str = Field(primary_key=True)
+    value: str
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+class Download(SQLModel, table=True):
+    """Active download tracking."""
+
+    __tablename__ = "downloads"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    model_id: str = Field(index=True)
+    # Status flow: pending -> downloading -> completed/failed
+    #              downloading -> paused -> downloading (resume)
+    #              downloading/paused/pending -> cancelled
+    status: str = Field(default="pending")
+    total_bytes: int | None = None
+    downloaded_bytes: int = Field(default=0)
+    error: str | None = None
+    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    completed_at: datetime | None = None
+
+
+# ============================================================================
+# Backend Routing Entities (Phase 10 - Cloud Fallback)
+# ============================================================================
+
+
+# Default base URLs for known providers
+DEFAULT_BASE_URLS: dict[BackendType, str] = {
+    BackendType.OPENAI: "https://api.openai.com",
+    BackendType.ANTHROPIC: "https://api.anthropic.com",
+    BackendType.TOGETHER: "https://api.together.xyz",
+    BackendType.GROQ: "https://api.groq.com/openai",
+    BackendType.FIREWORKS: "https://api.fireworks.ai/inference",
+    BackendType.MISTRAL: "https://api.mistral.ai",
+    BackendType.DEEPSEEK: "https://api.deepseek.com",
+}
+
+# API type mapping for each backend type
+API_TYPE_FOR_BACKEND: dict[BackendType, ApiType] = {
+    BackendType.OPENAI: ApiType.OPENAI,
+    BackendType.ANTHROPIC: ApiType.ANTHROPIC,
+    BackendType.TOGETHER: ApiType.OPENAI,
+    BackendType.GROQ: ApiType.OPENAI,
+    BackendType.FIREWORKS: ApiType.OPENAI,
+    BackendType.MISTRAL: ApiType.OPENAI,
+    BackendType.DEEPSEEK: ApiType.OPENAI,
+    BackendType.OPENAI_COMPATIBLE: ApiType.OPENAI,
+    BackendType.ANTHROPIC_COMPATIBLE: ApiType.ANTHROPIC,
+}
+
+
+class BackendMapping(SQLModel, table=True):
+    """Maps model patterns to backends with fallback configuration."""
+
+    __tablename__ = "backend_mappings"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    model_pattern: str = Field(index=True)  # e.g., "gpt-*" or exact model name
+    pattern_type: str = Field(default="exact")  # "exact", "prefix", or "regex"
+    backend_type: BackendType
+    backend_model: str | None = None  # Override model name for cloud
+    fallback_backend: BackendType | None = None  # Optional fallback on failure
+    priority: int = Field(default=0)  # Higher = checked first for pattern matching
+    enabled: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+class CloudCredential(SQLModel, table=True):
+    """Encrypted cloud API credentials."""
+
+    __tablename__ = "cloud_credentials"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    backend_type: BackendType  # No longer unique - allows multiple providers of same API type
+    api_type: ApiType = Field(default=ApiType.OPENAI)  # Which API protocol to use
+    name: str = Field(default="")  # Display name (e.g., "Groq", "Together", "My Custom API")
+    encrypted_api_key: str  # Encrypted with AuthLib
+    base_url: str | None = None  # Override default API URL (Azure OpenAI, proxies)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+# ============================================================================
+# Model Pool Configuration Entity (Phase 11 - Configuration UI)
+# ============================================================================
+
+
+class ServerConfig(SQLModel, table=True):
+    """Global server configuration (singleton - only id=1 used)."""
+
+    __tablename__ = "server_config"  # type: ignore
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Model pool settings
+    memory_limit_mode: str = Field(default="percent")  # "percent" or "gb"
+    memory_limit_value: int = Field(default=80)  # % or GB depending on mode
+    eviction_policy: str = Field(default="lru")  # "lru", "lfu", "ttl"
+    preload_models: str = Field(default="[]")  # JSON array of model paths
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

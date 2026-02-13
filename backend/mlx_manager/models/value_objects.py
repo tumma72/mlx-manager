@@ -8,9 +8,9 @@ __all__ = ["InferenceParams", "InferenceContext", "AudioDefaults"]
 class InferenceParams(BaseModel):
     """Generation parameters settable at profile or request level."""
 
-    temperature: float | None = None
-    max_tokens: int | None = None
-    top_p: float | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=1, le=128000)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class InferenceContext(BaseModel):

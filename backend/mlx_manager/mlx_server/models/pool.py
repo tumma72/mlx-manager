@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.composable import (
         ModelAdapter,
     )
+    from mlx_manager.models.capabilities import ModelCapabilities
 
 try:  # pragma: no cover
     import logfire  # pragma: no cover
@@ -43,7 +44,7 @@ class LoadedModel:
     preloaded: bool = False  # Whether protected from eviction
     adapter_path: str | None = None  # Path to LoRA adapter if loaded with one
     adapter_info: AdapterInfo | None = None  # Adapter metadata if applicable
-    capabilities: Any = None  # Model from DB, attached at load time
+    capabilities: ModelCapabilities | None = None  # JTI capability record from DB
     adapter: ModelAdapter | None = None  # Composable adapter for all model types
 
     def touch(self) -> None:
@@ -411,18 +412,22 @@ class ModelPoolManager:
                 from mlx_manager.models import Model
 
                 async with get_session() as session:
+                    from sqlalchemy.orm import selectinload
                     from sqlmodel import select
 
                     caps_result = await session.execute(
-                        select(Model).where(Model.repo_id == model_id)
+                        select(Model)
+                        .where(Model.repo_id == model_id)
+                        .options(selectinload(Model.capabilities))  # type: ignore[arg-type]
                     )
-                    caps = caps_result.scalar_one_or_none()
-                    if caps:
-                        loaded.capabilities = caps
+                    model_record = caps_result.scalar_one_or_none()
+                    if model_record and model_record.capabilities:
+                        loaded.capabilities = model_record.capabilities
+                        caps = model_record.capabilities
                         logger.info(
                             f"Attached capabilities for {model_id}: "
-                            f"native_tools={caps.supports_native_tools}, "
-                            f"thinking={caps.supports_thinking}"
+                            f"type={caps.capability_type}, "
+                            f"family={caps.model_family}"
                         )
             except Exception as e:
                 logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
@@ -442,7 +447,7 @@ class ModelPoolManager:
                 thinking_parser = None
                 if loaded.capabilities:
                     caps = loaded.capabilities
-                    family = getattr(caps, "model_family", None)
+                    family = caps.model_family
 
                     # Only resolve parsers for text/vision (audio has no parsers)
                     if model_type in (ModelType.TEXT_GEN, ModelType.VISION):
@@ -451,8 +456,8 @@ class ModelPoolManager:
                             resolve_tool_parser,
                         )
 
-                        tp_id = getattr(caps, "tool_parser_id", None)
-                        thk_id = getattr(caps, "thinking_parser_id", None)
+                        tp_id = caps.tool_parser_id
+                        thk_id = caps.thinking_parser_id
                         if tp_id:
                             try:
                                 tool_parser = resolve_tool_parser(tp_id)

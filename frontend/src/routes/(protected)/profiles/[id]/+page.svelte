@@ -5,10 +5,10 @@
 	import { onMount } from 'svelte';
 	import { profiles } from '$api';
 	import { profileStore } from '$stores';
-	import type { ServerProfile, ServerProfileUpdate } from '$api';
+	import type { ExecutionProfile, ExecutionProfileUpdate } from '$api';
 	import { ProfileForm } from '$components/profiles';
 
-	let profile = $state<ServerProfile | null>(null);
+	let profile = $state<ExecutionProfile | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -24,7 +24,7 @@
 		}
 	});
 
-	async function handleSubmit(data: ServerProfileUpdate) {
+	async function handleSubmit(data: ExecutionProfileUpdate) {
 		await profileStore.update(profileId, data);
 		await goto(resolve('/profiles'));
 	}

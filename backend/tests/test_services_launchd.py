@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mlx_manager.config import DEFAULT_PORT
-from mlx_manager.models import ServerProfile
+from mlx_manager.models import ExecutionProfile
 from mlx_manager.services.launchd import LaunchdManager
 
 
@@ -19,15 +19,16 @@ def launchd_manager(tmp_path):
 
 @pytest.fixture
 def sample_profile():
-    """Create a sample ServerProfile for testing.
+    """Create a sample ExecutionProfile for testing.
 
     With the embedded MLX server, profiles no longer have port/host fields.
     """
-    return ServerProfile(
+    return ExecutionProfile(
         id=1,
         name="Test Profile",
         model_id=1,
         auto_start=True,
+        profile_type="inference",
     )
 
 

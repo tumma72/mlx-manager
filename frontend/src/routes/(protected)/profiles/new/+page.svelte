@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { profileStore } from '$stores';
-	import type { ServerProfileCreate, ServerProfileUpdate } from '$api';
+	import type { ExecutionProfileCreate, ExecutionProfileUpdate } from '$api';
 	import { models as modelsApi } from '$api';
 	import { ProfileForm } from '$components/profiles';
 
@@ -27,8 +27,8 @@
 		}
 	});
 
-	async function handleSubmit(data: ServerProfileCreate | ServerProfileUpdate) {
-		await profileStore.create(data as ServerProfileCreate);
+	async function handleSubmit(data: ExecutionProfileCreate | ExecutionProfileUpdate) {
+		await profileStore.create(data as ExecutionProfileCreate);
 		await goto(resolve('/profiles'));
 	}
 

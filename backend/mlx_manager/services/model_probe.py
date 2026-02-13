@@ -127,12 +127,17 @@ async def probe_model(model_id: str):
             from mlx_manager.models import Model
 
             async with get_session() as session:
+                from sqlalchemy.orm import selectinload
                 from sqlmodel import select
 
-                caps_result = await session.execute(select(Model).where(Model.repo_id == model_id))
-                caps = caps_result.scalar_one_or_none()
-                if caps:
-                    loaded.capabilities = caps
+                caps_result = await session.execute(
+                    select(Model)
+                    .where(Model.repo_id == model_id)
+                    .options(selectinload(Model.capabilities))  # type: ignore[arg-type]
+                )
+                model_record = caps_result.scalar_one_or_none()
+                if model_record and model_record.capabilities:
+                    loaded.capabilities = model_record.capabilities
         except Exception:
             pass
         yield ProbeStep(step="cleanup", status="skipped")
