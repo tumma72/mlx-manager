@@ -22,6 +22,7 @@ from mlx_manager.mlx_server.parsers import (
     Glm4NativeParser,
     Glm4XmlParser,
     HermesJsonParser,
+    LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
     NullThinkingParser,
@@ -419,6 +420,135 @@ class TestLlamaPythonParser:
         assert args["units"] == "metric"
 
 
+# --- LiquidPythonParser Tests ---
+
+
+class TestLiquidPythonParser:
+    """Tests for LiquidAI Pythonic function call format."""
+
+    def setup_method(self) -> None:
+        self.parser = LiquidPythonParser()
+
+    def test_parser_id(self) -> None:
+        assert self.parser.parser_id == "liquid_python"
+
+    def test_stream_markers(self) -> None:
+        assert self.parser.stream_markers == [("<|tool_call_start|>", "<|tool_call_end|>")]
+
+    def test_extract_single_call_in_list(self) -> None:
+        text = '<|tool_call_start|>[get_weather(city="London")]<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args["city"] == "London"
+
+    def test_extract_bare_call_no_list(self) -> None:
+        text = '<|tool_call_start|>get_weather(city="London")<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args["city"] == "London"
+
+    def test_extract_multiple_calls(self) -> None:
+        text = '<|tool_call_start|>[get_weather(city="NYC"), get_time(tz="EST")]<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[1].function.name == "get_time"
+        args0 = json.loads(calls[0].function.arguments)
+        args1 = json.loads(calls[1].function.arguments)
+        assert args0["city"] == "NYC"
+        assert args1["tz"] == "EST"
+
+    def test_extract_unclosed_marker(self) -> None:
+        text = '<|tool_call_start|>[get_weather(city="London")]'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_with_surrounding_text(self) -> None:
+        text = (
+            'Let me check... <|tool_call_start|>[get_weather(city="London")]'
+            "<|tool_call_end|> I'll check the weather."
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_integer_args(self) -> None:
+        text = '<|tool_call_start|>[search(query="test", limit=10)]<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["query"] == "test"
+        assert args["limit"] == 10
+
+    def test_extract_mixed_arg_types(self) -> None:
+        text = '<|tool_call_start|>[func(str="hello", num=42, flag=True)]<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["str"] == "hello"
+        assert args["num"] == 42
+        assert args["flag"] is True
+
+    def test_extract_nested_dict_arg(self) -> None:
+        text = '<|tool_call_start|>[func(data={"key": "value", "num": 123})]<|tool_call_end|>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["data"]["key"] == "value"
+        assert args["data"]["num"] == 123
+
+    def test_extract_nested_list_arg(self) -> None:
+        text = "<|tool_call_start|>[func(items=[1, 2, 3])]<|tool_call_end|>"
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["items"] == [1, 2, 3]
+
+    def test_extract_empty_args(self) -> None:
+        text = "<|tool_call_start|>[func()]<|tool_call_end|>"
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "func"
+        assert calls[0].function.arguments == "{}"
+
+    def test_extract_empty_text(self) -> None:
+        assert self.parser.extract("") == []
+
+    def test_extract_empty_content(self) -> None:
+        text = "<|tool_call_start|><|tool_call_end|>"
+        calls = self.parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_invalid_syntax(self) -> None:
+        text = "<|tool_call_start|>[get_weather(city=]<|tool_call_end|>"
+        calls = self.parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_deduplicates(self) -> None:
+        text = (
+            '<|tool_call_start|>[get_weather(city="NYC")]<|tool_call_end|>'
+            '<|tool_call_start|>[get_weather(city="NYC")]<|tool_call_end|>'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+
+    def test_validates_positive(self) -> None:
+        text = '<|tool_call_start|>[get_weather(city="London")]<|tool_call_end|>'
+        assert self.parser.validates(text, "get_weather") is True
+
+    def test_validates_negative_wrong_fn(self) -> None:
+        text = '<|tool_call_start|>[get_weather(city="London")]<|tool_call_end|>'
+        assert self.parser.validates(text, "get_time") is False
+
+    def test_validates_negative_no_call(self) -> None:
+        assert self.parser.validates("Hello world", "get_weather") is False
+
+
 # --- NullToolParser Tests ---
 
 
@@ -631,6 +761,10 @@ class TestRegistry:
         parser = resolve_tool_parser("llama_python")
         assert isinstance(parser, LlamaPythonParser)
 
+    def test_resolve_tool_parser_liquid_python(self) -> None:
+        parser = resolve_tool_parser("liquid_python")
+        assert isinstance(parser, LiquidPythonParser)
+
     def test_resolve_tool_parser_null(self) -> None:
         parser = resolve_tool_parser("null")
         assert isinstance(parser, NullToolParser)
@@ -652,7 +786,15 @@ class TestRegistry:
             resolve_thinking_parser("nonexistent")
 
     def test_all_tool_parsers_registered(self) -> None:
-        expected = {"hermes_json", "glm4_native", "glm4_xml", "llama_xml", "llama_python", "null"}
+        expected = {
+            "hermes_json",
+            "glm4_native",
+            "glm4_xml",
+            "llama_xml",
+            "llama_python",
+            "liquid_python",
+            "null",
+        }
         assert set(TOOL_PARSERS.keys()) == expected
 
     def test_all_thinking_parsers_registered(self) -> None:
@@ -673,6 +815,7 @@ class TestRegistry:
             Glm4XmlParser,
             LlamaXmlParser,
             LlamaPythonParser,
+            LiquidPythonParser,
             NullToolParser,
         }
         registered_tool_classes = set(TOOL_PARSERS.values())

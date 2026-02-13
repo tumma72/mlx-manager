@@ -509,6 +509,7 @@ class TestComposableFamilyRegistry:
             "llama",
             "gemma",
             "mistral",
+            "liquid",
             "whisper",
             "kokoro",
             "audio_default",

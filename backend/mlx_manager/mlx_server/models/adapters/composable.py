@@ -663,6 +663,43 @@ class MistralAdapter(ModelAdapter):
         )
 
 
+class LiquidAdapter(ModelAdapter):
+    """Adapter for LiquidAI LFM2/LFM2.5 family models."""
+
+    @property
+    def family(self) -> str:
+        return "liquid"
+
+    def _default_tool_parser(self) -> ToolCallParser:
+        from mlx_manager.mlx_server.parsers.tool_call import LiquidPythonParser
+
+        return LiquidPythonParser()
+
+    def _default_thinking_parser(self) -> ThinkingParser:
+        return ThinkTagParser()
+
+    def supports_native_tools(self) -> bool:
+        return True
+
+    def _compute_stop_tokens(self) -> list[int]:
+        stop_ids = []
+        eos = getattr(self._actual_tokenizer, "eos_token_id", None)
+        if eos is not None:
+            stop_ids.append(eos)
+        for token_str in ("<|im_end|>",):
+            try:
+                tid = self._actual_tokenizer.convert_tokens_to_ids(token_str)
+                if (
+                    tid is not None
+                    and tid != getattr(self._actual_tokenizer, "unk_token_id", None)
+                    and tid not in stop_ids
+                ):
+                    stop_ids.append(tid)
+            except Exception:
+                pass
+        return stop_ids
+
+
 # --- Audio Adapters ---
 
 
@@ -739,6 +776,7 @@ FAMILY_REGISTRY: dict[str, type[ModelAdapter]] = {
     "llama": LlamaAdapter,
     "gemma": GemmaAdapter,
     "mistral": MistralAdapter,
+    "liquid": LiquidAdapter,
     "whisper": WhisperAdapter,
     "kokoro": KokoroAdapter,
     "audio_default": DefaultAudioAdapter,

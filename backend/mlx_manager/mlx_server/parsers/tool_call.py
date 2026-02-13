@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import uuid
@@ -271,6 +272,111 @@ class LlamaPythonParser(ToolCallParser):
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid Llama Python tool call: {}", e)
             return None
+
+
+class LiquidPythonParser(ToolCallParser):
+    """LiquidAI format: <|tool_call_start|>[func(arg="val")]<|tool_call_end|>"""
+
+    _PATTERN_CLOSED = re.compile(
+        r"<\|tool_call_start\|\>\s*(.*?)\s*<\|tool_call_end\|\>", re.DOTALL
+    )
+    _PATTERN_UNCLOSED = re.compile(r"<\|tool_call_start\|\>\s*(.*?)\s*$", re.DOTALL)
+
+    @property
+    def parser_id(self) -> str:
+        return "liquid_python"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("<|tool_call_start|>", "<|tool_call_end|>")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+        seen: set[str] = set()
+
+        for match in self._PATTERN_CLOSED.finditer(text):
+            for tc in self._parse_match(match):
+                key = f"{tc.function.name}:{tc.function.arguments}"
+                if key not in seen:
+                    seen.add(key)
+                    results.append(tc)
+
+        if not results:
+            for match in self._PATTERN_UNCLOSED.finditer(text):
+                for tc in self._parse_match(match):
+                    key = f"{tc.function.name}:{tc.function.arguments}"
+                    if key not in seen:
+                        seen.add(key)
+                        results.append(tc)
+
+        return results
+
+    @staticmethod
+    def _parse_match(match: re.Match[str]) -> list[ToolCall]:
+        """Parse Pythonic function call syntax using ast.
+
+        Format: [func_name(arg="val", arg2=123)]
+        or: func_name(arg="val")
+        """
+        try:
+            import ast
+
+            content = match.group(1).strip()
+            if not content:
+                return []
+
+            # Parse as Python expression
+            try:
+                tree = ast.parse(content, mode="eval")
+            except SyntaxError:
+                logger.warning("Invalid Python syntax in Liquid tool call: {}", content)
+                return []
+
+            results: list[ToolCall] = []
+            body = tree.body
+
+            # Handle both list of calls and single call
+            calls: list[ast.Call] = []
+            if isinstance(body, ast.List):
+                for elt in body.elts:
+                    if isinstance(elt, ast.Call):
+                        calls.append(elt)
+            elif isinstance(body, ast.Call):
+                calls.append(body)
+
+            for call in calls:
+                # Extract function name
+                if isinstance(call.func, ast.Name):
+                    name = call.func.id
+                else:
+                    logger.warning("Unsupported function type in Liquid tool call")
+                    continue
+
+                # Extract arguments
+                args_dict: dict[str, Any] = {}
+                for kw in call.keywords:
+                    arg_name = kw.arg
+                    if arg_name is None:
+                        continue
+                    try:
+                        # Try literal_eval for safe evaluation
+                        value = ast.literal_eval(kw.value)
+                    except (ValueError, SyntaxError):
+                        # Fallback to unparsing the AST node
+                        value = ast.unparse(kw.value)
+                    args_dict[arg_name] = value
+
+                results.append(
+                    ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        function=FunctionCall(name=name, arguments=json.dumps(args_dict)),
+                    )
+                )
+
+            return results
+        except (IndexError, AttributeError) as e:
+            logger.warning("Invalid Liquid tool call: {}", e)
+            return []
 
 
 class NullToolParser(ToolCallParser):

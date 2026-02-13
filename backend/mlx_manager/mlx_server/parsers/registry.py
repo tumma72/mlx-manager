@@ -8,6 +8,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     Glm4NativeParser,
     Glm4XmlParser,
     HermesJsonParser,
+    LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
     NullToolParser,
@@ -20,6 +21,7 @@ TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "glm4_xml": Glm4XmlParser,
     "llama_xml": LlamaXmlParser,
     "llama_python": LlamaPythonParser,
+    "liquid_python": LiquidPythonParser,
     "null": NullToolParser,
 }
 

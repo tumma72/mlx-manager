@@ -175,6 +175,7 @@ async def _clear_cached_capabilities(model_id: str) -> None:
     """Clear cached capabilities for a model before re-probing."""
     from mlx_manager.database import get_session
     from mlx_manager.models import Model
+    from mlx_manager.models.capabilities import ModelCapabilities
 
     async with get_session() as session:
         from sqlmodel import select
@@ -182,24 +183,13 @@ async def _clear_cached_capabilities(model_id: str) -> None:
         result = await session.execute(select(Model).where(Model.repo_id == model_id))
         model = result.scalar_one_or_none()
         if model:
-            # Clear capability fields
-            model.probed_at = None
-            model.probe_version = None
-            model.supports_native_tools = None
-            model.supports_thinking = None
-            model.tool_format = None
-            model.practical_max_tokens = None
-            model.model_family = None
-            model.tool_parser_id = None
-            model.thinking_parser_id = None
-            model.supports_multi_image = None
-            model.supports_video = None
-            model.embedding_dimensions = None
-            model.max_sequence_length = None
-            model.is_normalized = None
-            model.supports_tts = None
-            model.supports_stt = None
-            await session.commit()
+            cap_result = await session.execute(
+                select(ModelCapabilities).where(ModelCapabilities.model_id == model.id)
+            )
+            caps = cap_result.scalar_one_or_none()
+            if caps:
+                await session.delete(caps)
+                await session.commit()
 
 
 async def _probe_single(

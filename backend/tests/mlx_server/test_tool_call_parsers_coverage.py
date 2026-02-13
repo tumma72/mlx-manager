@@ -12,6 +12,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     Glm4NativeParser,
     Glm4XmlParser,
     HermesJsonParser,
+    LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
     _parse_python_args,
@@ -96,6 +97,33 @@ class TestLlamaPythonParserErrors:
         match = MagicMock(spec=re.Match)
         match.group.side_effect = AttributeError("bad")
         assert LlamaPythonParser._parse_match(match) is None
+
+
+class TestLiquidPythonParserErrors:
+    """Cover error paths in LiquidPythonParser._parse_match."""
+
+    def test_empty_content_returns_empty(self) -> None:
+        match = MagicMock(spec=re.Match)
+        match.group.return_value = "   "
+        assert LiquidPythonParser._parse_match(match) == []
+
+    def test_invalid_syntax_returns_empty(self) -> None:
+        match = MagicMock(spec=re.Match)
+        match.group.return_value = "[get_weather(city=]"
+        assert LiquidPythonParser._parse_match(match) == []
+
+    def test_exception_returns_empty(self) -> None:
+        match = MagicMock(spec=re.Match)
+        match.group.side_effect = AttributeError("bad")
+        assert LiquidPythonParser._parse_match(match) == []
+
+    def test_unsupported_function_type(self) -> None:
+        """Test call with non-Name function (e.g., attribute access)."""
+        match = MagicMock(spec=re.Match)
+        match.group.return_value = "[obj.method()]"
+        result = LiquidPythonParser._parse_match(match)
+        # Should skip unsupported function types
+        assert len(result) == 0
 
 
 class TestParsePythonArgsEdgeCases:

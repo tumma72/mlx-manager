@@ -14,6 +14,7 @@ FAMILY_PATTERNS = {
     "gemma": ["gemma"],
     "glm4": ["glm", "chatglm"],
     "phi": ["phi"],
+    "liquid": ["liquid", "lfm"],
     "whisper": ["whisper"],
     "kokoro": ["kokoro"],
 }
