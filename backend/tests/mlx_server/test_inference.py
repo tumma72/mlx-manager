@@ -45,6 +45,8 @@ def _make_mock_adapter(
     tool_prompt: str = "",
 ) -> MagicMock:
     """Create a mock adapter with sensible defaults (composable adapter pattern)."""
+    from mlx_manager.mlx_server.models.ir import PreparedInput, StreamEvent, TextResult
+
     adapter = MagicMock()
     adapter.family = family
     adapter.convert_messages = MagicMock(side_effect=lambda msgs: list(msgs))
@@ -61,6 +63,21 @@ def _make_mock_adapter(
     adapter.thinking_parser = MagicMock()
     adapter.thinking_parser.extract = MagicMock(return_value=None)
     adapter.thinking_parser.remove = MagicMock(side_effect=lambda text: text)
+    # prepare_input() returns a proper PreparedInput
+    adapter.prepare_input = MagicMock(
+        return_value=PreparedInput(prompt="formatted prompt", stop_token_ids=[128009])
+    )
+    # process_complete() returns a proper TextResult
+    adapter.process_complete = MagicMock(
+        side_effect=lambda text, reason="stop": TextResult(content=text, finish_reason=reason)
+    )
+    # Stream processor returns real IR StreamEvent objects
+    mock_processor = MagicMock()
+    mock_processor.feed = MagicMock(
+        side_effect=lambda token: StreamEvent(type="content", content=token)
+    )
+    mock_processor.get_accumulated_text = MagicMock(return_value="")
+    adapter.create_stream_processor = MagicMock(return_value=mock_processor)
     return adapter
 
 
@@ -601,126 +618,43 @@ class TestGenerateChatCompletion:
         # Should be an async generator
         assert hasattr(result, "__aiter__")
 
-    async def test_adapter_convert_messages_called(self) -> None:
-        """Adapter's convert_messages is called with original messages."""
+    async def test_adapter_prepare_input_called(self) -> None:
+        """Adapter's prepare_input is called with messages."""
         _, adapter, _ = await self._run_generate()
 
-        adapter.convert_messages.assert_called_once()
+        adapter.prepare_input.assert_called_once()
 
-    async def test_apply_chat_template_called(self) -> None:
-        """Adapter's apply_chat_template is called."""
-        _, adapter, _ = await self._run_generate()
-
-        adapter.apply_chat_template.assert_called_once()
-
-    async def test_tools_with_native_support(self) -> None:
-        """Tools are passed to apply_chat_template when adapter supports native tools."""
-        loaded, model, tokenizer = _make_mock_loaded_model()
-        adapter = _make_mock_adapter(supports_tools=True, native_tools=True)
-        loaded.adapter = adapter  # Assign adapter to loaded model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=loaded)
-
-        mock_result = {
-            "id": "chatcmpl-test",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "message": {"role": "assistant", "content": "Hi there!"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.services.inference._generate_chat_complete",
-                new_callable=AsyncMock,
-                return_value=mock_result,
-            ),
-        ):
-            from mlx_manager.mlx_server.services.inference import generate_chat_completion
-
-            await generate_chat_completion(
-                model_id="test/model",
-                messages=[{"role": "user", "content": "Hi"}],
-                stream=False,
-                tools=SAMPLE_TOOLS,
-            )
-
-        # apply_chat_template should receive tools
-        call_kwargs = adapter.apply_chat_template.call_args
-        assert call_kwargs is not None, "apply_chat_template should have been called"
-        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS or (
-            len(call_kwargs.args) > 3 and call_kwargs.args[3] == SAMPLE_TOOLS
-        )
-
-    async def test_tools_with_adapter_delivery(self) -> None:
-        """Tools are passed to apply_chat_template when adapter supports tools."""
-        _, adapter, _ = await self._run_generate(
-            tools=SAMPLE_TOOLS,
-            adapter_kwargs={
-                "supports_tools": True,
-                "native_tools": False,
-                "tool_prompt": "Available tools: search",
-            },
-        )
-
-        # Adapter owns tool delivery — inference just passes tools through
-        call_kwargs = adapter.apply_chat_template.call_args
-        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
-
-    async def test_tool_stop_tokens_added(self) -> None:
-        """Tool-specific stop tokens are requested when tools are provided."""
+    async def test_tools_forwarded_to_prepare_input(self) -> None:
+        """Tools are forwarded to adapter.prepare_input()."""
         _, adapter, _ = await self._run_generate(
             tools=SAMPLE_TOOLS,
             adapter_kwargs={"supports_tools": True},
         )
 
-        adapter.get_tool_call_stop_tokens.assert_called_once()
+        adapter.prepare_input.assert_called_once()
+        call_kwargs = adapter.prepare_input.call_args
+        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
 
-    async def test_prompt_injection_overrides_unsupported_adapter(self) -> None:
-        """Prompt injection passes tools even when adapter doesn't claim support."""
+    async def test_prompt_injection_forwarded_to_prepare_input(self) -> None:
+        """enable_prompt_injection is forwarded to adapter.prepare_input()."""
         _, adapter, _ = await self._run_generate(
             tools=SAMPLE_TOOLS,
-            adapter_kwargs={
-                "supports_tools": False,
-                "native_tools": False,
-                "tool_prompt": "Available tools: search",
-            },
+            adapter_kwargs={"supports_tools": False},
             extra_kwargs={"enable_prompt_injection": True},
         )
 
-        # Prompt injection forces tools to be passed to adapter
-        call_kwargs = adapter.apply_chat_template.call_args
+        adapter.prepare_input.assert_called_once()
+        call_kwargs = adapter.prepare_input.call_args
         assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
+        assert call_kwargs.kwargs.get("enable_prompt_injection") is True
 
-    async def test_tools_not_passed_when_unsupported(self) -> None:
-        """Tools are not passed to adapter when unsupported and no injection."""
-        _, adapter, _ = await self._run_generate(
-            tools=SAMPLE_TOOLS,
-            adapter_kwargs={
-                "supports_tools": False,
-                "native_tools": False,
-            },
-        )
-
-        # Tools should NOT be passed to apply_chat_template
-        call_kwargs = adapter.apply_chat_template.call_args
-        assert call_kwargs.kwargs.get("tools") is None
-
-    async def test_no_tools_skips_tool_logic(self) -> None:
-        """Without tools, tool-related adapter methods are not called."""
+    async def test_no_tools_passes_none_to_prepare_input(self) -> None:
+        """Without tools, prepare_input receives tools=None."""
         _, adapter, _ = await self._run_generate(tools=None)
 
-        adapter.supports_tool_calling.assert_not_called()
-        adapter.get_tool_call_stop_tokens.assert_not_called()
+        adapter.prepare_input.assert_called_once()
+        call_kwargs = adapter.prepare_input.call_args
+        assert call_kwargs.kwargs.get("tools") is None
 
 
 # ===========================================================================
@@ -1759,7 +1693,6 @@ class TestGoldenFixturesCrossFamily:
     async def test_streaming_thinking_round_trip(self, family: str, fixture_path: str) -> None:
         """Thinking chunks are processed correctly by StreamProcessor."""
         from mlx_manager.mlx_server.models.adapters import create_adapter
-        from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
         raw = _read_golden(fixture_path)
 

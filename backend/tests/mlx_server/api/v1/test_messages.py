@@ -12,6 +12,7 @@ from mlx_manager.mlx_server.api.v1.messages import (
     _handle_streaming,
     create_message,
 )
+from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
@@ -19,6 +20,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlock,
     TextBlockParam,
 )
+from mlx_manager.mlx_server.services.inference import InferenceResult
 from mlx_manager.mlx_server.services.protocol import InternalRequest, reset_translator
 from mlx_manager.models.value_objects import InferenceParams
 
@@ -74,6 +76,20 @@ def mock_internal_request():
         ),
         stream=False,
         stop=None,
+    )
+
+
+def _make_inference_result(
+    content: str = "Hello there!",
+    finish_reason: str = "stop",
+    prompt_tokens: int = 10,
+    completion_tokens: int = 5,
+) -> InferenceResult:
+    """Helper to create an InferenceResult for mocking."""
+    return InferenceResult(
+        result=TextResult(content=content, finish_reason=finish_reason),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
 
 
@@ -134,27 +150,12 @@ class TestNonStreamingResponse:
     """Tests for non-streaming /v1/messages response."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     async def test_response_has_anthropic_format(
         self, mock_generate, basic_request, mock_internal_request
     ):
         """Response has Anthropic format with msg_ prefix and content as list."""
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Hello there!"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-            },
-        }
+        mock_generate.return_value = _make_inference_result(content="Hello there!")
 
         response = await _handle_non_streaming(basic_request, mock_internal_request)
 
@@ -167,71 +168,34 @@ class TestNonStreamingResponse:
         assert response.content[0].text == "Hello there!"
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     async def test_stop_reason_translated_stop(
         self, mock_generate, basic_request, mock_internal_request
     ):
         """OpenAI 'stop' is translated to Anthropic 'end_turn'."""
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result(finish_reason="stop")
 
         response = await _handle_non_streaming(basic_request, mock_internal_request)
 
         assert response.stop_reason == "end_turn"
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     async def test_stop_reason_translated_length(
         self, mock_generate, basic_request, mock_internal_request
     ):
         """OpenAI 'length' is translated to Anthropic 'max_tokens'."""
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "length",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result(finish_reason="length")
 
         response = await _handle_non_streaming(basic_request, mock_internal_request)
 
         assert response.stop_reason == "max_tokens"
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     async def test_usage_included(self, mock_generate, basic_request, mock_internal_request):
         """Usage statistics are included in response."""
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150,
-            },
-        }
+        mock_generate.return_value = _make_inference_result(prompt_tokens=100, completion_tokens=50)
 
         response = await _handle_non_streaming(basic_request, mock_internal_request)
 
@@ -243,16 +207,15 @@ class TestStreamingResponse:
     """Tests for streaming /v1/messages response."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
-    async def test_returns_event_source_response(self, mock_generate, streaming_request):
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_stream")
+    async def test_returns_event_source_response(self, mock_stream, streaming_request):
         """Streaming returns EventSourceResponse."""
 
-        # Create async generator mock
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}
-            yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hello")
+            yield TextResult(content="Hello", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         internal = InternalRequest(
             model="test-model",
@@ -271,16 +234,15 @@ class TestStreamingResponse:
         assert isinstance(response, EventSourceResponse)
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
-    async def test_streaming_events_format(self, mock_generate, streaming_request):
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_stream")
+    async def test_streaming_events_format(self, mock_stream, streaming_request):
         """Streaming events have correct Anthropic format."""
 
-        # Create async generator mock
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}
-            yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hello")
+            yield TextResult(content="Hello", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         internal = InternalRequest(
             model="test-model",
@@ -301,8 +263,8 @@ class TestStreamingResponse:
         async for event in response.body_iterator:
             events.append(event)
 
-        # Should have at minimum: message_start, content_block_start,
-        # content_block_delta (tokens), content_block_stop, message_delta, message_stop
+        # Should have: message_start, content_block_start,
+        # content_block_delta, content_block_stop, message_delta, message_stop
         assert len(events) >= 5
 
         # Check first event is message_start
@@ -326,7 +288,7 @@ class TestStreamingResponse:
         assert delta_data["type"] == "content_block_delta"
         assert delta_data["delta"]["type"] == "text_delta"
 
-        # Check last events
+        # Check closing events
         stop_events = [e for e in events if e.get("event") == "content_block_stop"]
         assert len(stop_events) == 1
 
@@ -343,13 +305,12 @@ class TestProtocolTranslationIntegration:
     """Tests for protocol translation integration."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
     async def test_system_message_in_internal_messages(
         self, mock_get_translator, mock_generate, request_with_system
     ):
         """System message is placed in internal messages array."""
-        # Set up translator mock
         mock_translator = MagicMock()
         internal = InternalRequest(
             model="test-model",
@@ -366,37 +327,25 @@ class TestProtocolTranslationIntegration:
             stop=None,
         )
         mock_translator.anthropic_to_internal.return_value = internal
-        mock_translator.openai_stop_to_anthropic.return_value = "end_turn"
         mock_get_translator.return_value = mock_translator
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result()
 
         await create_message(request_with_system)
 
-        # Verify generate_chat_completion was called with system message in messages
+        # Verify generate_chat_complete_response was called with system message in messages
         mock_generate.assert_called_once()
         call_kwargs = mock_generate.call_args.kwargs
         assert len(call_kwargs["messages"]) == 2
         assert call_kwargs["messages"][0]["role"] == "system"
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
     async def test_temperature_passed_through(
         self, mock_get_translator, mock_generate, basic_request
     ):
-        """Temperature is passed through to generate_chat_completion."""
+        """Temperature is passed through to generate_chat_complete_response."""
         mock_translator = MagicMock()
         internal = InternalRequest(
             model="test-model",
@@ -410,21 +359,9 @@ class TestProtocolTranslationIntegration:
             stop=None,
         )
         mock_translator.anthropic_to_internal.return_value = internal
-        mock_translator.openai_stop_to_anthropic.return_value = "end_turn"
         mock_get_translator.return_value = mock_translator
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result()
 
         basic_request.temperature = 0.7
         basic_request.top_p = 0.9
@@ -440,11 +377,8 @@ class TestErrorHandling:
     """Tests for error handling."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
     @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
-    async def test_generic_exception_returns_500(
-        self, mock_get_translator, mock_generate, basic_request
-    ):
+    async def test_generic_exception_returns_500(self, mock_get_translator, basic_request):
         """Generic exception returns HTTP 500."""
         mock_translator = MagicMock()
         mock_translator.anthropic_to_internal.side_effect = RuntimeError("Test error")
@@ -457,9 +391,8 @@ class TestErrorHandling:
         assert "Test error" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
     @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
-    async def test_http_exception_reraises(self, mock_get_translator, mock_generate, basic_request):
+    async def test_http_exception_reraises(self, mock_get_translator, basic_request):
         """HTTPException is re-raised without wrapping."""
         mock_translator = MagicMock()
         mock_translator.anthropic_to_internal.side_effect = HTTPException(
@@ -478,36 +411,25 @@ class TestCreateMessageEndpoint:
     """Tests for the main create_message endpoint."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
     async def test_non_streaming_path(self, mock_generate, basic_request):
         """Non-streaming request returns AnthropicMessagesResponse."""
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Response"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result()
 
         response = await create_message(basic_request)
 
         assert isinstance(response, AnthropicMessagesResponse)
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_completion")
-    async def test_streaming_path(self, mock_generate, streaming_request):
+    @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_stream")
+    async def test_streaming_path(self, mock_stream, streaming_request):
         """Streaming request returns EventSourceResponse."""
 
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "Hi"}, "finish_reason": None}]}
-            yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hi")
+            yield TextResult(content="Hi", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         response = await create_message(streaming_request)
 

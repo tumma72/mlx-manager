@@ -143,37 +143,28 @@ class TestChatVisionIntegration:
 
     @pytest.mark.asyncio
     async def test_text_only_request_uses_inference_service(self):
-        """Verify text-only requests use generate_chat_completion."""
+        """Verify text-only requests use generate_chat_complete_response."""
         from mlx_manager.mlx_server.api.v1.chat import create_chat_completion
+        from mlx_manager.mlx_server.models.ir import TextResult
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionRequest,
             ChatMessage,
         )
+        from mlx_manager.mlx_server.services.inference import InferenceResult
 
         request = ChatCompletionRequest(
             model="mlx-community/Llama-3.2-3B-Instruct-4bit",
             messages=[ChatMessage(role="user", content="Hello, how are you?")],
         )
 
-        with patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion") as mock_gen:
-            mock_gen.return_value = {
-                "id": "test",
-                "object": "chat.completion",
-                "created": 1234567890,
-                "model": "test",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": "I'm fine!"},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "total_tokens": 15,
-                },
-            }
+        with patch(
+            "mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response"
+        ) as mock_gen:
+            mock_gen.return_value = InferenceResult(
+                result=TextResult(content="I'm fine!", finish_reason="stop"),
+                prompt_tokens=10,
+                completion_tokens=5,
+            )
 
             result = await create_chat_completion(request)
 

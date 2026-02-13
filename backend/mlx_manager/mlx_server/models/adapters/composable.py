@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 from loguru import logger
 
 if TYPE_CHECKING:
+    from mlx_manager.mlx_server.models.ir import PreparedInput, TextResult
     from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
 from mlx_manager.mlx_server.parsers import (
@@ -255,6 +256,72 @@ class ModelAdapter(ABC):
         from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
         return StreamProcessor(adapter=self, starts_in_thinking=starts_in_thinking)
+
+    def prepare_input(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        enable_prompt_injection: bool = False,
+    ) -> PreparedInput:
+        """Prepare model-ready input from messages and optional tools.
+
+        Encapsulates the full input pipeline:
+        1. convert_messages() — format conversion
+        2. Tool capability check
+        3. apply_chat_template() — prompt generation
+        4. Stop token aggregation
+        """
+        from mlx_manager.mlx_server.models.ir import PreparedInput
+
+        converted = self.convert_messages(messages)
+
+        use_tools = tools and (self.supports_tool_calling() or enable_prompt_injection)
+        effective_tools = tools if use_tools else None
+
+        prompt = self.apply_chat_template(
+            messages=converted,
+            add_generation_prompt=True,
+            tools=effective_tools,
+        )
+
+        stop_ids: set[int] = set(self.stop_tokens)
+        if use_tools:
+            stop_ids.update(self.get_tool_call_stop_tokens())
+
+        return PreparedInput(
+            prompt=prompt,
+            stop_token_ids=list(stop_ids),
+        )
+
+    def process_complete(self, raw_text: str, finish_reason: str = "stop") -> TextResult:
+        """Post-process raw model output into a TextResult.
+
+        Encapsulates the full output pipeline:
+        1. Tool call extraction
+        2. Thinking/reasoning extraction
+        3. Response cleaning
+        """
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        tool_calls_list = self.tool_parser.extract(raw_text)
+        reasoning_content = self.thinking_parser.extract(raw_text)
+
+        final_content = raw_text
+        if reasoning_content:
+            final_content = self.thinking_parser.remove(final_content)
+        final_content = self.clean_response(final_content)
+
+        tool_calls = None
+        if tool_calls_list:
+            tool_calls = [tc.model_dump() for tc in tool_calls_list]
+            finish_reason = "tool_calls"
+
+        return TextResult(
+            content=final_content,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+        )
 
 
 class DefaultAdapter(ModelAdapter):

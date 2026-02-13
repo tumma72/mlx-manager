@@ -17,6 +17,7 @@ from mlx_manager.mlx_server.api.v1.chat import (
     _handle_vision_request,
     create_chat_completion,
 )
+from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionRequest,
@@ -28,6 +29,27 @@ from mlx_manager.mlx_server.schemas.openai import (
     Tool,
     ToolCall,
 )
+from mlx_manager.mlx_server.services.inference import InferenceResult
+
+
+def _make_inference_result(
+    content: str = "Hello there!",
+    finish_reason: str = "stop",
+    prompt_tokens: int = 5,
+    completion_tokens: int = 3,
+    reasoning_content: str | None = None,
+    tool_calls: list[dict] | None = None,
+) -> InferenceResult:
+    return InferenceResult(
+        result=TextResult(
+            content=content,
+            finish_reason=finish_reason,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+        ),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
 
 @pytest.fixture
@@ -431,7 +453,7 @@ class TestConvertToolCalls:
 class TestHandleDirectRequest:
     """Tests for the direct inference path."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_non_streaming_basic(self, mock_settings, mock_generate):
         """Non-streaming direct request returns ChatCompletionResponse."""
@@ -439,19 +461,9 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc123",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Hello there!"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        }
+        mock_generate.return_value = _make_inference_result(
+            content="Hello there!", prompt_tokens=5, completion_tokens=3
+        )
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -464,18 +476,19 @@ class TestHandleDirectRequest:
         assert result.choices[0].message.content == "Hello there!"
         assert result.usage.total_tokens == 8
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_streaming_returns_event_source(self, mock_settings, mock_generate):
+    async def test_streaming_returns_event_source(self, mock_settings, mock_stream):
         """Streaming direct request returns EventSourceResponse."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "Hi"}}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hi")
+            yield TextResult(content="Hi", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -486,7 +499,7 @@ class TestHandleDirectRequest:
         result = await _handle_direct_request(request)
         assert isinstance(result, EventSourceResponse)
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_stop_string_converted_to_list(self, mock_settings, mock_generate):
         """Single stop string is converted to a list."""
@@ -494,19 +507,7 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Done"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
-        }
+        mock_generate.return_value = _make_inference_result()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -518,7 +519,7 @@ class TestHandleDirectRequest:
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["stop"] == ["END"]
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_stop_list_passed_through(self, mock_settings, mock_generate):
         """Stop list is passed through unchanged."""
@@ -526,19 +527,7 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Done"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
-        }
+        mock_generate.return_value = _make_inference_result()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -550,7 +539,7 @@ class TestHandleDirectRequest:
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["stop"] == ["<end>", "<stop>"]
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_tools_passed_when_tool_choice_not_none(self, mock_settings, mock_generate):
         """Tools are passed to inference when tool_choice is not 'none'."""
@@ -558,32 +547,22 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
+        mock_generate.return_value = _make_inference_result(
+            content="",
+            finish_reason="tool_calls",
+            prompt_tokens=20,
+            completion_tokens=10,
+            tool_calls=[
                 {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {
-                                    "name": "get_weather",
-                                    "arguments": '{"location":"Tokyo"}',
-                                },
-                            }
-                        ],
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"location":"Tokyo"}',
                     },
-                    "finish_reason": "tool_calls",
                 }
             ],
-            "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30},
-        }
+        )
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -612,7 +591,7 @@ class TestHandleDirectRequest:
         assert result.choices[0].message.tool_calls is not None
         assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_tools_excluded_when_tool_choice_is_none(self, mock_settings, mock_generate):
         """Tools are NOT passed when tool_choice is 'none'."""
@@ -620,19 +599,7 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "No tools used."},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13},
-        }
+        mock_generate.return_value = _make_inference_result(content="No tools used.")
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -652,7 +619,7 @@ class TestHandleDirectRequest:
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["tools"] is None
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_reasoning_content_preserved(self, mock_settings, mock_generate):
         """reasoning_content from the service is included in the response."""
@@ -660,23 +627,12 @@ class TestHandleDirectRequest:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "42",
-                        "reasoning_content": "Let me think step by step...",
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result(
+            content="42",
+            reasoning_content="Let me think step by step...",
+            prompt_tokens=10,
+            completion_tokens=5,
+        )
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -695,7 +651,7 @@ class TestHandleDirectRequest:
 class TestNonStreamingStructuredOutput:
     """Tests for structured output validation in non-streaming path."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_structured_output_valid_json(self, mock_settings, mock_generate):
         """Valid JSON matching schema passes validation."""
@@ -703,19 +659,9 @@ class TestNonStreamingStructuredOutput:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": '{"name":"Alice","age":30}'},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result(
+            content='{"name":"Alice","age":30}', prompt_tokens=10, completion_tokens=5
+        )
 
         schema = {
             "name": "person",
@@ -737,7 +683,7 @@ class TestNonStreamingStructuredOutput:
         )
         assert result.choices[0].message.content == '{"name":"Alice","age":30}'
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_structured_output_invalid_json_raises_400(self, mock_settings, mock_generate):
         """Invalid JSON that doesn't match schema raises HTTPException 400."""
@@ -745,19 +691,9 @@ class TestNonStreamingStructuredOutput:
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        mock_generate.return_value = {
-            "id": "chatcmpl-abc",
-            "created": 1700000000,
-            "model": "test-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "not valid json at all"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        }
+        mock_generate.return_value = _make_inference_result(
+            content="not valid json at all", prompt_tokens=10, completion_tokens=5
+        )
 
         schema = {
             "name": "person",
@@ -781,7 +717,7 @@ class TestNonStreamingStructuredOutput:
         assert exc_info.value.status_code == 400
         assert "JSON schema validation" in exc_info.value.detail
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_timeout_raises_408(self, mock_settings, mock_generate):
         """Timeout during generation raises TimeoutHTTPException (408)."""
@@ -809,18 +745,19 @@ class TestNonStreamingStructuredOutput:
 class TestHandleStreaming:
     """Tests for the streaming handler."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_streaming_returns_sse(self, mock_settings, mock_generate):
+    async def test_streaming_returns_sse(self, mock_settings, mock_stream):
         """Streaming handler returns EventSourceResponse."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "hello"}}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="hello")
+            yield TextResult(content="hello", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -831,18 +768,19 @@ class TestHandleStreaming:
         result = await _handle_streaming(request, [{"role": "user", "content": "Hi"}], None)
         assert isinstance(result, EventSourceResponse)
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_streaming_with_tools(self, mock_settings, mock_generate):
+    async def test_streaming_with_tools(self, mock_settings, mock_stream):
         """Streaming with tools returns an EventSourceResponse."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "I'll check"}}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="I'll check")
+            yield TextResult(content="I'll check", finish_reason="stop")
 
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -1385,22 +1323,20 @@ class TestBatchingFallback:
 class TestStreamingGeneratorConsumption:
     """Tests that actually iterate SSE generators to cover the inner bodies."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_streaming_generator_yields_chunks_and_done(self, mock_settings, mock_generate):
+    async def test_streaming_generator_yields_chunks_and_done(self, mock_settings, mock_stream):
         """Iterating the SSE generator yields data chunks followed by [DONE]."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
 
-        chunk1 = {"id": "c1", "choices": [{"delta": {"content": "Hi"}}]}
-        chunk2 = {"id": "c1", "choices": [{"delta": {"content": "!"}}]}
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hi")
+            yield StreamEvent(type="content", content="!")
+            yield TextResult(content="Hi!", finish_reason="stop")
 
-        async def mock_stream():
-            yield chunk1
-            yield chunk2
-
-        mock_generate.return_value = mock_stream()
+        mock_stream.return_value = mock_ir_stream()
 
         request = ChatCompletionRequest(
             model="test-model",
@@ -1417,17 +1353,15 @@ class TestStreamingGeneratorConsumption:
         event_text = "".join(str(e) for e in events)
         assert "DONE" in event_text
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_completion")
+    @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_streaming_generator_timeout_yields_error_event(
-        self, mock_settings, mock_generate
-    ):
-        """When generate_chat_completion times out, the generator yields an error event."""
+    async def test_streaming_generator_timeout_yields_error_event(self, mock_settings, mock_stream):
+        """When generate_chat_stream times out, the generator yields an error event."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 0.001
         mock_settings.return_value = settings
 
-        mock_generate.side_effect = TimeoutError()
+        mock_stream.side_effect = TimeoutError()
 
         request = ChatCompletionRequest(
             model="test-model",

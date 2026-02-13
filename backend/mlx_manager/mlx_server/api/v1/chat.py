@@ -13,6 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.models.detection import detect_model_type
+from mlx_manager.mlx_server.models.ir import TextResult
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionChoice,
@@ -31,8 +32,12 @@ from mlx_manager.mlx_server.services.batching import (
     get_scheduler_manager,
 )
 from mlx_manager.mlx_server.services.cloud.router import get_router
+from mlx_manager.mlx_server.services.formatters import OpenAIFormatter
 from mlx_manager.mlx_server.services.image_processor import preprocess_images
-from mlx_manager.mlx_server.services.inference import generate_chat_completion
+from mlx_manager.mlx_server.services.inference import (
+    generate_chat_complete_response,
+    generate_chat_stream,
+)
 from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
 )
@@ -376,34 +381,53 @@ async def _handle_streaming(
 ) -> EventSourceResponse:
     """Handle streaming response with timeout.
 
-    Supports tool calling in streaming mode - tool calls are detected
-    and included in the final chunk.
+    Uses the 3-layer adapter pipeline: inference yields IR StreamEvents,
+    OpenAIFormatter converts them to OpenAI Chat Completion chunk SSE dicts.
     """
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
 
     async def event_generator() -> Any:
         try:
-            # Apply timeout to the entire streaming operation
+            formatter = OpenAIFormatter(
+                model_id=request.model,
+                request_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            )
+
+            # Emit initial role chunk
+            for sse in formatter.stream_start():
+                yield sse
+
+            # Apply timeout to preparation (model loading, template application)
             gen = await asyncio.wait_for(
-                generate_chat_completion(
+                generate_chat_stream(
                     model_id=request.model,
                     messages=messages,
                     max_tokens=request.max_tokens or 4096,
                     temperature=request.temperature,
                     top_p=request.top_p,
                     stop=stop,
-                    stream=True,
                     tools=tools,
                 ),
                 timeout=timeout,
             )
-            async for chunk in gen:  # type: ignore[union-attr]
-                # Format as SSE data
-                yield {"data": json.dumps(chunk)}
 
-            # Final [DONE] message
-            yield {"data": "[DONE]"}
+            output_tokens = 0
+            async for item in gen:
+                if isinstance(item, TextResult):
+                    # Final result — emit stream_end with finish reason + tool calls
+                    for sse in formatter.stream_end(
+                        item.finish_reason,
+                        tool_calls=item.tool_calls,
+                        output_tokens=output_tokens,
+                    ):
+                        yield sse
+                else:
+                    # StreamEvent — emit content delta
+                    output_tokens += 1
+                    for sse in formatter.stream_event(item):
+                        yield sse
+
         except TimeoutError:
             logger.warning(f"Streaming chat completion timed out after {timeout}s")
             # Send error event before closing (per CONTEXT.md streaming errors)
@@ -426,6 +450,9 @@ async def _handle_non_streaming(
 ) -> ChatCompletionResponse:
     """Handle non-streaming response.
 
+    Uses the 3-layer adapter pipeline: inference returns IR TextResult,
+    OpenAIFormatter converts it to an OpenAI ChatCompletion response dict.
+
     Supports:
     - Tool calling: tool_calls included in response message
     - Reasoning: reasoning_content included in response message
@@ -435,15 +462,14 @@ async def _handle_non_streaming(
     timeout = settings.timeout_chat_seconds
 
     try:
-        result = await asyncio.wait_for(
-            generate_chat_completion(
+        inference_result = await asyncio.wait_for(
+            generate_chat_complete_response(
                 model_id=request.model,
                 messages=messages,
                 max_tokens=request.max_tokens or 4096,
                 temperature=request.temperature,
                 top_p=request.top_p,
                 stop=stop,
-                stream=False,
                 tools=tools,
             ),
             timeout=timeout,
@@ -456,13 +482,10 @@ async def _handle_non_streaming(
             f"Consider using a smaller model or reducing max_tokens.",
         )
 
-    # Cast to dict since we passed stream=False
-    result_dict = cast(dict[str, Any], result)
-    choice = result_dict["choices"][0]
-    msg = choice["message"]
+    text_result = inference_result.result
 
     # Validate structured output if json_schema is specified
-    content = msg.get("content", "")
+    content = text_result.content
     if (
         request.response_format
         and request.response_format.type == "json_schema"
@@ -479,10 +502,24 @@ async def _handle_non_streaming(
             )
         logger.debug("Structured output validation passed")
 
-    # Build ChatMessage with optional tool_calls and reasoning_content
+    # Format response using OpenAIFormatter
+    formatter = OpenAIFormatter(
+        model_id=request.model,
+        request_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+    )
+    result_dict = formatter.format_complete(
+        text_result,
+        prompt_tokens=inference_result.prompt_tokens,
+        completion_tokens=inference_result.completion_tokens,
+    )
+
+    # Convert formatter dict to Pydantic response model
+    choice = result_dict["choices"][0]
+    msg = choice["message"]
+
     chat_message = ChatMessage(
         role=msg["role"],
-        content=content,
+        content=msg.get("content", ""),
         tool_calls=_convert_tool_calls(msg.get("tool_calls")),
         reasoning_content=msg.get("reasoning_content"),
     )
