@@ -189,35 +189,24 @@ async def _stream_chat_generate(
     (required for Metal GPU thread affinity). Tokens are yielded as
     (token_text, token_id, is_stop) tuples.
 
-    Uses StreamingProcessor to filter patterns during generation:
+    Uses adapter.create_stream_processor() to filter patterns during generation:
     - Tool call markers (<tool_call>, <function=>) never reach the client
     - Thinking tags (<think>, etc.) filtered from stream
     - Final processing extracts tool_calls and reasoning from accumulated text
     """
-    from mlx_manager.mlx_server.services.response_processor import StreamingProcessor
     from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
     completion_tokens = 0
 
-    # Check if prompt already ends with a thinking start tag (e.g., GLM-4.7)
-    # In this case, the model's output continues inside the thinking pattern
-    thinking_starts = ["<think>", "<thinking>", "<reasoning>", "<reflection>"]
-    starts_in_thinking = any(prompt.rstrip().endswith(tag) for tag in thinking_starts)
-    if starts_in_thinking:
-        logger.debug("Prompt ends with thinking tag, starting in thinking mode")
-
-    # Use adapter for streaming (provides parsers and markers)
-    stream_processor = StreamingProcessor(
-        adapter=adapter,
-        starts_in_thinking=starts_in_thinking,
-    )  # Filters patterns during streaming
+    # Use adapter factory to create stream processor (detects starts_in_thinking
+    # from prompt automatically via adapter's thinking parser markers)
+    stream_processor = adapter.create_stream_processor(prompt=prompt)
 
     # Debug: Log configuration for this generation
     if tools:
         logger.debug(
             f"Generation config: model={model_id}, max_tokens={max_tokens}, "
-            f"stop_tokens={stop_token_ids}, tools_count={len(tools)}, "
-            f"starts_in_thinking={starts_in_thinking}"
+            f"stop_tokens={stop_token_ids}, tools_count={len(tools)}"
         )
 
     def produce_tokens() -> Iterator[tuple[str, int | None, bool]]:
@@ -275,7 +264,7 @@ async def _stream_chat_generate(
             )
             break
 
-        # Process token through StreamingProcessor
+        # Process token through StreamProcessor
         # Returns StreamEvent with reasoning_content or content
         event = stream_processor.feed(token_text)
         if event.reasoning_content or event.content:

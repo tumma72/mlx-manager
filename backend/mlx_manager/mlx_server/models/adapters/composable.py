@@ -6,9 +6,12 @@ import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
 from mlx_manager.mlx_server.parsers import (
     Glm4NativeParser,
@@ -226,6 +229,32 @@ class ModelAdapter(ABC):
             cleaned = cleaned.replace(token, "")
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
+
+    def create_stream_processor(self, prompt: str = "") -> StreamProcessor:
+        """Create a StreamProcessor for this adapter.
+
+        Factory method that creates a properly configured processor using
+        the adapter's parsers. Detects whether the prompt ends with a
+        thinking start tag (from this adapter's thinking parser markers)
+        to initialize the processor in thinking mode.
+
+        Args:
+            prompt: The prompt string being sent to the model. Used to
+                    detect if the model should start in thinking mode.
+
+        Returns:
+            StreamProcessor configured with this adapter's parsers
+        """
+        # Detect if prompt ends with a thinking start tag
+        starts_in_thinking = False
+        if prompt:
+            stripped = prompt.rstrip()
+            thinking_starts = [start for start, _ in self._thinking_parser.stream_markers]
+            starts_in_thinking = any(stripped.endswith(tag) for tag in thinking_starts)
+
+        from mlx_manager.mlx_server.services.response_processor import StreamProcessor
+
+        return StreamProcessor(adapter=self, starts_in_thinking=starts_in_thinking)
 
 
 class DefaultAdapter(ModelAdapter):

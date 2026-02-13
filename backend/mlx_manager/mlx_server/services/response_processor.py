@@ -1,56 +1,40 @@
-"""Minimal response processor for streaming support.
+"""Streaming response processor for the adapter pipeline.
 
-CRITICAL: This module is now MINIMAL - all tool/thinking parsing moved to
-composable adapters (parsers injected at adapter creation).
+Layer 2 of the 3-layer adapter pipeline:
+  Layer 1 (ModelAdapter)   -> input preparation
+  Layer 2 (StreamProcessor) -> token-by-token streaming + finalization
+  Layer 3 (ProtocolFormatter) -> protocol-specific responses (future)
 
-What remains:
-- StreamEvent: For streaming output
-- ParseResult: For final results (used by adapters)
-- StreamingProcessor: For token-by-token streaming (uses adapter's parsers)
-
-All parse_*_tool functions, ResponseProcessor, factory functions, and
-family patterns have been DELETED - adapters handle this now.
+Exports:
+- StreamProcessor: Token-by-token processor using adapter's parsers
+- StreamEvent: IR event type (re-exported from models.ir)
+- TextResult: IR result type (re-exported from models.ir)
+- ParseResult: Legacy result type (kept for backward compat, removed in Phase 6)
+- StreamingProcessor: Backward-compat alias for StreamProcessor
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
 from mlx_manager.mlx_server.schemas.openai import ToolCall
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
 
-# --- Stream Event and Pattern Dataclasses ---
-
-
-@dataclass
-class StreamEvent:
-    """Event from streaming processor for OpenAI-compatible streaming.
-
-    Follows OpenAI o1/o3 reasoning model API spec:
-    - reasoning_content: Content inside <think> tags (thinking phase)
-    - content: Regular response content
-    - is_complete: True when a thinking pattern ends (transition point)
-    """
-
-    content: str | None = None
-    reasoning_content: str | None = None
-    is_complete: bool = False
-
-
-# --- Pydantic Models ---
+# --- Legacy Types (kept for backward compat, deleted in Phase 6) ---
 
 
 class ParseResult(BaseModel):
     """Result of processing a model response.
 
-    Contains extracted content, tool calls, and reasoning, with all
-    markers/tags removed from the content field.
+    .. deprecated::
+        Use :class:`TextResult` from ``models.ir`` instead.
+        Kept for backward compatibility; will be removed in Phase 6.
     """
 
     content: str
@@ -58,11 +42,11 @@ class ParseResult(BaseModel):
     reasoning: str | None = None
 
 
-# --- Streaming Processor ---
+# --- Stream Processor ---
 
 
-class StreamingProcessor:
-    """Streaming-aware processor that yields OpenAI-compatible StreamEvents.
+class StreamProcessor:
+    """Streaming-aware processor that yields IR StreamEvents.
 
     Returns StreamEvent objects with either:
     - reasoning_content: Content inside thinking tags (for thinking models)
@@ -76,7 +60,7 @@ class StreamingProcessor:
     consistent behavior between streaming and non-streaming paths.
 
     Usage:
-        processor = StreamingProcessor(adapter=loaded.adapter)
+        processor = adapter.create_stream_processor(prompt=prompt)
         for token in generation:
             event = processor.feed(token)
             if event.reasoning_content or event.content:
@@ -99,7 +83,7 @@ class StreamingProcessor:
         adapter: ModelAdapter,
         starts_in_thinking: bool = False,
     ) -> None:
-        """Initialize streaming processor.
+        """Initialize stream processor.
 
         Args:
             adapter: Adapter with parsers for tool/thinking extraction
@@ -298,14 +282,15 @@ class StreamingProcessor:
             return StreamEvent(content=before)
         return StreamEvent()
 
-    def finalize(self) -> ParseResult:
-        """Finalize and get complete ParseResult.
+    def finalize(self) -> TextResult:
+        """Finalize and get IR TextResult.
 
         Called after all tokens processed. Uses adapter's parsers
         to extract structured data from accumulated text.
 
         Returns:
-            ParseResult with content, tool_calls, and reasoning
+            TextResult with content, tool_calls, reasoning_content,
+            and finish_reason
         """
         # Flush any pending buffer (incomplete pattern marker)
         if self._pending_buffer:
@@ -313,7 +298,7 @@ class StreamingProcessor:
             self._pending_buffer = ""
 
         # Debug: Log accumulated text for tool call analysis
-        logger.debug(f"StreamingProcessor.finalize(): accumulated={len(self._accumulated)} chars")
+        logger.debug(f"StreamProcessor.finalize(): accumulated={len(self._accumulated)} chars")
 
         # Use adapter's parsers for final extraction
         tool_calls_list = self._adapter.tool_parser.extract(self._accumulated)
@@ -326,15 +311,20 @@ class StreamingProcessor:
         # Debug: Log extraction results
         tool_count = len(tool_calls_list)
         logger.debug(
-            f"StreamingProcessor.finalize(): extracted tool_calls={tool_count}, "
+            f"StreamProcessor.finalize(): extracted tool_calls={tool_count}, "
             f"has_reasoning={bool(reasoning_content)}, "
             f"content_len={len(final_content)}"
         )
 
-        return ParseResult(
+        # Convert ToolCall Pydantic models to dicts for IR
+        tool_calls = [tc.model_dump() for tc in tool_calls_list] if tool_calls_list else None
+        finish_reason = "tool_calls" if tool_calls else "stop"
+
+        return TextResult(
             content=final_content,
-            tool_calls=tool_calls_list,
-            reasoning=reasoning_content,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
         )
 
     def get_pending_content(self) -> str:
@@ -352,3 +342,7 @@ class StreamingProcessor:
             Complete accumulated text including pattern content
         """
         return self._accumulated
+
+
+# Backward-compat alias (deleted in Phase 6)
+StreamingProcessor = StreamProcessor

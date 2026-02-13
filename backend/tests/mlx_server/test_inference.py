@@ -1757,9 +1757,9 @@ class TestGoldenFixturesCrossFamily:
         ],
     )
     async def test_streaming_thinking_round_trip(self, family: str, fixture_path: str) -> None:
-        """Thinking chunks are processed correctly by StreamingProcessor."""
+        """Thinking chunks are processed correctly by StreamProcessor."""
         from mlx_manager.mlx_server.models.adapters import create_adapter
-        from mlx_manager.mlx_server.services.response_processor import StreamingProcessor
+        from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
         raw = _read_golden(fixture_path)
 
@@ -1767,11 +1767,9 @@ class TestGoldenFixturesCrossFamily:
         mock_tokenizer = MagicMock()
         mock_tokenizer.eos_token_id = 100
 
-        # Create adapter for streaming processor
+        # Create adapter and use factory to create stream processor
         adapter = create_adapter(family=family, tokenizer=mock_tokenizer)
-
-        # Feed character by character to simulate streaming
-        processor = StreamingProcessor(adapter=adapter)
+        processor = adapter.create_stream_processor()
 
         all_reasoning = ""
         all_content = ""
@@ -1784,8 +1782,8 @@ class TestGoldenFixturesCrossFamily:
 
         result = processor.finalize()
 
-        # Should have extracted reasoning
-        assert result.reasoning is not None or all_reasoning, (
+        # Should have extracted reasoning (TextResult uses reasoning_content)
+        assert result.reasoning_content is not None or all_reasoning, (
             f"Expected reasoning content for {family} thinking fixture"
         )
 
