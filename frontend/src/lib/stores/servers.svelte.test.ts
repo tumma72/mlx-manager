@@ -732,4 +732,49 @@ describe("ServerStore", () => {
       expect(serverStore.isFailed(42)).toBe(true);
     });
   });
+
+  describe("error state edge cases", () => {
+    // Helper to get refresh function
+    async function getRefreshFn(): Promise<() => Promise<void>> {
+      const { pollingCoordinator } = await import("$lib/services");
+      const registerCall = vi.mocked(pollingCoordinator.register).mock.calls[0];
+      return registerCall[1].refreshFn as () => Promise<void>;
+    }
+
+    it("does not update error state if error is already the same", async () => {
+      const { servers: serversApi } = await import("$api");
+      vi.mocked(serversApi.list).mockRejectedValue(new Error("Same error"));
+
+      const refreshFn = await getRefreshFn();
+
+      // First error
+      await refreshFn();
+      expect(serverStore.error).toBe("Same error");
+
+      // Same error again - should not trigger reactive update
+      vi.mocked(serversApi.list).mockRejectedValue(new Error("Same error"));
+      await refreshFn();
+
+      // Error should still be "Same error" (unchanged)
+      expect(serverStore.error).toBe("Same error");
+    });
+  });
+
+  describe("markStartupFailed edge cases", () => {
+    it("does not trigger refresh when already failed with same error and not starting/restarting", async () => {
+      const { pollingCoordinator } = await import("$lib/services");
+
+      // First failure
+      serverStore.markStartupFailed(42, "Same error", "Same details");
+
+      // Clear refresh calls
+      vi.mocked(pollingCoordinator.refresh).mockClear();
+
+      // Same failure again (no state change - not starting/restarting)
+      serverStore.markStartupFailed(42, "Same error", "Same details");
+
+      // Should not trigger refresh (early exit due to no actual state change)
+      expect(pollingCoordinator.refresh).not.toHaveBeenCalled();
+    });
+  });
 });

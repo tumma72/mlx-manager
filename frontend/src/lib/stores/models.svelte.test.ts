@@ -293,4 +293,46 @@ describe("parseCharacteristicsFromName", () => {
     expect(result.quantization_bits).toBeUndefined();
     expect(result.is_multimodal).toBeUndefined();
   });
+
+  it("detects tool-use from tags with tool-use pattern", () => {
+    const result = parseCharacteristicsFromName("some-model", [
+      "tool-use",
+      "mlx",
+    ]);
+    expect(result.is_tool_use).toBe(true);
+  });
+
+  it("detects tool-use from tags with function-calling pattern", () => {
+    const result = parseCharacteristicsFromName("some-model", [
+      "function-calling",
+      "mlx",
+    ]);
+    expect(result.is_tool_use).toBe(true);
+  });
+
+  it("detects tool-use from tags with tools pattern", () => {
+    const result = parseCharacteristicsFromName("some-model", ["tools"]);
+    expect(result.is_tool_use).toBe(true);
+  });
+
+  it("detects tool-use from known tool-capable families when tags don't indicate it", () => {
+    // Qwen family is known to support tool-use
+    const result = parseCharacteristicsFromName("mlx-community/Qwen2-7B-4bit");
+    expect(result.architecture_family).toBe("Qwen");
+    expect(result.is_tool_use).toBe(true);
+  });
+
+  it("does not set tool-use for non-tool-capable families without tag indication", () => {
+    // Llama doesn't have built-in tool support unless tags indicate it
+    const result = parseCharacteristicsFromName("mlx-community/Llama-3-8B-4bit");
+    expect(result.architecture_family).toBe("Llama");
+    expect(result.is_tool_use).toBeUndefined();
+  });
+
+  it("handles model ID without slash separator", () => {
+    // Tests the || modelId fallback in line 121 when pop() doesn't find a separator
+    const result = parseCharacteristicsFromName("Qwen2-7B-4bit");
+    expect(result.architecture_family).toBe("Qwen");
+    expect(result.quantization_bits).toBe(4);
+  });
 });

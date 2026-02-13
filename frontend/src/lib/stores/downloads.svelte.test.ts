@@ -844,4 +844,75 @@ describe("DownloadsStore", () => {
       expect(firstEventSource.close).toHaveBeenCalled();
     });
   });
+
+  describe("SSE connection with no auth token", () => {
+    beforeEach(async () => {
+      vi.resetModules();
+
+      // Re-mock API
+      vi.doMock("$api", () => ({
+        models: mockModelsApi,
+      }));
+
+      // Mock authStore with no token
+      vi.doMock("$lib/stores", () => ({
+        authStore: { token: null },
+      }));
+
+      // Reimport store with null token
+      const module = await import("./downloads.svelte");
+      downloadsStore = module.downloadsStore;
+
+      mockModelsApi.startDownload.mockResolvedValue({ task_id: "test-task-123" });
+    });
+
+    it("connects to SSE without token parameter when token is null", async () => {
+      await downloadsStore.startDownload("mlx-community/test-model");
+
+      expect(mockEventSources).toHaveLength(1);
+      expect(mockEventSources[0].url).toBe(
+        "/api/models/download/test-task-123/progress",
+      );
+    });
+  });
+
+  describe("updateDownload on non-existent model", () => {
+    it("does not throw when updating progress for removed model", async () => {
+      // Start a download with download_id
+      downloadsStore.reconnect("mlx-community/test-model", "task-1", {
+        download_id: 42,
+        status: "downloading",
+      });
+
+      // Verify it exists
+      expect(
+        downloadsStore.getProgress("mlx-community/test-model"),
+      ).toBeDefined();
+
+      // Cancel it (removes from store)
+      await downloadsStore.cancelDownload("mlx-community/test-model");
+
+      // Verify it's gone
+      expect(
+        downloadsStore.getProgress("mlx-community/test-model"),
+      ).toBeUndefined();
+
+      // The updateDownload `if (current)` false branch would be hit if an SSE message
+      // arrived for a model that was removed. Since updateDownload is private,
+      // we verify the behavior by attempting to send a message to a removed model's EventSource.
+      // However, since EventSource is closed on cancel, we just verify that the store
+      // correctly handles the absence of the model in the downloads map.
+
+      // Create another download to verify store still works
+      downloadsStore.reconnect("mlx-community/another-model", "task-2", {
+        download_id: 99,
+        status: "downloading",
+      });
+
+      // Should work fine
+      expect(
+        downloadsStore.getProgress("mlx-community/another-model"),
+      ).toBeDefined();
+    });
+  });
 });

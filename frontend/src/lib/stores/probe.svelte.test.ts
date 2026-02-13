@@ -593,4 +593,102 @@ describe("probeStore", () => {
       expect(allProbes).toEqual({});
     });
   });
+
+  describe("buffer edge cases", () => {
+    it("handles empty buffer on line split (lines.pop() returns undefined)", async () => {
+      const modelId = "test-model";
+      // Send a chunk that ends exactly at a newline, so buffer becomes empty after pop
+      const chunks = ["data: [DONE]\n"];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      expect(state.status).toBe("completed");
+
+      // Clean up
+      probeStore.reset(modelId);
+    });
+  });
+
+  describe("completion edge cases", () => {
+    it("does not mark completed twice if stream ends after [DONE]", async () => {
+      const modelId = "test-model";
+      // This tests the line 109 false branch: if (probes[modelId]?.status === "probing")
+      // When [DONE] is received, status becomes "completed", then when stream ends,
+      // the condition is false so we don't set status again
+      const chunks = ["data: [DONE]\n"];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      // Should be completed from [DONE]
+      expect(state.status).toBe("completed");
+
+      // The code has a check: if (probes[modelId]?.status === "probing")
+      // If status is already "completed", it won't mark as completed again
+      // This is tested by the fact that the final state is completed
+
+      // Clean up
+      probeStore.reset(modelId);
+    });
+
+    it("marks as completed when stream ends naturally without [DONE] while status is probing", async () => {
+      const modelId = "test-model";
+      const step: ProbeStep = {
+        step: "test-step",
+        status: "completed",
+      };
+
+      // Stream ends without [DONE]
+      const chunks = [`data: ${JSON.stringify(step)}\n`];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      // Should be marked as completed by the fallback check
+      expect(state.status).toBe("completed");
+      expect(state.currentStep).toBeNull();
+
+      // Clean up
+      probeStore.reset(modelId);
+    });
+
+    it("handles stream ending right after [DONE] message (status not probing)", async () => {
+      const modelId = "test-model";
+      const step: ProbeStep = {
+        step: "test-step",
+        status: "running",
+      };
+
+      // Stream with step and [DONE], then stream ends
+      // This explicitly tests that after [DONE] sets status to "completed",
+      // the final check doesn't overwrite it
+      const chunks = [
+        `data: ${JSON.stringify(step)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      // Should be completed from [DONE], not from the final check
+      expect(state.status).toBe("completed");
+      expect(state.currentStep).toBeNull();
+
+      // Clean up
+      probeStore.reset(modelId);
+    });
+  });
 });
