@@ -252,8 +252,8 @@ class TestLaunchdManagerGetStatus:
 
             result = launchd_manager.get_status(sample_profile)
 
-        assert result["running"] is False
-        assert result["label"] == "com.mlx-manager.test-profile"
+        assert result.running is False
+        assert result.label == "com.mlx-manager.test-profile"
 
     def test_get_status_running(self, launchd_manager, sample_profile):
         """Test status when service is running."""
@@ -264,9 +264,9 @@ class TestLaunchdManagerGetStatus:
 
             result = launchd_manager.get_status(sample_profile)
 
-        assert result["installed"] is True
-        assert result["running"] is True
-        assert result["pid"] == 12345
+        assert result.installed is True
+        assert result.running is True
+        assert result.pid == 12345
 
     def test_get_status_installed_not_running(self, launchd_manager, sample_profile):
         """Test status when service is installed but not running."""
@@ -277,6 +277,6 @@ class TestLaunchdManagerGetStatus:
 
             result = launchd_manager.get_status(sample_profile)
 
-        assert result["installed"] is True
-        assert result["running"] is False
-        assert result["pid"] is None
+        assert result.installed is True
+        assert result.running is False
+        assert result.pid is None

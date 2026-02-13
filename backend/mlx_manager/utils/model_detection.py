@@ -14,7 +14,7 @@ from typing import Any
 from loguru import logger
 
 from mlx_manager.config import settings
-from mlx_manager.types import ModelCharacteristics
+from mlx_manager.models.dto.models import ModelCharacteristics
 
 # Mapping from model_type patterns to normalized architecture family names
 ARCHITECTURE_FAMILIES: dict[str, str] = {
@@ -513,39 +513,22 @@ def extract_characteristics(
         quantization.get("group_size") if isinstance(quantization, dict) else None
     )
 
-    characteristics: ModelCharacteristics = {
-        "model_type": config.get("model_type", ""),
-        "architecture_family": normalize_architecture(config),
-        "is_multimodal": is_multimodal,
-        "multimodal_type": multimodal_type,
-        "use_cache": config.get("use_cache", True),
-        "is_tool_use": is_tool_use,
-    }
-
-    # Add optional numeric fields if present
-    if "max_position_embeddings" in config:
-        characteristics["max_position_embeddings"] = config["max_position_embeddings"]
-
-    if "num_hidden_layers" in config:
-        characteristics["num_hidden_layers"] = config["num_hidden_layers"]
-
-    if "hidden_size" in config:
-        characteristics["hidden_size"] = config["hidden_size"]
-
-    if "vocab_size" in config:
-        characteristics["vocab_size"] = config["vocab_size"]
-
-    if "num_attention_heads" in config:
-        characteristics["num_attention_heads"] = config["num_attention_heads"]
-
-    if "num_key_value_heads" in config:
-        characteristics["num_key_value_heads"] = config["num_key_value_heads"]
-
-    if quantization_bits is not None:
-        characteristics["quantization_bits"] = quantization_bits
-
-    if quantization_group_size is not None:
-        characteristics["quantization_group_size"] = quantization_group_size
+    characteristics = ModelCharacteristics(
+        model_type=config.get("model_type", ""),
+        architecture_family=normalize_architecture(config),
+        is_multimodal=is_multimodal,
+        multimodal_type=multimodal_type,
+        use_cache=config.get("use_cache", True),
+        is_tool_use=is_tool_use,
+        max_position_embeddings=config.get("max_position_embeddings"),
+        num_hidden_layers=config.get("num_hidden_layers"),
+        hidden_size=config.get("hidden_size"),
+        vocab_size=config.get("vocab_size"),
+        num_attention_heads=config.get("num_attention_heads"),
+        num_key_value_heads=config.get("num_key_value_heads"),
+        quantization_bits=quantization_bits,
+        quantization_group_size=quantization_group_size,
+    )
 
     return characteristics
 

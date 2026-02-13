@@ -116,9 +116,9 @@ async def _run_download_task(task_id: str, download_id: int, model_id: str) -> N
 
     try:
         async for progress in hf_client.download_model(model_id):
-            download_tasks[task_id].update(progress)
+            download_tasks[task_id].update(progress.model_dump(exclude_none=True))
 
-            status = progress.get("status")
+            status = progress.status
             is_final = status in ("completed", "failed")
 
             # Update DB on status changes and completion
@@ -126,9 +126,9 @@ async def _run_download_task(task_id: str, download_id: int, model_id: str) -> N
                 await _update_download_record(
                     download_id,
                     status=status or "downloading",
-                    downloaded_bytes=progress.get("downloaded_bytes", 0),
-                    total_bytes=progress.get("total_bytes"),
-                    error=progress.get("error"),
+                    downloaded_bytes=progress.downloaded_bytes or 0,
+                    total_bytes=progress.total_bytes,
+                    error=progress.error,
                     completed=status == "completed",
                 )
                 break

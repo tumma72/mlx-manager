@@ -11,12 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mlx_manager.database import get_db
 from mlx_manager.mlx_server.services.cloud.anthropic import AnthropicCloudBackend
 from mlx_manager.mlx_server.services.cloud.openai import OpenAICloudBackend
-from mlx_manager.models import (
+from mlx_manager.models.enums import ApiType, BackendType
+from mlx_manager.shared import (
     API_TYPE_FOR_BACKEND,
     DEFAULT_BASE_URLS,
-    ApiType,
     BackendMapping,
-    BackendType,
     CloudCredential,
 )
 

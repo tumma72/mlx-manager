@@ -15,7 +15,7 @@ from loguru import logger
 
 from mlx_manager.config import DEFAULT_PORT
 from mlx_manager.models import ExecutionProfile
-from mlx_manager.types import LaunchdStatus
+from mlx_manager.models.dto.system import LaunchdStatus
 
 
 class LaunchdManager:

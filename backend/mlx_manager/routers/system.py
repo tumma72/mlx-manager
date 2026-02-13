@@ -160,8 +160,7 @@ async def get_launchd_status(
     profile: ExecutionProfile = Depends(get_profile_or_404),
 ):
     """Get launchd service status."""
-    status = launchd_manager.get_status(profile)
-    return LaunchdStatus(**status)
+    return launchd_manager.get_status(profile)
 
 
 # ============================================================================

@@ -8,18 +8,17 @@ import asyncio
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
+from pydantic import BaseModel, Field
 
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog
 
 
-@dataclass
-class RequestContext:
+class RequestContext(BaseModel):
     """Context for tracking request lifecycle.
 
     Created at request start, completed at request end.
@@ -29,7 +28,7 @@ class RequestContext:
     model: str
     endpoint: str
     backend_type: str = "local"
-    start_time: float = field(default_factory=time.time)
+    start_time: float = Field(default_factory=time.time)
 
     # Set when request completes
     status: str | None = None

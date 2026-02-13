@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
+from pydantic import BaseModel
 
 
-@dataclass
-class ValidationResult:
+class ValidationResult(BaseModel):
     """Result of JSON Schema validation.
 
     Attributes:

@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.models.dto.models import DownloadStatus
+
 
 class TestHealthEndpoint:
     """Tests for the /health endpoint."""
@@ -467,18 +469,18 @@ class TestRunDownloadTask:
 
         # Mock hf_client.download_model to yield progress events
         async def mock_download_model(model_id):
-            yield {
-                "status": "downloading",
-                "progress": 50,
-                "downloaded_bytes": 500,
-                "total_bytes": 1000,
-            }
-            yield {
-                "status": "completed",
-                "progress": 100,
-                "downloaded_bytes": 1000,
-                "total_bytes": 1000,
-            }
+            yield DownloadStatus(
+                status="downloading",
+                progress=50,
+                downloaded_bytes=500,
+                total_bytes=1000,
+            )
+            yield DownloadStatus(
+                status="completed",
+                progress=100,
+                downloaded_bytes=1000,
+                total_bytes=1000,
+            )
 
         # Mock _update_download_record (imported inside _run_download_task from routers.models)
         update_calls = []
@@ -532,7 +534,7 @@ class TestRunDownloadTask:
 
         # Mock hf_client.download_model to raise CancelledError
         async def mock_download_model(model_id):
-            yield {"status": "downloading", "progress": 50}
+            yield DownloadStatus(status="downloading", progress=50)
             raise asyncio.CancelledError()
 
         with patch.object(main.hf_client, "download_model", mock_download_model):
@@ -567,7 +569,7 @@ class TestRunDownloadTask:
 
         # Mock hf_client.download_model to raise an exception
         async def mock_download_model(model_id):
-            yield {"status": "downloading", "progress": 25}
+            yield DownloadStatus(status="downloading", progress=25)
             raise RuntimeError("Network error")
 
         # Mock _update_download_record (imported inside _run_download_task from routers.models)

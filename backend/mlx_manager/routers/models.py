@@ -179,30 +179,30 @@ async def get_download_progress(
 
         try:
             async for progress in hf_client.download_model(model_id, cancel_event=cancel_event):
-                download_tasks[task_id].update(progress)
+                download_tasks[task_id].update(progress.model_dump(exclude_none=True))
 
                 # Serialize progress dict properly
                 progress_dict = {
-                    "status": progress.get("status"),
-                    "progress": progress.get("progress", 0),
-                    "downloaded_bytes": progress.get("downloaded_bytes", 0),
-                    "total_bytes": progress.get("total_bytes", 0),
-                    "error": progress.get("error"),
+                    "status": progress.status,
+                    "progress": progress.progress or 0,
+                    "downloaded_bytes": progress.downloaded_bytes or 0,
+                    "total_bytes": progress.total_bytes or 0,
+                    "error": progress.error,
                 }
                 yield f"data: {json.dumps(progress_dict)}\n\n"
 
                 # Update DB record periodically (every 5 seconds) or on status change
                 current_time = time.time()
-                status = progress.get("status")
+                status = progress.status
                 is_final = status in ("completed", "failed", "cancelled")
 
                 if download_id and (is_final or current_time - last_db_update >= 5):
                     await _update_download_record(
                         download_id,
                         status=status or "downloading",
-                        downloaded_bytes=progress.get("downloaded_bytes", 0),
-                        total_bytes=progress.get("total_bytes"),
-                        error=progress.get("error"),
+                        downloaded_bytes=progress.downloaded_bytes or 0,
+                        total_bytes=progress.total_bytes,
+                        error=progress.error,
                         completed=is_final and status == "completed",
                     )
                     last_db_update = current_time

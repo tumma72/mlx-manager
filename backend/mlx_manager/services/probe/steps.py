@@ -1,4 +1,4 @@
-"""Probe step and result dataclasses.
+"""Probe step and result models.
 
 These are the building blocks shared across all probe strategies.
 ProbeStep is yielded as SSE events for streaming progress to the UI.
@@ -8,12 +8,12 @@ ProbeResult accumulates capabilities discovered during probing.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class ProbeStep:
+
+class ProbeStep(BaseModel):
     """A single step in the probe process, yielded as an SSE event."""
 
     step: str
@@ -37,8 +37,7 @@ class ProbeStep:
         return f"data: {json.dumps(data)}\n\n"
 
 
-@dataclass
-class ProbeResult:
+class ProbeResult(BaseModel):
     """Accumulated probe results across all capability checks.
 
     Fields are set by type-specific strategies. Irrelevant fields
@@ -71,4 +70,4 @@ class ProbeResult:
 
     # Metadata
     model_type: str | None = None
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

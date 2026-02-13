@@ -527,40 +527,40 @@ class TestExtractCharacteristics:
         }
         chars = extract_characteristics(config)
 
-        assert chars["model_type"] == "qwen2"
-        assert chars["architecture_family"] == "Qwen"
-        assert chars["max_position_embeddings"] == 32768
-        assert chars["num_hidden_layers"] == 28
-        assert chars["hidden_size"] == 3584
-        assert chars["vocab_size"] == 152064
-        assert chars["num_attention_heads"] == 28
-        assert chars["num_key_value_heads"] == 4
-        assert chars["quantization_bits"] == 4
-        assert chars["quantization_group_size"] == 64
-        assert chars["is_multimodal"] is False
-        assert chars["multimodal_type"] is None
-        assert chars["use_cache"] is True
+        assert chars.model_type == "qwen2"
+        assert chars.architecture_family == "Qwen"
+        assert chars.max_position_embeddings == 32768
+        assert chars.num_hidden_layers == 28
+        assert chars.hidden_size == 3584
+        assert chars.vocab_size == 152064
+        assert chars.num_attention_heads == 28
+        assert chars.num_key_value_heads == 4
+        assert chars.quantization_bits == 4
+        assert chars.quantization_group_size == 64
+        assert chars.is_multimodal is False
+        assert chars.multimodal_type is None
+        assert chars.use_cache is True
 
     def test_extracts_minimal_config(self):
         """Test extracting from minimal config with only model_type."""
         config = {"model_type": "llama"}
         chars = extract_characteristics(config)
 
-        assert chars["model_type"] == "llama"
-        assert chars["architecture_family"] == "Llama"
-        assert chars["is_multimodal"] is False
-        assert "max_position_embeddings" not in chars
-        assert "quantization_bits" not in chars
+        assert chars.model_type == "llama"
+        assert chars.architecture_family == "Llama"
+        assert chars.is_multimodal is False
+        assert chars.max_position_embeddings is None
+        assert chars.quantization_bits is None
 
     def test_handles_missing_fields_gracefully(self):
         """Test handles missing fields with defaults."""
         config = {}
         chars = extract_characteristics(config)
 
-        assert chars["model_type"] == ""
-        assert chars["architecture_family"] == "Unknown"
-        assert chars["is_multimodal"] is False
-        assert chars["use_cache"] is True
+        assert chars.model_type == ""
+        assert chars.architecture_family == "Unknown"
+        assert chars.is_multimodal is False
+        assert chars.use_cache is True
 
     def test_handles_quantization_without_bits(self):
         """Test handles quantization config without bits field."""
@@ -570,8 +570,8 @@ class TestExtractCharacteristics:
         }
         chars = extract_characteristics(config)
 
-        assert "quantization_bits" not in chars
-        assert chars["quantization_group_size"] == 64
+        assert chars.quantization_bits is None
+        assert chars.quantization_group_size == 64
 
     def test_handles_non_dict_quantization(self):
         """Test handles quantization as non-dict value."""
@@ -581,8 +581,8 @@ class TestExtractCharacteristics:
         }
         chars = extract_characteristics(config)
 
-        assert "quantization_bits" not in chars
-        assert "quantization_group_size" not in chars
+        assert chars.quantization_bits is None
+        assert chars.quantization_group_size is None
 
 
 class TestDetectMultimodal:
@@ -728,9 +728,9 @@ class TestExtractCharacteristicsFromModel:
             result = extract_characteristics_from_model("mlx-community/test-model")
 
         assert result is not None
-        assert result["architecture_family"] == "Qwen"
-        assert result["max_position_embeddings"] == 32768
-        assert result["quantization_bits"] == 4
+        assert result.architecture_family == "Qwen"
+        assert result.max_position_embeddings == 32768
+        assert result.quantization_bits == 4
 
     def test_returns_none_when_model_not_downloaded(self, tmp_path):
         """Test returns None when model is not downloaded."""
@@ -788,29 +788,29 @@ class TestQuantizationExtraction:
         """Test extracts 4-bit quantization."""
         config = {"quantization": {"bits": 4, "group_size": 64}}
         chars = extract_characteristics(config)
-        assert chars["quantization_bits"] == 4
-        assert chars["quantization_group_size"] == 64
+        assert chars.quantization_bits == 4
+        assert chars.quantization_group_size == 64
 
     def test_extracts_8bit_quantization(self):
         """Test extracts 8-bit quantization."""
         config = {"quantization": {"bits": 8}}
         chars = extract_characteristics(config)
-        assert chars["quantization_bits"] == 8
+        assert chars.quantization_bits == 8
 
     def test_extracts_3bit_quantization(self):
         """Test extracts 3-bit quantization."""
         config = {"quantization": {"bits": 3, "group_size": 128}}
         chars = extract_characteristics(config)
-        assert chars["quantization_bits"] == 3
+        assert chars.quantization_bits == 3
 
     def test_no_quantization_returns_none(self):
         """Test no quantization config returns None for bits."""
         config = {"model_type": "llama"}
         chars = extract_characteristics(config)
-        assert "quantization_bits" not in chars
+        assert chars.quantization_bits is None
 
     def test_empty_quantization_returns_none(self):
         """Test empty quantization dict returns None for bits."""
         config = {"quantization": {}}
         chars = extract_characteristics(config)
-        assert "quantization_bits" not in chars
+        assert chars.quantization_bits is None

@@ -26,26 +26,26 @@ async def sync_models_from_cache() -> int:
     async with get_session() as session:
         for lm in local_models:
             # Check if already registered
-            result = await session.execute(select(Model).where(Model.repo_id == lm["model_id"]))
+            result = await session.execute(select(Model).where(Model.repo_id == lm.model_id))
             if result.scalar_one_or_none():
                 continue
 
             # Detect model type
             from mlx_manager.mlx_server.models.detection import detect_model_type
 
-            model_type = detect_model_type(lm["model_id"])
+            model_type = detect_model_type(lm.model_id)
 
             model = Model(
-                repo_id=lm["model_id"],
+                repo_id=lm.model_id,
                 model_type=model_type.value,
-                local_path=lm["local_path"],
-                size_bytes=lm["size_bytes"],
+                local_path=lm.local_path,
+                size_bytes=lm.size_bytes,
                 downloaded_at=datetime.now(tz=UTC),
             )
 
             session.add(model)
             new_count += 1
-            logger.info(f"Registered model: {lm['model_id']} (type={model_type.value})")
+            logger.info(f"Registered model: {lm.model_id} (type={model_type.value})")
 
         if new_count > 0:
             await session.commit()

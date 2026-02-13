@@ -20,15 +20,15 @@ from __future__ import annotations
 import asyncio
 import statistics
 import time
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable
 
 
-@dataclass
-class BenchmarkResult:
+class BenchmarkResult(BaseModel):
     """Result from a throughput benchmark run.
 
     Attributes:
@@ -50,7 +50,7 @@ class BenchmarkResult:
     avg_latency_ms: float
     p50_latency_ms: float
     p99_latency_ms: float
-    latencies_ms: list[float] = field(default_factory=list, repr=False)
+    latencies_ms: list[float] = Field(default_factory=list, repr=False)
 
     def __str__(self) -> str:
         """Human-readable summary of benchmark results."""

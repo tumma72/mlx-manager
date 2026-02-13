@@ -1,6 +1,6 @@
 """Model types for the MLX server."""
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 from mlx_manager.models.enums import ModelType
 
@@ -8,8 +8,7 @@ from mlx_manager.models.enums import ModelType
 __all__ = ["AdapterInfo", "ModelType"]
 
 
-@dataclass
-class AdapterInfo:
+class AdapterInfo(BaseModel):
     """Information about a loaded LoRA adapter."""
 
     adapter_path: str

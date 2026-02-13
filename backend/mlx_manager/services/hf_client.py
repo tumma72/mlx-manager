@@ -14,12 +14,12 @@ from loguru import logger
 from tqdm.auto import tqdm  # type: ignore[import-untyped]
 
 from mlx_manager.config import settings
+from mlx_manager.models.dto.models import DownloadStatus, LocalModel, ModelSearchResult
 from mlx_manager.services.hf_api import (
     estimate_size_from_name,
     get_model_size_gb,
     search_models,
 )
-from mlx_manager.types import DownloadStatus, LocalModelInfo, ModelSearchResult
 
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
@@ -438,7 +438,7 @@ class HuggingFaceClient:
             logger.debug(f"Failed to calculate directory size for {path}: {e}")
             return 0
 
-    def list_local_models(self) -> list[LocalModelInfo]:
+    def list_local_models(self) -> list[LocalModel]:
         """List all locally downloaded MLX models.
 
         If hf_organization is set, only lists models from that organization.
@@ -452,7 +452,7 @@ class HuggingFaceClient:
         if settings.offline_mode:
             return []
 
-        models: list[LocalModelInfo] = []
+        models: list[LocalModel] = []
 
         if not self.cache_dir.exists():
             return models
@@ -493,7 +493,7 @@ class HuggingFaceClient:
                     characteristics = extract_characteristics_from_model(model_id)
 
                     models.append(
-                        LocalModelInfo(
+                        LocalModel(
                             model_id=model_id,
                             local_path=local_path,
                             size_bytes=size_bytes,

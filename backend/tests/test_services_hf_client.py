@@ -94,8 +94,8 @@ class TestHuggingFaceClientListLocalModels:
             result = hf_client_instance.list_local_models()
 
         assert len(result) == 1
-        assert result[0]["model_id"] == "mlx-community/test-model"
-        assert result[0]["size_bytes"] == 1000
+        assert result[0].model_id == "mlx-community/test-model"
+        assert result[0].size_bytes == 1000
 
 
 class TestHuggingFaceClientDeleteModel:
@@ -149,11 +149,11 @@ class TestHuggingFaceClientSearchModels:
             results = await hf_client_instance.search_mlx_models("test", limit=10)
 
         assert len(results) == 1
-        assert results[0]["model_id"] == "mlx-community/test-model"
-        assert results[0]["downloads"] == 1000
-        assert results[0]["likes"] == 50
+        assert results[0].model_id == "mlx-community/test-model"
+        assert results[0].downloads == 1000
+        assert results[0].likes == 50
         # 5_000_000_000 / 1024^3 = 4.66 GiB
-        assert results[0]["estimated_size_gb"] == 4.66
+        assert results[0].estimated_size_gb == 4.66
 
     @pytest.mark.asyncio
     async def test_search_models_with_size_filter(self, hf_client_instance):
@@ -208,13 +208,13 @@ class TestHuggingFaceClientDownloadModel:
                 events.append(event)
 
         # First event is immediate starting (without size), second has size after dry_run
-        assert events[0]["status"] == "starting"
-        assert events[0]["total_bytes"] == 0  # Immediate yield before dry_run
+        assert events[0].status == "starting"
+        assert events[0].total_bytes == 0  # Immediate yield before dry_run
         # Second event has size info after dry_run completes
-        assert events[1]["status"] == "starting"
-        assert events[1]["total_bytes"] == 1_000_000_000
-        assert events[-1]["status"] == "completed"
-        assert events[-1]["progress"] == 100
+        assert events[1].status == "starting"
+        assert events[1].total_bytes == 1_000_000_000
+        assert events[-1].status == "completed"
+        assert events[-1].progress == 100
 
     @pytest.mark.asyncio
     async def test_download_model_failure(self, hf_client_instance):
@@ -234,9 +234,9 @@ class TestHuggingFaceClientDownloadModel:
             async for event in hf_client_instance.download_model("mlx-community/Qwen3-8B-4bit"):
                 events.append(event)
 
-        assert events[0]["status"] == "starting"
-        assert events[-1]["status"] == "failed"
-        assert "Download failed" in events[-1]["error"]
+        assert events[0].status == "starting"
+        assert events[-1].status == "failed"
+        assert "Download failed" in events[-1].error
 
     @pytest.mark.asyncio
     async def test_download_model_dry_run_failure_falls_back_to_estimation(
@@ -256,13 +256,13 @@ class TestHuggingFaceClientDownloadModel:
                 events.append(event)
 
         # First event is immediate starting (without size)
-        assert events[0]["status"] == "starting"
-        assert events[0]["total_bytes"] == 0  # Immediate yield before dry_run
+        assert events[0].status == "starting"
+        assert events[0].total_bytes == 0  # Immediate yield before dry_run
         # Second event has estimated size after dry_run failure falls back to estimation
         # Size estimated from name: 8B * 0.5 bytes * 1.1 ≈ 4.1 GiB
-        assert events[1]["status"] == "starting"
-        assert events[1]["total_size_gb"] > 3.5
-        assert events[-1]["status"] == "completed"
+        assert events[1].status == "starting"
+        assert events[1].total_size_gb > 3.5
+        assert events[-1].status == "completed"
 
 
 class TestHuggingFaceClientOfflineMode:
@@ -299,8 +299,8 @@ class TestHuggingFaceClientOfflineMode:
                 events.append(event)
 
         assert len(events) == 1
-        assert events[0]["status"] == "failed"
-        assert "Offline mode" in events[0]["error"]
+        assert events[0].status == "failed"
+        assert "Offline mode" in events[0].error
 
     def test_is_downloaded_returns_false_in_offline_mode(self, tmp_path):
         """Test _is_downloaded returns False in offline mode."""
@@ -463,11 +463,11 @@ class TestHuggingFaceClientSearchModelsEdgeCases:
             results = await hf_client_instance.search_mlx_models("test")
 
         assert len(results) == 1
-        assert results[0]["model_id"] == "mlx-community/test-model"
-        assert results[0]["author"] == "mlx-community"  # Defaults to org
-        assert results[0]["downloads"] == 0
-        assert results[0]["likes"] == 0
-        assert results[0]["tags"] == []
+        assert results[0].model_id == "mlx-community/test-model"
+        assert results[0].author == "mlx-community"  # Defaults to org
+        assert results[0].downloads == 0
+        assert results[0].likes == 0
+        assert results[0].tags == []
 
     @pytest.mark.asyncio
     async def test_search_respects_limit(self, hf_client_instance):
@@ -670,7 +670,7 @@ class TestListLocalModelsNoOrganization:
             result = client.list_local_models()
 
         assert len(result) == 1
-        assert result[0]["model_id"] == "mlx-community/Qwen-7B"
+        assert result[0].model_id == "mlx-community/Qwen-7B"
 
     def test_list_local_models_lmstudio_community_model(self, tmp_path):
         """Test lists lmstudio-community models when no org filter."""
@@ -691,7 +691,7 @@ class TestListLocalModelsNoOrganization:
             result = client.list_local_models()
 
         assert len(result) == 1
-        assert result[0]["model_id"] == "lmstudio-community/Llama-3-8B"
+        assert result[0].model_id == "lmstudio-community/Llama-3-8B"
 
     def test_list_local_models_mlx_in_name(self, tmp_path):
         """Test lists models with 'mlx' in name when no org filter."""
@@ -712,7 +712,7 @@ class TestListLocalModelsNoOrganization:
             result = client.list_local_models()
 
         assert len(result) == 1
-        assert result[0]["model_id"] == "someorg/model-mlx-optimized"
+        assert result[0].model_id == "someorg/model-mlx-optimized"
 
     def test_list_local_models_excludes_non_mlx(self, tmp_path):
         """Test excludes non-MLX models when no org filter (line 274-275)."""
@@ -761,7 +761,7 @@ class TestListLocalModelsNoOrganization:
 
         # Should only include mlx-community model
         assert len(result) == 1
-        assert result[0]["model_id"] == "mlx-community/Model-A"
+        assert result[0].model_id == "mlx-community/Model-A"
 
     def test_list_local_models_skips_non_model_dirs(self, tmp_path):
         """Test skips directories that don't start with models--."""
@@ -942,8 +942,8 @@ class TestDownloadCancellation:
                 events.append(event)
 
         # Should yield cancelled status (line 319-326)
-        assert events[-1]["status"] == "cancelled"
-        assert events[-1]["progress"] == 0
+        assert events[-1].status == "cancelled"
+        assert events[-1].progress == 0
 
     @pytest.mark.asyncio
     async def test_download_cancelled_during_download(self, hf_client_instance, tmp_path):
@@ -981,7 +981,7 @@ class TestDownloadCancellation:
             await task
 
         # Should detect cancellation during polling (lines 352-364)
-        assert any(e["status"] == "cancelled" for e in events)
+        assert any(e.status == "cancelled" for e in events)
 
     @pytest.mark.asyncio
     async def test_download_cancelled_error_in_except_block(self, hf_client_instance, tmp_path):
@@ -1008,7 +1008,7 @@ class TestDownloadCancellation:
                 events.append(event)
 
         # Should catch DownloadCancelledError and yield cancelled status (lines 401-402)
-        assert events[-1]["status"] == "cancelled"
+        assert events[-1].status == "cancelled"
 
     @pytest.mark.asyncio
     async def test_download_await_cancelled_task_raises_exception(
@@ -1047,7 +1047,7 @@ class TestDownloadCancellation:
             await task
 
         # Should handle the exception when awaiting cancelled task (lines 355-356)
-        assert any(e["status"] == "cancelled" for e in events)
+        assert any(e.status == "cancelled" for e in events)
 
     @pytest.mark.asyncio
     async def test_download_progress_logging_every_10_polls(self, hf_client_instance, tmp_path):
@@ -1130,10 +1130,10 @@ class TestDryRunTimeout:
 
         # Should proceed with zero size after timeout (lines 291-294)
         # First event has total_bytes=0, second event should also have 0 after timeout
-        assert events[0]["total_bytes"] == 0
-        assert events[1]["total_bytes"] == 0  # Still zero after timeout
+        assert events[0].total_bytes == 0
+        assert events[1].total_bytes == 0  # Still zero after timeout
         # Check that download still completes
-        assert events[-1]["status"] == "completed"
+        assert events[-1].status == "completed"
 
 
 # ============================================================================

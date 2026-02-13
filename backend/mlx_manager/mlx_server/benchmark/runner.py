@@ -8,16 +8,15 @@ Measures throughput (tokens/second) for:
 
 import json
 import time
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from pydantic import BaseModel
 
 from mlx_manager.config import DEFAULT_PORT
 
 
-@dataclass
-class BenchmarkResult:
+class BenchmarkResult(BaseModel):
     """Result from a single benchmark run."""
 
     model: str
@@ -40,8 +39,7 @@ class BenchmarkResult:
         return self.prompt_tokens + self.completion_tokens
 
 
-@dataclass
-class BenchmarkSummary:
+class BenchmarkSummary(BaseModel):
     """Aggregate statistics from multiple benchmark runs."""
 
     model: str

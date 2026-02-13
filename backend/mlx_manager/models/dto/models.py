@@ -8,6 +8,8 @@ from mlx_manager.models.capabilities import CapabilitiesResponse
 
 __all__ = [
     "ModelResponse",
+    "ModelCharacteristics",
+    "DownloadStatus",
     "ModelSearchResult",
     "LocalModel",
     "DownloadRequest",
@@ -117,6 +119,39 @@ class ModelResponse(BaseModel):
         return self.capabilities.supports_stt if self.capabilities else None
 
 
+class ModelCharacteristics(BaseModel):
+    """Model characteristics extracted from config.json."""
+
+    model_type: str | None = None
+    architecture_family: str | None = None
+    max_position_embeddings: int | None = None
+    num_hidden_layers: int | None = None
+    hidden_size: int | None = None
+    vocab_size: int | None = None
+    num_attention_heads: int | None = None
+    num_key_value_heads: int | None = None
+    quantization_bits: int | None = None
+    quantization_group_size: int | None = None
+    is_multimodal: bool | None = None
+    multimodal_type: str | None = None
+    use_cache: bool | None = None
+    is_tool_use: bool | None = None
+
+
+class DownloadStatus(BaseModel):
+    """Status update for model download progress."""
+
+    status: str | None = None
+    model_id: str | None = None
+    total_size_gb: float | None = None
+    total_bytes: int | None = None
+    downloaded_bytes: int | None = None
+    local_path: str | None = None
+    progress: int | None = None
+    speed_mbps: float | None = None
+    error: str | None = None
+
+
 class ModelSearchResult(BaseModel):
     """Model search result from HuggingFace."""
 
@@ -137,7 +172,7 @@ class LocalModel(BaseModel):
     local_path: str
     size_bytes: int
     size_gb: float
-    characteristics: dict | None = None  # ModelCharacteristics from config.json
+    characteristics: ModelCharacteristics | None = None
 
 
 class DownloadRequest(BaseModel):

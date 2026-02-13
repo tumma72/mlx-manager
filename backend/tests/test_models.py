@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.models.dto.models import DownloadStatus
 from mlx_manager.services.auth_service import create_access_token
 
 
@@ -174,8 +175,8 @@ async def test_get_download_progress_with_valid_task(auth_client):
     }
 
     async def mock_download_model(model_id, cancel_event=None):
-        yield {"status": "downloading", "progress": 50}
-        yield {"status": "completed", "progress": 100}
+        yield DownloadStatus(status="downloading", progress=50)
+        yield DownloadStatus(status="completed", progress=100)
 
     with (
         patch("mlx_manager.routers.models.hf_client") as mock,
@@ -878,18 +879,18 @@ async def test_download_progress_sse_updates_db_periodically(auth_client):
     update_calls = []
 
     async def mock_download_model(model_id, cancel_event=None):
-        yield {
-            "status": "downloading",
-            "progress": 50,
-            "downloaded_bytes": 5000,
-            "total_bytes": 10000,
-        }
-        yield {
-            "status": "completed",
-            "progress": 100,
-            "downloaded_bytes": 10000,
-            "total_bytes": 10000,
-        }
+        yield DownloadStatus(
+            status="downloading",
+            progress=50,
+            downloaded_bytes=5000,
+            total_bytes=10000,
+        )
+        yield DownloadStatus(
+            status="completed",
+            progress=100,
+            downloaded_bytes=10000,
+            total_bytes=10000,
+        )
 
     async def mock_update_record(*args, **kwargs):
         update_calls.append({"args": args, "kwargs": kwargs})
@@ -981,7 +982,7 @@ async def test_download_progress_sse_without_download_id(auth_client):
     }
 
     async def mock_download_model(model_id, cancel_event=None):
-        yield {"status": "completed", "progress": 100}
+        yield DownloadStatus(status="completed", progress=100)
 
     with (
         patch("mlx_manager.routers.models.hf_client") as mock_hf,

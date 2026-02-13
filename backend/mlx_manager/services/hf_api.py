@@ -13,10 +13,10 @@ download logic (resumable, LFS, caching, etc.).
 
 import asyncio
 import re
-from dataclasses import dataclass
 
 import httpx
 from loguru import logger
+from pydantic import BaseModel
 
 # HuggingFace API base URL
 HF_API_BASE = "https://huggingface.co/api"
@@ -25,17 +25,16 @@ HF_API_BASE = "https://huggingface.co/api"
 DEFAULT_TIMEOUT = 30.0
 
 
-@dataclass
-class ModelInfo:
+class ModelInfo(BaseModel):
     """Model information from HuggingFace API."""
 
     model_id: str
-    author: str | None
-    downloads: int
-    likes: int
-    tags: list[str]
-    last_modified: str | None
-    size_bytes: int | None  # From usedStorage (accurate total repository size)
+    author: str | None = None
+    downloads: int = 0
+    likes: int = 0
+    tags: list[str] = []
+    last_modified: str | None = None
+    size_bytes: int | None = None  # From usedStorage (accurate total repository size)
 
 
 def estimate_size_from_name(model_id: str) -> float | None:
