@@ -14,7 +14,6 @@ from mlx_manager.mlx_server.api.v1.chat import (
     _handle_routed_request,
     _handle_streaming,
     _handle_text_request,
-    _handle_vision_request,
     create_chat_completion,
 )
 from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
@@ -111,10 +110,10 @@ class TestRoutingDisabled:
         mock_direct.return_value = MagicMock()
 
         # Call the handler
-        await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request, None)
 
         # Should go directly to direct handler, not router
-        mock_direct.assert_called_once_with(basic_request)
+        mock_direct.assert_called_once_with(basic_request, None)
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_batched_request")
@@ -135,7 +134,7 @@ class TestRoutingDisabled:
 
         mock_batched.return_value = MagicMock()
 
-        await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request, None)
 
         # Should use batching path
         mock_batched.assert_called_once()
@@ -161,7 +160,7 @@ class TestRoutingEnabled:
         router_mock.route_request = AsyncMock(return_value=mock_completion_response)
         mock_get_router.return_value = router_mock
 
-        await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request, None)
 
         # Should use router
         router_mock.route_request.assert_called_once()
@@ -250,10 +249,10 @@ class TestRoutingFallback:
         mock_direct.return_value = MagicMock()
 
         # Should not raise, should fall back
-        await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request, None)
 
         # Direct handler should be called as fallback
-        mock_direct.assert_called_once_with(basic_request)
+        mock_direct.assert_called_once_with(basic_request, None)
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_routed_request")
@@ -278,7 +277,7 @@ class TestRoutingFallback:
 
         mock_batched.return_value = MagicMock()
 
-        await _handle_text_request(basic_request)
+        await _handle_text_request(basic_request, None)
 
         # Batching handler should be called as fallback
         mock_batched.assert_called_once()
@@ -797,175 +796,36 @@ class TestHandleStreaming:
 
 
 # ============================================================================
-# Tests for _handle_vision_request
+# Tests for unified vision handling (now through _handle_text_request)
 # ============================================================================
 
 
-class TestHandleVisionRequest:
-    """Tests for vision request handling."""
+class TestUnifiedVisionHandling:
+    """Tests for vision request handling through the unified path."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_vision_completion")
-    @patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images")
     @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_vision_non_streaming(
-        self, mock_settings, mock_detect, mock_preprocess, mock_generate
-    ):
-        """Vision non-streaming returns ChatCompletionResponse."""
-        settings = MagicMock()
-        settings.timeout_chat_seconds = 900.0
-        mock_settings.return_value = settings
-
-        mock_detect.return_value = ModelType.VISION
-
-        mock_preprocess.return_value = [MagicMock()]  # preprocessed image
-
-        mock_generate.return_value = {
-            "id": "chatcmpl-vision",
-            "created": 1700000000,
-            "model": "vision-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "I see a cat."},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105},
-        }
+    async def test_images_with_non_vision_model_raises_400(self, mock_detect):
+        """Images sent to a non-vision model raises 400 during validation."""
+        mock_detect.return_value = ModelType.TEXT_GEN
 
         request = ChatCompletionRequest(
-            model="vision-model",
+            model="text-only-model",
             messages=[
                 ChatMessage(
                     role="user",
                     content=[
-                        {"type": "text", "text": "What do you see?"},
-                        {"type": "image_url", "image_url": {"url": "http://example.com/cat.jpg"}},
+                        {"type": "text", "text": "Describe this"},
+                        {"type": "image_url", "image_url": {"url": "http://example.com/img.png"}},
                     ],
                 )
             ],
         )
 
-        result = await _handle_vision_request(request, ["http://example.com/cat.jpg"])
-        assert isinstance(result, ChatCompletionResponse)
-        assert result.choices[0].message.content == "I see a cat."
-        assert result.usage.total_tokens == 105
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_vision_completion")
-    @patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images")
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_vision_streaming(
-        self, mock_settings, mock_detect, mock_preprocess, mock_generate
-    ):
-        """Vision streaming returns EventSourceResponse."""
-        settings = MagicMock()
-        settings.timeout_chat_seconds = 900.0
-        mock_settings.return_value = settings
-
-        mock_detect.return_value = ModelType.VISION
-        mock_preprocess.return_value = [MagicMock()]
-
-        async def mock_stream():
-            yield {"choices": [{"delta": {"content": "cat"}}]}
-
-        mock_generate.return_value = mock_stream()
-
-        request = ChatCompletionRequest(
-            model="vision-model",
-            messages=[ChatMessage(role="user", content="What?")],
-            stream=True,
-        )
-
-        result = await _handle_vision_request(request, ["http://example.com/img.png"])
-        assert isinstance(result, EventSourceResponse)
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    async def test_vision_request_with_non_vision_model_raises_400(self, mock_detect):
-        """Images sent to a non-vision model raises 400."""
-        mock_detect.return_value = ModelType.TEXT_GEN
-
-        request = ChatCompletionRequest(
-            model="text-only-model",
-            messages=[ChatMessage(role="user", content="Describe this")],
-        )
-
+        # The validation happens in create_chat_completion before routing
         with pytest.raises(HTTPException) as exc_info:
-            await _handle_vision_request(request, ["http://example.com/img.png"])
+            await create_chat_completion(request)
         assert exc_info.value.status_code == 400
         assert "vision model" in exc_info.value.detail.lower()
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_vision_completion")
-    @patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images")
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_vision_timeout_raises_408(
-        self, mock_settings, mock_detect, mock_preprocess, mock_generate
-    ):
-        """Vision timeout raises TimeoutHTTPException (408)."""
-        settings = MagicMock()
-        settings.timeout_chat_seconds = 0.001
-        mock_settings.return_value = settings
-
-        mock_detect.return_value = ModelType.VISION
-        mock_preprocess.return_value = [MagicMock()]
-        mock_generate.side_effect = TimeoutError()
-
-        request = ChatCompletionRequest(
-            model="vision-model",
-            messages=[ChatMessage(role="user", content="Describe")],
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            await _handle_vision_request(request, ["http://example.com/img.png"])
-        assert exc_info.value.status_code == 408
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_vision_completion")
-    @patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images")
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_vision_prompt_concatenation(
-        self, mock_settings, mock_detect, mock_preprocess, mock_generate
-    ):
-        """Vision prompt correctly concatenates system/user/assistant messages."""
-        settings = MagicMock()
-        settings.timeout_chat_seconds = 900.0
-        mock_settings.return_value = settings
-
-        mock_detect.return_value = ModelType.VISION
-        mock_preprocess.return_value = [MagicMock()]
-        mock_generate.return_value = {
-            "id": "chatcmpl-v",
-            "created": 1700000000,
-            "model": "vision-model",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "A cat."},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 50, "completion_tokens": 2, "total_tokens": 52},
-        }
-
-        request = ChatCompletionRequest(
-            model="vision-model",
-            messages=[
-                ChatMessage(role="system", content="Be brief."),
-                ChatMessage(role="user", content="What's this?"),
-                ChatMessage(role="assistant", content="It looks like..."),
-                ChatMessage(role="user", content="More detail?"),
-            ],
-        )
-
-        await _handle_vision_request(request, ["http://example.com/img.png"])
-        call_kwargs = mock_generate.call_args.kwargs
-        prompt = call_kwargs["text_prompt"]
-        assert "System: Be brief." in prompt
-        assert "User: What's this?" in prompt
-        assert "Assistant: It looks like..." in prompt
-        assert "User: More detail?" in prompt
 
 
 # ============================================================================
@@ -988,8 +848,7 @@ class TestCreateChatCompletion:
             Usage,
         )
 
-        mock_detect.return_value = ModelType.TEXT_GEN
-
+        # No images, so detect_model_type won't be called
         response = ChatCompletionResponse(
             id="chatcmpl-abc",
             created=1700000000,
@@ -1019,16 +878,17 @@ class TestCreateChatCompletion:
         )
 
         result = await create_chat_completion(request)
-        mock_text_handler.assert_called_once_with(request)
+        # Should be called with request and empty image_urls list
+        mock_text_handler.assert_called_once()
         assert result is response
 
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_vision_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_text_request")
     @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
     @patch("mlx_manager.mlx_server.api.v1.chat.audit_service")
-    async def test_images_route_to_vision_handler(
-        self, mock_audit, mock_detect, mock_vision_handler
+    async def test_images_route_to_unified_handler(
+        self, mock_audit, mock_detect, mock_text_handler
     ):
-        """Request with images routes to _handle_vision_request."""
+        """Request with images routes to _handle_text_request (unified path)."""
         from mlx_manager.mlx_server.schemas.openai import (
             ChatCompletionChoice,
             Usage,
@@ -1049,7 +909,7 @@ class TestCreateChatCompletion:
             ],
             usage=Usage(prompt_tokens=50, completion_tokens=5, total_tokens=55),
         )
-        mock_vision_handler.return_value = response
+        mock_text_handler.return_value = response
 
         ctx = MagicMock()
         mock_audit.track_request.return_value.__aenter__ = AsyncMock(return_value=ctx)
@@ -1069,49 +929,9 @@ class TestCreateChatCompletion:
         )
 
         result = await create_chat_completion(request)
-        mock_vision_handler.assert_called_once()
+        # Should route through unified text handler with image URLs
+        mock_text_handler.assert_called_once()
         assert result is response
-
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_vision_request")
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.audit_service")
-    async def test_vision_model_without_images_routes_to_vision(
-        self, mock_audit, mock_detect, mock_vision_handler
-    ):
-        """Vision model with text-only request still routes to vision handler."""
-        from mlx_manager.mlx_server.schemas.openai import (
-            ChatCompletionChoice,
-            Usage,
-        )
-
-        mock_detect.return_value = ModelType.VISION
-
-        response = ChatCompletionResponse(
-            id="chatcmpl-vis",
-            created=1700000000,
-            model="vision-model",
-            choices=[
-                ChatCompletionChoice(
-                    index=0,
-                    message=ChatMessage(role="assistant", content="Hello!"),
-                    finish_reason="stop",
-                )
-            ],
-            usage=Usage(prompt_tokens=5, completion_tokens=1, total_tokens=6),
-        )
-        mock_vision_handler.return_value = response
-
-        ctx = MagicMock()
-        mock_audit.track_request.return_value.__aenter__ = AsyncMock(return_value=ctx)
-        mock_audit.track_request.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        request = ChatCompletionRequest(
-            model="vision-model",
-            messages=[ChatMessage(role="user", content="Hello, vision model!")],
-        )
-
-        await create_chat_completion(request)
-        mock_vision_handler.assert_called_once()
 
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_text_request")
     @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
@@ -1286,7 +1106,7 @@ class TestBatchingFallback:
             messages=[ChatMessage(role="user", content="Hi")],
         )
 
-        await _handle_text_request(request)
+        await _handle_text_request(request, None)
         mock_direct.assert_called_once()
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
@@ -1311,7 +1131,7 @@ class TestBatchingFallback:
             messages=[ChatMessage(role="user", content="Hi")],
         )
 
-        await _handle_text_request(request)
+        await _handle_text_request(request, None)
         mock_direct.assert_called_once()
 
 
@@ -1376,41 +1196,6 @@ class TestStreamingGeneratorConsumption:
 
         event_text = "".join(str(e) for e in events)
         assert "error" in event_text.lower() or "timeout" in event_text.lower()
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.generate_vision_completion")
-    @patch("mlx_manager.mlx_server.api.v1.chat.preprocess_images")
-    @patch("mlx_manager.mlx_server.api.v1.chat.detect_model_type")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    async def test_vision_streaming_generator_yields_chunks(
-        self, mock_settings, mock_detect, mock_preprocess, mock_generate
-    ):
-        """Vision streaming generator yields data chunks and [DONE]."""
-        settings = MagicMock()
-        settings.timeout_chat_seconds = 900.0
-        mock_settings.return_value = settings
-
-        mock_detect.return_value = ModelType.VISION
-        mock_preprocess.return_value = [MagicMock()]
-
-        async def mock_stream():
-            yield {"id": "v1", "choices": [{"delta": {"content": "A cat"}}]}
-            yield {"id": "v1", "choices": [{"delta": {"content": "."}}]}
-
-        mock_generate.return_value = mock_stream()
-
-        request = ChatCompletionRequest(
-            model="vision-model",
-            messages=[ChatMessage(role="user", content="What?")],
-            stream=True,
-        )
-
-        result = await _handle_vision_request(request, ["http://example.com/img.png"])
-        events = []
-        async for event in result.body_iterator:
-            events.append(event)
-
-        event_text = "".join(str(e) for e in events)
-        assert "DONE" in event_text
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")

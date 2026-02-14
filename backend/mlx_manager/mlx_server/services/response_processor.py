@@ -9,8 +9,6 @@ Exports:
 - StreamProcessor: Token-by-token processor using adapter's parsers
 - StreamEvent: IR event type (re-exported from models.ir)
 - TextResult: IR result type (re-exported from models.ir)
-- ParseResult: Legacy result type (kept for backward compat, removed in Phase 6)
-- StreamingProcessor: Backward-compat alias for StreamProcessor
 """
 
 from __future__ import annotations
@@ -18,28 +16,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from pydantic import BaseModel, Field
 
 from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
-from mlx_manager.mlx_server.schemas.openai import ToolCall
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
-
-# --- Legacy Types (kept for backward compat, deleted in Phase 6) ---
-
-
-class ParseResult(BaseModel):
-    """Result of processing a model response.
-
-    .. deprecated::
-        Use :class:`TextResult` from ``models.ir`` instead.
-        Kept for backward compatibility; will be removed in Phase 6.
-    """
-
-    content: str
-    tool_calls: list[ToolCall] = Field(default_factory=list)
-    reasoning: str | None = None
 
 
 # --- Stream Processor ---
@@ -345,4 +326,3 @@ class StreamProcessor:
 
 
 # Backward-compat alias (deleted in Phase 6)
-StreamingProcessor = StreamProcessor

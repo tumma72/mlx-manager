@@ -80,6 +80,7 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_returns_audio_bytes(self):
         """Speech endpoint should return audio bytes with correct content type."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
+        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="mlx-community/Kokoro-82M-bf16",
@@ -92,7 +93,9 @@ class TestSpeechEndpoint:
             "mlx_manager.mlx_server.api.v1.speech.generate_speech",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = (fake_audio, 24000)
+            mock_gen.return_value = AudioResult(
+                audio_bytes=fake_audio, sample_rate=24000, format="wav"
+            )
 
             response = await create_speech(request)
 
@@ -110,6 +113,7 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_flac_content_type(self):
         """Speech endpoint should set flac content type for flac format."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
+        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="test-tts",
@@ -121,7 +125,9 @@ class TestSpeechEndpoint:
             "mlx_manager.mlx_server.api.v1.speech.generate_speech",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = (b"fLaC", 24000)
+            mock_gen.return_value = AudioResult(
+                audio_bytes=b"fLaC", sample_rate=24000, format="flac"
+            )
 
             response = await create_speech(request)
             assert response.media_type == "audio/flac"
@@ -130,6 +136,7 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_mp3_content_type(self):
         """Speech endpoint should set mp3 content type for mp3 format."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
+        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="test-tts",
@@ -141,7 +148,9 @@ class TestSpeechEndpoint:
             "mlx_manager.mlx_server.api.v1.speech.generate_speech",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = (b"\xff\xfb", 24000)
+            mock_gen.return_value = AudioResult(
+                audio_bytes=b"\xff\xfb", sample_rate=24000, format="mp3"
+            )
 
             response = await create_speech(request)
             assert response.media_type == "audio/mpeg"
@@ -196,6 +205,7 @@ class TestTranscriptionsEndpoint:
     async def test_transcription_endpoint_returns_text(self):
         """Transcription endpoint should return transcribed text."""
         from mlx_manager.mlx_server.api.v1.transcriptions import create_transcription
+        from mlx_manager.mlx_server.models.ir import TranscriptionResult
 
         # Create a mock UploadFile
         mock_file = MagicMock()
@@ -206,7 +216,7 @@ class TestTranscriptionsEndpoint:
             "mlx_manager.mlx_server.api.v1.transcriptions.transcribe_audio",
             new_callable=AsyncMock,
         ) as mock_transcribe:
-            mock_transcribe.return_value = {"text": "Hello, world!"}
+            mock_transcribe.return_value = TranscriptionResult(text="Hello, world!")
 
             response = await create_transcription(
                 file=mock_file,
@@ -221,6 +231,7 @@ class TestTranscriptionsEndpoint:
     async def test_transcription_with_language_hint(self):
         """Transcription should pass language hint to service."""
         from mlx_manager.mlx_server.api.v1.transcriptions import create_transcription
+        from mlx_manager.mlx_server.models.ir import TranscriptionResult
 
         mock_file = MagicMock()
         mock_file.filename = "audio.wav"
@@ -230,7 +241,7 @@ class TestTranscriptionsEndpoint:
             "mlx_manager.mlx_server.api.v1.transcriptions.transcribe_audio",
             new_callable=AsyncMock,
         ) as mock_transcribe:
-            mock_transcribe.return_value = {"text": "Hola, mundo!"}
+            mock_transcribe.return_value = TranscriptionResult(text="Hola, mundo!")
 
             await create_transcription(
                 file=mock_file,
@@ -436,7 +447,7 @@ class TestGenerateSpeechService:
 
             mock_sf_write.side_effect = write_to_buffer
 
-            audio_bytes, sample_rate = await generate_speech(
+            result = await generate_speech(
                 model_id="test-tts-model",
                 text="Hello world",
                 voice="af_heart",
@@ -444,8 +455,9 @@ class TestGenerateSpeechService:
                 response_format="wav",
             )
 
-            assert audio_bytes == b"fake-audio-bytes"
-            assert sample_rate == 24000
+            assert result.audio_bytes == b"fake-audio-bytes"
+            assert result.sample_rate == 24000
+            assert result.format == "wav"
             mock_model.generate.assert_called_once()
             # Single segment means no concatenation
             mock_concat.assert_not_called()
@@ -502,7 +514,7 @@ class TestGenerateSpeechService:
 
             mock_sf_write.side_effect = write_to_buffer
 
-            audio_bytes, sample_rate = await generate_speech(
+            result = await generate_speech(
                 model_id="test-tts",
                 text="Hello world, this is a longer text.",
                 voice="af_bella",
@@ -510,8 +522,9 @@ class TestGenerateSpeechService:
                 response_format="flac",
             )
 
-            assert audio_bytes == b"concatenated-audio"
-            assert sample_rate == 24000
+            assert result.audio_bytes == b"concatenated-audio"
+            assert result.sample_rate == 24000
+            assert result.format == "flac"
             mock_concat.assert_called_once()
 
     @pytest.mark.asyncio
@@ -590,12 +603,12 @@ class TestGenerateSpeechService:
 
             mock_sf_write.side_effect = write_to_buffer
 
-            _, sample_rate = await generate_speech(
+            result = await generate_speech(
                 model_id="test-tts",
                 text="Test",
             )
 
-            assert sample_rate == 44100
+            assert result.sample_rate == 44100
 
     @pytest.mark.asyncio
     async def test_generate_speech_result_sample_rate_overrides(self):
@@ -638,12 +651,12 @@ class TestGenerateSpeechService:
 
             mock_sf_write.side_effect = write_to_buffer
 
-            _, sample_rate = await generate_speech(
+            result = await generate_speech(
                 model_id="test-tts",
                 text="Test",
             )
 
-            assert sample_rate == 48000
+            assert result.sample_rate == 48000
 
     @pytest.mark.asyncio
     async def test_generate_speech_passes_correct_gen_kwargs(self):
@@ -732,13 +745,13 @@ class TestGenerateSpeechService:
         ):
             mock_sf_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
 
-            _, sample_rate = await generate_speech(
+            result = await generate_speech(
                 model_id="test-tts",
                 text="Test",
             )
 
             # Default sample_rate is 24000 per getattr fallback
-            assert sample_rate == 24000
+            assert result.sample_rate == 24000
 
     @pytest.mark.asyncio
     async def test_generate_speech_run_on_metal_error_propagates(self):
@@ -810,9 +823,9 @@ class TestTranscribeAudioService:
                 audio_data=b"fake-wav-data",
             )
 
-            assert result["text"] == "Hello, world!"
-            assert "segments" not in result
-            assert "language" not in result
+            assert result.text == "Hello, world!"
+            assert result.segments is None
+            assert result.language is None
             mock_pool.get_model.assert_called_once_with("test-stt-model")
 
     @pytest.mark.asyncio
@@ -857,9 +870,9 @@ class TestTranscribeAudioService:
                 audio_data=b"audio-bytes",
             )
 
-            assert result["text"] == "Hello world"
-            assert len(result["segments"]) == 2
-            assert result["language"] == "en"
+            assert result.text == "Hello world"
+            assert len(result.segments) == 2
+            assert result.language == "en"
 
     @pytest.mark.asyncio
     async def test_transcribe_audio_with_language_hint(self):
@@ -901,7 +914,7 @@ class TestTranscribeAudioService:
                 language="es",
             )
 
-            assert result["text"] == "Hola mundo"
+            assert result.text == "Hola mundo"
             # Verify language was passed
             call_kwargs = mock_gen_transcription.call_args[1]
             assert call_kwargs["language"] == "es"
@@ -1118,7 +1131,7 @@ class TestTranscribeAudioService:
             )
 
             # getattr(segments, "text", "") should give ""
-            assert result["text"] == ""
+            assert result.text == ""
 
 
 class TestAudioRouteRegistration:

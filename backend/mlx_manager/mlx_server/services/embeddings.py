@@ -6,6 +6,8 @@ MLX Metal thread affinity requirements.
 
 from loguru import logger
 
+from mlx_manager.mlx_server.models.ir import EmbeddingResult
+
 try:
     import logfire
 
@@ -17,7 +19,7 @@ except ImportError:
 async def generate_embeddings(
     model_id: str,
     texts: list[str],
-) -> tuple[list[list[float]], int]:
+) -> EmbeddingResult:
     """Generate embeddings for a list of texts.
 
     Args:
@@ -25,7 +27,7 @@ async def generate_embeddings(
         texts: List of strings to embed
 
     Returns:
-        Tuple of (list of embedding vectors, total token count)
+        EmbeddingResult with embedding vectors, dimensions, and token count
 
     Raises:
         RuntimeError: If model loading or generation fails
@@ -111,7 +113,12 @@ async def generate_embeddings(
                 total_tokens=total_tokens,
             )
 
-        return embeddings_list, total_tokens
+        return EmbeddingResult(
+            embeddings=embeddings_list,
+            dimensions=len(embeddings_list[0]) if embeddings_list else 0,
+            total_tokens=total_tokens,
+            finish_reason="stop",
+        )
 
     finally:
         if span_context:

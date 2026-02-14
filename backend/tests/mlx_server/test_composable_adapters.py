@@ -435,6 +435,67 @@ class TestMistralAdapter:
         assert "Hello" in result
 
 
+class TestEmbeddingsAdapter:
+    """Test EmbeddingsAdapter."""
+
+    def test_family(self) -> None:
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert adapter.family == "embeddings"
+
+    def test_default_parsers(self) -> None:
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert isinstance(adapter.tool_parser, NullToolParser)
+        assert isinstance(adapter.thinking_parser, NullThinkingParser)
+
+    def test_supports_tool_calling(self) -> None:
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert adapter.supports_tool_calling() is False
+
+    def test_supports_native_tools(self) -> None:
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert adapter.supports_native_tools() is False
+
+    def test_get_stream_markers_empty(self) -> None:
+        """Embeddings adapter should have no stream markers."""
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert adapter.get_stream_markers() == []
+
+    def test_format_tools_for_prompt_empty(self) -> None:
+        """Embeddings adapter doesn't support tools."""
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = EmbeddingsAdapter(MockTokenizer())
+        assert adapter.format_tools_for_prompt([]) == ""
+
+    def test_registry_includes_embeddings(self) -> None:
+        """Verify embeddings is registered in FAMILY_REGISTRY."""
+        from mlx_manager.mlx_server.models.adapters.composable import (
+            FAMILY_REGISTRY,
+            EmbeddingsAdapter,
+        )
+
+        assert "embeddings" in FAMILY_REGISTRY
+        assert FAMILY_REGISTRY["embeddings"] is EmbeddingsAdapter
+
+    def test_create_adapter_embeddings(self) -> None:
+        """Factory can create EmbeddingsAdapter."""
+        from mlx_manager.mlx_server.models.adapters.composable import EmbeddingsAdapter
+
+        adapter = create_adapter("embeddings", MockTokenizer())
+        assert isinstance(adapter, EmbeddingsAdapter)
+        assert adapter.family == "embeddings"
+
+
 class TestParserDependencyInjection:
     """Test parser dependency injection."""
 
@@ -513,6 +574,7 @@ class TestComposableFamilyRegistry:
             "whisper",
             "kokoro",
             "audio_default",
+            "embeddings",
             "default",
         }
         assert set(FAMILY_REGISTRY.keys()) == expected_families

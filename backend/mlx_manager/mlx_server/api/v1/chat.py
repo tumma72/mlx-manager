@@ -41,7 +41,6 @@ from mlx_manager.mlx_server.services.inference import (
 from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
 )
-from mlx_manager.mlx_server.services.vision import generate_vision_completion
 
 router = APIRouter(tags=["chat"])
 
@@ -108,9 +107,15 @@ async def create_chat_completion(
 
     has_images = len(all_image_urls) > 0
 
-    # Check model type - vision models must use vision path even for text-only
-    model_type = detect_model_type(request.model)
-    is_vision_model = model_type == ModelType.VISION
+    # Validate model type if images are present
+    if has_images:
+        model_type = detect_model_type(request.model)
+        if model_type != ModelType.VISION:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{request.model}' is type '{model_type.value}', "
+                f"but request contains images. Use a vision model (e.g., Qwen2-VL).",
+            )
 
     async with audit_service.track_request(
         request_id=request_id,
@@ -119,13 +124,9 @@ async def create_chat_completion(
         backend_type="local",
     ) as audit_ctx:
         try:
-            if has_images or is_vision_model:
-                # Vision model or multimodal request - use vision path
-                # Vision models use Processor (not Tokenizer) and require mlx_vlm
-                result = await _handle_vision_request(request, all_image_urls)
-            else:
-                # Text-only request with text model - use mlx_lm path
-                result = await _handle_text_request(request)
+            # Unified text and vision path
+            # Images (if present) will be handled by the adapter's prepare_input()
+            result = await _handle_text_request(request, all_image_urls)
 
             # Update audit context with usage if available (non-streaming)
             if isinstance(result, ChatCompletionResponse) and result.usage:
@@ -144,105 +145,29 @@ async def create_chat_completion(
             raise HTTPException(status_code=500, detail="Internal server error")
 
 
-async def _handle_vision_request(
-    request: ChatCompletionRequest,
-    image_urls: list[str],
-) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle multimodal request with images."""
-    # Check model type before loading
-    model_type = detect_model_type(request.model)
-    if model_type != ModelType.VISION:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model '{request.model}' is type '{model_type.value}', "
-            f"but request contains images. Use a vision model (e.g., Qwen2-VL).",
-        )
-
-    # Preprocess images
-    images = await preprocess_images(image_urls)
-
-    # Build text prompt from messages
-    # For vision, combine system + user messages into single prompt
-    prompt_parts = []
-    for message in request.messages:
-        if message.content is None:
-            continue
-        text, _ = extract_content_parts(message.content)
-        if message.role == "system":
-            prompt_parts.append(f"System: {text}")
-        elif message.role == "user":
-            prompt_parts.append(f"User: {text}")
-        elif message.role == "assistant":
-            prompt_parts.append(f"Assistant: {text}")
-    text_prompt = "\n".join(prompt_parts)
-
-    # Generate vision completion with timeout
-    settings = get_settings()
-    timeout = settings.timeout_chat_seconds
-
-    try:
-        result = await asyncio.wait_for(
-            generate_vision_completion(
-                model_id=request.model,
-                text_prompt=text_prompt,
-                images=images,
-                max_tokens=request.max_tokens or 4096,
-                temperature=request.temperature,
-                stream=request.stream,
-            ),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        logger.warning(f"Vision completion timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Vision completion timed out after {int(timeout)} seconds. "
-            f"Consider using a smaller model or fewer images.",
-        )
-
-    if request.stream:
-        # result is an async generator
-        async def event_generator() -> Any:
-            async for chunk in result:  # type: ignore[union-attr]
-                yield {"data": json.dumps(chunk)}
-            yield {"data": "[DONE]"}
-
-        return EventSourceResponse(event_generator())
-    else:
-        # result is a dict
-        result_dict = cast(dict[str, Any], result)
-        choice = result_dict["choices"][0]
-        return ChatCompletionResponse(
-            id=result_dict["id"],
-            created=result_dict["created"],
-            model=result_dict["model"],
-            choices=[
-                ChatCompletionChoice(
-                    index=choice["index"],
-                    message=ChatMessage(
-                        role=choice["message"]["role"],
-                        content=choice["message"]["content"],
-                    ),
-                    finish_reason=choice["finish_reason"],
-                )
-            ],
-            usage=Usage(
-                prompt_tokens=result_dict["usage"]["prompt_tokens"],
-                completion_tokens=result_dict["usage"]["completion_tokens"],
-                total_tokens=result_dict["usage"]["total_tokens"],
-            ),
-        )
-
-
 async def _handle_text_request(
     request: ChatCompletionRequest,
+    image_urls: list[str] | None = None,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text-only request.
+    """Handle text and vision requests.
 
-    Routes through cloud router if enabled, batching scheduler if enabled,
-    otherwise uses direct inference.
+    Routes through cloud router if enabled (text only), batching scheduler if enabled (text only),
+    otherwise uses direct inference. Vision models always go through the direct path.
+
+    Note: Cloud routing and batching only work with text models. Vision models require
+    direct inference regardless of settings.
     """
     settings = get_settings()
+
+    # Preprocess images if present
+    images = None
+    if image_urls:
+        images = await preprocess_images(image_urls)
+
+    # Vision models always use direct path (cloud/batching don't support vision)
+    has_images = images is not None
+    if has_images:
+        return await _handle_direct_request(request, images)
 
     # Try cloud routing path if enabled (checks mappings and handles failover)
     if settings.enable_cloud_routing:
@@ -269,7 +194,7 @@ async def _handle_text_request(
             logger.warning(f"Batching unavailable, falling back to direct: {e}")
 
     # Direct inference path
-    return await _handle_direct_request(request)
+    return await _handle_direct_request(request, images)
 
 
 async def _handle_routed_request(
@@ -344,10 +269,12 @@ async def _handle_routed_request(
 
 async def _handle_direct_request(
     request: ChatCompletionRequest,
+    images: list[Any] | None = None,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text request via direct inference (non-batched).
+    """Handle text and vision requests via direct inference (non-batched).
 
     Supports:
+    - Vision: Images passed to inference service for multimodal models
     - Tool calling: Passes tools to inference service
     - Structured output: Validates response against JSON schema
     """
@@ -368,9 +295,9 @@ async def _handle_direct_request(
         logger.debug(f"Passing {len(tools)} tools to inference")
 
     if request.stream:
-        return await _handle_streaming(request, messages, stop, tools)
+        return await _handle_streaming(request, messages, stop, tools, images)
     else:
-        return await _handle_non_streaming(request, messages, stop, tools)
+        return await _handle_non_streaming(request, messages, stop, tools, images)
 
 
 async def _handle_streaming(
@@ -378,6 +305,7 @@ async def _handle_streaming(
     messages: list[dict[str, Any]],
     stop: list[str] | None,
     tools: list[dict[str, Any]] | None = None,
+    images: list[Any] | None = None,
 ) -> EventSourceResponse:
     """Handle streaming response with timeout.
 
@@ -408,6 +336,7 @@ async def _handle_streaming(
                     top_p=request.top_p,
                     stop=stop,
                     tools=tools,
+                    images=images,
                 ),
                 timeout=timeout,
             )
@@ -447,6 +376,7 @@ async def _handle_non_streaming(
     messages: list[dict[str, Any]],
     stop: list[str] | None,
     tools: list[dict[str, Any]] | None = None,
+    images: list[Any] | None = None,
 ) -> ChatCompletionResponse:
     """Handle non-streaming response.
 
@@ -454,6 +384,7 @@ async def _handle_non_streaming(
     OpenAIFormatter converts it to an OpenAI ChatCompletion response dict.
 
     Supports:
+    - Vision: Images passed to inference service for multimodal models
     - Tool calling: tool_calls included in response message
     - Reasoning: reasoning_content included in response message
     - Structured output: validates response against JSON schema
@@ -471,6 +402,7 @@ async def _handle_non_streaming(
                 top_p=request.top_p,
                 stop=stop,
                 tools=tools,
+                images=images,
             ),
             timeout=timeout,
         )

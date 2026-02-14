@@ -38,7 +38,7 @@ async def create_speech(request: SpeechRequest) -> Response:
     )
 
     try:
-        audio_bytes, _sample_rate = await generate_speech(
+        result = await generate_speech(
             model_id=request.model,
             text=request.input,
             voice=request.voice,
@@ -57,7 +57,7 @@ async def create_speech(request: SpeechRequest) -> Response:
     content_type = AUDIO_CONTENT_TYPES.get(request.response_format, "application/octet-stream")
 
     return Response(
-        content=audio_bytes,
+        content=result.audio_bytes,
         media_type=content_type,
         headers={"Content-Disposition": f"attachment; filename=speech.{request.response_format}"},
     )

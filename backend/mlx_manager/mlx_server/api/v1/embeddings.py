@@ -61,7 +61,7 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     ) as audit_ctx:
         try:
             # Generate embeddings with timeout
-            embeddings_list, total_tokens = await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 generate_embeddings(
                     model_id=request.model,
                     texts=texts,
@@ -70,18 +70,18 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
             )
 
             # Update audit context with token count
-            audit_ctx.prompt_tokens = total_tokens
-            audit_ctx.total_tokens = total_tokens
+            audit_ctx.prompt_tokens = result.total_tokens
+            audit_ctx.total_tokens = result.total_tokens
 
             # Build response
             return EmbeddingResponse(
                 data=[
-                    EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings_list)
+                    EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(result.embeddings)
                 ],
                 model=request.model,
                 usage=EmbeddingUsage(
-                    prompt_tokens=total_tokens,
-                    total_tokens=total_tokens,
+                    prompt_tokens=result.total_tokens,
+                    total_tokens=result.total_tokens,
                 ),
             )
 

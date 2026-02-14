@@ -1095,8 +1095,9 @@ The `ProtocolFormatter` layer converts protocol-neutral IR (StreamEvent,
 AdapterResult) to protocol-specific responses. Formatters are **request-scoped**:
 created once per request and owned by the router.
 
-This replaces the old `ProtocolTranslator` which performed bidirectional
-conversion. The new design has **unidirectional flow**: IR → protocol response.
+This replaced the old `ProtocolTranslator` (deleted in Phase 6). The `AnthropicFormatter`
+now also handles **request parsing** via `parse_request()` (absorbed from ProtocolTranslator).
+The design has **unidirectional flow** for output: IR → protocol response.
 
 ### 8.2 ProtocolFormatter Interface
 
@@ -1385,17 +1386,18 @@ async def create_message(request: AnthropicMessagesRequest):
 
 ### 8.6 What Replaced ProtocolTranslator
 
-**Old architecture:**
+**Old architecture (deleted in Phase 6):**
 - `ProtocolTranslator.anthropic_to_internal()` converted Anthropic requests → OpenAI format
 - `ProtocolTranslator.internal_to_anthropic_response()` converted OpenAI responses → Anthropic format
-- Bidirectional conversion, tightly coupled to OpenAI as "internal" format
+- Bidirectional conversion in `protocol.py`, tightly coupled to OpenAI as "internal" format
 
-**New architecture:**
-- Anthropic router converts request → generic message dict (minimal, protocol-agnostic)
+**Current architecture:**
+- `AnthropicFormatter.parse_request()` converts Anthropic request → `InternalRequest` (generic message dict)
 - Service layer works with generic message dicts (not OpenAI-specific)
 - Adapters produce protocol-neutral IR (StreamEvent, TextResult)
 - **ProtocolFormatter** converts IR → protocol responses (unidirectional)
 - OpenAI is not privileged; it's one formatter among equals
+- `protocol.py` deleted — all functionality absorbed into `formatters/anthropic.py`
 
 ---
 

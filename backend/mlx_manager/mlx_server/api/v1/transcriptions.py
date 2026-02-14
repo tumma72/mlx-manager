@@ -54,4 +54,4 @@ async def create_transcription(
         logger.exception(f"Unexpected STT error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    return TranscriptionResponse(text=result.get("text", ""))
+    return TranscriptionResponse(text=result.text)

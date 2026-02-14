@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 
 from mlx_manager.mlx_server.services.cloud.client import CloudBackendClient
-from mlx_manager.mlx_server.services.protocol import get_translator
+from mlx_manager.mlx_server.services.formatters import anthropic_stop_to_openai
 
 # Default Anthropic API URL
 ANTHROPIC_API_URL = "https://api.anthropic.com"
@@ -145,8 +145,6 @@ class AnthropicCloudBackend(CloudBackendClient):
 
     def _translate_response(self, anthropic_response: dict[str, Any]) -> dict[str, Any]:
         """Translate Anthropic response to OpenAI format."""
-        translator = get_translator()
-
         # Extract content text
         content_blocks = anthropic_response.get("content", [])
         content_text = " ".join(
@@ -155,7 +153,7 @@ class AnthropicCloudBackend(CloudBackendClient):
 
         # Translate stop reason
         anthropic_stop = anthropic_response.get("stop_reason")
-        openai_stop = translator.anthropic_stop_to_openai(anthropic_stop)
+        openai_stop = anthropic_stop_to_openai(anthropic_stop)
 
         # Build OpenAI-format response
         usage = anthropic_response.get("usage", {})
@@ -186,8 +184,6 @@ class AnthropicCloudBackend(CloudBackendClient):
         request_data: dict[str, Any],
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Streaming with response translation to OpenAI format."""
-        translator = get_translator()
-
         async for line in self._stream_with_circuit_breaker(
             "/v1/messages",
             request_data,
@@ -236,7 +232,7 @@ class AnthropicCloudBackend(CloudBackendClient):
                 elif event_type == "message_delta":
                     stop_reason = data.get("delta", {}).get("stop_reason")
                     if stop_reason:
-                        openai_stop = translator.anthropic_stop_to_openai(stop_reason)
+                        openai_stop = anthropic_stop_to_openai(stop_reason)
                         yield {
                             "id": "chatcmpl-streaming",
                             "object": "chat.completion.chunk",

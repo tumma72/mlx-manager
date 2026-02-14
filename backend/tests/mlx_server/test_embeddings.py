@@ -109,10 +109,14 @@ class TestEmbeddingsEndpoint:
             mock_detect.return_value = ModelType.EMBEDDINGS
 
             with patch("mlx_manager.mlx_server.api.v1.embeddings.generate_embeddings") as mock_gen:
+                from mlx_manager.mlx_server.models.ir import EmbeddingResult
+
                 # Return mock embeddings
-                mock_gen.return_value = (
-                    [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],  # embeddings
-                    10,  # total_tokens
+                mock_gen.return_value = EmbeddingResult(
+                    embeddings=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+                    dimensions=3,
+                    total_tokens=10,
+                    finish_reason="stop",
                 )
 
                 response = await create_embeddings(request)
@@ -212,13 +216,15 @@ class TestGenerateEmbeddingsService:
             patch("mlx.core.array", side_effect=lambda v: v),
             patch("mlx.core.eval"),
         ):
-            embeddings_list, total_tokens = await generate_embeddings(
+            result = await generate_embeddings(
                 model_id="test-embed-model",
                 texts=["Hello", "World"],
             )
 
-            assert embeddings_list == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-            assert total_tokens == 7  # 3 + 4
+            assert result.embeddings == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+            assert result.total_tokens == 7  # 3 + 4
+            assert result.dimensions == 3
+            assert result.finish_reason == "stop"
             mock_pool.get_model.assert_called_once_with("test-embed-model")
 
     @pytest.mark.asyncio
@@ -268,13 +274,15 @@ class TestGenerateEmbeddingsService:
             patch("mlx.core.array", side_effect=lambda v: v),
             patch("mlx.core.eval"),
         ):
-            embeddings_list, total_tokens = await generate_embeddings(
+            result = await generate_embeddings(
                 model_id="test-embed",
                 texts=["Hello world test"],
             )
 
-            assert len(embeddings_list) == 1
-            assert total_tokens == 5
+            assert len(result.embeddings) == 1
+            assert result.total_tokens == 5
+            assert result.dimensions == 4
+            assert result.finish_reason == "stop"
 
     @pytest.mark.asyncio
     async def test_generate_embeddings_tokenizer_without_inner(self):
@@ -321,13 +329,15 @@ class TestGenerateEmbeddingsService:
             patch("mlx.core.array", side_effect=lambda v: v),
             patch("mlx.core.eval"),
         ):
-            embeddings_list, total_tokens = await generate_embeddings(
+            result = await generate_embeddings(
                 model_id="test-embed",
                 texts=["Hi"],
             )
 
-            assert embeddings_list == [[0.5, 0.6]]
-            assert total_tokens == 2
+            assert result.embeddings == [[0.5, 0.6]]
+            assert result.total_tokens == 2
+            assert result.dimensions == 2
+            assert result.finish_reason == "stop"
             # Since no _tokenizer, getattr falls back to tokenizer itself
             mock_tokenizer.assert_called_once()
 
@@ -591,9 +601,9 @@ class TestGenerateEmbeddingsService:
             patch("mlx.core.array", side_effect=lambda v: v),
             patch("mlx.core.eval"),
         ):
-            _, total_tokens = await generate_embeddings(
+            result = await generate_embeddings(
                 model_id="test-embed",
                 texts=["text1", "text2", "text3"],
             )
 
-            assert total_tokens == 9  # 3 + 2 + 4
+            assert result.total_tokens == 9  # 3 + 2 + 4

@@ -1,4 +1,4 @@
-"""Coverage tests for StreamingProcessor edge/branching paths.
+"""Coverage tests for StreamProcessor edge/branching paths.
 
 Targets uncovered lines in response_processor.py:
 - Lines 171-172: Partial marker match with content before it
@@ -13,7 +13,7 @@ Targets uncovered lines in response_processor.py:
 from unittest.mock import MagicMock
 
 from mlx_manager.mlx_server.models.adapters.composable import create_adapter
-from mlx_manager.mlx_server.services.response_processor import StreamingProcessor
+from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
 
 def _make_mock_tokenizer(eos_token_id: int = 0) -> MagicMock:
@@ -22,11 +22,11 @@ def _make_mock_tokenizer(eos_token_id: int = 0) -> MagicMock:
     return tok
 
 
-def _make_qwen_processor() -> StreamingProcessor:
-    """Build a StreamingProcessor with QwenAdapter (has <think>/<tool_call> markers)."""
+def _make_qwen_processor() -> StreamProcessor:
+    """Build a StreamProcessor with QwenAdapter (has <think>/<tool_call> markers)."""
     tok = _make_mock_tokenizer()
     adapter = create_adapter(family="qwen", tokenizer=tok)
-    return StreamingProcessor(adapter=adapter)
+    return StreamProcessor(adapter=adapter)
 
 
 class TestPartialMarkerMatch:
@@ -257,7 +257,7 @@ class TestStartsInThinking:
         """When starting in thinking mode, content is reasoning."""
         tok = _make_mock_tokenizer()
         adapter = create_adapter(family="qwen", tokenizer=tok)
-        proc = StreamingProcessor(adapter=adapter, starts_in_thinking=True)
+        proc = StreamProcessor(adapter=adapter, starts_in_thinking=True)
 
         # Feed enough to exceed REASONING_BUFFER_SIZE
         event = proc.feed("x" * 20)
@@ -267,7 +267,7 @@ class TestStartsInThinking:
         """Thinking mode exits on </think>."""
         tok = _make_mock_tokenizer()
         adapter = create_adapter(family="qwen", tokenizer=tok)
-        proc = StreamingProcessor(adapter=adapter, starts_in_thinking=True)
+        proc = StreamProcessor(adapter=adapter, starts_in_thinking=True)
 
         # Feed content and close the thinking
         proc.feed("reasoning")

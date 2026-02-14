@@ -1,7 +1,7 @@
 """Chat completions router with streaming support.
 
 This router uses the embedded MLX Server for inference, calling the
-generate_chat_completion() and generate_vision_completion() functions
+generate_chat_completion() function
 directly rather than proxying to an external server process.
 """
 
@@ -77,10 +77,6 @@ async def chat_completions(
             from mlx_manager.mlx_server.models.types import ModelType
             from mlx_manager.mlx_server.services.image_processor import preprocess_images
             from mlx_manager.mlx_server.services.inference import generate_chat_completion
-            from mlx_manager.mlx_server.services.vision import generate_vision_completion
-
-            # Detect model type
-            model_type = detect_model_type(model_id)
 
             # Get generation parameters: request overrides profile defaults
             temp = (
@@ -98,32 +94,35 @@ async def chat_completions(
             if request.tools and request.temperature is None:
                 temp = min(temp, 0.3)
 
-            # Determine which inference service to use
-            if has_images or model_type == ModelType.VISION:
-                # Vision model inference
-                text_prompt, image_urls = _extract_text_and_images(request.messages)
-                images = await preprocess_images(image_urls) if image_urls else []
+            # Validate model type if images are present
+            if has_images:
+                model_type = detect_model_type(model_id)
+                if model_type != ModelType.VISION:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Model '{model_id}' is type '{model_type.value}', "
+                        f"but request contains images. Use a vision model (e.g., Qwen2-VL).",
+                    )
 
-                gen = await generate_vision_completion(
-                    model_id=model_id,
-                    text_prompt=text_prompt,
-                    images=images,
-                    max_tokens=max_tok,
-                    temperature=temp,
-                    stream=True,
-                )
-            else:
-                # Text model inference
-                gen = await generate_chat_completion(
-                    model_id=model_id,
-                    messages=request.messages,
-                    max_tokens=max_tok,
-                    temperature=temp,
-                    top_p=top_p_val,
-                    stream=True,
-                    tools=request.tools,
-                    enable_prompt_injection=profile.default_enable_tool_injection,
-                )
+            # Preprocess images if present
+            images = None
+            if has_images:
+                _, image_urls = _extract_text_and_images(request.messages)
+                images = await preprocess_images(image_urls) if image_urls else None
+
+            # Unified text and vision inference
+            # Images (if present) will be handled by the adapter's prepare_input()
+            gen = await generate_chat_completion(
+                model_id=model_id,
+                messages=request.messages,
+                max_tokens=max_tok,
+                temperature=temp,
+                top_p=top_p_val,
+                stream=True,
+                tools=request.tools,
+                enable_prompt_injection=profile.default_enable_tool_injection,
+                images=images,
+            )
 
             # Cast to async generator (both functions return AsyncGenerator when stream=True)
             async_gen = cast(AsyncGenerator[dict, None], gen)

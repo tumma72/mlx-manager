@@ -50,6 +50,7 @@ class ModelAdapter(ABC):
         tokenizer: Any | None = None,
         tool_parser: ToolCallParser | None = None,
         thinking_parser: ThinkingParser | None = None,
+        model_id: str | None = None,
     ) -> None:
         self._tokenizer = tokenizer
         # Get actual tokenizer (Processor wraps tokenizer, regular is itself)
@@ -61,6 +62,7 @@ class ModelAdapter(ABC):
         self._thinking_parser = thinking_parser or self._default_thinking_parser()
         # Pre-compute stop tokens at init
         self._stop_tokens = self._compute_stop_tokens()
+        self._model_id = model_id
 
     @property
     @abstractmethod
@@ -262,6 +264,7 @@ class ModelAdapter(ABC):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         enable_prompt_injection: bool = False,
+        images: list[Any] | None = None,
     ) -> PreparedInput:
         """Prepare model-ready input from messages and optional tools.
 
@@ -270,9 +273,55 @@ class ModelAdapter(ABC):
         2. Tool capability check
         3. apply_chat_template() — prompt generation
         4. Stop token aggregation
+
+        When images are provided (vision models), uses mlx-vlm chat template
+        instead of the regular tokenizer template.
         """
         from mlx_manager.mlx_server.models.ir import PreparedInput
 
+        # Vision path: use mlx-vlm chat template
+        if images:
+            from mlx_vlm.prompt_utils import apply_chat_template as vlm_apply_chat_template
+            from mlx_vlm.utils import load_config
+
+            # Build flat text prompt from messages
+            text_parts = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Multipart content - extract text parts only
+                    text = " ".join(
+                        part.get("text", "")
+                        for part in content
+                        if isinstance(part, dict) and part.get("type") == "text"
+                    )
+                else:
+                    text = str(content) if content else ""
+                if text:
+                    if role == "system":
+                        text_parts.append(f"System: {text}")
+                    elif role == "user":
+                        text_parts.append(text)
+                    elif role == "assistant":
+                        text_parts.append(f"Assistant: {text}")
+            text_prompt = "\n".join(text_parts)
+
+            # Load model config and apply vision chat template
+            config = load_config(self._model_id)
+            prompt = vlm_apply_chat_template(
+                self._tokenizer, config, text_prompt, num_images=len(images)
+            )
+
+            stop_ids: set[int] = set(self.stop_tokens)
+
+            return PreparedInput(
+                prompt=prompt,
+                stop_token_ids=list(stop_ids),
+                pixel_values=images,
+            )
+
+        # Text path: regular chat template
         converted = self.convert_messages(messages)
 
         use_tools = tools and (self.supports_tool_calling() or enable_prompt_injection)
@@ -284,7 +333,7 @@ class ModelAdapter(ABC):
             tools=effective_tools,
         )
 
-        stop_ids: set[int] = set(self.stop_tokens)
+        stop_ids = set(self.stop_tokens)
         if use_tools:
             stop_ids.update(self.get_tool_call_stop_tokens())
 
@@ -863,6 +912,24 @@ class DefaultAudioAdapter(BaseAudioAdapter):
     """Catchall adapter for unknown audio model families."""
 
 
+class EmbeddingsAdapter(ModelAdapter):
+    """Adapter for embedding models.
+
+    Embedding models have no streaming, tool calling, or thinking support.
+    They use a simple batch tokenize → forward pass → normalize pipeline.
+    """
+
+    @property
+    def family(self) -> str:
+        return "embeddings"
+
+    def _default_tool_parser(self) -> ToolCallParser:
+        return NullToolParser()
+
+    def _default_thinking_parser(self) -> ThinkingParser:
+        return NullThinkingParser()
+
+
 # --- Factory ---
 
 # Family name -> composable adapter class
@@ -876,6 +943,7 @@ FAMILY_REGISTRY: dict[str, type[ModelAdapter]] = {
     "whisper": WhisperAdapter,
     "kokoro": KokoroAdapter,
     "audio_default": DefaultAudioAdapter,
+    "embeddings": EmbeddingsAdapter,
     "default": DefaultAdapter,
 }
 
@@ -885,6 +953,7 @@ def create_adapter(
     tokenizer: Any | None = None,
     tool_parser: ToolCallParser | None = None,
     thinking_parser: ThinkingParser | None = None,
+    model_id: str | None = None,
 ) -> ModelAdapter:
     """Create a composable adapter for a model family.
 
@@ -893,6 +962,7 @@ def create_adapter(
         tokenizer: HuggingFace tokenizer or processor (None for audio)
         tool_parser: Override default tool parser
         thinking_parser: Override default thinking parser
+        model_id: Model identifier (needed for vision models to load config)
 
     Returns:
         ModelAdapter instance
@@ -902,4 +972,5 @@ def create_adapter(
         tokenizer=tokenizer,
         tool_parser=tool_parser,
         thinking_parser=thinking_parser,
+        model_id=model_id,
     )

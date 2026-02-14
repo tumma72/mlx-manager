@@ -18,7 +18,6 @@ from mlx_manager.mlx_server.services.inference import (
     generate_chat_complete_response,
     generate_chat_stream,
 )
-from mlx_manager.mlx_server.services.protocol import get_translator
 
 router = APIRouter(tags=["messages"])
 
@@ -38,8 +37,6 @@ async def create_message(
     request_id = f"msg_{uuid.uuid4().hex[:24]}"
     logger.info(f"Messages request: model={request.model}, stream={request.stream}")
 
-    translator = get_translator()
-
     async with audit_service.track_request(
         request_id=request_id,
         model=request.model,
@@ -48,7 +45,7 @@ async def create_message(
     ) as audit_ctx:
         try:
             # Convert to internal format
-            internal = translator.anthropic_to_internal(request)
+            internal = AnthropicFormatter.parse_request(request)
 
             if request.stream:
                 return await _handle_streaming(request, internal)

@@ -13,6 +13,8 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
+from mlx_manager.mlx_server.models.ir import AudioResult, TranscriptionResult
+
 try:
     import logfire
 
@@ -27,7 +29,7 @@ async def generate_speech(
     voice: str = "af_heart",
     speed: float = 1.0,
     response_format: str = "wav",
-) -> tuple[bytes, int]:
+) -> AudioResult:
     """Generate speech audio from text using a TTS model.
 
     Args:
@@ -38,7 +40,7 @@ async def generate_speech(
         response_format: Output audio format ("wav", "flac", "mp3")
 
     Returns:
-        Tuple of (audio bytes in requested format, sample rate)
+        AudioResult with audio bytes, sample rate, and format
 
     Raises:
         RuntimeError: If model loading or generation fails
@@ -135,7 +137,11 @@ async def generate_speech(
                 sample_rate=sample_rate,
             )
 
-        return audio_bytes, sample_rate
+        return AudioResult(
+            audio_bytes=audio_bytes,
+            sample_rate=sample_rate,
+            format=response_format,
+        )
 
     finally:
         if span_context:
@@ -146,7 +152,7 @@ async def transcribe_audio(
     model_id: str,
     audio_data: bytes,
     language: str | None = None,
-) -> dict[str, Any]:
+) -> TranscriptionResult:
     """Transcribe audio to text using an STT model.
 
     Args:
@@ -155,8 +161,7 @@ async def transcribe_audio(
         language: Optional language hint for transcription
 
     Returns:
-        Dict with "text" (str) and optionally "segments" (list of dicts),
-        "language" (str), and timing metadata.
+        TranscriptionResult with text, segments, and language
 
     Raises:
         RuntimeError: If model loading or transcription fails
@@ -242,7 +247,11 @@ async def transcribe_audio(
                 text_length=len(result.get("text", "")),
             )
 
-        return result
+        return TranscriptionResult(
+            text=result.get("text", ""),
+            segments=result.get("segments"),
+            language=result.get("language"),
+        )
 
     finally:
         if span_context:
