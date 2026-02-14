@@ -260,6 +260,11 @@ def detect_model_type_detailed(
             if any(ind in arch_lower for ind in embedding_indicators):
                 return TypeDetectionResult(ModelType.EMBEDDINGS, "architecture", architecture)
 
+            # Known text-gen architectures (CausalLM variants)
+            text_gen_indicators = ("causallm", "forconditionalgeneration")
+            if any(ind in arch_lower for ind in text_gen_indicators):
+                return TypeDetectionResult(ModelType.TEXT_GEN, "architecture", architecture)
+
         # model_type field detection
         config_model_type = config.get("model_type", "").lower()
         audio_model_type_indicators = (
