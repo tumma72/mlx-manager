@@ -8,9 +8,13 @@
 		MinusCircle,
 		FlaskConical,
 		Volume2,
-		Pause
+		Pause,
+		Copy,
+		Check
 	} from 'lucide-svelte';
 	import type { ProbeState } from '$stores/probe.svelte';
+	import type { ProbeDiagnostic } from '$lib/api/types';
+	import { systemStore } from '$stores';
 	import { Button } from '$components/ui';
 	import ToolUseBadge from './badges/ToolUseBadge.svelte';
 	import ThinkingBadge from './badges/ThinkingBadge.svelte';
@@ -30,6 +34,7 @@
 
 	const stepLabels: Record<string, string> = {
 		detect_type: 'Detecting model type',
+		detect_family: 'Detecting model family',
 		find_strategy: 'Finding probe strategy',
 		load_model: 'Loading model into memory',
 		check_context: 'Testing context window',
@@ -47,7 +52,8 @@
 		test_similarity: 'Testing similarity ordering',
 		save_results: 'Saving probe results',
 		cleanup: 'Cleaning up',
-		strategy_error: 'Strategy error'
+		strategy_error: 'Strategy error',
+		probe_complete: 'Probe complete'
 	};
 
 	// Audio playback from base64 TTS result
@@ -211,6 +217,96 @@
 	let showMultiImage = $derived(probe.capabilities.supports_multi_image === true);
 	let showVideo = $derived(probe.capabilities.supports_video === true);
 	let hasBadges = $derived(showToolUse || showThinking || showTTS || showSTT || showEmbeddings || showMultiImage || showVideo);
+
+	// Filter out probe_complete from displayed steps
+	let displayedSteps = $derived(probe.steps.filter((s) => s.step !== 'probe_complete'));
+
+	// Sorted diagnostics: action_needed first, then warning, then info
+	const levelOrder: Record<string, number> = { action_needed: 0, warning: 1, info: 2 };
+	let sortedDiagnostics = $derived(
+		[...probe.diagnostics].sort(
+			(a, b) => (levelOrder[a.level] ?? 3) - (levelOrder[b.level] ?? 3)
+		)
+	);
+
+	// Diagnostic level badge styling
+	function diagBadgeClass(level: ProbeDiagnostic['level']): string {
+		switch (level) {
+			case 'action_needed':
+				return 'bg-red-500/20 text-red-600 dark:text-red-400';
+			case 'warning':
+				return 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400';
+			case 'info':
+				return 'bg-blue-500/20 text-blue-600 dark:text-blue-400';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	}
+
+	function diagLevelLabel(level: ProbeDiagnostic['level']): string {
+		switch (level) {
+			case 'action_needed':
+				return 'Action Needed';
+			case 'warning':
+				return 'Warning';
+			case 'info':
+				return 'Info';
+			default:
+				return level;
+		}
+	}
+
+	const categoryLabels: Record<string, string> = {
+		family: 'Model Family',
+		tool_dialect: 'Tool Dialect',
+		thinking_dialect: 'Thinking Dialect',
+		type: 'Type Detection',
+		unsupported: 'Unsupported'
+	};
+
+	// Copy report functionality
+	let copied = $state(false);
+
+	function generateReport(): string {
+		const caps = probe.capabilities;
+		const sys = systemStore.info;
+		let report = `# Probe Diagnostic Report: \`${modelId}\`\n\n`;
+		report += `## Model Information\n`;
+		report += `- **Model ID:** \`${modelId}\`\n`;
+		if (caps.model_type) report += `- **Detected Type:** ${caps.model_type}\n`;
+		if (caps.model_family) report += `- **Model Family:** ${caps.model_family}\n`;
+		report += `\n## Diagnostics\n`;
+		for (const diag of probe.diagnostics) {
+			report += `- **[${diag.category}]** ${diag.message}\n`;
+		}
+		report += `\n## Environment\n`;
+		if (sys?.os_version) report += `- **OS:** ${sys.os_version}\n`;
+		if (sys?.python_version) report += `- **Python:** ${sys.python_version}\n`;
+		if (sys?.mlx_version) report += `- **MLX:** ${sys.mlx_version}\n`;
+		return report;
+	}
+
+	async function copyReport() {
+		try {
+			await navigator.clipboard.writeText(generateReport());
+			copied = true;
+			setTimeout(() => {
+				copied = false;
+			}, 2000);
+		} catch {
+			// Fallback for older browsers
+			const textarea = document.createElement('textarea');
+			textarea.value = generateReport();
+			document.body.appendChild(textarea);
+			textarea.select();
+			document.execCommand('copy');
+			document.body.removeChild(textarea);
+			copied = true;
+			setTimeout(() => {
+				copied = false;
+			}, 2000);
+		}
+	}
 </script>
 
 <Dialog.Root bind:open>
@@ -239,7 +335,7 @@
 
 			<!-- Steps -->
 			<div class="space-y-2 mb-4">
-				{#each probe.steps as step (step.step)}
+				{#each displayedSteps as step (step.step)}
 					<div class="flex items-start gap-2">
 						<div class="mt-0.5">
 							{#if step.status === 'running'}
@@ -262,6 +358,11 @@
 							>
 								{stepLabels[step.step] ?? step.step}
 							</span>
+							{#if step.diagnostics?.length}
+								<span class="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400">
+									{step.diagnostics.length} {step.diagnostics.some(d => d.level === 'action_needed') ? 'action needed' : step.diagnostics.length === 1 ? 'warning' : 'warnings'}
+								</span>
+							{/if}
 							{#if step.status === 'failed' && step.error}
 								<p class="text-xs text-red-400 mt-0.5 truncate">{step.error}</p>
 							{/if}
@@ -322,6 +423,26 @@
 				</div>
 			{/if}
 
+			<!-- Diagnostics -->
+			{#if sortedDiagnostics.length > 0}
+				<div class="border-l-2 border-yellow-500 pl-4 mt-4 mb-4">
+					<h4 class="text-sm font-medium mb-2">Diagnostics</h4>
+					<div class="space-y-2">
+						{#each sortedDiagnostics as diag, i (i)}
+							<div class="flex items-start gap-2">
+								<span class="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 {diagBadgeClass(diag.level)}">
+									{diagLevelLabel(diag.level)}
+								</span>
+								<div class="min-w-0">
+									<p class="text-sm">{diag.message}</p>
+									<span class="text-[10px] text-muted-foreground">{categoryLabels[diag.category] ?? diag.category}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<!-- Capabilities summary -->
 			{#if probe.status === 'completed' && capEntries.length > 0}
 				<div class="border-l-2 border-green-500 pl-4 mt-4">
@@ -365,8 +486,19 @@
 				</div>
 			{/if}
 
-			<!-- Close button -->
-			<div class="flex justify-end mt-6">
+			<!-- Footer buttons -->
+			<div class="flex justify-end gap-2 mt-6">
+				{#if probe.status === 'completed' && probe.diagnostics.length > 0}
+					<Button variant="outline" onclick={copyReport}>
+						{#if copied}
+							<Check class="w-4 h-4 mr-1.5" />
+							Copied!
+						{:else}
+							<Copy class="w-4 h-4 mr-1.5" />
+							Copy Report
+						{/if}
+					</Button>
+				{/if}
 				<Button variant="outline" onclick={() => (open = false)}>Close</Button>
 			</div>
 		</Dialog.Content>

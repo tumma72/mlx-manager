@@ -13,6 +13,8 @@ function createProbeState(
     steps: [],
     capabilities: {},
     error: null,
+    diagnostics: [],
+    probeResult: null,
     ...overrides,
   };
 }

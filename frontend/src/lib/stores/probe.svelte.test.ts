@@ -58,6 +58,8 @@ describe("probeStore", () => {
         steps: [],
         capabilities: {},
         error: null,
+        diagnostics: [],
+        probeResult: null,
       });
     });
 

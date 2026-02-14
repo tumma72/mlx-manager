@@ -450,6 +450,7 @@ export interface ModelCapabilities {
   model_type?: ModelType | null;
   probed_at?: string | null;
   probe_version?: number;
+  model_family?: string | null;
   // Text-gen
   supports_native_tools?: boolean | null;
   supports_thinking?: boolean | null;
@@ -467,10 +468,22 @@ export interface ModelCapabilities {
   supports_stt?: boolean | null;
 }
 
+export type DiagnosticLevel = 'info' | 'warning' | 'action_needed';
+export type DiagnosticCategory = 'family' | 'tool_dialect' | 'thinking_dialect' | 'type' | 'unsupported';
+
+export interface ProbeDiagnostic {
+  level: DiagnosticLevel;
+  category: DiagnosticCategory;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 export interface ProbeStep {
   step: string;
   status: 'running' | 'completed' | 'failed' | 'skipped';
   capability?: string;
   value?: unknown;
   error?: string;
+  details?: Record<string, unknown>;
+  diagnostics?: ProbeDiagnostic[];
 }

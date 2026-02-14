@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 
 from loguru import logger
 
-from .steps import ProbeResult, ProbeStep
+from .steps import DiagnosticCategory, DiagnosticLevel, ProbeDiagnostic, ProbeResult, ProbeStep
 from .strategy import get_probe_strategy
 
 
@@ -29,23 +29,49 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
     Yields:
         ProbeStep objects describing each step's progress
     """
-    from mlx_manager.mlx_server.models.detection import detect_model_type
+    from mlx_manager.mlx_server.models.detection import detect_model_type_detailed
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     pool = get_model_pool()
     result = ProbeResult()
     was_preloaded = model_id in pool._models
 
-    # Step 1: Detect model type
+    # Step 1: Detect model type (with detection metadata)
     yield ProbeStep(step="detect_type", status="running")
     try:
-        model_type = detect_model_type(model_id)
+        detection = detect_model_type_detailed(model_id)
+        model_type = detection.model_type
         result.model_type = model_type.value
+
+        step_details: dict[str, object] = {
+            "detection_method": detection.detection_method,
+            "architecture": detection.architecture,
+        }
+        step_diagnostics: list[ProbeDiagnostic] = []
+
+        if detection.detection_method == "default":
+            diag = ProbeDiagnostic(
+                level=DiagnosticLevel.WARNING,
+                category=DiagnosticCategory.TYPE,
+                message=(
+                    f"Model type defaulted to TEXT_GEN — no config, architecture, "
+                    f"or name pattern matched for '{model_id}'"
+                ),
+                details={
+                    "architecture": detection.architecture,
+                    "detection_method": detection.detection_method,
+                },
+            )
+            step_diagnostics.append(diag)
+            result.diagnostics.append(diag)
+
         yield ProbeStep(
             step="detect_type",
             status="completed",
             capability="model_type",
             value=model_type.value,
+            details=step_details,
+            diagnostics=step_diagnostics or None,
         )
     except Exception as e:
         logger.error(f"Type detection failed for {model_id}: {e}")
@@ -63,13 +89,23 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
         return
 
     # Step 2.5: Pre-validate audio models (codecs are detected as AUDIO but can't be loaded)
-    from mlx_manager.mlx_server.models.types import ModelType
+    from mlx_manager.mlx_server.models.types import ModelType as ModelTypeEnum
 
-    if model_type == ModelType.AUDIO:
+    if model_type == ModelTypeEnum.AUDIO:
         from .audio import _detect_audio_capabilities
 
         is_tts, is_stt, _ = _detect_audio_capabilities(model_id)
         if not is_tts and not is_stt:
+            diag = ProbeDiagnostic(
+                level=DiagnosticLevel.ACTION_NEEDED,
+                category=DiagnosticCategory.UNSUPPORTED,
+                message=(
+                    f"Unsupported audio model subtype: {model_id} is detected as audio "
+                    "but is not a recognized TTS or STT model (likely an audio codec)."
+                ),
+                details={"model_id": model_id, "is_tts": False, "is_stt": False},
+            )
+            result.diagnostics.append(diag)
             yield ProbeStep(
                 step="load_model",
                 status="failed",
@@ -78,6 +114,7 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
                     "but is not a recognized TTS or STT model (likely an audio codec). "
                     "Audio codec models are not supported for inference."
                 ),
+                diagnostics=[diag],
             )
             return
 
@@ -141,6 +178,15 @@ async def probe_model(model_id: str, *, verbose: bool = False) -> AsyncGenerator
         except Exception:
             pass
         yield ProbeStep(step="cleanup", status="skipped")
+
+    # Final meta-step: emit probe_complete with full result
+    # Note: diagnostics are inside details.result.diagnostics — do NOT
+    # duplicate them on the step itself or the frontend will double-count.
+    yield ProbeStep(
+        step="probe_complete",
+        status="completed",
+        details={"result": result.model_dump()},
+    )
 
     logger.info(f"Probe complete for {model_id}: type={result.model_type}")
 

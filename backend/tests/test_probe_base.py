@@ -80,16 +80,19 @@ async def test_verify_thinking_sweeps_all_parsers():
             {"null": MagicMock, "think_tag": mock_sweep_parser},
         ),
     ):
-        supports, parser_id = await probe._verify_thinking_support(mock_loaded, mock_adapter)
+        supports, parser_id, diagnostics = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
 
         assert supports is True
         assert parser_id == "think_tag"
+        assert diagnostics == []
         mock_sweep_parser_instance.extract.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_verify_thinking_fallback_when_no_parser_matches():
-    """Test thinking verification uses fallback parser when template supports but no tags found."""
+    """Test thinking reports unverified when template supports but no tags found in output."""
     probe = ConcreteProbe()
     probe.set_mock_output("4")  # Plain output without thinking tags
 
@@ -125,11 +128,16 @@ async def test_verify_thinking_fallback_when_no_parser_matches():
             {"null": MagicMock, "think_tag": mock_sweep_parser, "reasoning_tag": mock_other_parser},
         ),
     ):
-        supports, parser_id = await probe._verify_thinking_support(mock_loaded, mock_adapter)
+        supports, parser_id, diagnostics = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
 
-        # Should fall back to adapter's parser since template supports it
-        assert supports is True
-        assert parser_id == "think_tag"
+        # Probe couldn't verify — report as unverified, don't trust config
+        assert supports is False
+        assert parser_id == "null"
+        # Should produce a diagnostic about unverified thinking
+        assert len(diagnostics) == 1
+        assert diagnostics[0].category.value == "thinking_dialect"
 
 
 @pytest.mark.asyncio
@@ -155,11 +163,16 @@ async def test_verify_thinking_exception_handling():
         "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
         return_value=True,
     ):
-        supports, parser_id = await probe._verify_thinking_support(mock_loaded, mock_adapter)
+        supports, parser_id, diagnostics = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
 
-        # Should fall back to template check
-        assert supports is True
-        assert parser_id == "think_tag"
+        # Generation failed — can't verify, report as unverified
+        assert supports is False
+        assert parser_id == "null"
+        assert len(diagnostics) == 1
+        assert diagnostics[0].category.value == "thinking_dialect"
+        assert "generation error" in diagnostics[0].message
 
 
 # ---------------------------------------------------------------------------
@@ -194,11 +207,14 @@ async def test_verify_tool_template_delivery_no_parser_match():
         ),
         patch("mlx_manager.services.probe.base._find_matching_parser", return_value=None),
     ):
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, diagnostics = await probe._verify_tool_support(
+            mock_loaded, mock_adapter
+        )
 
         # Should return None when no parser matches
         assert tool_format is None
         assert parser_id is None
+        assert diagnostics == []
 
 
 @pytest.mark.asyncio
@@ -227,15 +243,18 @@ async def test_verify_tool_adapter_delivery_no_parser_match():
         ),
         patch("mlx_manager.services.probe.base._find_matching_parser", return_value=None),
     ):
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, diagnostics = await probe._verify_tool_support(
+            mock_loaded, mock_adapter
+        )
 
         assert tool_format is None
         assert parser_id is None
+        assert diagnostics == []
 
 
 @pytest.mark.asyncio
 async def test_verify_tool_partial_markers_warning():
-    """Test that partial tool markers trigger warning logging."""
+    """Test that partial tool markers produce an ACTION_NEEDED diagnostic."""
     probe = ConcreteProbe()
     probe.set_mock_output("<tool_call>Incomplete tool call without closing tag")
 
@@ -259,16 +278,21 @@ async def test_verify_tool_partial_markers_warning():
         ),
         patch("mlx_manager.services.probe.base._find_matching_parser", return_value=None),
     ):
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, diagnostics = await probe._verify_tool_support(
+            mock_loaded, mock_adapter
+        )
 
-        # Should detect partial markers and return None
         assert tool_format is None
         assert parser_id is None
+        assert len(diagnostics) == 1
+        assert diagnostics[0].level.value == "action_needed"
+        assert diagnostics[0].category.value == "tool_dialect"
+        assert "<tool_call>" in diagnostics[0].details["found_markers"]
 
 
 @pytest.mark.asyncio
 async def test_verify_tool_unknown_xml_tags_warning():
-    """Test that unknown XML tags trigger warning logging."""
+    """Test that unknown XML tags produce a WARNING diagnostic."""
     probe = ConcreteProbe()
     probe.set_mock_output("<custom_tag>Some content</custom_tag>")
 
@@ -292,10 +316,16 @@ async def test_verify_tool_unknown_xml_tags_warning():
         ),
         patch("mlx_manager.services.probe.base._find_matching_parser", return_value=None),
     ):
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, diagnostics = await probe._verify_tool_support(
+            mock_loaded, mock_adapter
+        )
 
         assert tool_format is None
         assert parser_id is None
+        assert len(diagnostics) == 1
+        assert diagnostics[0].level.value == "warning"
+        assert diagnostics[0].category.value == "tool_dialect"
+        assert "custom_tag" in diagnostics[0].details["unknown_tags"]
 
 
 # ---------------------------------------------------------------------------
@@ -476,18 +506,25 @@ async def test_probe_generative_capabilities_no_adapter():
 
     result = ProbeResult()
 
-    with patch(
-        "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
-        return_value="unknown",
+    with (
+        patch(
+            "mlx_manager.mlx_server.models.adapters.detect_model_family",
+            return_value="unknown",
+        ),
+        patch(
+            "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
+            {"default": MagicMock},
+        ),
     ):
         steps = []
         async for step in probe._probe_generative_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
-        # Should have two skipped steps
-        assert len(steps) == 2
-        assert all(s.status == "skipped" for s in steps)
-        assert {s.step for s in steps} == {"test_thinking", "test_tools"}
+        step_names = [s.step for s in steps]
+        # detect_family (running + completed) + test_thinking (skipped) + test_tools (skipped)
+        assert "detect_family" in step_names
+        skipped = [s for s in steps if s.status == "skipped"]
+        assert {s.step for s in skipped} == {"test_thinking", "test_tools"}
 
 
 @pytest.mark.asyncio
@@ -501,18 +538,22 @@ async def test_probe_generative_capabilities_no_tokenizer():
 
     result = ProbeResult()
 
-    with patch(
-        "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
-        return_value="qwen",
+    with (
+        patch(
+            "mlx_manager.mlx_server.models.adapters.detect_model_family",
+            return_value="qwen",
+        ),
+        patch(
+            "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
+            {"qwen": MagicMock},
+        ),
     ):
         steps = []
         async for step in probe._probe_generative_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
-        # Should have two skipped steps
-        assert len(steps) == 2
-        assert all(s.status == "skipped" for s in steps)
-        assert {s.step for s in steps} == {"test_thinking", "test_tools"}
+        skipped = [s for s in steps if s.status == "skipped"]
+        assert {s.step for s in skipped} == {"test_thinking", "test_tools"}
 
 
 @pytest.mark.asyncio
@@ -534,8 +575,12 @@ async def test_probe_generative_capabilities_thinking_test_exception():
 
     with (
         patch(
-            "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
+            "mlx_manager.mlx_server.models.adapters.detect_model_family",
             return_value="qwen",
+        ),
+        patch(
+            "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
+            {"qwen": MagicMock},
         ),
         patch.object(probe, "_verify_tool_support", new_callable=AsyncMock),
     ):
@@ -569,14 +614,18 @@ async def test_probe_generative_capabilities_tool_test_exception():
 
     with (
         patch(
-            "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
+            "mlx_manager.mlx_server.models.adapters.detect_model_family",
             return_value="qwen",
+        ),
+        patch(
+            "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
+            {"qwen": MagicMock},
         ),
         patch.object(
             probe,
             "_verify_thinking_support",
             new_callable=AsyncMock,
-            return_value=(False, "null"),
+            return_value=(False, "null", []),
         ),
     ):
         steps = []

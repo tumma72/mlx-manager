@@ -1,4 +1,4 @@
-import type { ModelCapabilities, ProbeStep } from "$lib/api/types";
+import type { ModelCapabilities, ProbeDiagnostic, ProbeStep } from "$lib/api/types";
 
 export interface ProbeState {
   status: "idle" | "probing" | "completed" | "failed";
@@ -6,6 +6,8 @@ export interface ProbeState {
   steps: ProbeStep[];
   capabilities: Partial<ModelCapabilities>;
   error: string | null;
+  diagnostics: ProbeDiagnostic[];
+  probeResult: Record<string, unknown> | null;
 }
 
 function createProbeStore() {
@@ -20,6 +22,8 @@ function createProbeStore() {
         steps: [],
         capabilities: {},
         error: null,
+        diagnostics: [],
+        probeResult: null,
       }
     );
   }
@@ -31,6 +35,8 @@ function createProbeStore() {
       steps: [],
       capabilities: {},
       error: null,
+      diagnostics: [],
+      probeResult: null,
     };
 
     try {
@@ -89,6 +95,25 @@ function createProbeStore() {
                   step.value;
               }
 
+              // Accumulate diagnostics from step (skip probe_complete to avoid
+              // double-counting — its diagnostics are in details.result)
+              const diagnostics = [...current.diagnostics];
+              if (step.step !== "probe_complete" && step.diagnostics?.length) {
+                for (const diag of step.diagnostics) {
+                  diagnostics.push(diag);
+                }
+              }
+
+              // Extract probeResult from probe_complete step
+              let probeResult = current.probeResult;
+              if (
+                step.step === "probe_complete" &&
+                step.details?.result
+              ) {
+                probeResult = step.details
+                  .result as Record<string, unknown>;
+              }
+
               probes[modelId] = {
                 ...current,
                 currentStep:
@@ -97,6 +122,8 @@ function createProbeStore() {
                     : current.currentStep,
                 steps,
                 capabilities,
+                diagnostics,
+                probeResult,
               };
             } catch {
               // Ignore malformed SSE data

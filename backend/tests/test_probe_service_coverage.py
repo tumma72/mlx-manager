@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.mlx_server.models.detection import TypeDetectionResult
+
 
 @pytest.mark.asyncio
 async def test_audio_codec_rejection():
@@ -22,8 +24,8 @@ async def test_audio_codec_rejection():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.AUDIO,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.AUDIO, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -85,8 +87,8 @@ async def test_strategy_probe_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -132,8 +134,8 @@ async def test_load_model_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -197,8 +199,8 @@ async def test_preloaded_model_no_db_record():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -269,8 +271,8 @@ async def test_preloaded_model_no_capabilities():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -344,8 +346,8 @@ async def test_preloaded_model_with_capabilities():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -409,8 +411,8 @@ async def test_preloaded_model_db_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -544,7 +546,7 @@ async def test_detect_type_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
             side_effect=ValueError("Cannot determine model type"),
         ),
     ):
@@ -580,8 +582,8 @@ async def test_no_strategy_for_model_type():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -632,8 +634,8 @@ async def test_save_results_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",
@@ -689,8 +691,8 @@ async def test_cleanup_exception():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=ModelType.TEXT_GEN,
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
             "mlx_manager.services.probe.service.get_probe_strategy",

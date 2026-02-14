@@ -9,6 +9,7 @@
 	let { probe }: Props = $props();
 
 	const stepLabels: Record<string, string> = {
+		detect_family: 'Detecting family',
 		load_model: 'Loading model',
 		check_context: 'Checking context',
 		test_thinking: 'Testing thinking',
@@ -16,10 +17,13 @@
 		save_results: 'Saving results',
 		cleanup: 'Cleaning up'
 	};
+
+	// Filter out probe_complete from displayed steps
+	let displayedSteps = $derived(probe.steps.filter((s) => s.step !== 'probe_complete'));
 </script>
 
 <div class="space-y-1 text-xs">
-	{#each probe.steps as step (step.step)}
+	{#each displayedSteps as step (step.step)}
 		<div class="flex items-center gap-1.5">
 			{#if step.status === 'running'}
 				<Loader2 class="w-3 h-3 animate-spin text-blue-500" />
@@ -33,6 +37,9 @@
 			<span class={step.status === 'failed' ? 'text-red-500' : 'text-muted-foreground'}>
 				{stepLabels[step.step] ?? step.step}
 			</span>
+			{#if step.diagnostics?.length}
+				<span class="text-yellow-500 ml-0.5">!</span>
+			{/if}
 			{#if step.status === 'failed' && step.error}
 				<span class="text-red-400 truncate">— {step.error}</span>
 			{/if}

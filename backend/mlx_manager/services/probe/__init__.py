@@ -12,8 +12,15 @@ Usage:
         print(step.to_sse())
 """
 
+from .report import generate_support_report
 from .service import probe_model
-from .steps import ProbeResult, ProbeStep
+from .steps import (
+    DiagnosticCategory,
+    DiagnosticLevel,
+    ProbeDiagnostic,
+    ProbeResult,
+    ProbeStep,
+)
 
 # Register all built-in strategies on import
 from .strategy import (
@@ -26,8 +33,12 @@ from .strategy import (
 _register_all()
 
 __all__ = [
+    "DiagnosticCategory",
+    "DiagnosticLevel",
+    "ProbeDiagnostic",
     "ProbeResult",
     "ProbeStep",
+    "generate_support_report",
     "get_probe_strategy",
     "has_probe_strategy",
     "probe_model",

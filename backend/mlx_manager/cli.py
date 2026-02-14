@@ -135,6 +135,7 @@ def probe(
     force: bool = typer.Option(False, "--force", help="Clear cached capabilities before probing"),
     save: str = typer.Option(None, "--save", help="Write raw outputs to directory"),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    report: bool = typer.Option(False, "--report", help="Generate a markdown diagnostic report"),
 ):
     """Probe model capabilities (tools, thinking, embeddings, audio, etc.)."""
     import asyncio
@@ -148,7 +149,13 @@ def probe(
     else:
         asyncio.run(
             _probe_single(
-                model_id, format, verbose=verbose, force=force, save=save, json_output=json_output
+                model_id,
+                format,
+                verbose=verbose,
+                force=force,
+                save=save,
+                json_output=json_output,
+                report=report,
             )
         )
 
@@ -200,6 +207,7 @@ async def _probe_single(
     force: bool = False,
     save: str | None = None,
     json_output: bool = False,
+    report: bool = False,
 ) -> None:
     """Probe a single model and display results."""
     import json as json_mod
@@ -223,7 +231,7 @@ async def _probe_single(
             _print_step(step, verbose=verbose)
 
     if json_output:
-        output = {
+        output: dict = {
             "model_id": model_id,
             "steps": [
                 {
@@ -233,13 +241,24 @@ async def _probe_single(
                     **({"value": s.value} if s.value is not None else {}),
                     **({"error": s.error} if s.error else {}),
                     **({"details": s.details} if verbose and s.details else {}),
+                    **(
+                        {"diagnostics": [d.model_dump() for d in s.diagnostics]}
+                        if s.diagnostics
+                        else {}
+                    ),
                 }
                 for s in steps
             ],
         }
         print(json_mod.dumps(output, indent=2))
     else:
+        # Print diagnostic summary
+        _print_diagnostic_summary(steps)
         console.print()
+
+    # Generate report if requested
+    if report:
+        _print_report(model_id, steps)
 
     if save:
         _save_probe_outputs(model_id, steps, save)
@@ -315,7 +334,11 @@ async def _probe_all(format: str, *, verbose: bool = False, force: bool = False)
 
 
 def _print_step(step, indent: int = 0, *, verbose: bool = False) -> None:
-    """Print a single probe step with status icon."""
+    """Print a single probe step with status icon and diagnostic badges."""
+    # Skip probe_complete in normal output (it's a meta-step)
+    if step.step == "probe_complete":
+        return
+
     prefix = " " * indent
     icons = {
         "running": "[yellow]⟳[/yellow]",
@@ -329,11 +352,77 @@ def _print_step(step, indent: int = 0, *, verbose: bool = False) -> None:
         detail = f" → {step.value}"
     if step.error:
         detail = f" [red]{step.error}[/red]"
-    console.print(f"{prefix}{icon} {step.step}{detail}")
+
+    # Diagnostic badge
+    badge = ""
+    if step.diagnostics:
+        action_count = sum(1 for d in step.diagnostics if d.level.value == "action_needed")
+        warn_count = sum(1 for d in step.diagnostics if d.level.value == "warning")
+        if action_count:
+            badge = f" [red]({action_count} action needed)[/red]"
+        elif warn_count:
+            badge = f" [yellow]({warn_count} warning{'s' if warn_count > 1 else ''})[/yellow]"
+
+    console.print(f"{prefix}{icon} {step.step}{detail}{badge}")
 
     if verbose and step.details:
         for key, value in step.details.items():
+            if key == "result":
+                continue  # Skip full result dict in verbose output
             console.print(f"{prefix}  [dim]{key}:[/dim] {value}")
+
+    if verbose and step.diagnostics:
+        for diag in step.diagnostics:
+            level_color = {
+                "action_needed": "red",
+                "warning": "yellow",
+                "info": "blue",
+            }.get(diag.level.value, "dim")
+            console.print(
+                f"{prefix}  [{level_color}][{diag.level.value}][/{level_color}] {diag.message}"
+            )
+            for key, value in diag.details.items():
+                if key == "raw_output_sample":
+                    console.print(f"{prefix}    [dim]{key}:[/dim] {str(value)[:200]}...")
+                else:
+                    console.print(f"{prefix}    [dim]{key}:[/dim] {value}")
+
+
+def _print_diagnostic_summary(steps: list) -> None:
+    """Print a summary line of all diagnostics after probe steps."""
+    all_diags = []
+    for step in steps:
+        if step.diagnostics:
+            all_diags.extend(step.diagnostics)
+    if not all_diags:
+        return
+    action_count = sum(1 for d in all_diags if d.level.value == "action_needed")
+    warn_count = sum(1 for d in all_diags if d.level.value == "warning")
+    info_count = sum(1 for d in all_diags if d.level.value == "info")
+    parts = []
+    if action_count:
+        parts.append(f"[red]{action_count} action needed[/red]")
+    if warn_count:
+        parts.append(f"[yellow]{warn_count} warning{'s' if warn_count > 1 else ''}[/yellow]")
+    if info_count:
+        parts.append(f"[blue]{info_count} info[/blue]")
+    console.print(f"\n  {len(all_diags)} diagnostics: {', '.join(parts)}")
+
+
+def _print_report(model_id: str, steps: list) -> None:
+    """Generate and print a markdown diagnostic report."""
+    from mlx_manager.services.probe import ProbeResult, generate_support_report
+
+    # Extract ProbeResult from probe_complete step
+    result = ProbeResult()
+    for step in steps:
+        if step.step == "probe_complete" and step.details and "result" in step.details:
+            result = ProbeResult(**step.details["result"])
+            break
+
+    report = generate_support_report(model_id, result, steps)
+    console.print("\n[bold]Diagnostic Report[/bold]\n")
+    console.print(report)
 
 
 def _save_probe_outputs(model_id: str, steps: list, save_dir: str) -> None:

@@ -5,11 +5,19 @@ the correct loading strategy. It reuses detection utilities from the existing
 model_detection module to ensure consistency between badge display and loading.
 """
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
+
+
+class TypeDetectionResult(NamedTuple):
+    """Result of detailed model type detection."""
+
+    model_type: ModelType
+    detection_method: str  # "config_field", "architecture", "name_pattern", "default"
+    architecture: str  # First architecture from config.json, or ""
 
 
 def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> ModelType:
@@ -179,3 +187,148 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
     # Default to text generation
     logger.debug(f"Defaulting to TEXT_GEN model: {model_id}")
     return ModelType.TEXT_GEN
+
+
+def detect_model_type_detailed(
+    model_id: str, config: dict[str, Any] | None = None
+) -> TypeDetectionResult:
+    """Detect model type with metadata about how detection was performed.
+
+    Wraps detect_model_type() with tracking of which detection method matched
+    and the model's architecture string from config.json.
+
+    Args:
+        model_id: HuggingFace model ID
+        config: Optional pre-loaded config.json dict
+
+    Returns:
+        TypeDetectionResult with model_type, detection_method, and architecture
+    """
+    from mlx_manager.utils.model_detection import detect_multimodal, read_model_config
+
+    # Load config if not provided
+    if config is None:
+        try:
+            config = read_model_config(model_id)
+        except Exception:
+            config = None
+
+    # Extract architecture for metadata
+    arch_list = config.get("architectures", []) if config else []
+    architecture = arch_list[0] if arch_list else ""
+
+    if config:
+        # Config-field based detection
+        is_multimodal, multimodal_type = detect_multimodal(config)
+        if is_multimodal and multimodal_type == "vision":
+            return TypeDetectionResult(ModelType.VISION, "config_field", architecture)
+
+        audio_config_indicators = (
+            "audio_config",
+            "tts_config",
+            "stt_config",
+            "vocoder_config",
+            "codec_config",
+        )
+        if any(key in config for key in audio_config_indicators):
+            return TypeDetectionResult(ModelType.AUDIO, "config_field", architecture)
+
+        # Architecture-based detection
+        if arch_list:
+            arch_lower = architecture.lower()
+            audio_arch_indicators = (
+                "kokoro",
+                "whisper",
+                "bark",
+                "speecht5",
+                "parler",
+                "sesame",
+                "spark",
+                "dia",
+                "outetts",
+                "chatterbox",
+                "parakeet",
+                "voxtral",
+                "vibevoice",
+                "voxcpm",
+                "soprano",
+            )
+            if any(ind in arch_lower for ind in audio_arch_indicators):
+                return TypeDetectionResult(ModelType.AUDIO, "architecture", architecture)
+
+            embedding_indicators = ("embedding", "sentence", "bert", "roberta", "e5", "bge")
+            if any(ind in arch_lower for ind in embedding_indicators):
+                return TypeDetectionResult(ModelType.EMBEDDINGS, "architecture", architecture)
+
+        # model_type field detection
+        config_model_type = config.get("model_type", "").lower()
+        audio_model_type_indicators = (
+            "kokoro",
+            "whisper",
+            "bark",
+            "speecht5",
+            "parler",
+            "dia",
+            "outetts",
+            "spark",
+            "chatterbox",
+            "soprano",
+            "parakeet",
+            "qwen3_tts",
+            "qwen3_asr",
+            "glm4_voice",
+        )
+        if any(ind in config_model_type for ind in audio_model_type_indicators):
+            return TypeDetectionResult(ModelType.AUDIO, "config_field", architecture)
+
+        if any(ind in config_model_type for ind in ("embedding", "sentence", "bert")):
+            return TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", architecture)
+
+    # Name-based fallback
+    name_lower = model_id.lower()
+
+    audio_name_patterns = (
+        "kokoro",
+        "whisper",
+        "tts",
+        "stt",
+        "speech",
+        "bark",
+        "speecht5",
+        "parler",
+        "chatterbox",
+        "/dia-",
+        "outetts",
+        "spark-tts",
+        "parakeet",
+        "voxtral",
+        "vibevoice",
+        "voxcpm",
+        "soprano",
+        "dac",
+        "snac",
+        "vocos",
+        "descript-audio",
+    )
+    if any(pattern in name_lower for pattern in audio_name_patterns):
+        return TypeDetectionResult(ModelType.AUDIO, "name_pattern", architecture)
+
+    vision_patterns = (
+        "-vl",
+        "vlm",
+        "vision",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "llava",
+        "pixtral",
+        "gemma-3",
+    )
+    if any(pattern in name_lower for pattern in vision_patterns):
+        return TypeDetectionResult(ModelType.VISION, "name_pattern", architecture)
+
+    embed_patterns = ("embed", "minilm", "sentence", "e5-", "bge-", "gte-")
+    if any(pattern in name_lower for pattern in embed_patterns):
+        return TypeDetectionResult(ModelType.EMBEDDINGS, "name_pattern", architecture)
+
+    # Default
+    return TypeDetectionResult(ModelType.TEXT_GEN, "default", architecture)

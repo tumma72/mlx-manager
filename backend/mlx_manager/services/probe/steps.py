@@ -8,9 +8,37 @@ ProbeResult accumulates capabilities discovered during probing.
 from __future__ import annotations
 
 import json
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class DiagnosticLevel(StrEnum):
+    """Severity level for probe diagnostics."""
+
+    INFO = "info"
+    WARNING = "warning"
+    ACTION_NEEDED = "action_needed"
+
+
+class DiagnosticCategory(StrEnum):
+    """Category of probe diagnostic."""
+
+    FAMILY = "family"
+    TOOL_DIALECT = "tool_dialect"
+    THINKING_DIALECT = "thinking_dialect"
+    TYPE = "type"
+    UNSUPPORTED = "unsupported"
+
+
+class ProbeDiagnostic(BaseModel):
+    """A diagnostic message produced during probing."""
+
+    level: DiagnosticLevel
+    category: DiagnosticCategory
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProbeStep(BaseModel):
@@ -22,6 +50,7 @@ class ProbeStep(BaseModel):
     value: Any = None
     error: str | None = None
     details: dict[str, Any] | None = None
+    diagnostics: list[ProbeDiagnostic] | None = None
 
     def to_sse(self) -> str:
         """Serialize to SSE event data."""
@@ -34,6 +63,8 @@ class ProbeStep(BaseModel):
             data["error"] = self.error
         if self.details is not None:
             data["details"] = self.details
+        if self.diagnostics:
+            data["diagnostics"] = [d.model_dump() for d in self.diagnostics]
         return f"data: {json.dumps(data)}\n\n"
 
 
@@ -71,3 +102,4 @@ class ProbeResult(BaseModel):
     # Metadata
     model_type: str | None = None
     errors: list[str] = Field(default_factory=list)
+    diagnostics: list[ProbeDiagnostic] = Field(default_factory=list)

@@ -352,7 +352,7 @@ async def test_orchestrator_type_detection_failure():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
             side_effect=Exception("Unknown model type"),
         ),
     ):
@@ -536,12 +536,12 @@ async def test_text_gen_probe_happy_path():
         patch.object(
             TextGenProbe,
             "_verify_thinking_support",
-            return_value=(True, "think_tag"),
+            return_value=(True, "think_tag", []),
         ),
         patch.object(
             TextGenProbe,
             "_verify_tool_support",
-            return_value=("template", "hermes_json"),
+            return_value=("template", "hermes_json", []),
         ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=16.0),
@@ -938,8 +938,10 @@ async def test_audio_probe_name_based_fallback():
 @pytest.mark.asyncio
 async def test_orchestrator_strategy_not_found():
     """Test orchestrator handles missing strategy gracefully."""
-    # Create a custom model type that has no strategy
+    from mlx_manager.mlx_server.models.detection import TypeDetectionResult
+
     mock_pool = MagicMock()
+    mock_type = MagicMock(value="unknown_type")
 
     with (
         patch(
@@ -947,8 +949,8 @@ async def test_orchestrator_strategy_not_found():
             return_value=mock_pool,
         ),
         patch(
-            "mlx_manager.mlx_server.models.detection.detect_model_type",
-            return_value=MagicMock(value="unknown_type"),
+            "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
+            return_value=TypeDetectionResult(mock_type, "config_field", "UnknownArch"),
         ),
         patch(
             "mlx_manager.services.probe.strategy.get_probe_strategy",
@@ -2092,7 +2094,7 @@ async def test_text_gen_probe_template_delivery():
         ),
     ):
         probe = TextGenProbe()
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, _diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
         assert tool_format == "template"
         assert parser_id == "hermes_json"
 
@@ -2125,7 +2127,7 @@ async def test_text_gen_probe_adapter_delivery():
         ),
     ):
         probe = TextGenProbe()
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, _diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
         assert tool_format == "adapter"
         assert parser_id == "hermes_json"
 
@@ -2158,7 +2160,7 @@ async def test_text_gen_probe_fallback_parser_sweep():
         ),
     ):
         probe = TextGenProbe()
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, _diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
         assert tool_format == "template"
         # The hermes_json parser should match the <tool_call> format
         assert parser_id == "hermes_json"
@@ -2236,14 +2238,16 @@ async def test_text_gen_probe_thinking_generation_based():
         ),
     ):
         probe = TextGenProbe()
-        supports, parser_id = await probe._verify_thinking_support(mock_loaded, mock_adapter)
+        supports, parser_id, _diags = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
         assert supports is True
         assert parser_id == "think_tag"
 
 
 @pytest.mark.asyncio
-async def test_text_gen_probe_thinking_template_authoritative():
-    """Test thinking: template support is authoritative even without tags in output."""
+async def test_text_gen_probe_thinking_unverified_without_tags():
+    """Test thinking: reports unverified when template supports but no tags in output."""
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2264,9 +2268,13 @@ async def test_text_gen_probe_thinking_template_authoritative():
         ),
     ):
         probe = TextGenProbe()
-        supports, parser_id = await probe._verify_thinking_support(mock_loaded, mock_adapter)
-        assert supports is True  # Template is authoritative
-        assert parser_id == "think_tag"
+        supports, parser_id, diags = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
+        assert supports is False  # Could not verify empirically
+        assert parser_id == "null"
+        assert len(diags) == 1
+        assert diags[0].category.value == "thinking_dialect"
 
 
 @pytest.mark.asyncio
@@ -2292,7 +2300,7 @@ async def test_text_gen_probe_no_tool_support_detected():
         ),
     ):
         probe = TextGenProbe()
-        tool_format, parser_id = await probe._verify_tool_support(mock_loaded, mock_adapter)
+        tool_format, parser_id, _diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
         assert tool_format is None
         assert parser_id is None
 
@@ -2467,12 +2475,12 @@ async def test_vision_probe_discovers_thinking():
         patch.object(
             VisionProbe,
             "_verify_thinking_support",
-            return_value=(True, "think_tag"),
+            return_value=(True, "think_tag", []),
         ),
         patch.object(
             VisionProbe,
             "_verify_tool_support",
-            return_value=("template", "hermes_json"),
+            return_value=("template", "hermes_json", []),
         ),
     ):
         import tempfile

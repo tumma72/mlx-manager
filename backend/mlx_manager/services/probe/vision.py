@@ -35,6 +35,7 @@ class VisionProbe(GenerativeProbe):
         messages: list[dict],
         tools: list[dict] | None = None,
         enable_thinking: bool = False,
+        max_tokens: int = 800,
     ) -> str:
         """Generate a response using mlx-vlm with a synthetic test image.
 
@@ -76,7 +77,7 @@ class VisionProbe(GenerativeProbe):
                 processor,
                 formatted_prompt,
                 [test_image],
-                max_tokens=200,
+                max_tokens=max_tokens,
                 verbose=False,
             )
             return str(result.text) if hasattr(result, "text") else str(result)

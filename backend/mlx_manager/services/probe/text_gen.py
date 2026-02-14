@@ -54,6 +54,7 @@ class TextGenProbe(GenerativeProbe):
         messages: list[dict],
         tools: list[dict] | None = None,
         enable_thinking: bool = False,
+        max_tokens: int = 800,
     ) -> str:
         """Generate a response using mlx-lm via the model's adapter."""
         import asyncio
@@ -76,7 +77,7 @@ class TextGenProbe(GenerativeProbe):
             loaded.model,
             loaded.tokenizer,
             prompt=prompt,
-            max_tokens=200,
+            max_tokens=max_tokens,
             verbose=False,
         )
         return output
