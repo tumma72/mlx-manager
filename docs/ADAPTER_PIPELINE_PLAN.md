@@ -52,73 +52,87 @@ This plan details the incremental refactoring of the MLX Server adapter architec
 
 ---
 
-## Current State Analysis
+## Current State (Post Phase 3)
 
-### What Exists Today
+### What Works: TEXT_GEN Full Pipeline
+
+The 3-layer pipeline is fully operational for TEXT_GEN models:
+
+```
+Request → [ProtocolFormatter] → adapter.prepare_input() → generate → adapter.process_complete() → [ProtocolFormatter] → Response
+```
 
 #### Layer 1: ModelAdapter (composable.py)
-- **Purpose**: Model-family-specific processing (chat template, tool/thinking parsing, response cleaning)
-- **Lifecycle**: Created once at model load, lives in `LoadedModel.adapter`
-- **Current Methods**:
-  - `apply_chat_template()`: Message → prompt string
-  - `convert_messages()`: OpenAI messages → model-compatible format
-  - `format_tools_for_prompt()`: Tool injection for non-native models
-  - `clean_response()`: Remove special tokens
-  - `supports_native_tools()`, `supports_tool_calling()`: Capabilities
-  - `get_stream_markers()`: Combined markers from parsers
-  - `_compute_stop_tokens()`: Stop token IDs
+- **Created once** at model load, lives in `LoadedModel.adapter`
+- **Full input pipeline**: `prepare_input(messages, tools, enable_prompt_injection)` → `PreparedInput`
+  - Encapsulates: `convert_messages()` + `apply_chat_template()` + stop token aggregation
+- **Full output pipeline**: `process_complete(raw_text, finish_reason)` → `TextResult`
+  - Encapsulates: tool parsing + thinking parsing + response cleaning
+- **Stream factory**: `create_stream_processor(prompt)` → `StreamProcessor`
+- **Family adapters**: Qwen, GLM4, Llama, Gemma, Mistral, Liquid, Default
+- **Stateless**: Safe for parallel requests from different protocols
 
-**Problem**: Does NOT own full OUTPUT pipeline. StreamingProcessor is created ad-hoc in inference.py, not via adapter factory method.
+#### Layer 2: StreamProcessor (response_processor.py)
+- **Created per-request** via `adapter.create_stream_processor()`
+- **Returns IR**: `feed(token)` → `StreamEvent`, `finalize()` → `TextResult`
+- Backward-compat alias `StreamingProcessor` kept (deleted in Phase 6)
 
-#### Layer 2: StreamingProcessor (response_processor.py)
-- **Purpose**: Token-by-token parsing with stateful pattern matching
-- **Lifecycle**: Created ad-hoc in `_stream_chat_generate()` with `StreamingProcessor(adapter=adapter)`
-- **Current Methods**:
-  - `feed(token)`: Process token → StreamEvent
-  - `finalize()`: Extract tool calls/reasoning → ParseResult
+#### Layer 3: ProtocolFormatter (services/formatters/)
+- **OpenAIFormatter**: IR → OpenAI chat completion chunks/responses
+- **AnthropicFormatter**: IR → Anthropic message events/responses
+- **Created per-request** in routers (stateless, protocol-specific)
+- **Handles**: streaming SSE events, non-streaming responses, tool calls, reasoning content
 
-**Problem**:
-1. Name doesn't match target architecture (should be StreamProcessor)
-2. Created directly, not via adapter factory method
-3. Returns ParseResult (Pydantic), not IR AdapterResult
+#### IR Types (models/ir.py)
+- `PreparedInput`: prompt + stop_token_ids (+ pixel_values placeholder for Phase 4)
+- `StreamEvent`: type + content/reasoning_content/tool_call_delta
+- `TextResult`: content + reasoning_content + tool_calls + finish_reason
+- `EmbeddingResult`, `AudioResult`, `TranscriptionResult`: defined but unused (Phase 5)
+- `InferenceResult`: wrapper with prompt_tokens + completion_tokens
 
-#### Non-layer: ProtocolTranslator (protocol.py)
-- **Purpose**: Bidirectional translation between OpenAI and Anthropic formats
-- **Current Methods**:
-  - `anthropic_to_internal()`: Anthropic request → InternalRequest
-  - `internal_to_anthropic_response()`: Complete result → Anthropic response
-  - `openai_stop_to_anthropic()`, `anthropic_stop_to_openai()`: Stop reason mapping
+### What Doesn't Work Yet: Vision, Embeddings, Audio
 
-**Problem**: Should be absorbed into Layer 3 (ProtocolFormatter), but that layer doesn't exist yet.
+| Capability | TEXT_GEN | VISION | EMBEDDINGS | AUDIO |
+|---|---|---|---|---|
+| Adapter exists | Yes (7 families) | No (gets generic) | No | Yes (minimal) |
+| Uses `prepare_input()` | Yes | No | No | No |
+| Uses `process_complete()` | Yes | No | No | No |
+| Uses formatters | OpenAI + Anthropic | Neither | Neither | Neither |
+| Uses adapter pipeline | Yes | No (`vision.py`) | No (`embeddings.py`) | No (`audio.py`) |
 
-### What Doesn't Exist Yet
+#### Vision (separate path — Phase 4 target)
+- `vision.py` bypasses adapters entirely, calls `mlx_vlm.apply_chat_template` directly
+- Returns raw OpenAI dicts, not IR types
+- `chat.py` router explicitly branches: `if has_images → vision path`
+- No vision-specific adapter classes exist
 
-1. **Layer 3: ProtocolFormatter** - No protocol-specific formatting layer
-2. **IR AdapterResult hierarchy** - ParseResult is close, but not the target ABC hierarchy
-3. **PreparedInput IR** - Adapters return raw prompt strings, not structured IR
-4. **Vision adapter integration** - Vision uses separate inference path (vision.py), bypasses adapters entirely
-5. **Embeddings/Audio adapter integration** - These model types don't use adapters at all
+#### Embeddings (separate path — Phase 5 target)
+- `embeddings.py` calls `mlx_embeddings` directly, no adapter involvement
+- No `EmbeddingsAdapter` class exists
+- Returns raw OpenAI EmbeddingResponse
 
-### Critical Dependencies
+#### Audio (separate path — Phase 5 target)
+- `audio.py` calls `mlx_audio` directly
+- `WhisperAdapter` and `KokoroAdapter` exist but have no `prepare_input()`/`process_complete()`
+- Only used for `post_load_configure()` hooks, not for inference pipeline
 
-#### Files That Use Current Adapter Architecture
-1. `services/inference.py` (TEXT_GEN)
-2. `services/vision.py` (VISION, separate path)
-3. `services/embeddings.py` (no adapters)
-4. `services/audio.py` (no adapters)
-5. `api/v1/chat.py` (router, calls inference)
-6. `api/v1/messages.py` (router, calls inference + ProtocolTranslator)
-7. `api/v1/completions.py` (legacy OpenAI)
-8. `models/pool.py` (creates adapters at load time)
+### Legacy Code (to be cleaned up in Phase 6)
+- `ProtocolTranslator` in `protocol.py` — still used by `messages.py` for request translation (input side only)
+- `ParseResult` in `response_processor.py` — kept for backward compat
+- `StreamingProcessor` alias — kept for backward compat
+- `generate_chat_completion()` legacy wrapper — uses new pipeline internally
 
-#### Test Files That Exercise Current Architecture
-- `tests/mlx_server/test_inference.py`
-- `tests/mlx_server/test_response_processor.py`
-- `tests/mlx_server/test_response_processor_coverage.py`
-- `tests/mlx_server/test_tool_calling.py`
-- `tests/mlx_server/test_template_tools.py`
-- `tests/mlx_server/anthropic/` (140+ tests using ProtocolTranslator)
-- `tests/e2e/` (E2E tests for vision, audio, embeddings, cross-protocol)
+### Files in Current Architecture
+1. `services/inference.py` — TEXT_GEN via adapter pipeline (IR-based)
+2. `services/vision.py` — VISION, separate path (bypasses adapters)
+3. `services/embeddings.py` — EMBEDDINGS, separate path (no adapters)
+4. `services/audio.py` — AUDIO, separate path (adapters exist but unused for inference)
+5. `services/formatters/` — ProtocolFormatter layer (OpenAI + Anthropic)
+6. `api/v1/chat.py` — routes to text or vision, uses OpenAIFormatter for text
+7. `api/v1/messages.py` — uses AnthropicFormatter, TEXT_GEN only
+8. `models/adapters/composable.py` — all adapter classes
+9. `models/pool.py` — creates adapters at load time for all model types
+10. `models/ir.py` — IR types
 
 ---
 

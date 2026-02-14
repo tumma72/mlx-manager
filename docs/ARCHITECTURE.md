@@ -10,6 +10,8 @@
 ## Table of Contents
 
 1. [Executive Summary](#1-executive-summary)
+   - [1.5 v1.2 Architecture Evolution: MLX Unified Server](#15-v12-architecture-evolution-mlx-unified-server)
+   - [1.6 3-Layer Adapter Pipeline Architecture](#16-3-layer-adapter-pipeline-architecture)
 2. [Problem Statement](#2-problem-statement)
 3. [Solution Overview](#3-solution-overview)
 4. [System Architecture](#4-system-architecture)
@@ -85,7 +87,13 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
 |  +---------+--------+  +---------+--------+  +-----------+--------+  |
 |            |                     |                       |           |
 |  +---------v---------------------v-----------------------v--------+  |
-|  |                    Protocol Translator                         |  |
+|  |              3-Layer Adapter Pipeline (per request)            |  |
+|  | Layer 3: ProtocolFormatter (OpenAI | Anthropic)               |  |
+|  |          ↓ IR → Protocol-specific SSE chunks                   |  |
+|  | Layer 2: StreamProcessor (request-scoped state)                |  |
+|  |          ↓ Tokens → StreamEvent (IR)                           |  |
+|  | Layer 1: ModelAdapter (model-scoped, persistent)               |  |
+|  |          ↓ Messages → PreparedInput | Complete → AdapterResult |  |
 |  +---------------------------+------------------------------------+  |
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
@@ -96,6 +104,7 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
 |  +---------------------------v------------------------------------+  |
 |  |                    Model Pool Manager                          |  |
 |  |  Hot Models (LRU) | Memory Pressure Monitor | On-Demand Load   |  |
+|  |  Each model has 1 persistent adapter instance                  |  |
 |  +---------------------------+------------------------------------+  |
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
@@ -105,12 +114,14 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
 |  |                    Model Adapters (per family)                 |  |
-|  |  Llama | Qwen | Mistral | Gemma | VisionAddOn                  |  |
+|  |  Text: Qwen | GLM4 | Llama | Gemma | Mistral | Liquid          |  |
+|  |  Vision: QwenVision | GemmaVision (extend text adapters)       |  |
+|  |  Embeddings | Audio (TTS/STT)                                  |  |
 |  +---------------------------+------------------------------------+  |
 |                              |                                       |
 |  +---------------------------v------------------------------------+  |
 |  |                    MLX Libraries                               |  |
-|  |  mlx-lm | mlx-vlm | mlx-embeddings | MLX Core                  |  |
+|  |  mlx-lm | mlx-vlm | mlx-embeddings | mlx-audio | MLX Core      |  |
 |  +---------------------------------------------------------------+  |
 |                                                                      |
 |  +---------------------------------------------------------------+  |
@@ -147,6 +158,413 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
 4. **Phase 10: Dual Protocol** — Anthropic API, cloud fallback routing
 5. **Phase 11: Configuration** — UI for pool, providers, routing rules
 6. **Phase 12: Hardening** — LogFire metrics, error handling, audit logging
+
+---
+
+## 1.6 3-Layer Adapter Pipeline Architecture
+
+> **Status:** Active architecture (2026-02)
+> **Scope:** MLX Server inference pipeline design
+
+### Overview
+
+The MLX Server uses a **3-layer streaming pipeline** that cleanly separates concerns between model-specific processing, request-scoped streaming state, and protocol formatting. This architecture unifies all model types (text, vision, embeddings, audio) under a single adapter abstraction while maintaining protocol independence.
+
+### Design Principles
+
+1. **1 Model + 1 Adapter Instance**: Each loaded model gets exactly one adapter instance, configured once at load time and reused across all requests
+2. **Request-Scoped Sessions**: Each request gets its own StreamProcessor + ProtocolFormatter instances for isolated state
+3. **Protocol-Neutral IR**: Intermediate representation (IR) types flow through the pipeline, eliminating protocol awareness from adapters
+4. **No Duplication**: Stream events flow through the pipeline without buffering or copying
+5. **Vision = Text + Multimodal Input**: Vision models are text adapters with image/video preprocessing, not a separate category
+
+### The 3 Layers
+
+#### Layer 1: ModelAdapter (model-scoped, persistent)
+
+**Lifecycle**: Created once at model load time, lives in `LoadedModel.adapter`
+
+**Responsibility**: Full pipeline ownership for both INPUT preparation and OUTPUT processing
+
+**Key Methods**:
+```python
+class ModelAdapter(ABC):
+    """Base adapter for all model types."""
+
+    # INPUT: Prepare request for generation
+    @abstractmethod
+    def prepare_input(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        **kwargs
+    ) -> PreparedInput:
+        """Convert messages to model-ready input (chat template + tokenization)."""
+        ...
+
+    # OUTPUT: Create request-scoped processor
+    @abstractmethod
+    def create_stream_processor(self) -> StreamProcessor:
+        """Factory method for per-request streaming processor."""
+        ...
+
+    # OUTPUT: Non-streaming processing
+    @abstractmethod
+    def process_complete(self, raw_output: str) -> AdapterResult:
+        """Process complete (non-streaming) generation output."""
+        ...
+
+    # Pre-computed configuration
+    stop_tokens: list[str]  # Model-specific stop sequences
+    stream_markers: dict[str, str]  # Patterns for streaming detection
+```
+
+**Configuration**: Adapters compose family-specific parsers and configuration:
+```python
+class QwenAdapter(TextAdapter):
+    def __init__(
+        self,
+        tokenizer: PreTrainedTokenizer,
+        tool_parser: ToolCallParser | None = None,
+        thinking_parser: ThinkingParser | None = None,
+    ):
+        self.tokenizer = tokenizer
+        self.tool_parser = tool_parser
+        self.thinking_parser = thinking_parser
+        self.stop_tokens = ["<|im_end|>", "<|endoftext|>"]
+        self.stream_markers = {
+            "thinking_start": "<think>",
+            "thinking_end": "</think>",
+            "tool_call_start": "<tool_call>",
+        }
+```
+
+**Model Type Coverage**:
+- **TEXT_GEN**: Message conversion, chat template, tool/thinking parsing, response cleaning
+- **VISION**: Extends text adapters with image/video preprocessing, shares output pipeline
+- **EMBEDDINGS**: Simple tokenization, no chat template or parsing
+- **AUDIO**: Direct audio preprocessing, format-specific output handling
+
+**Vision Integration**:
+Vision models are NOT a separate adapter category. They extend text adapters:
+```python
+class QwenVisionAdapter(QwenAdapter):
+    """Qwen2-VL extends Qwen text adapter with vision input."""
+
+    def prepare_input(self, messages: list[dict], **kwargs) -> PreparedInput:
+        # Process images/videos first
+        processed_messages = self._process_vision_content(messages)
+        # Use parent text adapter for chat template
+        return super().prepare_input(processed_messages, **kwargs)
+```
+
+This means vision models share:
+- Tool call parsing (same `tool_parser`)
+- Thinking extraction (same `thinking_parser`)
+- Response cleaning (same post-processing)
+- Streaming logic (same `StreamProcessor`)
+
+#### Layer 2: StreamProcessor (request-scoped, ephemeral)
+
+**Lifecycle**: Created per-request via `adapter.create_stream_processor()`
+
+**Responsibility**: Incremental token-by-token parsing with stateful pattern matching
+
+**Key Methods**:
+```python
+class StreamProcessor(ABC):
+    """Per-request streaming state manager."""
+
+    @abstractmethod
+    def feed(self, token: str) -> StreamEvent:
+        """
+        Process next token, update internal state, yield IR event.
+
+        Returns:
+            StreamEvent: Protocol-neutral event (content | reasoning | tool_call_delta)
+        """
+        ...
+
+    @abstractmethod
+    def finalize(self) -> AdapterResult:
+        """
+        Finalize processing after stream ends.
+
+        Returns:
+            AdapterResult: Complete IR with extracted data
+        """
+        ...
+```
+
+**State Management**: Each processor maintains:
+- `accumulated_text`: Full output buffer
+- `current_content`: Current content chunk being built
+- `current_reasoning`: Reasoning buffer (if in <think> mode)
+- `tool_call_buffer`: Active tool call being parsed
+- `pattern_buffers`: Partial pattern matches across token boundaries
+
+**Example Flow**:
+```python
+# Request 1 (streaming)
+processor1 = adapter.create_stream_processor()
+for token in model.generate(...):
+    event = processor1.feed(token)  # -> StreamEvent
+    formatter.format_stream_event(event)  # -> SSE chunk
+result = processor1.finalize()  # -> AdapterResult
+
+# Request 2 (parallel, same model)
+processor2 = adapter.create_stream_processor()  # Independent state
+for token in model.generate(...):
+    event = processor2.feed(token)
+    formatter.format_stream_event(event)
+result = processor2.finalize()
+```
+
+#### Layer 3: ProtocolFormatter (request-scoped, pluggable)
+
+**Lifecycle**: Created per-request by router based on API endpoint
+
+**Responsibility**: Convert protocol-neutral IR to protocol-specific responses
+
+**Key Methods**:
+```python
+class ProtocolFormatter(ABC):
+    """Protocol-specific response formatting."""
+
+    @abstractmethod
+    def format_stream_event(self, event: StreamEvent) -> str:
+        """Convert IR stream event to protocol SSE chunk."""
+        ...
+
+    @abstractmethod
+    def format_response(self, result: AdapterResult) -> dict:
+        """Convert IR result to protocol-specific response."""
+        ...
+```
+
+**Implementations**:
+
+1. **OpenAIFormatter**: Formats to OpenAI API spec
+   ```python
+   class OpenAIFormatter(ProtocolFormatter):
+       def format_stream_event(self, event: StreamEvent) -> str:
+           if event.type == "content":
+               chunk = {
+                   "id": self.request_id,
+                   "object": "chat.completion.chunk",
+                   "choices": [{
+                       "index": 0,
+                       "delta": {"content": event.content},
+                       "finish_reason": None,
+                   }],
+               }
+               return f"data: {json.dumps(chunk)}\n\n"
+           ...
+   ```
+
+2. **AnthropicFormatter**: Formats to Anthropic API spec (absorbs old ProtocolTranslator)
+   ```python
+   class AnthropicFormatter(ProtocolFormatter):
+       def format_stream_event(self, event: StreamEvent) -> str:
+           if event.type == "content":
+               chunk = {
+                   "type": "content_block_delta",
+                   "index": 0,
+                   "delta": {
+                       "type": "text_delta",
+                       "text": event.content,
+                   },
+               }
+               return f"event: content_block_delta\ndata: {json.dumps(chunk)}\n\n"
+           ...
+   ```
+
+### Intermediate Representation (IR) Types
+
+Protocol-neutral data structures that flow through the pipeline:
+
+```python
+# Streaming events
+@dataclass
+class StreamEvent:
+    """Single event emitted during streaming."""
+    type: Literal["content", "reasoning_content", "tool_call_delta"]
+    content: str | None = None
+    reasoning_content: str | None = None
+    tool_call_delta: dict | None = None
+
+# Complete results (polymorphic hierarchy)
+class AdapterResult(ABC):
+    """Base result type for all adapters."""
+    finish_reason: str
+
+class TextResult(AdapterResult):
+    """Text generation result (TEXT_GEN and VISION)."""
+    content: str
+    reasoning_content: str | None = None
+    tool_calls: list[dict] | None = None
+    finish_reason: str = "stop"
+
+class EmbeddingResult(AdapterResult):
+    """Embedding generation result."""
+    embeddings: list[list[float]]
+    dimensions: int
+    finish_reason: str = "stop"
+
+class AudioResult(AdapterResult):
+    """TTS audio generation result."""
+    audio_bytes: bytes
+    sample_rate: int
+    format: str
+    finish_reason: str = "stop"
+
+class TranscriptionResult(AdapterResult):
+    """STT transcription result."""
+    text: str
+    segments: list[dict] | None = None
+    finish_reason: str = "stop"
+```
+
+### Request Flow (Streaming Text Example)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 1. Router receives POST /v1/chat/completions                     │
+│    - Creates OpenAIFormatter                                     │
+│    - Extracts messages, tools, etc.                              │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 2. Get model from pool                                           │
+│    - loaded_model = pool.get_model(model_id)                     │
+│    - adapter = loaded_model.adapter  (created at load time)      │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 3. Adapter prepares input                                        │
+│    - prepared = adapter.prepare_input(messages, tools)           │
+│    - PreparedInput(prompt="<chat template>", token_ids=[...])    │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 4. Generate tokens (MLX inference)                               │
+│    - for token in model.generate(prepared.token_ids):            │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 5. Create request-scoped processor                               │
+│    - stream_processor = adapter.create_stream_processor()        │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 6. Stream processing loop                                        │
+│    for token in token_stream:                                    │
+│        event = stream_processor.feed(token)  # -> StreamEvent    │
+│        chunk = formatter.format_stream_event(event)  # -> SSE    │
+│        yield chunk                                               │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 7. Finalize                                                      │
+│    - result = stream_processor.finalize()  # -> TextResult (IR)  │
+│    - final_chunk = formatter.format_response(result)  # -> SSE   │
+│    - yield final_chunk                                           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Parallel Request Handling
+
+The architecture supports multiple concurrent requests to the same model:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LoadedModel (Pool)                           │
+│  ├─ model: nn.Module                                            │
+│  ├─ adapter: QwenAdapter  ←── SHARED across all requests        │
+│  ├─ tokenizer: PreTrainedTokenizer                              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                ┌─────────────┴─────────────┐
+                │                           │
+                ▼                           ▼
+┌───────────────────────────┐   ┌───────────────────────────┐
+│ Request 1 (OpenAI)        │   │ Request 2 (Anthropic)     │
+│ ├─ stream_processor1      │   │ ├─ stream_processor2      │
+│ ├─ OpenAIFormatter        │   │ ├─ AnthropicFormatter     │
+│ └─ Independent state      │   │ └─ Independent state      │
+└───────────────────────────┘   └───────────────────────────┘
+```
+
+Requests are queued, each gets:
+- Own `StreamProcessor` instance (isolated state)
+- Own `ProtocolFormatter` instance (protocol-specific formatting)
+- Shared `ModelAdapter` instance (immutable configuration)
+
+### Key Changes from Previous Architecture
+
+1. **Adapters Own the Entire Pipeline**: Previously, adapters only handled message conversion. Now they own both input preparation AND output processing via `create_stream_processor()`.
+
+2. **StreamingProcessor Absorbed into Adapter**: The standalone `StreamingProcessor` is now created and managed by adapters as `StreamProcessor` (factory pattern).
+
+3. **ProtocolTranslator Becomes ProtocolFormatter**: Protocol conversion logic moves from a centralized translator to pluggable formatters, absorbed into the formatter layer.
+
+4. **Vision Is Text + Input**: Vision adapters extend text adapters instead of being separate. All vision models share text output processing (thinking, tools, cleaning).
+
+5. **Unified Model Types**: All model types (text, vision, embeddings, audio) use the same adapter abstraction with type-specific result classes.
+
+6. **Inference Service Becomes Orchestrator**: The inference service no longer handles model-specific logic. It becomes a thin layer that:
+   - Gets model from pool
+   - Calls `adapter.prepare_input()`
+   - Generates tokens
+   - Pipes through `stream_processor` → `protocol_formatter`
+
+### Code Organization
+
+```
+mlx_server/
+├── models/
+│   ├── adapters/
+│   │   ├── base.py              # ModelAdapter, StreamProcessor ABCs
+│   │   ├── text.py              # TextAdapter base class
+│   │   ├── vision.py            # VisionAdapter base (extends TextAdapter)
+│   │   ├── embeddings.py        # EmbeddingsAdapter
+│   │   ├── audio.py             # AudioAdapter (TTS/STT)
+│   │   ├── families/
+│   │   │   ├── qwen.py          # QwenAdapter, QwenVisionAdapter
+│   │   │   ├── glm4.py          # GLM4Adapter
+│   │   │   ├── llama.py         # LlamaAdapter
+│   │   │   ├── gemma.py         # GemmaAdapter
+│   │   │   └── ...
+│   │   └── registry.py          # create_adapter() factory
+│   ├── parsers/                 # Existing parser architecture (unchanged)
+│   │   ├── tool_calls.py        # ToolCallParser ABC
+│   │   ├── thinking.py          # ThinkingParser ABC
+│   │   └── implementations/
+│   └── pool.py                  # Model pool (LoadedModel.adapter field)
+├── routers/
+│   ├── openai.py                # Creates OpenAIFormatter
+│   ├── anthropic.py             # Creates AnthropicFormatter
+│   └── ...
+├── protocol/
+│   ├── formatters.py            # ProtocolFormatter ABC + implementations
+│   └── ir.py                    # StreamEvent, AdapterResult hierarchy
+└── services/
+    └── inference.py             # Thin orchestrator (get, prepare, generate, pipe)
+```
+
+### What Stays Unchanged
+
+- **Parser Architecture**: `ToolCallParser` and `ThinkingParser` abstractions remain, composed into adapters
+- **Family Registry**: `create_adapter()` factory and `FAMILY_REGISTRY` pattern
+- **Pool Loading**: `LoadedModel` instances created at model load time
+- **Metal Thread Generation**: Queue-based threading for MLX Metal affinity
+- **Probe Logic**: Model family/parser detection and storage in DB
 
 ---
 

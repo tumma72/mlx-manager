@@ -30,6 +30,12 @@ The companion blueprint for the embedded inference server lives at
    and derived user state. All data is fetched on demand from the API. Route
    protection happens at both the frontend (layout guards) and backend
    (dependency injection).
+6. **Unified adapter pipeline for all model types**: mlx_server uses a 3-layer
+   architecture (ModelAdapter → StreamProcessor → ProtocolFormatter) that eliminates
+   model-type conditionals in inference logic. Vision models are text models with
+   multimodal input preprocessing. All model types share the same output pipeline:
+   tool parsing, thinking extraction, protocol translation. Adapters are created once
+   at model load and reused across requests — zero per-request overhead.
 
 ---
 
@@ -53,6 +59,7 @@ mlx_manager/
     models.py               # /api/models/search, download, local, SSE progress
     servers.py              # /api/servers — model pool control
     chat.py                 # POST /api/chat/completions — SSE streaming
+                            # Selects protocol formatter, pipes through adapter pipeline
     settings.py             # Cloud providers, routing rules, pool config, timeouts
     system.py               # System info, launchd, audit log proxy, WebSocket
     mcp.py                  # MCP tool listing and execution
@@ -85,6 +92,17 @@ mlx_manager/
     logfire_config.py       # configure_logfire(), instrument_*() helpers
 
   mlx_server/               # Embedded inference server (see mlx_server/ARCHITECTURE.md)
+                            # Unified 3-layer adapter pipeline for all model types
+    routers/                # OpenAI + Anthropic compatible API endpoints
+    services/               # Inference orchestration (text, vision, embeddings, audio)
+                            # All services use same adapter pipeline — model-type agnostic
+    models/                 # Model pool, loaded model state, adapter pipeline
+      adapters/             # L1: ModelAdapter (load-time, persistent in LoadedModel)
+      processors/           # L2: StreamProcessor (per-request, created by adapter)
+      pool.py               # Model pool with LRU eviction, creates adapters at load
+    parsers/                # Tool call and thinking parsers (composed into L1 adapters)
+    formatters/             # L3: ProtocolFormatter (per-request, created by router)
+                            # OpenAI + Anthropic translation of StreamEvent IR → SSE
   static/                   # Embedded frontend build (production only)
 ```
 
@@ -142,18 +160,35 @@ frontend/src/
 ├─────────────────────────────────────────────────────────────────┤
 │                     API / Router Layer                           │
 │  Thin endpoints. Validate request schemas. Inject auth via      │
-│  Depends(get_current_user). Dispatch to services. Format        │
-│  responses. Never contain business logic.                       │
+│  Depends(get_current_user). Select protocol formatters.         │
+│  Dispatch to services. Never contain business logic.            │
 ├─────────────────────────────────────────────────────────────────┤
 │                      Service Layer                              │
 │  Business logic singletons. Auth service (JWT, passwords).      │
 │  Encryption service (API keys). HF client (model lifecycle).    │
 │  Health checker (background monitoring). Launchd manager.       │
+│  Probe service (capability discovery). Inference orchestration. │
+├─────────────────────────────────────────────────────────────────┤
+│                mlx_server Adapter Pipeline                       │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ L1: ModelAdapter (persistent, in LoadedModel)             │ │
+│  │   • prepare_input() — chat template, tools, multimodal   │ │
+│  │   • create_stream_processor() — per-request factory      │ │
+│  │   • Composes: tool_parser, thinking_parser               │ │
+│  ├───────────────────────────────────────────────────────────┤ │
+│  │ L2: StreamProcessor (per-request)                         │ │
+│  │   • feed(token) → StreamEvent (IR)                        │ │
+│  │   • finalize() → AdapterResult                            │ │
+│  ├───────────────────────────────────────────────────────────┤ │
+│  │ L3: ProtocolFormatter (per-request, from router)          │ │
+│  │   • format_stream_event() → OpenAI/Anthropic SSE         │ │
+│  │   • format_response() → protocol-specific JSON           │ │
+│  └───────────────────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────┤
 │                     Data / Model Layer                           │
 │  SQLModel entities (User, ServerProfile, Download,              │
-│  CloudCredential, BackendMapping, ServerConfig, Setting).       │
-│  Async SQLite sessions via aiosqlite.                           │
+│  CloudCredential, BackendMapping, ServerConfig, Setting,        │
+│  ModelCapabilities). Async SQLite sessions via aiosqlite.       │
 ├─────────────────────────────────────────────────────────────────┤
 │                   Infrastructure Layer                           │
 │  Configuration (pydantic-settings). Logging (loguru).           │
@@ -167,8 +202,12 @@ frontend/src/
 - Routers import from services and models, never from `mlx_server` internals.
 - Services import from models and config, never from routers.
 - The only integration point with `mlx_server` is through its public Python API
-  (`get_model_pool()`, `generate_chat_completion()`, etc.) — called from routers
-  or services that bridge the two components (chat, servers, system).
+  (`get_model_pool()`, inference service functions, protocol formatters) — called
+  from routers or services that bridge the two components (chat, servers, system).
+- mlx_server implements a 3-layer adapter pipeline (ModelAdapter → StreamProcessor
+  → ProtocolFormatter) that makes the inference layer model-type agnostic. Routers
+  select protocol formatters and pipe through them; all model-specific logic lives
+  in the adapter layer.
 
 ---
 
@@ -327,25 +366,41 @@ Frontend: fetch("/api/chat/completions", { method: "POST", body, headers })
     ▼
 chat_router.chat_completions()
     │  Depends(get_current_user)
-    │  Detect model type (text vs vision)
+    │  Select protocol formatter (OpenAI / Anthropic) based on request
     ▼
-mlx_server.services.inference.generate_chat_completion()
-    │  or mlx_server.services.vision.generate_vision_completion()
+mlx_server.services.inference.generate_*()
+    │  ← Routes to correct service based on model type
+    │  ← All model types use same 3-layer adapter pipeline
     │
-    │  The service reads the adapter from LoadedModel — NO per-request
-    │  model detection, adapter creation, or parser selection. The adapter
-    │  was created at load time with the correct parsers already injected
-    │  (see mlx_server/ARCHITECTURE.md §6 and §10).
-    │
-    │  adapter = loaded.adapter
-    │  prompt = adapter.apply_chat_template(messages, tools=tools)
-    │  markers = adapter.get_stream_markers()  # combined tool + thinking
-    │  → single-pass StreamingProcessor with markers
-    │  → finalize via adapter.tool_parser.extract() / thinking_parser.extract()
+    │  LAYER 1: ModelAdapter (persistent, stored in LoadedModel)
+    │  ├── adapter.prepare_input(messages, tools) → PreparedInput
+    │  │   ├── Apply chat template
+    │  │   ├── Format tool definitions
+    │  │   └── Prepare multimodal inputs (vision models)
+    │  │
+    │  ├── model.generate(prepared_input) → raw tokens
+    │  │
+    │  └── LAYER 2: StreamProcessor (per-request)
+    │      ├── processor = adapter.create_stream_processor()
+    │      ├── processor.feed(token) → StreamEvent (IR)
+    │      │   ├── Parse tool calls (using adapter.tool_parser)
+    │      │   ├── Extract thinking blocks (using adapter.thinking_parser)
+    │      │   └── Clean response text
+    │      │
+    │      └── LAYER 3: ProtocolFormatter (per-request)
+    │          └── formatter.format_stream_event(StreamEvent) → SSE chunk
     ▼
 StreamingResponse (text/event-stream):
-    events: thinking, thinking_done, response, tool_call, tool_calls_done, done, error
+    OpenAI: data: {"choices":[{"delta":{"content":"..."}}]}
+    Anthropic: data: {"type":"content_block_delta","delta":{"text":"..."}}
 ```
+
+**Key principles**:
+- Model adapter created once at load time, reused across all requests
+- StreamProcessor + ProtocolFormatter created fresh per request
+- Vision models use same TEXT output pipeline with multimodal INPUT preprocessing
+- Protocol translation happens at formatter layer, not in adapter/service
+- No model type conditionals in streaming logic — unified pipeline
 
 Note: Chat streaming uses POST + fetch (not EventSource), so the Authorization
 header works normally. No query parameter needed.
@@ -450,7 +505,107 @@ which internally delegates to `parser.extract()` — the same code path that
 inference uses. If the model family's default parser fails, the probe iterates
 **all registered parsers** as a fallback before concluding "no tool support."
 
-### 6.3 Auth Service Contract
+### 6.3 mlx_server Adapter Pipeline Integration
+
+The embedded `mlx_server` component uses a 3-layer adapter pipeline that makes
+inference model-type agnostic. All model types (TEXT_GEN, VISION, EMBEDDINGS,
+AUDIO) flow through the same pipeline architecture:
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│ LAYER 1: ModelAdapter (model-scoped, persistent)                 │
+│ ─────────────────────────────────────────────────────────────     │
+│ • Created once at model load, stored in LoadedModel.adapter      │
+│ • Configured with family-specific parsers, stop tokens, markers  │
+│ • Owns entire INPUT preparation AND OUTPUT processing pipeline   │
+│ • Vision models = Text adapters with multimodal input handling   │
+│                                                                   │
+│ Methods:                                                          │
+│   prepare_input(messages, tools, ...) → PreparedInput            │
+│   create_stream_processor() → StreamProcessor                    │
+│   process_complete(raw_output) → AdapterResult                   │
+│                                                                   │
+│ Composes: tool_parser, thinking_parser                           │
+├───────────────────────────────────────────────────────────────────┤
+│ LAYER 2: StreamProcessor (request-scoped)                        │
+│ ─────────────────────────────────────────────────────────────     │
+│ • Created per-request via adapter.create_stream_processor()      │
+│ • Holds per-request state: accumulated text, pattern buffers     │
+│ • Uses adapter's parsers to extract tools/thinking in real-time  │
+│                                                                   │
+│ Methods:                                                          │
+│   feed(token) → StreamEvent                                       │
+│   finalize() → AdapterResult                                      │
+│                                                                   │
+│ Replaces: old StreamingProcessor                                 │
+├───────────────────────────────────────────────────────────────────┤
+│ LAYER 3: ProtocolFormatter (request-scoped)                      │
+│ ─────────────────────────────────────────────────────────────     │
+│ • OpenAIFormatter / AnthropicFormatter                           │
+│ • Created per-request, plugged in by router                      │
+│ • Translates IR types to protocol-specific SSE chunks            │
+│                                                                   │
+│ Methods:                                                          │
+│   format_stream_event(StreamEvent) → ProtocolChunk               │
+│   format_response(AdapterResult) → ProtocolResponse              │
+│                                                                   │
+│ Absorbs: old ProtocolTranslator                                  │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**IR (Intermediate Representation) Types:**
+
+- `StreamEvent`: Union of `content | reasoning_content | tool_call_delta`
+- `AdapterResult` hierarchy:
+  - `TextResult` (TEXT_GEN + VISION outputs)
+  - `EmbeddingResult` (EMBEDDINGS)
+  - `AudioResult` (TTS)
+  - `TranscriptionResult` (STT)
+
+**Request Flow:**
+
+```
+Router
+  │
+  ├─→ Select protocol formatter (OpenAI / Anthropic)
+  │
+  └─→ inference.generate_*()
+      │
+      ├─→ L1: adapter.prepare_input() → PreparedInput
+      │
+      ├─→ model.generate() → raw tokens
+      │
+      ├─→ L2: stream_processor.feed(token) → StreamEvent (IR)
+      │
+      └─→ L3: protocol_formatter.format(event) → SSE chunk
+```
+
+**Vision Model Integration:**
+
+Vision models are **text models with multimodal input preprocessing**. They:
+- Use the same TEXT_GEN adapter families (Qwen, Gemma, etc.)
+- Extend `prepare_input()` to handle image/video URLs
+- Share the same OUTPUT pipeline: tool parsing, thinking extraction, text cleaning
+- Are detected via `model_type=VISION` in capabilities, but use TEXT adapter logic
+
+**mlx_manager Integration Points:**
+
+| Layer            | Created By          | Lifetime       | Location                  |
+|------------------|---------------------|----------------|---------------------------|
+| ModelAdapter     | Model pool          | Model lifetime | `LoadedModel.adapter`     |
+| StreamProcessor  | Adapter per request | Request scope  | Inference service locals  |
+| ProtocolFormatter| Router per request  | Request scope  | Router locals             |
+
+The chat router (`routers/chat.py`) is now a thin orchestrator:
+1. Extract user, profile, protocol from request
+2. Create protocol formatter (`OpenAIFormatter` or `AnthropicFormatter`)
+3. Call `inference.generate_*()` with formatter
+4. Service uses `loaded.adapter` directly — no model detection at request time
+5. Stream events flow: adapter → processor → formatter → SSE
+
+See `mlx_server/ARCHITECTURE.md` for complete pipeline specification.
+
+### 6.4 Auth Service Contract
 
 ```python
 # auth_service.py — stateless functions, no class needed
@@ -468,7 +623,7 @@ decode_token(token: str) -> dict | None
     # Validate signature + expiry, return payload or None
 ```
 
-### 6.4 Encryption Service Contract
+### 6.5 Encryption Service Contract
 
 ```python
 # encryption_service.py — stateless functions with cached key derivation
@@ -483,7 +638,7 @@ clear_cache() -> None
     # Clear LRU-cached JWE key (for testing)
 ```
 
-### 6.5 Download Infrastructure
+### 6.6 Download Infrastructure
 
 The download system bridges async FastAPI with synchronous `huggingface_hub`:
 
@@ -543,10 +698,14 @@ full schema).
 | `practical_max_tokens` | `int?`      | estimated from KV cache + available memory         |
 | `probe_version` *      | `int`       | schema version (currently 3) for re-probe triggers |
 
-The `model_family` and parser ID fields replace the per-request `detect_model_family()`
-and `get_adapter()` calls. At load time, the pool reads these fields and passes them
-to `create_adapter()` to build a fully configured adapter instance (see
-`mlx_server/ARCHITECTURE.md` §6.3).
+The `model_family` and parser ID fields enable zero-overhead adapter creation at load
+time. The pool reads these fields and passes them to `create_adapter()` to build a
+fully configured adapter instance with correct parsers already injected. The adapter
+is stored in `LoadedModel.adapter` and reused for all requests — no per-request model
+detection or parser selection. Vision models store `model_type=VISION` but use the
+same adapter families as text models (Qwen, Gemma, etc.) with multimodal input
+preprocessing (see §6.3 and `mlx_server/ARCHITECTURE.md` for the complete 3-layer
+pipeline specification).
 
 ### 7.3 Session Management
 
@@ -879,3 +1038,88 @@ These properties must hold at all times:
 | **Production** | `mlx-manager serve`      | Backend on 10242, embedded frontend static files      |
 | **Menubar**    | `mlx-manager menubar`    | macOS status bar app, auto-starts server              |
 | **Service**    | `mlx-manager install-service` | launchd auto-start on login                      |
+
+---
+
+## 14. Adapter Pipeline Benefits
+
+The 3-layer adapter pipeline architecture delivers significant architectural improvements:
+
+### 14.1 Eliminated Per-Request Overhead
+
+**Before:**
+- Every request: `detect_model_family()` + `get_adapter()` + parser selection
+- Protocol translation scattered across routers and services
+- Separate streaming processors for each model type
+- Vision models treated as completely different code path
+
+**After:**
+- Zero per-request detection — adapter created once at model load
+- Protocol translation isolated to L3 formatters
+- Single streaming pipeline for all model types
+- Vision = Text with multimodal input preprocessing
+
+### 14.2 Clean Separation of Concerns
+
+| Layer | Responsibility | Lifetime | State |
+|-------|----------------|----------|-------|
+| L1: ModelAdapter | Model-specific logic (template, parsers, markers) | Model load → unload | Stateless per request |
+| L2: StreamProcessor | Per-request accumulation, token → IR events | Request scope | Stateful |
+| L3: ProtocolFormatter | Protocol translation, IR → OpenAI/Anthropic | Request scope | Stateless |
+
+### 14.3 Unified Model Type Handling
+
+All model types flow through the same pipeline:
+
+```
+TEXT_GEN:    messages → adapter.prepare_input() → generate() → tokens
+                                                              ↓
+VISION:      messages + images → prepare_input() → generate() → tokens
+                                                              ↓
+                                        L2: StreamProcessor.feed(token)
+                                                              ↓
+                                        StreamEvent (IR: content | tools | thinking)
+                                                              ↓
+                                        L3: ProtocolFormatter.format()
+                                                              ↓
+                                        OpenAI or Anthropic SSE chunk
+
+EMBEDDINGS:  texts → adapter.prepare_input() → encode() → vectors → EmbeddingResult
+AUDIO:       text → adapter.prepare_input() → synthesize() → audio → AudioResult
+```
+
+The inference service becomes model-type agnostic — it calls `adapter.prepare_input()`,
+runs the model, feeds tokens to `stream_processor`, and pipes events through the
+`protocol_formatter`. No type switching in the hot path.
+
+### 14.4 Simplified Testing
+
+- Adapter tests verify model-specific logic in isolation (templates, parsers)
+- StreamProcessor tests use mock adapters and verify IR generation
+- ProtocolFormatter tests use mock events and verify SSE format
+- Integration tests compose all three layers with minimal setup
+
+### 14.5 Easier Extension
+
+**Adding a new model family:**
+1. Create adapter subclass with family-specific template
+2. Register parsers (or reuse existing)
+3. Add to `FAMILY_REGISTRY`
+4. Done — no changes to routers, services, or formatters
+
+**Adding a new protocol:**
+1. Implement `ProtocolFormatter` interface
+2. Add protocol detection to router
+3. Done — no changes to adapters or services
+
+### 14.6 Vision Model Unification
+
+Vision models are no longer a special case:
+- Same adapter families (Qwen, Gemma, etc.)
+- Same output pipeline (tool parsing, thinking extraction, text cleaning)
+- Only difference: `prepare_input()` handles image/video URLs
+- No separate `vision.py` inference service — unified with text generation
+
+This eliminates code duplication and ensures vision models get all the same
+capabilities (tool calling, thinking, streaming) as text models without
+separate implementation paths.
