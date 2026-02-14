@@ -1,4 +1,4 @@
-"""BatchRequest dataclass for continuous batching.
+"""BatchRequest model for continuous batching.
 
 Represents a single generation request with state management,
 streaming support, and lifecycle tracking.
@@ -8,22 +8,22 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from mlx_manager.mlx_server.services.batching.block import BlockTable
 from mlx_manager.mlx_server.services.batching.types import Priority, RequestStatus
 
-if TYPE_CHECKING:
-    from mlx_manager.mlx_server.services.batching.block import BlockTable
 
-
-@dataclass
-class BatchRequest:
+class BatchRequest(BaseModel):
     """A request in the continuous batching queue.
 
     Tracks request state through its lifecycle from submission
     to completion, including generated tokens and timing information.
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Required fields
     request_id: str
@@ -34,16 +34,16 @@ class BatchRequest:
 
     # State tracking
     status: RequestStatus = RequestStatus.WAITING
-    generated_tokens: list[int] = field(default_factory=list)
+    generated_tokens: list[int] = Field(default_factory=list)
 
     # Streaming output - None signals completion
-    output_queue: asyncio.Queue[dict[str, Any] | None] = field(
+    output_queue: asyncio.Queue[dict[str, Any] | None] = Field(
         default_factory=asyncio.Queue,
         repr=False,
     )
 
     # Timing
-    created_at: float = field(default_factory=time.time)
+    created_at: float = Field(default_factory=time.time)
     started_at: float | None = None
 
     # Block management (for paged KV cache)

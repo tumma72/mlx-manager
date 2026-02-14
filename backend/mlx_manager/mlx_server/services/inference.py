@@ -14,10 +14,10 @@ Extended capabilities:
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
-from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
+from pydantic import BaseModel, ConfigDict
 
 from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
 
@@ -29,8 +29,7 @@ except ImportError:  # pragma: no cover
     LOGFIRE_AVAILABLE = False  # pragma: no cover
 
 
-@dataclass
-class InferenceResult:
+class InferenceResult(BaseModel):
     """Non-streaming inference result with token counts."""
 
     result: TextResult
@@ -38,9 +37,10 @@ class InferenceResult:
     completion_tokens: int
 
 
-@dataclass
-class _GenContext:
+class _GenContext(BaseModel):
     """Shared generation context prepared once per request."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: Any
     tokenizer: Any
@@ -54,6 +54,7 @@ class _GenContext:
     completion_id: str
     created: int
     tools: list[dict[str, Any]] | None
+    pixel_values: Any | None = None  # Vision: preprocessed images from PreparedInput
 
 
 async def _prepare_generation(
@@ -65,6 +66,7 @@ async def _prepare_generation(
     stop: list[str] | None = None,
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
+    images: list[Any] | None = None,
 ) -> _GenContext:
     """Prepare shared context for chat generation (model, adapter, prompt, stop tokens)."""
     from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -85,6 +87,7 @@ async def _prepare_generation(
         messages,
         tools=tools,
         enable_prompt_injection=enable_prompt_injection,
+        images=images,
     )
 
     if tools and not (adapter.supports_tool_calling() or enable_prompt_injection):
@@ -121,6 +124,7 @@ async def _prepare_generation(
         completion_id=completion_id,
         created=created,
         tools=tools,
+        pixel_values=prepared.pixel_values,
     )
 
 
@@ -136,6 +140,7 @@ async def generate_chat_stream(
     stop: list[str] | None = None,
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
+    images: list[Any] | None = None,
 ) -> AsyncGenerator[StreamEvent | TextResult, None]:
     """Streaming chat generation returning IR events.
 
@@ -147,7 +152,15 @@ async def generate_chat_stream(
     Callers apply a ProtocolFormatter to convert IR to protocol-specific SSE events.
     """
     ctx = await _prepare_generation(
-        model_id, messages, max_tokens, temperature, top_p, stop, tools, enable_prompt_injection
+        model_id,
+        messages,
+        max_tokens,
+        temperature,
+        top_p,
+        stop,
+        tools,
+        enable_prompt_injection,
+        images,
     )
 
     span_context = None
@@ -182,6 +195,7 @@ async def generate_chat_complete_response(
     stop: list[str] | None = None,
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
+    images: list[Any] | None = None,
 ) -> InferenceResult:
     """Non-streaming chat generation returning IR result.
 
@@ -189,7 +203,15 @@ async def generate_chat_complete_response(
     Callers apply a ProtocolFormatter to convert IR to protocol-specific response.
     """
     ctx = await _prepare_generation(
-        model_id, messages, max_tokens, temperature, top_p, stop, tools, enable_prompt_injection
+        model_id,
+        messages,
+        max_tokens,
+        temperature,
+        top_p,
+        stop,
+        tools,
+        enable_prompt_injection,
+        images,
     )
 
     span_context = None
@@ -224,6 +246,7 @@ async def generate_chat_completion(
     stream: bool = False,
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
+    images: list[Any] | None = None,
 ) -> AsyncGenerator[dict, None] | dict:
     """Generate a chat completion in OpenAI format.
 
@@ -243,6 +266,7 @@ async def generate_chat_completion(
         stop,
         tools,
         enable_prompt_injection,
+        images,
     )
 
     span_context = None
@@ -301,6 +325,36 @@ async def _stream_chat_ir(
     Yields StreamEvent for each token, then a final TextResult with
     finish_reason, tool_calls, and reasoning_content.
     """
+    if ctx.pixel_values is not None:
+        # Vision path: non-streaming generation, simulate streaming
+        from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+        def run_vision_generation() -> str:
+            """Run vision generation in dedicated thread (owns Metal context)."""
+            from mlx_vlm import generate as vlm_generate
+
+            response = vlm_generate(
+                ctx.model,
+                ctx.tokenizer,
+                ctx.prompt,
+                ctx.pixel_values,
+                max_tokens=ctx.max_tokens,
+                temp=ctx.temperature,
+                verbose=False,
+            )
+            return str(response.text)
+
+        response_text = await run_on_metal_thread(run_vision_generation, timeout=600.0)
+
+        # Yield the full response as a single content event
+        yield StreamEvent(type="content", content=response_text)
+
+        # Process with adapter for tool/thinking extraction
+        result = ctx.adapter.process_complete(response_text, "stop")
+        yield result
+        return
+
+    # Text path: existing streaming logic
     from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
     completion_tokens = 0
@@ -393,36 +447,59 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
     actual_tokenizer = getattr(ctx.tokenizer, "tokenizer", ctx.tokenizer)
     prompt_tokens = len(actual_tokenizer.encode(ctx.prompt))
 
-    def run_generation() -> tuple[str, str]:
-        """Run complete generation in dedicated thread (owns Metal context)."""
-        from mlx_lm import stream_generate
-        from mlx_lm.sample_utils import make_sampler
+    if ctx.pixel_values is not None:
+        # Vision path: use mlx_vlm.generate (blocking, not streaming)
+        def run_vision_generation() -> tuple[str, str]:
+            """Run vision generation in dedicated thread (owns Metal context)."""
+            from mlx_vlm import generate as vlm_generate
 
-        response_text = ""
-        finish_reason = "length"
+            response = vlm_generate(
+                ctx.model,
+                ctx.tokenizer,  # This is actually the Processor for vision models
+                ctx.prompt,
+                ctx.pixel_values,
+                max_tokens=ctx.max_tokens,
+                temp=ctx.temperature,
+                verbose=False,
+            )
+            return (str(response.text), "stop")
 
-        sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
+        response_text, finish_reason = await run_on_metal_thread(
+            run_vision_generation, timeout=600.0
+        )
+        completion_tokens = len(response_text.split())  # Rough estimate for vision
+    else:
+        # Text path: existing stream_generate logic
+        def run_generation() -> tuple[str, str]:
+            """Run complete generation in dedicated thread (owns Metal context)."""
+            from mlx_lm import stream_generate
+            from mlx_lm.sample_utils import make_sampler
 
-        for response in stream_generate(
-            ctx.model,
-            ctx.tokenizer,
-            ctx.prompt,
-            max_tokens=ctx.max_tokens,
-            sampler=sampler,
-        ):
-            token_id = getattr(response, "token", None)
-            token_text = getattr(response, "text", str(response))
+            response_text = ""
+            finish_reason = "length"
 
-            if token_id is not None and token_id in ctx.stop_token_ids:
-                finish_reason = "stop"
-                break
+            sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
 
-            response_text += token_text
+            for response in stream_generate(
+                ctx.model,
+                ctx.tokenizer,
+                ctx.prompt,
+                max_tokens=ctx.max_tokens,
+                sampler=sampler,
+            ):
+                token_id = getattr(response, "token", None)
+                token_text = getattr(response, "text", str(response))
 
-        return (response_text, finish_reason)
+                if token_id is not None and token_id in ctx.stop_token_ids:
+                    finish_reason = "stop"
+                    break
 
-    response_text, finish_reason = await run_on_metal_thread(run_generation)
-    completion_tokens = len(ctx.tokenizer.encode(response_text))
+                response_text += token_text
+
+            return (response_text, finish_reason)
+
+        response_text, finish_reason = await run_on_metal_thread(run_generation)
+        completion_tokens = len(ctx.tokenizer.encode(response_text))
 
     # Post-process with adapter.process_complete()
     adapter = ctx.adapter
@@ -506,6 +583,7 @@ async def _stream_chat_generate(
         completion_id=completion_id,
         created=created,
         tools=tools,
+        pixel_values=None,
     )
     formatter = OpenAIFormatter(model_id=model_id, request_id=completion_id)
     formatter.created = created
@@ -559,6 +637,7 @@ async def _generate_chat_complete(
         completion_id=completion_id,
         created=created,
         tools=tools,
+        pixel_values=None,
     )
     ir = await _complete_chat_ir(ctx)
     formatter = OpenAIFormatter(model_id=model_id, request_id=completion_id)

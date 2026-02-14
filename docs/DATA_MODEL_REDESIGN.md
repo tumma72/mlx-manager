@@ -959,9 +959,9 @@ class MLXServerSettings(BaseSettings):
 
 ## 8. Runtime Models (Inference Context)
 
-These are **in-process objects** that exist only during inference. They should be Pydantic BaseModel for validation and serialization, not dataclasses.
+These are **in-process objects** that exist only during inference. All have been converted to Pydantic BaseModel for validation and serialization consistency.
 
-### 8.1 Current Dataclasses -> Pydantic
+### 8.1 Runtime Models (all Pydantic BaseModel)
 
 ```mermaid
 classDiagram
@@ -1085,11 +1085,11 @@ The `Usage` class existing in both `openai.py` and `anthropic.py` with different
 | Pydantic BaseModel (DTOs + runtime) | 58 | ~54 | -4 (consolidated duplicates, +9 from dataclass conversion) |
 | Pydantic BaseModel (value objects) | 0 | 3 | +3 |
 | BaseSettings | 2 | 2 | 0 |
-| Dataclasses | 19 | **6** | -13 (9 converted to Pydantic, 4 deleted as dead code) |
+| Dataclasses | 19 | **0** | -19 (all converted to Pydantic or deleted as dead code) |
 | TypedDict | 8 | **0** | -8 (3 dead deleted Phase 1, 5 migrated Phase 6) |
 | **Total** | **~135** | **~75** | **-60** |
 
-The 6 remaining dataclasses are justified: `LoadedModel` (mutable + Any-typed model/tokenizer), `StreamEvent` (hot path performance), `QueueEntry` (`order=True` for heapq), `KVBlock`/`BlockTable` (memory management primitives), `BatchRequest` (stateful lifecycle with asyncio.Queue).
+All former dataclasses have been converted to Pydantic BaseModel with `ConfigDict(arbitrary_types_allowed=True)` where needed. The original justifications for keeping 6 as dataclasses (mutable fields, `order=True`, asyncio.Queue) are fully addressed by Pydantic v2's capabilities.
 
 ---
 
@@ -1126,7 +1126,7 @@ backend/mlx_manager/
             openai.py            # unchanged (external protocol)
             anthropic.py         # unchanged (external protocol)
         models/
-            pool.py              # LoadedModel (dataclass - mutable + Any fields)
+            pool.py              # LoadedModel (Pydantic BaseModel)
             types.py             # ModelType re-export, AdapterInfo (Pydantic BaseModel)
             audit.py             # AuditLog entity + DTOs
         services/
@@ -1310,7 +1310,8 @@ backend/mlx_manager/
 - [x] `BenchmarkSummary` (`mlx_server/benchmark/runner.py`) — benchmark aggregate, preserved `to_dict()`
 - [x] `BenchmarkResult` (`mlx_server/services/batching/benchmark.py`) — batching benchmark, preserved `__str__()`
 - [x] `RequestContext` (`mlx_server/services/audit.py`) — audit context, `field(default_factory=time.time)` → `Field(default_factory=time.time)`
-- [x] Kept 6 as dataclass (justified): `LoadedModel` (mutable + Any fields), `StreamEvent` (perf), `QueueEntry` (`order=True` for heapq), `KVBlock`/`BlockTable` (memory primitives), `BatchRequest` (stateful lifecycle with asyncio.Queue)
+- [x] Converted remaining 6 to Pydantic BaseModel: `LoadedModel`, `StreamEvent`, `QueueEntry`, `KVBlock`/`BlockTable`, `BatchRequest` — all use `ConfigDict(arbitrary_types_allowed=True)` where needed
+- [x] Converted 5 new IR/pipeline dataclasses to Pydantic: `PreparedInput`, `AdapterResult` (+ subclasses), `InferenceResult`, `_GenContext`
 
 *Step 3 — Create shared package for backend entities:*
 - [x] Created `mlx_manager/shared/__init__.py` + `shared/cloud_entities.py`

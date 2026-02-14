@@ -6,21 +6,17 @@ import asyncio
 import json
 import re
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import HTTPException
 from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
 
+from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import AdapterInfo, ModelType
-
-if TYPE_CHECKING:
-    from mlx_manager.mlx_server.models.adapters.composable import (
-        ModelAdapter,
-    )
-    from mlx_manager.models.capabilities import ModelCapabilities
+from mlx_manager.models.capabilities import ModelCapabilities
 
 try:  # pragma: no cover
     import logfire  # pragma: no cover
@@ -30,15 +26,16 @@ except ImportError:  # pragma: no cover
     LOGFIRE_AVAILABLE = False  # pragma: no cover
 
 
-@dataclass
-class LoadedModel:
+class LoadedModel(BaseModel):
     """Container for a loaded model and its metadata."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model_id: str
     model: Any  # mlx_lm model
     tokenizer: Any  # HuggingFace tokenizer
-    loaded_at: float = field(default_factory=time.time)
-    last_used: float = field(default_factory=time.time)
+    loaded_at: float = Field(default_factory=time.time)
+    last_used: float = Field(default_factory=time.time)
     size_gb: float = 0.0  # Estimated size
     model_type: str = "text-gen"  # Type of model (from ModelType enum values)
     preloaded: bool = False  # Whether protected from eviction
@@ -489,6 +486,7 @@ class ModelPoolManager:
                     tokenizer=tokenizer,
                     tool_parser=tool_parser,
                     thinking_parser=thinking_parser,
+                    model_id=model_id,
                 )
                 logger.info(
                     "Created {} adapter for {} (tool={}, think={})",

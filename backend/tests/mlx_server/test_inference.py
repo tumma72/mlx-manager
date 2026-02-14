@@ -85,6 +85,7 @@ def _make_mock_tokenizer(prompt_token_count: int = 10) -> MagicMock:
     """Create a mock tokenizer that returns deterministic encode results."""
     tok = MagicMock()
     tok.encode = MagicMock(return_value=list(range(prompt_token_count)))
+    tok.apply_chat_template = MagicMock(return_value="<mock_prompt>")
     # tokenizer.tokenizer pattern used for Processor-wrapped tokenizers
     tok.tokenizer = tok
     return tok
@@ -666,7 +667,7 @@ class TestStreamChatGenerate:
     """Test _stream_chat_generate streaming consumer logic.
 
     Mocks stream_from_metal_thread to yield predetermined token tuples,
-    letting the real StreamingProcessor run for accurate coverage.
+    letting the real StreamProcessor run for accurate coverage.
     """
 
     @staticmethod
@@ -772,7 +773,7 @@ class TestStreamChatGenerate:
         ["qwen", "glm4"],
     )
     async def test_streaming_thinking_tags_filtered(self, family: str) -> None:
-        """Thinking tags are processed by StreamingProcessor (not sent as content)."""
+        """Thinking tags are processed by StreamProcessor (not sent as content)."""
         tokens = [
             ("<think>", 10, False),
             ("reasoning here", 11, False),
@@ -1674,7 +1675,7 @@ class TestGoldenFixturesCrossFamily:
         adapter = create_adapter(family=family, tokenizer=mock_tokenizer)
         tool_calls = adapter.tool_parser.extract(response_text)
 
-        # Simulate ParseResult
+        # Simulate TextResult
         result = MagicMock()
         result.tool_calls = tool_calls
 
@@ -1750,10 +1751,12 @@ class TestModelAdapterIntegration:
             def _default_thinking_parser(self):
                 return NullThinkingParser()
 
-        # Create mock tokenizer
+        # Create mock tokenizer (set .tokenizer to self so _actual_tokenizer resolves correctly)
         mock_tokenizer = MagicMock()
         mock_tokenizer.eos_token_id = 128009
         mock_tokenizer.encode = MagicMock(return_value=list(range(10)))
+        mock_tokenizer.apply_chat_template = MagicMock(return_value="<prompt>")
+        mock_tokenizer.tokenizer = mock_tokenizer
 
         # Create adapter with mocked parsers
         adapter = TestModelAdapter(tokenizer=mock_tokenizer)

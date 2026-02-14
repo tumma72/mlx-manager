@@ -9,15 +9,15 @@ memory waste from 60-80% (traditional pre-allocation) to under 4%.
 """
 
 import time
-from dataclasses import dataclass, field
+
+from pydantic import BaseModel, Field
 
 # Tokens per block - balance between flexibility and efficiency
 # 32 tokens provides ~4% internal fragmentation vs ~60-80% with pre-allocation
 BLOCK_SIZE = 32
 
 
-@dataclass
-class KVBlock:
+class KVBlock(BaseModel):
     """A fixed-size block for KV cache storage.
 
     Attributes:
@@ -30,13 +30,12 @@ class KVBlock:
 
     block_id: int
     ref_count: int = 0
-    last_used: float = field(default_factory=time.time)
+    last_used: float = Field(default_factory=time.time)
     is_prefix_cached: bool = False
     prefix_hash: int | None = None
 
 
-@dataclass
-class BlockTable:
+class BlockTable(BaseModel):
     """Per-request mapping from logical to physical blocks.
 
     A BlockTable tracks which physical blocks hold a request's KV cache data.
@@ -50,7 +49,7 @@ class BlockTable:
     """
 
     request_id: str
-    logical_to_physical: dict[int, int] = field(default_factory=dict)
+    logical_to_physical: dict[int, int] = Field(default_factory=dict)
     num_tokens: int = 0
 
     def current_logical_index(self) -> int:

@@ -1,7 +1,5 @@
 """Tests for Intermediate Representation types (models/ir.py)."""
 
-import pytest
-
 from mlx_manager.mlx_server.models.ir import (
     AdapterResult,
     AudioResult,
@@ -76,9 +74,9 @@ class TestStreamEvent:
 class TestAdapterResultHierarchy:
     """Tests for AdapterResult ABC and concrete subclasses."""
 
-    def test_abstract_not_instantiable(self) -> None:
-        with pytest.raises(TypeError):
-            AdapterResult()  # type: ignore[abstract]
+    def test_base_result_defaults(self) -> None:
+        result = AdapterResult()
+        assert result.finish_reason == "stop"
 
     def test_text_result_minimal(self) -> None:
         result = TextResult(content="Hello")
@@ -94,7 +92,7 @@ class TestAdapterResultHierarchy:
             tool_calls=[{"id": "call_1", "type": "function", "function": {"name": "get_weather"}}],
             finish_reason="tool_calls",
         )
-        d = result.to_dict()
+        d = result.model_dump()
         assert d["content"] == "Here's the weather"
         assert d["reasoning_content"] == "Let me think..."
         assert len(d["tool_calls"]) == 1
@@ -110,7 +108,7 @@ class TestAdapterResultHierarchy:
             dimensions=2,
         )
         assert isinstance(result, AdapterResult)
-        d = result.to_dict()
+        d = result.model_dump()
         assert d["embeddings"] == [[0.1, 0.2], [0.3, 0.4]]
         assert d["dimensions"] == 2
         assert d["finish_reason"] == "stop"
@@ -122,7 +120,7 @@ class TestAdapterResultHierarchy:
             format="wav",
         )
         assert isinstance(result, AdapterResult)
-        d = result.to_dict()
+        d = result.model_dump()
         assert d["audio_bytes"] == b"\x00\x01"
         assert d["sample_rate"] == 24000
         assert d["format"] == "wav"
@@ -133,7 +131,7 @@ class TestAdapterResultHierarchy:
             segments=[{"start": 0.0, "end": 1.0, "text": "Hello world"}],
         )
         assert isinstance(result, AdapterResult)
-        d = result.to_dict()
+        d = result.model_dump()
         assert d["text"] == "Hello world"
         assert len(d["segments"]) == 1
 

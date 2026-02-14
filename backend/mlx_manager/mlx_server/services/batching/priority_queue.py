@@ -10,23 +10,31 @@ from __future__ import annotations
 import asyncio
 import heapq
 import time
-from dataclasses import dataclass, field
+
+from pydantic import BaseModel, ConfigDict
 
 from mlx_manager.mlx_server.services.batching.request import BatchRequest
 
 
-@dataclass(order=True)
-class QueueEntry:
+class QueueEntry(BaseModel):
     """Entry in the priority queue with comparison support.
 
     Uses effective_priority for primary ordering, entry_count as
     FIFO tie-breaker for same-priority requests.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     effective_priority: float  # Lower = higher priority
     entry_count: int  # FIFO tie-breaker
-    request: BatchRequest = field(compare=False)
-    entry_time: float = field(compare=False)
+    request: BatchRequest
+    entry_time: float
+
+    def __lt__(self, other: QueueEntry) -> bool:
+        return (self.effective_priority, self.entry_count) < (
+            other.effective_priority,
+            other.entry_count,
+        )
 
 
 class PriorityQueueWithAging:

@@ -1,7 +1,7 @@
 """Tests for /v1/messages Anthropic Messages API endpoint."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
@@ -20,15 +20,9 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlock,
     TextBlockParam,
 )
+from mlx_manager.mlx_server.services.formatters import InternalRequest
 from mlx_manager.mlx_server.services.inference import InferenceResult
-from mlx_manager.mlx_server.services.protocol import InternalRequest, reset_translator
 from mlx_manager.models.value_objects import InferenceParams
-
-
-@pytest.fixture(autouse=True)
-def reset_protocol_translator():
-    """Reset the protocol translator singleton before each test."""
-    reset_translator()
 
 
 @pytest.fixture
@@ -306,12 +300,11 @@ class TestProtocolTranslationIntegration:
 
     @pytest.mark.asyncio
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
+    @patch("mlx_manager.mlx_server.api.v1.messages.AnthropicFormatter.parse_request")
     async def test_system_message_in_internal_messages(
-        self, mock_get_translator, mock_generate, request_with_system
+        self, mock_parse_request, mock_generate, request_with_system
     ):
         """System message is placed in internal messages array."""
-        mock_translator = MagicMock()
         internal = InternalRequest(
             model="test-model",
             messages=[
@@ -326,8 +319,7 @@ class TestProtocolTranslationIntegration:
             stream=False,
             stop=None,
         )
-        mock_translator.anthropic_to_internal.return_value = internal
-        mock_get_translator.return_value = mock_translator
+        mock_parse_request.return_value = internal
 
         mock_generate.return_value = _make_inference_result()
 
@@ -341,12 +333,11 @@ class TestProtocolTranslationIntegration:
 
     @pytest.mark.asyncio
     @patch("mlx_manager.mlx_server.api.v1.messages.generate_chat_complete_response")
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
+    @patch("mlx_manager.mlx_server.api.v1.messages.AnthropicFormatter.parse_request")
     async def test_temperature_passed_through(
-        self, mock_get_translator, mock_generate, basic_request
+        self, mock_parse_request, mock_generate, basic_request
     ):
         """Temperature is passed through to generate_chat_complete_response."""
-        mock_translator = MagicMock()
         internal = InternalRequest(
             model="test-model",
             messages=[{"role": "user", "content": "Hello"}],
@@ -358,8 +349,7 @@ class TestProtocolTranslationIntegration:
             stream=False,
             stop=None,
         )
-        mock_translator.anthropic_to_internal.return_value = internal
-        mock_get_translator.return_value = mock_translator
+        mock_parse_request.return_value = internal
 
         mock_generate.return_value = _make_inference_result()
 
@@ -377,12 +367,10 @@ class TestErrorHandling:
     """Tests for error handling."""
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
-    async def test_generic_exception_returns_500(self, mock_get_translator, basic_request):
+    @patch("mlx_manager.mlx_server.api.v1.messages.AnthropicFormatter.parse_request")
+    async def test_generic_exception_returns_500(self, mock_parse_request, basic_request):
         """Generic exception returns HTTP 500."""
-        mock_translator = MagicMock()
-        mock_translator.anthropic_to_internal.side_effect = RuntimeError("Test error")
-        mock_get_translator.return_value = mock_translator
+        mock_parse_request.side_effect = RuntimeError("Test error")
 
         with pytest.raises(HTTPException) as exc_info:
             await create_message(basic_request)
@@ -391,14 +379,10 @@ class TestErrorHandling:
         assert "Test error" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_translator")
-    async def test_http_exception_reraises(self, mock_get_translator, basic_request):
+    @patch("mlx_manager.mlx_server.api.v1.messages.AnthropicFormatter.parse_request")
+    async def test_http_exception_reraises(self, mock_parse_request, basic_request):
         """HTTPException is re-raised without wrapping."""
-        mock_translator = MagicMock()
-        mock_translator.anthropic_to_internal.side_effect = HTTPException(
-            status_code=400, detail="Bad request"
-        )
-        mock_get_translator.return_value = mock_translator
+        mock_parse_request.side_effect = HTTPException(status_code=400, detail="Bad request")
 
         with pytest.raises(HTTPException) as exc_info:
             await create_message(basic_request)

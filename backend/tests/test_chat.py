@@ -1,8 +1,7 @@
 """Tests for the chat completions API router.
 
 With the embedded MLX Server, the chat router calls generate_chat_completion()
-and generate_vision_completion() directly instead of proxying to an external
-server process.
+directly instead of proxying to an external server process.
 
 Note: The inference service now handles thinking tag extraction and returns
 OpenAI-compatible deltas with reasoning_content. The chat router forwards
@@ -690,7 +689,7 @@ async def test_chat_completions_both_reasoning_and_content_fields(auth_client, a
 
 @pytest.mark.asyncio
 async def test_chat_completions_vision_model(auth_client, api_test_profile):
-    """Test that vision models use generate_vision_completion."""
+    """Test that vision models use unified generate_chat_completion."""
     from mlx_manager.mlx_server.models.types import ModelType
 
     chunks = [
@@ -698,7 +697,7 @@ async def test_chat_completions_vision_model(auth_client, api_test_profile):
     ]
 
     with patch(
-        "mlx_manager.mlx_server.services.vision.generate_vision_completion",
+        "mlx_manager.mlx_server.services.inference.generate_chat_completion",
         create_mock_inference(chunks),
     ):
         with patch(
