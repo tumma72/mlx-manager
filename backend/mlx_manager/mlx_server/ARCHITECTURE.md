@@ -130,28 +130,20 @@ mlx_server/
     thinking.py           # Concrete thinking/reasoning parsers
     registry.py           # Parser registry: string ID → parser class
 
-  models/                 # Model lifecycle and family-specific behavior
+  models/                 # Model lifecycle and unified adapter architecture
     types.py              # ModelType enum (TEXT_GEN, VISION, EMBEDDINGS, AUDIO)
     detection.py          # detect_model_type(), detect_model_family() — fallback
     pool.py               # ModelPoolManager — LRU cache, adapter-aware loading
     adapters/
-      base.py             # ModelAdapter (stateful base class)
-      registry.py         # Family → adapter class mapping, adapter factory
-      qwen.py             # QwenAdapter (defaults: HermesJsonParser, ThinkTagParser)
-                          # QwenVisionAdapter extends QwenAdapter, adds image preprocessing
-      glm4.py             # GLM4Adapter (defaults: Glm4NativeParser, ThinkTagParser)
-      llama.py            # LlamaAdapter (defaults: LlamaXmlParser, ThinkTagParser)
-      gemma.py            # GemmaAdapter (defaults: NullToolParser, NullThinkingParser)
-                          # GemmaVisionAdapter extends GemmaAdapter, adds image preprocessing
-      mistral.py          # MistralAdapter (defaults: NullToolParser, NullThinkingParser)
-      liquid.py           # LiquidAdapter (defaults: LiquidPythonParser, ThinkTagParser)
-      embedding.py        # EmbeddingAdapter (minimal: tokenize → normalize)
-      audio.py            # WhisperAdapter (STT), KokoroAdapter (TTS)
+      composable.py       # ModelAdapter (single concrete class for all model types)
+      configs.py          # FamilyConfig dataclasses + FAMILY_CONFIGS registry
+      strategies.py       # Strategy functions (template, tool format, message conversion)
+      registry.py         # Adapter factory: create_adapter(), detect_model_family()
 
-  services/               # Inference orchestration (model-type agnostic)
-    inference.py          # Universal chat/completion generation (text + vision)
-    embeddings.py         # Embedding generation (mlx-embeddings)
-    audio.py              # TTS / STT (mlx-audio)
+  services/               # Inference orchestration (delegates to adapter pipeline)
+    inference.py          # Thin orchestrator: calls adapter.generate() / adapter.generate_step()
+    embeddings.py         # Thin wrapper: calls adapter.generate_embeddings()
+    audio.py              # Thin wrapper: calls adapter.generate_speech() / adapter.transcribe()
     stream_processor.py   # Request-scoped StreamProcessor (adapter-created)
     formatters/           # Protocol-specific response formatters
       base.py             # ProtocolFormatter (ABC)
@@ -507,131 +499,170 @@ classes and makes the system extensible without schema migrations.
 
 ---
 
-## 6. Adapter Architecture — 3-Layer Pipeline Owner
+## 6. Adapter Architecture — Unified Adapter with Config-Driven Behavior
 
 ### 6.1 Layer 1: ModelAdapter (Model-Scoped, Persistent)
 
 Each `LoadedModel` holds a dedicated `ModelAdapter` instance. The adapter is
 **created once at model load time** and **destroyed when the model is evicted**.
-It is the **full pipeline owner**: both INPUT preparation and OUTPUT processing.
+It is the **full pipeline owner**: both INPUT preparation and OUTPUT processing
+**for all model types** (TEXT_GEN, VISION, EMBEDDINGS, AUDIO).
+
+The **Unified Adapter Architecture** replaced 12 family-specific subclasses with
+a single concrete `ModelAdapter` class configured from `FamilyConfig` data objects.
+This eliminates subclass proliferation and consolidates family-specific behavior
+into composable strategy functions.
 
 ```python
-class ModelAdapter(ABC):
-    """Stateful adapter, one instance per loaded model.
+class ModelAdapter:
+    """Unified adapter for all model families and types.
 
-    Owns the complete inference pipeline:
-    - INPUT: Message conversion, chat template, tool delivery
-    - OUTPUT: Tool extraction, thinking extraction, response cleaning
+    Owns the complete inference pipeline for ALL model types:
+    - TEXT_GEN / VISION: Message conversion, chat template, tool delivery, streaming
+    - EMBEDDINGS: Tokenization, normalization
+    - AUDIO: Audio preprocessing, TTS/STT parameter setup
 
-    Composes parsers via dependency injection. Pre-computes stop tokens
-    and stream markers at init. Lives as long as the model is in pool.
+    Configured from FamilyConfig at creation time. Delegates family-specific
+    behavior to strategy functions. Lives as long as the model is in pool.
     """
 
     def __init__(
         self,
         tokenizer: Any,
-        tool_parser: ToolCallParser,
-        thinking_parser: ThinkingParser,
+        family_config: FamilyConfig,
         capabilities: ModelCapabilities | None = None,
     ):
         self.tokenizer = tokenizer
-        self.tool_parser = tool_parser
-        self.thinking_parser = thinking_parser
+        self.config = family_config
         self.capabilities = capabilities
+
+        # Create parsers from config factories
+        self.tool_parser = family_config.tool_parser_factory()
+        self.thinking_parser = family_config.thinking_parser_factory()
+
+        # Pre-compute stop tokens and stream markers
         self._stop_token_ids: list[int] = self._compute_stop_tokens()
         self._stream_markers: list[tuple[str, str]] = self._compute_stream_markers()
 
     # --- Identity ---
 
     @property
-    @abstractmethod
     def family(self) -> str:
-        """Model family identifier (qwen, glm4, llama, gemma, etc.)."""
+        """Model family identifier from config."""
+        return self.config.family
 
-    # --- INPUT PIPELINE ---
+    # --- INPUT PIPELINE (all model types) ---
 
     def prepare_input(
         self,
-        messages: list[dict],
+        messages: list[dict] | None = None,
         *,
         tools: list[dict] | None = None,
         enable_thinking: bool | None = None,
+        texts: list[str] | None = None,      # Embeddings
+        audio_data: bytes | None = None,      # Audio STT
+        text_for_tts: str | None = None,      # Audio TTS
         **kwargs,
     ) -> PreparedInput:
-        """Full input preparation pipeline.
+        """Full input preparation pipeline for all model types.
 
-        Returns PreparedInput with:
-        - prompt: str — formatted prompt ready for generation
-        - stop_tokens: list[int] — aggregated stop tokens
-        - metadata: dict — any additional info for generation
+        Dispatches to appropriate strategy based on model type:
+        - TEXT_GEN/VISION: apply chat template, format tools, handle images
+        - EMBEDDINGS: tokenize text batch
+        - AUDIO: preprocess audio bytes or TTS parameters
         """
-        # 1. Message conversion (handle tool roles)
-        converted = self.convert_messages(messages)
+        # Dispatch based on model type (via strategy pattern)
+        if self.config.model_type in (ModelType.TEXT_GEN, ModelType.VISION):
+            return self._prepare_text_input(messages, tools, enable_thinking, **kwargs)
+        elif self.config.model_type == ModelType.EMBEDDINGS:
+            return self._prepare_embedding_input(texts, **kwargs)
+        elif self.config.model_type == ModelType.AUDIO:
+            return self._prepare_audio_input(audio_data, text_for_tts, **kwargs)
 
-        # 2. Tool delivery (native, adapter, or injected)
-        tool_format = self.capabilities.tool_format if self.capabilities else None
-        if tools:
-            if tool_format in ("template", "native") and self.supports_native_tools():
-                prompt = self.apply_chat_template(converted, tools=tools, enable_thinking=enable_thinking)
-            elif tool_format in ("adapter", "hermes"):
-                tool_prompt = self.format_tools_for_prompt(tools)
-                injected = self._inject_tool_prompt(converted, tool_prompt)
-                prompt = self.apply_chat_template(injected, enable_thinking=enable_thinking)
-            else:
-                prompt = self.apply_chat_template(converted, enable_thinking=enable_thinking)
+    def _prepare_text_input(self, messages, tools, enable_thinking, **kwargs):
+        """TEXT_GEN / VISION input preparation."""
+        # 1. Message conversion (handle tool roles) via config strategy
+        converted = self.config.message_converter(messages) if self.config.message_converter else messages
+
+        # 2. Apply chat template via config strategy
+        if self.config.template_strategy:
+            prompt = self.config.template_strategy(self.tokenizer, converted, tools, enable_thinking)
         else:
-            prompt = self.apply_chat_template(converted, enable_thinking=enable_thinking)
+            prompt = self.tokenizer.apply_chat_template(converted, tokenize=False)
 
-        # 3. Stop tokens (pre-computed, cached)
-        stop_tokens = self.get_stop_tokens()
+        # 3. Format tools if needed via config strategy
+        if tools and self.config.tool_formatter:
+            tool_prompt = self.config.tool_formatter(tools)
+            # Inject into system message
+            converted = self._inject_tool_prompt(converted, tool_prompt)
 
-        return PreparedInput(prompt=prompt, stop_tokens=stop_tokens, metadata={})
+        # 4. Vision: preprocess images
+        pixel_values = None
+        if self.config.model_type == ModelType.VISION and kwargs.get("images"):
+            pixel_values = self._preprocess_images(kwargs["images"])
 
-    @abstractmethod
-    def apply_chat_template(
-        self,
-        messages: list[dict],
-        *,
-        tools: list[dict] | None = None,
-        enable_thinking: bool | None = None,
-    ) -> str:
-        """Apply tokenizer chat template. Messages → prompt string."""
+        return PreparedInput(
+            prompt=prompt,
+            stop_token_ids=self._stop_token_ids,
+            pixel_values=pixel_values,
+            metadata={},
+        )
 
-    @abstractmethod
-    def convert_messages(self, messages: list[dict]) -> list[dict]:
-        """Transform tool/special roles to tokenizer-compatible format."""
+    # --- OUTPUT PIPELINE (all model types) ---
 
-    @abstractmethod
-    def format_tools_for_prompt(self, tools: list[dict]) -> str:
-        """Format tool definitions for system prompt injection fallback."""
+    def generate(self, prepared_input: PreparedInput, **kwargs) -> str | list[float] | bytes:
+        """Execute generation for this model type.
 
-    # --- OUTPUT PIPELINE ---
+        Delegates to appropriate library:
+        - TEXT_GEN: mlx-lm generate
+        - VISION: mlx-vlm generate (with pixel_values)
+        - EMBEDDINGS: mlx-embeddings encode
+        - AUDIO: mlx-audio synthesize/transcribe
+        """
+        if self.config.model_type == ModelType.TEXT_GEN:
+            return self._generate_text(prepared_input, **kwargs)
+        elif self.config.model_type == ModelType.VISION:
+            return self._generate_vision(prepared_input, **kwargs)
+        elif self.config.model_type == ModelType.EMBEDDINGS:
+            return self._generate_embeddings(prepared_input, **kwargs)
+        elif self.config.model_type == ModelType.AUDIO:
+            return self._generate_audio(prepared_input, **kwargs)
+
+    def generate_step(self, prepared_input: PreparedInput, **kwargs) -> Iterator[str]:
+        """Streaming generation for text/vision models."""
+        # Only TEXT_GEN and VISION support streaming
+        if self.config.model_type in (ModelType.TEXT_GEN, ModelType.VISION):
+            return self._generate_text_stream(prepared_input, **kwargs)
+        else:
+            raise ValueError(f"Streaming not supported for {self.config.model_type}")
 
     def create_stream_processor(self) -> StreamProcessor:
-        """Factory method for request-scoped stream processor.
-
-        Pre-configures processor with this adapter's parsers and markers.
-        Each request gets its own processor instance.
-        """
+        """Factory method for request-scoped stream processor."""
         return StreamProcessor(
             tool_parser=self.tool_parser,
             thinking_parser=self.thinking_parser,
             stream_markers=self._stream_markers,
         )
 
-    def process_complete(self, raw_output: str, **kwargs) -> AdapterResult:
-        """Process complete (non-streaming) model output.
+    def process_complete(self, raw_output: str | list[float] | bytes, **kwargs) -> AdapterResult:
+        """Process complete output for all model types.
 
-        Returns AdapterResult (TextResult for text/vision, EmbeddingResult, etc.)
-        with extracted tool calls, thinking, and cleaned content.
+        Dispatches to appropriate result type:
+        - TEXT_GEN/VISION: TextResult with tool/thinking extraction
+        - EMBEDDINGS: EmbeddingResult with normalization
+        - AUDIO: AudioResult or TranscriptionResult
         """
-        # Extract tool calls via composed parser
+        if self.config.model_type in (ModelType.TEXT_GEN, ModelType.VISION):
+            return self._process_text_output(raw_output, **kwargs)
+        elif self.config.model_type == ModelType.EMBEDDINGS:
+            return self._process_embedding_output(raw_output, **kwargs)
+        elif self.config.model_type == ModelType.AUDIO:
+            return self._process_audio_output(raw_output, **kwargs)
+
+    def _process_text_output(self, raw_output: str, **kwargs) -> TextResult:
+        """Extract tools, thinking, clean content."""
         tool_calls = self.tool_parser.extract(raw_output)
-
-        # Extract thinking via composed parser
         reasoning_content = self.thinking_parser.extract(raw_output)
-
-        # Clean content (remove thinking tags)
         content = self.thinking_parser.remove(raw_output)
 
         return TextResult(
@@ -646,12 +677,22 @@ class ModelAdapter(ABC):
     # --- Pre-Computed Properties ---
 
     def get_stop_tokens(self) -> list[int]:
-        """Return pre-computed stop tokens. No runtime lookup."""
+        """Return pre-computed stop tokens from config."""
         return self._stop_token_ids
 
-    @abstractmethod
     def _compute_stop_tokens(self) -> list[int]:
-        """Compute stop tokens once at init. Called by __init__."""
+        """Compute stop tokens once at init from config."""
+        # Base stop tokens from tokenizer
+        stop_ids = []
+        if hasattr(self.tokenizer, "eos_token_id") and self.tokenizer.eos_token_id:
+            stop_ids.append(self.tokenizer.eos_token_id)
+
+        # Family-specific stop tokens from config
+        for token in self.config.stop_tokens:
+            if token_id := self.tokenizer.convert_tokens_to_ids(token):
+                stop_ids.append(token_id)
+
+        return stop_ids
 
     def _compute_stream_markers(self) -> list[tuple[str, str]]:
         """Combined markers from both parsers for single-pass streaming."""
@@ -659,46 +700,20 @@ class ModelAdapter(ABC):
             self.tool_parser.stream_markers
             + self.thinking_parser.stream_markers
         )
-
-    # --- Tool Support ---
-
-    def supports_native_tools(self) -> bool:
-        """Whether tokenizer accepts tools= parameter natively."""
-        if self.capabilities:
-            return bool(self.capabilities.supports_native_tools)
-        return False
 ```
 
-**Vision Models as Text Adapters:**
+**Vision Models Use Text Config:**
 
-Vision adapters **extend text family adapters** and add multimodal input handling:
+Vision models are configured with the **same family configs** as text models
+(qwen, gemma, etc.). The only difference is `model_type=VISION` in the config,
+which enables image preprocessing in `prepare_input()`. They share the same
+output pipeline (tool parsing, thinking extraction) as text models.
 
 ```python
-class GemmaVisionAdapter(GemmaAdapter):
-    """Vision adapter extending GemmaAdapter.
-
-    Adds image preprocessing to input pipeline.
-    Uses SAME output pipeline: thinking, tools, response cleaning.
-    Produces TextResult (not a separate result type).
-    """
-
-    def prepare_input(self, messages: list[dict], **kwargs) -> PreparedInput:
-        # 1. Download and preprocess images
-        processed_messages = self._preprocess_images(messages)
-
-        # 2. Apply processor-based formatting (PIL → tensors)
-        formatted = self._apply_vision_processor(processed_messages)
-
-        # 3. Delegate to parent for chat template + tools
-        return super().prepare_input(formatted, **kwargs)
-
-    def _preprocess_images(self, messages: list[dict]) -> list[dict]:
-        """Download URLs, convert to PIL Images."""
-        ...
-
-    def _apply_vision_processor(self, messages: list[dict]) -> list[dict]:
-        """Use model's processor for image → tensor conversion."""
-        ...
+# Vision model loading (in pool.py)
+config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
+vision_config = config.with_model_type(ModelType.VISION)  # Copy with VISION type
+adapter = ModelAdapter(tokenizer, vision_config, capabilities)
 ```
 
 ### 6.2 Layer 2: StreamProcessor (Request-Scoped)
@@ -783,83 +798,162 @@ class StreamProcessor:
         )
 ```
 
-### 6.3 Family Subclasses
+### 6.3 Family Configurations
 
-Subclasses provide **sensible defaults** for known families. The parsers can
-be overridden at instantiation time (e.g., when probe discovers a model uses
-a different parser than the family default).
-
-```
-ModelAdapter (abstract, stateful, full pipeline owner)
-  ├── QwenAdapter         # Defaults: HermesJsonParser, ThinkTagParser
-  │   └── QwenVisionAdapter  # Extends QwenAdapter, adds image preprocessing
-  ├── GLM4Adapter         # Defaults: Glm4NativeParser, ThinkTagParser
-  ├── LlamaAdapter        # Defaults: LlamaXmlParser, NullThinkingParser
-  ├── GemmaAdapter        # Defaults: NullToolParser, NullThinkingParser
-  │   └── GemmaVisionAdapter  # Extends GemmaAdapter, adds image preprocessing
-  ├── MistralAdapter      # Defaults: NullToolParser, NullThinkingParser
-  ├── LiquidAdapter       # Defaults: LiquidPythonParser, ThinkTagParser
-  ├── WhisperAdapter      # Audio STT (minimal processing)
-  ├── KokoroAdapter       # Audio TTS (minimal processing)
-  └── DefaultAdapter      # Defaults: NullToolParser, NullThinkingParser
-```
-
-**Embeddings Adapters:**
+**Replaced subclass hierarchy with data-driven config.** Instead of 12 adapter
+subclasses, the system uses `FamilyConfig` objects that define family-specific
+behavior via strategy functions:
 
 ```python
-class EmbeddingAdapter(ModelAdapter):
-    """Minimal adapter for embedding models.
+@dataclass
+class FamilyConfig:
+    """Configuration for a model family."""
+    family: str
+    model_type: ModelType
+    tool_parser_factory: Callable[[], ToolCallParser]
+    thinking_parser_factory: Callable[[], ThinkingParser]
+    stop_tokens: list[str] = field(default_factory=list)
+    template_strategy: Callable | None = None      # Custom chat template
+    tool_formatter: Callable | None = None         # Tool definition formatter
+    message_converter: Callable | None = None      # Message role converter
+    post_load_hook: Callable | None = None         # Model post-processing
 
-    Input: Tokenize text batch
-    Output: Extract embeddings, normalize → EmbeddingResult
-    Parsers: NullToolParser, NullThinkingParser
-    """
-
-    def prepare_input(self, texts: list[str], **kwargs) -> PreparedInput:
-        # Tokenization only
-        tokens = [self.tokenizer.encode(t) for t in texts]
-        return PreparedInput(prompt=tokens, stop_tokens=[], metadata={})
-
-    def process_complete(self, embeddings: list[list[float]], **kwargs) -> EmbeddingResult:
-        # Normalize, compute dimensions
-        normalized = self._normalize(embeddings)
-        return EmbeddingResult(
-            embeddings=normalized,
-            dimensions=len(normalized[0]),
-            finish_reason="stop",
-            prompt_tokens=kwargs.get("prompt_tokens", 0),
-            completion_tokens=0,
-        )
+# Registry of family configs
+FAMILY_CONFIGS: dict[str, FamilyConfig] = {
+    "qwen": FamilyConfig(
+        family="qwen",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: HermesJsonParser(),
+        thinking_parser_factory=lambda: ThinkTagParser(),
+        template_strategy=strategies.apply_qwen_template,
+        message_converter=strategies.convert_hermes_messages,
+    ),
+    "glm4": FamilyConfig(
+        family="glm4",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: Glm4NativeParser(),
+        thinking_parser_factory=lambda: ThinkTagParser(),
+        template_strategy=strategies.apply_glm4_template,
+        stop_tokens=["<|user|>", "<|observation|>"],
+    ),
+    "llama": FamilyConfig(
+        family="llama",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: LlamaXmlParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+        tool_formatter=strategies.format_llama_tools_yaml,
+        message_converter=strategies.convert_llama_messages,
+    ),
+    "gemma": FamilyConfig(
+        family="gemma",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+    ),
+    "mistral": FamilyConfig(
+        family="mistral",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+        template_strategy=strategies.apply_mistral_template,
+    ),
+    "liquid": FamilyConfig(
+        family="liquid",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: LiquidPythonParser(),
+        thinking_parser_factory=lambda: ThinkTagParser(),
+    ),
+    "whisper": FamilyConfig(
+        family="whisper",
+        model_type=ModelType.AUDIO,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+        post_load_hook=strategies.whisper_post_load,
+    ),
+    "kokoro": FamilyConfig(
+        family="kokoro",
+        model_type=ModelType.AUDIO,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+    ),
+    "audio_default": FamilyConfig(
+        family="audio_default",
+        model_type=ModelType.AUDIO,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+    ),
+    "embeddings": FamilyConfig(
+        family="embeddings",
+        model_type=ModelType.EMBEDDINGS,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+    ),
+    "default": FamilyConfig(
+        family="default",
+        model_type=ModelType.TEXT_GEN,
+        tool_parser_factory=lambda: NullToolParser(),
+        thinking_parser_factory=lambda: NullThinkingParser(),
+    ),
+}
 ```
 
-**Audio Adapters:**
+**Strategy Functions** (in `adapters/strategies.py`):
 
 ```python
-class KokoroAdapter(ModelAdapter):
-    """TTS adapter for Kokoro models."""
+# Template strategies
+def apply_qwen_template(tokenizer, messages, tools, enable_thinking):
+    """Qwen-specific template with thinking toggle."""
+    return tokenizer.apply_chat_template(
+        messages,
+        tools=tools,
+        enable_thinking=enable_thinking,
+        tokenize=False,
+    )
 
-    def prepare_input(self, text: str, voice: str, **kwargs) -> PreparedInput:
-        # Audio-specific params
-        return PreparedInput(
-            prompt=text,
-            stop_tokens=[],
-            metadata={"voice": voice, "sample_rate": 24000},
-        )
+def apply_glm4_template(tokenizer, messages, tools, enable_thinking):
+    """GLM-4 template with XML-style tool integration."""
+    # Custom template logic
+    ...
 
-    def process_complete(self, audio_data: bytes, **kwargs) -> AudioResult:
-        return AudioResult(
-            audio_data=audio_data,
-            sample_rate=kwargs.get("sample_rate", 24000),
-            format="wav",
-            finish_reason="stop",
-            prompt_tokens=0,
-            completion_tokens=0,
-        )
+# Tool formatters
+def format_qwen_tools_xml(tools: list[dict]) -> str:
+    """Format tools as Qwen-style XML."""
+    # XML formatting logic
+    ...
+
+def format_llama_tools_yaml(tools: list[dict]) -> str:
+    """Format tools as YAML for Llama."""
+    # YAML formatting logic
+    ...
+
+# Message converters
+def convert_hermes_messages(messages: list[dict]) -> list[dict]:
+    """Convert tool roles to user/assistant for Hermes format."""
+    # Conversion logic
+    ...
+
+def convert_llama_messages(messages: list[dict]) -> list[dict]:
+    """Convert tool roles for Llama-specific format."""
+    # Conversion logic
+    ...
+```
+
+**Vision Integration:**
+
+Vision models use the **same family configs** as text models. The adapter
+detects `model_type=VISION` and enables image preprocessing:
+
+```python
+# Vision model uses qwen config but with VISION type
+config = FAMILY_CONFIGS["qwen"].with_model_type(ModelType.VISION)
+adapter = ModelAdapter(tokenizer, config, capabilities)
+# Same parsers, same template, same output pipeline — just adds images
 ```
 
 ### 6.4 Adapter Factory
 
-The adapter factory creates adapter instances during model loading:
+The adapter factory creates a single `ModelAdapter` instance configured from
+`FamilyConfig`:
 
 ```python
 def create_adapter(
@@ -868,35 +962,41 @@ def create_adapter(
     model_type: ModelType,
     capabilities: ModelCapabilities | None = None,
 ) -> ModelAdapter:
-    """Create an adapter instance for a loaded model.
+    """Create a configured adapter instance for a loaded model.
 
-    Uses model_type to select appropriate adapter class.
-    If capabilities specify parser IDs (from probe), those parsers are
-    injected. Otherwise, the family's defaults are used.
+    Uses family + model_type to select FamilyConfig, then creates a single
+    ModelAdapter with that config. Parser overrides from DB capabilities
+    take precedence over config defaults.
     """
-    # Select adapter class based on model_type + family
-    if model_type == ModelType.VISION:
-        adapter_class = VISION_ADAPTER_REGISTRY.get(family, DefaultVisionAdapter)
-    elif model_type == ModelType.EMBEDDINGS:
-        adapter_class = EmbeddingAdapter
-    elif model_type == ModelType.AUDIO:
-        adapter_class = AUDIO_ADAPTER_REGISTRY.get(family, DefaultAudioAdapter)
-    else:  # TEXT_GEN
-        adapter_class = FAMILY_REGISTRY.get(family, DefaultAdapter)
+    # Get base config for this family
+    base_config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
 
-    kwargs = {"tokenizer": tokenizer, "capabilities": capabilities}
+    # Adjust config for model type if needed
+    if model_type != base_config.model_type:
+        config = base_config.with_model_type(model_type)
+    else:
+        config = base_config
 
-    # Override parsers if DB specifies them (text/vision only)
+    # Override parser factories if DB specifies them (text/vision only)
     if model_type in (ModelType.TEXT_GEN, ModelType.VISION):
         if capabilities and capabilities.tool_parser_id:
-            kwargs["tool_parser"] = resolve_tool_parser(capabilities.tool_parser_id)
+            parser_class = resolve_tool_parser(capabilities.tool_parser_id)
+            config = config.with_tool_parser(lambda: parser_class())
         if capabilities and capabilities.thinking_parser_id:
-            kwargs["thinking_parser"] = resolve_thinking_parser(
-                capabilities.thinking_parser_id
-            )
+            parser_class = resolve_thinking_parser(capabilities.thinking_parser_id)
+            config = config.with_thinking_parser(lambda: parser_class())
 
-    return adapter_class(**kwargs)
+    # Create single unified adapter with config
+    return ModelAdapter(tokenizer, config, capabilities)
 ```
+
+**Key Design Points:**
+
+- **Single concrete class**: `ModelAdapter` (no subclasses)
+- **Config-driven behavior**: `FamilyConfig` objects replace inheritance
+- **Strategy pattern**: Family-specific logic lives in strategy functions
+- **Parser override**: DB capabilities can override config defaults
+- **All model types**: Single adapter handles TEXT_GEN, VISION, EMBEDDINGS, AUDIO
 
 ### 6.5 Message Conversion Contract
 

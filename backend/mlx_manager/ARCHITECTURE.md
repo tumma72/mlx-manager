@@ -92,16 +92,18 @@ mlx_manager/
     logfire_config.py       # configure_logfire(), instrument_*() helpers
 
   mlx_server/               # Embedded inference server (see mlx_server/ARCHITECTURE.md)
-                            # Unified 3-layer adapter pipeline for all model types
+                            # Unified Adapter Architecture: single ModelAdapter for all types
     routers/                # OpenAI + Anthropic compatible API endpoints
-    services/               # Inference orchestration (text, vision, embeddings, audio)
-                            # All services use same adapter pipeline — model-type agnostic
-    models/                 # Model pool, loaded model state, adapter pipeline
-      adapters/             # L1: ModelAdapter (load-time, persistent in LoadedModel)
-      processors/           # L2: StreamProcessor (per-request, created by adapter)
+    services/               # Thin orchestrators — delegate to adapter.generate()
+    models/                 # Model pool, loaded model state, unified adapter
+      adapters/
+        composable.py       # ModelAdapter (single concrete class for all model types)
+        configs.py          # FamilyConfig data objects (11 configs: qwen, glm4, llama, etc.)
+        strategies.py       # Strategy functions (template, tool format, message conversion)
+        registry.py         # Adapter factory + family detection
       pool.py               # Model pool with LRU eviction, creates adapters at load
-    parsers/                # Tool call and thinking parsers (composed into L1 adapters)
-    formatters/             # L3: ProtocolFormatter (per-request, created by router)
+    parsers/                # Tool call and thinking parsers (composed into adapters)
+    services/formatters/    # L3: ProtocolFormatter (per-request, created by router)
                             # OpenAI + Anthropic translation of StreamEvent IR → SSE
   static/                   # Embedded frontend build (production only)
 ```
@@ -505,88 +507,107 @@ which internally delegates to `parser.extract()` — the same code path that
 inference uses. If the model family's default parser fails, the probe iterates
 **all registered parsers** as a fallback before concluding "no tool support."
 
-### 6.3 mlx_server Adapter Pipeline Integration
+### 6.3 mlx_server Unified Adapter Architecture
 
-The embedded `mlx_server` component uses a 3-layer adapter pipeline that makes
-inference model-type agnostic. All model types (TEXT_GEN, VISION, EMBEDDINGS,
-AUDIO) flow through the same pipeline architecture:
+The embedded `mlx_server` component uses a **Unified Adapter Architecture**
+that replaces 12 family-specific adapter subclasses with a single `ModelAdapter`
+class configured from `FamilyConfig` data objects. All model types (TEXT_GEN,
+VISION, EMBEDDINGS, AUDIO) use this single adapter implementation.
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│ LAYER 1: ModelAdapter (model-scoped, persistent)                 │
+│ ModelAdapter (single concrete class, config-driven)              │
 │ ─────────────────────────────────────────────────────────────     │
 │ • Created once at model load, stored in LoadedModel.adapter      │
-│ • Configured with family-specific parsers, stop tokens, markers  │
-│ • Owns entire INPUT preparation AND OUTPUT processing pipeline   │
-│ • Vision models = Text adapters with multimodal input handling   │
+│ • Configured from FamilyConfig (11 configs: qwen, glm4, ...)     │
+│ • Owns ALL generation for ALL model types                        │
 │                                                                   │
-│ Methods:                                                          │
-│   prepare_input(messages, tools, ...) → PreparedInput            │
-│   create_stream_processor() → StreamProcessor                    │
-│   process_complete(raw_output) → AdapterResult                   │
+│ Config-driven behavior:                                           │
+│   • Parser factories → create tool_parser, thinking_parser       │
+│   • Template strategy → apply_chat_template() logic              │
+│   • Tool formatter → format tool definitions                     │
+│   • Message converter → handle role transformations              │
+│   • Stop tokens → family-specific stop sequences                 │
 │                                                                   │
-│ Composes: tool_parser, thinking_parser                           │
-├───────────────────────────────────────────────────────────────────┤
-│ LAYER 2: StreamProcessor (request-scoped)                        │
-│ ─────────────────────────────────────────────────────────────     │
-│ • Created per-request via adapter.create_stream_processor()      │
-│ • Holds per-request state: accumulated text, pattern buffers     │
-│ • Uses adapter's parsers to extract tools/thinking in real-time  │
+│ ALL model type methods:                                           │
+│   prepare_input() → PreparedInput  (all types)                   │
+│   generate() → output              (all types)                   │
+│   generate_step() → Iterator[str]  (text/vision streaming)       │
+│   create_stream_processor()        (text/vision)                 │
+│   process_complete() → AdapterResult (all types)                 │
 │                                                                   │
-│ Methods:                                                          │
-│   feed(token) → StreamEvent                                       │
-│   finalize() → AdapterResult                                      │
-│                                                                   │
-│ Replaces: old StreamingProcessor                                 │
-├───────────────────────────────────────────────────────────────────┤
-│ LAYER 3: ProtocolFormatter (request-scoped)                      │
-│ ─────────────────────────────────────────────────────────────     │
-│ • OpenAIFormatter / AnthropicFormatter                           │
-│ • Created per-request, plugged in by router                      │
-│ • Translates IR types to protocol-specific SSE chunks            │
-│                                                                   │
-│ Methods:                                                          │
-│   format_stream_event(StreamEvent) → ProtocolChunk               │
-│   format_response(AdapterResult) → ProtocolResponse              │
-│                                                                   │
-│ Absorbs: old ProtocolTranslator                                  │
+│ Replaces: 12 adapter subclasses                                  │
+│   (QwenAdapter, GLM4Adapter, LlamaAdapter, GemmaAdapter,         │
+│    MistralAdapter, LiquidAdapter, QwenVisionAdapter,             │
+│    GemmaVisionAdapter, EmbeddingsAdapter, KokoroAdapter,         │
+│    WhisperAdapter, DefaultAdapter)                               │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-**IR (Intermediate Representation) Types:**
+**FamilyConfig Structure:**
 
-- `StreamEvent`: Union of `content | reasoning_content | tool_call_delta`
-- `AdapterResult` hierarchy:
-  - `TextResult` (TEXT_GEN + VISION outputs)
-  - `EmbeddingResult` (EMBEDDINGS)
-  - `AudioResult` (TTS)
-  - `TranscriptionResult` (STT)
+```python
+@dataclass
+class FamilyConfig:
+    family: str                                    # "qwen", "glm4", etc.
+    model_type: ModelType                          # TEXT_GEN, VISION, etc.
+    tool_parser_factory: Callable[[], ToolCallParser]
+    thinking_parser_factory: Callable[[], ThinkingParser]
+    stop_tokens: list[str] = field(default_factory=list)
+    template_strategy: Callable | None = None      # Custom apply_chat_template
+    tool_formatter: Callable | None = None         # Tool definition format
+    message_converter: Callable | None = None      # Message role converter
+    post_load_hook: Callable | None = None         # Model post-processing
 
-**Request Flow:**
+# 11 configs in FAMILY_CONFIGS dict:
+# qwen, glm4, llama, gemma, mistral, liquid,
+# whisper, kokoro, audio_default, embeddings, default
+```
+
+**Request Flow (All Model Types):**
 
 ```
 Router
   │
   ├─→ Select protocol formatter (OpenAI / Anthropic)
   │
-  └─→ inference.generate_*()
+  └─→ Service (inference / embeddings / audio)
       │
-      ├─→ L1: adapter.prepare_input() → PreparedInput
+      ├─→ adapter.prepare_input() → PreparedInput
+      │   │
+      │   ├─→ TEXT/VISION: apply template, format tools, convert messages
+      │   ├─→ EMBEDDINGS: tokenize text batch
+      │   └─→ AUDIO: preprocess audio bytes or TTS params
       │
-      ├─→ model.generate() → raw tokens
+      ├─→ adapter.generate() → raw output
+      │   │
+      │   ├─→ TEXT: mlx-lm generate
+      │   ├─→ VISION: mlx-vlm generate (with images)
+      │   ├─→ EMBEDDINGS: mlx-embeddings encode
+      │   └─→ AUDIO: mlx-audio synthesize/transcribe
       │
-      ├─→ L2: stream_processor.feed(token) → StreamEvent (IR)
-      │
-      └─→ L3: protocol_formatter.format(event) → SSE chunk
+      └─→ adapter.process_complete() → AdapterResult
+          │
+          ├─→ TEXT/VISION: extract tools, thinking, clean text → TextResult
+          ├─→ EMBEDDINGS: normalize embeddings → EmbeddingResult
+          └─→ AUDIO: format audio bytes → AudioResult/TranscriptionResult
 ```
 
 **Vision Model Integration:**
 
-Vision models are **text models with multimodal input preprocessing**. They:
-- Use the same TEXT_GEN adapter families (Qwen, Gemma, etc.)
-- Extend `prepare_input()` to handle image/video URLs
-- Share the same OUTPUT pipeline: tool parsing, thinking extraction, text cleaning
-- Are detected via `model_type=VISION` in capabilities, but use TEXT adapter logic
+Vision models use **same family configs** as text models (qwen, gemma) with
+`model_type=VISION`. The adapter detects the VISION type and:
+- Preprocesses images in `prepare_input()`
+- Calls mlx-vlm generate with pixel_values
+- Uses same OUTPUT pipeline (tool parsing, thinking extraction) as text
+
+**Key Benefits:**
+
+- **Zero subclasses**: Single `ModelAdapter` class handles all families/types
+- **Config-driven**: Family behavior defined in data, not inheritance
+- **Unified pipeline**: All model types use same adapter methods
+- **Strategy pattern**: Family-specific logic in composable functions
+- **Parser override**: DB capabilities can override config defaults
 
 **mlx_manager Integration Points:**
 

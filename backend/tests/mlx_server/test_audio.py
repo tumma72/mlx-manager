@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
+from mlx_manager.mlx_server.models.ir import AudioResult, TranscriptionResult
 from mlx_manager.mlx_server.schemas.openai import (
     SpeechRequest,
     TranscriptionResponse,
@@ -80,7 +81,6 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_returns_audio_bytes(self):
         """Speech endpoint should return audio bytes with correct content type."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
-        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="mlx-community/Kokoro-82M-bf16",
@@ -113,7 +113,6 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_flac_content_type(self):
         """Speech endpoint should set flac content type for flac format."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
-        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="test-tts",
@@ -136,7 +135,6 @@ class TestSpeechEndpoint:
     async def test_speech_endpoint_mp3_content_type(self):
         """Speech endpoint should set mp3 content type for mp3 format."""
         from mlx_manager.mlx_server.api.v1.speech import create_speech
-        from mlx_manager.mlx_server.models.ir import AudioResult
 
         request = SpeechRequest(
             model="test-tts",
@@ -205,7 +203,6 @@ class TestTranscriptionsEndpoint:
     async def test_transcription_endpoint_returns_text(self):
         """Transcription endpoint should return transcribed text."""
         from mlx_manager.mlx_server.api.v1.transcriptions import create_transcription
-        from mlx_manager.mlx_server.models.ir import TranscriptionResult
 
         # Create a mock UploadFile
         mock_file = MagicMock()
@@ -231,7 +228,6 @@ class TestTranscriptionsEndpoint:
     async def test_transcription_with_language_hint(self):
         """Transcription should pass language hint to service."""
         from mlx_manager.mlx_server.api.v1.transcriptions import create_transcription
-        from mlx_manager.mlx_server.models.ir import TranscriptionResult
 
         mock_file = MagicMock()
         mock_file.filename = "audio.wav"
@@ -384,69 +380,51 @@ class TestAudioService:
 
         assert inspect.iscoroutinefunction(transcribe_audio)
 
-    def test_speech_service_uses_pool(self):
-        """Verify service uses model pool for model management."""
+    def test_speech_service_delegates_to_adapter(self):
+        """Verify speech service delegates to adapter."""
         from mlx_manager.mlx_server.services.audio import generate_speech
 
         source = inspect.getsource(generate_speech)
         assert "get_model_pool" in source
-        assert "model.generate" in source
+        assert "loaded.adapter.generate_speech" in source
 
-    def test_transcribe_service_uses_pool(self):
-        """Verify transcription service uses model pool."""
+    def test_transcribe_service_delegates_to_adapter(self):
+        """Verify transcription service delegates to adapter."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
         source = inspect.getsource(transcribe_audio)
         assert "get_model_pool" in source
-        assert "generate_transcription" in source
+        assert "loaded.adapter.transcribe" in source
 
 
 class TestGenerateSpeechService:
-    """Tests for generate_speech service function with mocked Metal thread."""
+    """Tests for generate_speech service function with mocked adapter."""
 
     @pytest.mark.asyncio
-    async def test_generate_speech_single_segment(self):
-        """Generate speech with a single audio segment from model."""
+    async def test_generate_speech_returns_adapter_result(self):
+        """Generate speech returns AudioResult from adapter."""
         from mlx_manager.mlx_server.services.audio import generate_speech
 
-        # Mock model that returns a single GenerationResult
-        mock_result = MagicMock()
-        mock_result.audio = MagicMock()
-        mock_result.audio.tolist.return_value = [0.1, 0.2, 0.3]
-        mock_result.sample_rate = 24000
+        expected_result = AudioResult(
+            audio_bytes=b"fake-audio-bytes",
+            sample_rate=24000,
+            format="wav",
+        )
 
-        mock_model = MagicMock()
-        mock_model.generate.return_value = [mock_result]
-        mock_model.sample_rate = 24000
+        mock_adapter = MagicMock()
+        mock_adapter.generate_speech = AsyncMock(return_value=expected_result)
 
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.concatenate") as mock_concat,
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
-            # sf.write writes to the buffer
-            def write_to_buffer(buf, data, sr, **kwargs):
-                buf.write(b"fake-audio-bytes")
-
-            mock_sf_write.side_effect = write_to_buffer
-
             result = await generate_speech(
                 model_id="test-tts-model",
                 text="Hello world",
@@ -458,365 +436,149 @@ class TestGenerateSpeechService:
             assert result.audio_bytes == b"fake-audio-bytes"
             assert result.sample_rate == 24000
             assert result.format == "wav"
-            mock_model.generate.assert_called_once()
-            # Single segment means no concatenation
-            mock_concat.assert_not_called()
             mock_pool.get_model.assert_called_once_with("test-tts-model")
 
     @pytest.mark.asyncio
-    async def test_generate_speech_multiple_segments_concatenated(self):
-        """Generate speech with multiple segments uses mx.concatenate."""
+    async def test_generate_speech_passes_all_params_to_adapter(self):
+        """Verify all parameters are forwarded to adapter.generate_speech."""
         from mlx_manager.mlx_server.services.audio import generate_speech
 
-        # Mock model returning multiple segments
-        mock_result1 = MagicMock()
-        mock_result1.audio = MagicMock()
-        mock_result1.audio.tolist.return_value = [0.1, 0.2]
-        mock_result1.sample_rate = 24000
+        expected_result = AudioResult(audio_bytes=b"data", sample_rate=24000, format="flac")
 
-        mock_result2 = MagicMock()
-        mock_result2.audio = MagicMock()
-        mock_result2.audio.tolist.return_value = [0.3, 0.4]
-        mock_result2.sample_rate = 24000
+        mock_adapter = MagicMock()
+        mock_adapter.generate_speech = AsyncMock(return_value=expected_result)
 
         mock_model = MagicMock()
-        mock_model.generate.return_value = [mock_result1, mock_result2]
-        mock_model.sample_rate = 24000
-
         mock_loaded = MagicMock()
         mock_loaded.model = mock_model
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        concatenated_audio = MagicMock()
-        concatenated_audio.tolist.return_value = [0.1, 0.2, 0.3, 0.4]
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.concatenate", return_value=concatenated_audio) as mock_concat,
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
-
-            def write_to_buffer(buf, data, sr, **kwargs):
-                buf.write(b"concatenated-audio")
-
-            mock_sf_write.side_effect = write_to_buffer
-
-            result = await generate_speech(
-                model_id="test-tts",
-                text="Hello world, this is a longer text.",
-                voice="af_bella",
-                speed=1.5,
-                response_format="flac",
-            )
-
-            assert result.audio_bytes == b"concatenated-audio"
-            assert result.sample_rate == 24000
-            assert result.format == "flac"
-            mock_concat.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_speech_empty_output_raises(self):
-        """Generate speech raises RuntimeError when model produces no audio."""
-        from mlx_manager.mlx_server.services.audio import generate_speech
-
-        mock_model = MagicMock()
-        mock_model.generate.return_value = []  # No results
-        mock_model.sample_rate = 24000
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.concatenate"),
-            patch("mlx.core.eval"),
-        ):
-            with pytest.raises(RuntimeError, match="no audio output"):
-                await generate_speech(
-                    model_id="test-tts",
-                    text="Hello",
-                )
-
-    @pytest.mark.asyncio
-    async def test_generate_speech_uses_model_sample_rate_fallback(self):
-        """If GenerationResult has no sample_rate attr, fall back to model.sample_rate."""
-        from mlx_manager.mlx_server.services.audio import generate_speech
-
-        mock_result = MagicMock(spec=["audio"])  # No sample_rate attribute
-        mock_result.audio = MagicMock()
-        mock_result.audio.tolist.return_value = [0.5]
-
-        mock_model = MagicMock()
-        mock_model.generate.return_value = [mock_result]
-        mock_model.sample_rate = 44100
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
-        ):
-
-            def write_to_buffer(buf, data, sr, **kwargs):
-                buf.write(b"audio-data")
-
-            mock_sf_write.side_effect = write_to_buffer
-
-            result = await generate_speech(
-                model_id="test-tts",
-                text="Test",
-            )
-
-            assert result.sample_rate == 44100
-
-    @pytest.mark.asyncio
-    async def test_generate_speech_result_sample_rate_overrides(self):
-        """GenerationResult.sample_rate overrides the model default."""
-        from mlx_manager.mlx_server.services.audio import generate_speech
-
-        mock_result = MagicMock()
-        mock_result.audio = MagicMock()
-        mock_result.audio.tolist.return_value = [0.5]
-        mock_result.sample_rate = 48000
-
-        mock_model = MagicMock()
-        mock_model.generate.return_value = [mock_result]
-        mock_model.sample_rate = 24000  # Will be overridden
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
-        ):
-
-            def write_to_buffer(buf, data, sr, **kwargs):
-                buf.write(b"audio-data")
-
-            mock_sf_write.side_effect = write_to_buffer
-
-            result = await generate_speech(
-                model_id="test-tts",
-                text="Test",
-            )
-
-            assert result.sample_rate == 48000
-
-    @pytest.mark.asyncio
-    async def test_generate_speech_passes_correct_gen_kwargs(self):
-        """Verify generate_speech passes text, voice, speed, verbose to model.generate."""
-        from mlx_manager.mlx_server.services.audio import generate_speech
-
-        mock_result = MagicMock()
-        mock_result.audio = MagicMock()
-        mock_result.audio.tolist.return_value = [0.5]
-        mock_result.sample_rate = 24000
-
-        mock_model = MagicMock()
-        mock_model.generate.return_value = [mock_result]
-        mock_model.sample_rate = 24000
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
-        ):
-            mock_sf_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
-
             await generate_speech(
                 model_id="test-tts",
                 text="Hello world",
                 voice="af_bella",
                 speed=2.0,
-                response_format="mp3",
+                response_format="flac",
             )
 
-            mock_model.generate.assert_called_once_with(
-                text="Hello world",
+            mock_adapter.generate_speech.assert_called_once_with(
+                mock_model,
+                "Hello world",
                 voice="af_bella",
                 speed=2.0,
-                verbose=False,
+                response_format="flac",
             )
 
     @pytest.mark.asyncio
-    async def test_generate_speech_model_no_sample_rate_attr(self):
-        """Model without sample_rate attribute uses default 24000."""
+    async def test_generate_speech_error_propagates(self):
+        """Errors from adapter propagate as RuntimeError."""
         from mlx_manager.mlx_server.services.audio import generate_speech
 
-        mock_result = MagicMock(spec=["audio"])
-        mock_result.audio = MagicMock()
-        mock_result.audio.tolist.return_value = [0.5]
-
-        mock_model = MagicMock(spec=["generate"])
-        mock_model.generate.return_value = [mock_result]
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.eval"),
-            patch("soundfile.write") as mock_sf_write,
-        ):
-            mock_sf_write.side_effect = lambda buf, *a, **kw: buf.write(b"data")
-
-            result = await generate_speech(
-                model_id="test-tts",
-                text="Test",
-            )
-
-            # Default sample_rate is 24000 per getattr fallback
-            assert result.sample_rate == 24000
-
-    @pytest.mark.asyncio
-    async def test_generate_speech_run_on_metal_error_propagates(self):
-        """Errors from run_on_metal_thread propagate as RuntimeError."""
-        from mlx_manager.mlx_server.services.audio import generate_speech
+        mock_adapter = MagicMock()
+        mock_adapter.generate_speech = AsyncMock(
+            side_effect=RuntimeError("TTS generation failed: GPU error")
+        )
 
         mock_loaded = MagicMock()
         mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def raise_runtime_error(fn, **kwargs):
-            raise RuntimeError("TTS generation failed: GPU error")
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=raise_runtime_error,
-            ),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             with pytest.raises(RuntimeError, match="TTS generation failed"):
                 await generate_speech(model_id="test-tts", text="Hello")
 
-
-class TestTranscribeAudioService:
-    """Tests for transcribe_audio service function with mocked Metal thread."""
-
     @pytest.mark.asyncio
-    async def test_transcribe_audio_basic(self):
-        """Transcribe audio returns text from STT model."""
-        from mlx_manager.mlx_server.services.audio import transcribe_audio
+    async def test_generate_speech_no_adapter_raises(self):
+        """AssertionError when loaded model has no adapter."""
+        from mlx_manager.mlx_server.services.audio import generate_speech
 
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Hello, world!"
-        mock_stt_output.segments = None
-        mock_stt_output.language = None
-
-        mock_model = MagicMock()
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = None
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
+        ):
+            with pytest.raises(AssertionError, match="No adapter"):
+                await generate_speech(model_id="test-tts", text="Hello")
 
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                return_value=mock_stt_output,
-            ),
+    @pytest.mark.asyncio
+    async def test_generate_speech_custom_voice_and_speed(self):
+        """Custom voice and speed params are forwarded correctly."""
+        from mlx_manager.mlx_server.services.audio import generate_speech
+
+        expected_result = AudioResult(audio_bytes=b"audio", sample_rate=48000, format="mp3")
+
+        mock_adapter = MagicMock()
+        mock_adapter.generate_speech = AsyncMock(return_value=expected_result)
+
+        mock_loaded = MagicMock()
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
+
+        mock_pool = MagicMock()
+        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
+
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
+        ):
+            result = await generate_speech(
+                model_id="test-tts",
+                text="Test",
+                voice="af_bella",
+                speed=1.5,
+                response_format="mp3",
+            )
+
+            assert result.sample_rate == 48000
+            assert result.format == "mp3"
+
+
+class TestTranscribeAudioService:
+    """Tests for transcribe_audio service function with mocked adapter."""
+
+    @pytest.mark.asyncio
+    async def test_transcribe_audio_basic(self):
+        """Transcribe audio returns TranscriptionResult from adapter."""
+        from mlx_manager.mlx_server.services.audio import transcribe_audio
+
+        expected_result = TranscriptionResult(
+            text="Hello, world!",
+            segments=None,
+            language=None,
+        )
+
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(return_value=expected_result)
+
+        mock_loaded = MagicMock()
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
+
+        mock_pool = MagicMock()
+        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
+
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await transcribe_audio(
                 model_id="test-stt-model",
@@ -833,37 +595,28 @@ class TestTranscribeAudioService:
         """Transcribe audio includes segments when available."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Hello world"
-        mock_stt_output.segments = [
-            {"start": 0.0, "end": 0.5, "text": "Hello"},
-            {"start": 0.5, "end": 1.0, "text": "world"},
-        ]
-        mock_stt_output.language = "en"
+        expected_result = TranscriptionResult(
+            text="Hello world",
+            segments=[
+                {"start": 0.0, "end": 0.5, "text": "Hello"},
+                {"start": 0.5, "end": 1.0, "text": "world"},
+            ],
+            language="en",
+        )
 
-        mock_model = MagicMock()
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(return_value=expected_result)
+
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                return_value=mock_stt_output,
-            ),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await transcribe_audio(
                 model_id="test-stt",
@@ -876,37 +629,29 @@ class TestTranscribeAudioService:
 
     @pytest.mark.asyncio
     async def test_transcribe_audio_with_language_hint(self):
-        """Transcribe audio passes language kwarg to generate_transcription."""
+        """Transcribe audio passes language kwarg to adapter."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Hola mundo"
-        mock_stt_output.segments = None
-        mock_stt_output.language = "es"
+        expected_result = TranscriptionResult(
+            text="Hola mundo",
+            segments=None,
+            language="es",
+        )
+
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(return_value=expected_result)
 
         mock_model = MagicMock()
         mock_loaded = MagicMock()
         mock_loaded.model = mock_model
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                return_value=mock_stt_output,
-            ) as mock_gen_transcription,
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await transcribe_audio(
                 model_id="test-stt",
@@ -915,43 +660,31 @@ class TestTranscribeAudioService:
             )
 
             assert result.text == "Hola mundo"
-            # Verify language was passed
-            call_kwargs = mock_gen_transcription.call_args[1]
-            assert call_kwargs["language"] == "es"
+            mock_adapter.transcribe.assert_called_once_with(
+                mock_model, b"audio-bytes", language="es"
+            )
 
     @pytest.mark.asyncio
     async def test_transcribe_audio_no_language_hint(self):
-        """Transcribe audio without language does not pass language kwarg."""
+        """Transcribe audio passes language=None to adapter when not specified."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Test"
-        mock_stt_output.segments = None
-        mock_stt_output.language = None
+        expected_result = TranscriptionResult(text="Test", segments=None, language=None)
+
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(return_value=expected_result)
 
         mock_model = MagicMock()
         mock_loaded = MagicMock()
         mock_loaded.model = mock_model
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                return_value=mock_stt_output,
-            ) as mock_gen_transcription,
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             await transcribe_audio(
                 model_id="test-stt",
@@ -959,134 +692,30 @@ class TestTranscribeAudioService:
                 language=None,
             )
 
-            # language should NOT be in kwargs
-            call_kwargs = mock_gen_transcription.call_args[1]
-            assert "language" not in call_kwargs
-
-    @pytest.mark.asyncio
-    async def test_transcribe_audio_writes_temp_file(self):
-        """Transcribe audio writes audio_data to a temp file for STT."""
-        from mlx_manager.mlx_server.services.audio import transcribe_audio
-
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Transcribed text"
-        mock_stt_output.segments = None
-        mock_stt_output.language = None
-
-        mock_model = MagicMock()
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        captured_audio_path = []
-
-        def capture_transcription_call(model, audio, verbose, **kwargs):
-            captured_audio_path.append(audio)
-            return mock_stt_output
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                side_effect=capture_transcription_call,
-            ),
-        ):
-            await transcribe_audio(
-                model_id="test-stt",
-                audio_data=b"fake-wav-data",
+            mock_adapter.transcribe.assert_called_once_with(
+                mock_model, b"audio-bytes", language=None
             )
 
-            # Verify a file path was passed (not raw bytes)
-            assert len(captured_audio_path) == 1
-            assert isinstance(captured_audio_path[0], str)
-            assert captured_audio_path[0].endswith(".wav")
-
     @pytest.mark.asyncio
-    async def test_transcribe_audio_cleans_up_temp_file(self):
-        """Temp file is deleted after transcription even on success."""
-        import os
-
+    async def test_transcribe_audio_error_propagates(self):
+        """Errors from adapter propagate as RuntimeError."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        mock_stt_output = MagicMock()
-        mock_stt_output.text = "Test"
-        mock_stt_output.segments = None
-        mock_stt_output.language = None
-
-        mock_model = MagicMock()
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        captured_path = []
-
-        def capture_path(model, audio, verbose, **kwargs):
-            captured_path.append(audio)
-            return mock_stt_output
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                side_effect=capture_path,
-            ),
-        ):
-            await transcribe_audio(
-                model_id="test-stt",
-                audio_data=b"fake-wav-data",
-            )
-
-            # Temp file should have been deleted
-            assert len(captured_path) == 1
-            assert not os.path.exists(captured_path[0])
-
-    @pytest.mark.asyncio
-    async def test_transcribe_audio_run_on_metal_error_propagates(self):
-        """Errors from run_on_metal_thread propagate as RuntimeError."""
-        from mlx_manager.mlx_server.services.audio import transcribe_audio
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(
+            side_effect=RuntimeError("STT transcription failed: GPU error")
+        )
 
         mock_loaded = MagicMock()
         mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def raise_runtime_error(fn, **kwargs):
-            raise RuntimeError("STT transcription failed: GPU error")
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=raise_runtime_error,
-            ),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             with pytest.raises(RuntimeError, match="STT transcription failed"):
                 await transcribe_audio(
@@ -1095,42 +724,53 @@ class TestTranscribeAudioService:
                 )
 
     @pytest.mark.asyncio
-    async def test_transcribe_audio_no_text_attr_returns_empty(self):
-        """If STT output has no text attribute, return empty string."""
+    async def test_transcribe_audio_no_adapter_raises(self):
+        """AssertionError when loaded model has no adapter."""
         from mlx_manager.mlx_server.services.audio import transcribe_audio
 
-        mock_stt_output = MagicMock(spec=[])  # No attributes at all
-
-        mock_model = MagicMock()
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = None
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
+        ):
+            with pytest.raises(AssertionError, match="No adapter"):
+                await transcribe_audio(
+                    model_id="test-stt",
+                    audio_data=b"audio-bytes",
+                )
 
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch(
-                "mlx_audio.stt.generate.generate_transcription",
-                return_value=mock_stt_output,
-            ),
+    @pytest.mark.asyncio
+    async def test_transcribe_audio_empty_text(self):
+        """Adapter returning empty text is passed through."""
+        from mlx_manager.mlx_server.services.audio import transcribe_audio
+
+        expected_result = TranscriptionResult(text="", segments=None, language=None)
+
+        mock_adapter = MagicMock()
+        mock_adapter.transcribe = AsyncMock(return_value=expected_result)
+
+        mock_loaded = MagicMock()
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
+
+        mock_pool = MagicMock()
+        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
+
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await transcribe_audio(
                 model_id="test-stt",
                 audio_data=b"audio-bytes",
             )
 
-            # getattr(segments, "text", "") should give ""
             assert result.text == ""
 
 

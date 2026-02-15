@@ -106,11 +106,14 @@ class EmbeddingsProbe(BaseProbe):
 
 async def _encode_text(loaded: LoadedModel, text: str) -> list[float] | None:
     """Encode a single text string and return the embedding vector."""
-    from mlx_manager.mlx_server.services.embeddings import generate_embeddings
+    adapter = loaded.adapter
+    if adapter is None:
+        msg = "No adapter available for embeddings"
+        raise RuntimeError(msg)
 
-    embeddings, _ = await generate_embeddings(loaded.model_id, [text])
-    if embeddings and len(embeddings) > 0:
-        return embeddings[0]
+    result = await adapter.generate_embeddings(loaded.model, [text])
+    if result.embeddings and len(result.embeddings) > 0:
+        return result.embeddings[0]
     return None
 
 
@@ -133,10 +136,13 @@ async def _test_similarity_ordering(loaded: LoadedModel) -> bool:
 
     Tests: sim("cat", "kitten") > sim("cat", "airplane")
     """
-    from mlx_manager.mlx_server.services.embeddings import generate_embeddings
+    adapter = loaded.adapter
+    if adapter is None:
+        return False
 
     texts = ["cat", "kitten", "airplane"]
-    embeddings, _ = await generate_embeddings(loaded.model_id, texts)
+    result = await adapter.generate_embeddings(loaded.model, texts)
+    embeddings = result.embeddings
 
     if len(embeddings) != 3:
         return False

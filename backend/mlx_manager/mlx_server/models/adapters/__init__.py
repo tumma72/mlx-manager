@@ -3,13 +3,12 @@
 from mlx_manager.mlx_server.models.adapters.composable import (
     FAMILY_REGISTRY,
     DefaultAdapter,
-    GemmaAdapter,
-    GLM4Adapter,
-    LlamaAdapter,
-    MistralAdapter,
     ModelAdapter,
-    QwenAdapter,
     create_adapter,
+)
+from mlx_manager.mlx_server.models.adapters.configs import (
+    FAMILY_CONFIGS,
+    FamilyConfig,
 )
 from mlx_manager.mlx_server.models.adapters.registry import (
     FAMILY_PATTERNS,
@@ -17,15 +16,12 @@ from mlx_manager.mlx_server.models.adapters.registry import (
 )
 
 __all__ = [
-    # Protocol and base
+    # Core adapter
     "ModelAdapter",
     "DefaultAdapter",
-    # Family-specific adapters
-    "QwenAdapter",
-    "GLM4Adapter",
-    "LlamaAdapter",
-    "GemmaAdapter",
-    "MistralAdapter",
+    # Config-driven families
+    "FamilyConfig",
+    "FAMILY_CONFIGS",
     # Factory and registry
     "create_adapter",
     "FAMILY_REGISTRY",

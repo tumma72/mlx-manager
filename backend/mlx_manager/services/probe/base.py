@@ -99,7 +99,6 @@ class GenerativeProbe(BaseProbe):
     generation path (mlx-lm for text, mlx-vlm for vision).
     """
 
-    @abstractmethod
     async def _generate(
         self,
         loaded: LoadedModel,
@@ -108,11 +107,25 @@ class GenerativeProbe(BaseProbe):
         enable_thinking: bool = False,
         max_tokens: int = 800,
     ) -> str:
-        """Generate a response using the model.
+        """Generate a response using the adapter's full pipeline.
 
-        Subclasses provide backend-specific generation logic.
+        Uses adapter.generate() which handles prepare_input → generation
+        → process_complete for all model types (text and vision).
         """
-        ...
+        adapter = loaded.adapter
+        if adapter is None:
+            msg = "No adapter available for generation"
+            raise RuntimeError(msg)
+
+        result = await adapter.generate(
+            model=loaded.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.7,
+            tools=tools,
+            enable_thinking=enable_thinking,
+        )
+        return result.content
 
     # ------------------------------------------------------------------
     # Shared thinking/tool verification
@@ -210,8 +223,7 @@ class GenerativeProbe(BaseProbe):
                     level=DiagnosticLevel.WARNING,
                     category=DiagnosticCategory.THINKING_DIALECT,
                     message=(
-                        "Thinking verification failed due to generation error "
-                        "— could not verify"
+                        "Thinking verification failed due to generation error — could not verify"
                     ),
                     details={"error": str(e)},
                 )

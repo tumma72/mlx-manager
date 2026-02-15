@@ -145,14 +145,14 @@ class TestStopTokenDetection:
 
     def test_stop_tokens_collected_from_adapter(self) -> None:
         """Verify stop tokens are retrieved from adapter."""
-        from mlx_manager.mlx_server.models.adapters import LlamaAdapter
+        from mlx_manager.mlx_server.models.adapters import create_adapter
 
         mock_tokenizer = Mock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         mock_tokenizer.eos_token_id = 128009
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)
 
-        adapter = LlamaAdapter(mock_tokenizer)
+        adapter = create_adapter("llama", mock_tokenizer)
         stop_tokens = adapter.stop_tokens
 
         assert 128009 in stop_tokens, "Should include eos_token_id"
@@ -160,14 +160,14 @@ class TestStopTokenDetection:
 
     def test_llama_adapter_returns_dual_stop_tokens(self) -> None:
         """Verify Llama adapter returns BOTH stop tokens (critical for Llama 3)."""
-        from mlx_manager.mlx_server.models.adapters import LlamaAdapter
+        from mlx_manager.mlx_server.models.adapters import create_adapter
 
         mock_tokenizer = Mock(spec=["eos_token_id", "unk_token_id", "convert_tokens_to_ids"])
         mock_tokenizer.eos_token_id = 128009
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)
 
-        adapter = LlamaAdapter(mock_tokenizer)
+        adapter = create_adapter("llama", mock_tokenizer)
         stop_tokens = adapter.stop_tokens
 
         assert len(stop_tokens) >= 2, "Llama adapter must return at least 2 stop tokens"

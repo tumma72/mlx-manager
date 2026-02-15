@@ -7,7 +7,6 @@ tests thinking and tool calling capabilities.
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
@@ -37,52 +36,27 @@ class VisionProbe(GenerativeProbe):
         enable_thinking: bool = False,
         max_tokens: int = 800,
     ) -> str:
-        """Generate a response using mlx-vlm with a synthetic test image.
-
-        Uses mlx-vlm's apply_chat_template for prompt formatting (correctly
-        handles processor-level image tokens) and forwards tools= /
-        enable_thinking= via **kwargs to the underlying tokenizer template.
-        """
-        import asyncio
-
+        """Generate a response using adapter's vision pipeline with a synthetic test image."""
         from PIL import Image
+
+        adapter = loaded.adapter
+        if adapter is None:
+            msg = "No adapter available for generation"
+            raise RuntimeError(msg)
 
         # Synthetic 64x64 gray test image
         test_image = Image.new("RGB", (64, 64), color=(128, 128, 128))
 
-        def _run() -> str:
-            from mlx_vlm import generate as vlm_generate
-            from mlx_vlm.prompt_utils import apply_chat_template
-            from mlx_vlm.utils import load_config
-
-            processor = loaded.tokenizer
-            config = load_config(loaded.model_id)
-
-            # Build text prompt from messages
-            text_prompt = _messages_to_text(messages)
-
-            # Build kwargs that pass through to the tokenizer template
-            template_kwargs: dict = {}
-            if tools:
-                template_kwargs["tools"] = tools
-            if enable_thinking:
-                template_kwargs["enable_thinking"] = True
-
-            formatted_prompt = apply_chat_template(
-                processor, config, text_prompt, num_images=1, **template_kwargs
-            )
-
-            result = vlm_generate(
-                loaded.model,
-                processor,
-                formatted_prompt,
-                [test_image],
-                max_tokens=max_tokens,
-                verbose=False,
-            )
-            return str(result.text) if hasattr(result, "text") else str(result)
-
-        return await asyncio.to_thread(_run)
+        result = await adapter.generate(
+            model=loaded.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.7,
+            tools=tools,
+            enable_thinking=enable_thinking,
+            images=[test_image],
+        )
+        return result.content
 
     async def probe(
         self, model_id: str, loaded: LoadedModel, result: ProbeResult
@@ -224,56 +198,9 @@ def _check_video_support(model_id: str) -> bool:
 def _estimate_vision_max_tokens(model_id: str, loaded: LoadedModel) -> int | None:
     """Estimate practical max tokens for vision models.
 
-    Vision models share the same KV cache formula as text models
-    but may use text_config for the LLM backbone parameters.
+    Delegates to the shared KV cache estimation utility, which automatically
+    checks text_config for nested LLM backbone parameters.
     """
-    try:
-        from huggingface_hub import hf_hub_download
+    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
 
-        config_path = hf_hub_download(model_id, "config.json")
-        with open(config_path) as f:
-            config = json.load(f)
-
-        # Vision models often nest LLM params under text_config
-        text_config = config.get("text_config", config)
-
-        max_pos = text_config.get(
-            "max_position_embeddings",
-            text_config.get("max_sequence_length"),
-        )
-        if max_pos is None:
-            return None
-
-        num_layers = text_config.get("num_hidden_layers", text_config.get("num_layers"))
-        num_kv_heads = text_config.get(
-            "num_key_value_heads",
-            text_config.get("num_attention_heads"),
-        )
-        head_dim = text_config.get("head_dim")
-        if head_dim is None:
-            hidden_size = text_config.get("hidden_size")
-            num_heads = text_config.get("num_attention_heads")
-            if hidden_size and num_heads:
-                head_dim = hidden_size // num_heads
-
-        if not all([num_layers, num_kv_heads, head_dim]):
-            return int(max_pos)
-
-        kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2
-
-        from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
-
-        device_memory_gb = get_device_memory_gb()
-        model_size_gb = loaded.size_gb
-
-        available_gb = (device_memory_gb * 0.75) - model_size_gb - 1.0
-        if available_gb <= 0:
-            return int(min(max_pos, 2048))
-
-        available_bytes = available_gb * 1e9
-        practical_max = int(min(max_pos, available_bytes / kv_per_token))
-        return max(practical_max, 512)
-
-    except Exception as e:
-        logger.debug(f"Could not estimate vision max tokens for {model_id}: {e}")
-        return None
+    return estimate_practical_max_tokens(model_id, loaded.size_gb)

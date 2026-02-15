@@ -13,7 +13,6 @@ adapter's thinking_parser, then sweeps all registered parsers.
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
@@ -47,40 +46,6 @@ class TextGenProbe(GenerativeProbe):
     @property
     def model_type(self) -> ModelType:
         return ModelType.TEXT_GEN
-
-    async def _generate(
-        self,
-        loaded: LoadedModel,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-        enable_thinking: bool = False,
-        max_tokens: int = 800,
-    ) -> str:
-        """Generate a response using mlx-lm via the model's adapter."""
-        import asyncio
-
-        from mlx_lm import generate as mlx_generate
-
-        adapter = loaded.adapter
-        if adapter is None:
-            msg = "No adapter available for generation"
-            raise RuntimeError(msg)
-
-        prompt = adapter.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tools=tools,
-            enable_thinking=enable_thinking,
-        )
-        output = await asyncio.to_thread(
-            mlx_generate,
-            loaded.model,
-            loaded.tokenizer,
-            prompt=prompt,
-            max_tokens=max_tokens,
-            verbose=False,
-        )
-        return output
 
     async def probe(
         self, model_id: str, loaded: LoadedModel, result: ProbeResult
@@ -117,60 +82,8 @@ class TextGenProbe(GenerativeProbe):
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
     """Estimate practical max tokens based on model config and available memory.
 
-    Uses the formula:
-    kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2  (bytes, fp16)
-    available_bytes = (device_memory * 0.75 - model_size_gb - 1.0) * 1e9
-    practical_max = min(max_position_embeddings, available_bytes / kv_per_token)
+    Delegates to the shared KV cache estimation utility.
     """
-    try:
-        from huggingface_hub import hf_hub_download
+    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
 
-        config_path = hf_hub_download(model_id, "config.json")
-        with open(config_path) as f:
-            config = json.load(f)
-
-        max_pos = config.get(
-            "max_position_embeddings",
-            config.get("max_sequence_length", config.get("seq_length")),
-        )
-        if max_pos is None:
-            return None
-
-        num_layers = config.get(
-            "num_hidden_layers", config.get("n_layer", config.get("num_layers"))
-        )
-        num_kv_heads = config.get(
-            "num_key_value_heads",
-            config.get("num_attention_heads", config.get("n_head")),
-        )
-        head_dim = config.get("head_dim")
-        if head_dim is None:
-            hidden_size = config.get("hidden_size", config.get("d_model"))
-            num_heads = config.get("num_attention_heads", config.get("n_head"))
-            if hidden_size and num_heads:
-                head_dim = hidden_size // num_heads
-
-        if not all([num_layers, num_kv_heads, head_dim]):
-            return int(max_pos)
-
-        # KV cache cost per token in bytes (fp16)
-        kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2
-
-        # Available memory
-        from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
-
-        device_memory_gb = get_device_memory_gb()
-        model_size_gb = loaded.size_gb
-
-        available_gb = (device_memory_gb * 0.75) - model_size_gb - 1.0
-        if available_gb <= 0:
-            return int(min(max_pos, 2048))  # Minimum practical context
-
-        available_bytes = available_gb * 1e9
-        practical_max = int(min(max_pos, available_bytes / kv_per_token))
-
-        return max(practical_max, 512)  # At least 512 tokens
-
-    except Exception as e:
-        logger.debug("Could not estimate practical max tokens for {}: {}", model_id, e)
-        return None
+    return estimate_practical_max_tokens(model_id, loaded.size_gb)

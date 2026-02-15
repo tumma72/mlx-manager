@@ -291,9 +291,17 @@ async def test_orchestrator_full_flow_text_gen():
 @pytest.mark.asyncio
 async def test_orchestrator_full_flow_embeddings():
     """Test full orchestrator flow with embeddings model."""
+    from mlx_manager.mlx_server.models.ir import EmbeddingResult
+
+    mock_adapter = MagicMock()
+    mock_adapter.generate_embeddings = AsyncMock(
+        return_value=EmbeddingResult(embeddings=[[0.5] * 384], dimensions=384, total_tokens=1)
+    )
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/embed-model"
     mock_loaded.tokenizer = MagicMock()
+    mock_loaded.adapter = mock_adapter
 
     mock_pool = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
@@ -313,11 +321,6 @@ async def test_orchestrator_full_flow_embeddings():
             "mlx_manager.services.probe.service._save_capabilities",
             new_callable=AsyncMock,
         ) as mock_save,
-        patch(
-            "mlx_manager.mlx_server.services.embeddings.generate_embeddings",
-            new_callable=AsyncMock,
-            return_value=([[0.5] * 384], None),
-        ),
         patch(
             "mlx_manager.utils.model_detection.read_model_config",
             return_value={"max_position_embeddings": 512},
@@ -717,42 +720,43 @@ async def test_vision_probe_processor_check():
 @pytest.mark.asyncio
 async def test_embeddings_probe_happy_path():
     """Test EmbeddingsProbe with all capabilities."""
-    from mlx_manager.services.probe import ProbeResult
-    from mlx_manager.services.probe.embeddings import EmbeddingsProbe
-
-    mock_loaded = MagicMock()
-    mock_loaded.model_id = "test/embed-model"
-
-    result = ProbeResult()
-
     # Create normalized embedding (384-dim, L2 norm = 1.0)
     import math
+
+    from mlx_manager.mlx_server.models.ir import EmbeddingResult
+    from mlx_manager.services.probe import ProbeResult
+    from mlx_manager.services.probe.embeddings import EmbeddingsProbe
 
     dim = 384
     embedding = [1.0 / math.sqrt(dim)] * dim
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.services.embeddings.generate_embeddings",
-            new_callable=AsyncMock,
-            side_effect=[
-                # First call: test_encode
-                ([embedding], None),
-                # Second call: test_similarity
-                (
-                    [
-                        [0.5] * dim,  # cat
-                        [0.6] * dim,  # kitten (more similar)
-                        [0.1] * dim,  # airplane (less similar)
-                    ],
-                    None,
-                ),
-            ],
-        ),
-        patch(
-            "mlx_manager.utils.model_detection.read_model_config",
-            return_value={"max_position_embeddings": 512},
-        ),
+    mock_adapter = MagicMock()
+    mock_adapter.generate_embeddings = AsyncMock(
+        side_effect=[
+            # First call: test_encode
+            EmbeddingResult(embeddings=[embedding], dimensions=dim, total_tokens=1),
+            # Second call: test_similarity
+            EmbeddingResult(
+                embeddings=[
+                    [0.5] * dim,  # cat
+                    [0.6] * dim,  # kitten (more similar)
+                    [0.1] * dim,  # airplane (less similar)
+                ],
+                dimensions=dim,
+                total_tokens=3,
+            ),
+        ],
+    )
+
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/embed-model"
+    mock_loaded.adapter = mock_adapter
+
+    result = ProbeResult()
+
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        return_value={"max_position_embeddings": 512},
     ):
         probe = EmbeddingsProbe()
         steps = []
@@ -811,27 +815,27 @@ async def test_embeddings_probe_encode_failure():
 @pytest.mark.asyncio
 async def test_audio_probe_tts_detection():
     """Test AudioProbe detects TTS models (Kokoro pattern)."""
+    from mlx_manager.mlx_server.models.ir import AudioResult
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.audio import AudioProbe
 
+    mock_adapter = MagicMock()
+    mock_adapter.generate_speech = AsyncMock(
+        return_value=AudioResult(audio_bytes=b"fake_audio_data", sample_rate=24000, format="wav")
+    )
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/kokoro-model"
+    mock_loaded.adapter = mock_adapter
 
     result = ProbeResult()
 
-    with (
-        patch(
-            "mlx_manager.utils.model_detection.read_model_config",
-            return_value={
-                "architectures": ["KokoroForCausalLM"],
-                "model_type": "kokoro",
-            },
-        ),
-        patch(
-            "mlx_manager.mlx_server.services.audio.generate_speech",
-            new_callable=AsyncMock,
-            return_value=(b"fake_audio_data", 24000),
-        ),
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        return_value={
+            "architectures": ["KokoroForCausalLM"],
+            "model_type": "kokoro",
+        },
     ):
         probe = AudioProbe()
         steps = []
@@ -858,27 +862,25 @@ async def test_audio_probe_tts_detection():
 @pytest.mark.asyncio
 async def test_audio_probe_stt_detection():
     """Test AudioProbe detects STT models (Whisper pattern)."""
+    from mlx_manager.mlx_server.models.ir import TranscriptionResult
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.audio import AudioProbe
 
+    mock_adapter = MagicMock()
+    mock_adapter.transcribe = AsyncMock(return_value=TranscriptionResult(text="Hello world"))
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/whisper-model"
+    mock_loaded.adapter = mock_adapter
 
     result = ProbeResult()
 
-    with (
-        patch(
-            "mlx_manager.utils.model_detection.read_model_config",
-            return_value={
-                "architectures": ["WhisperForConditionalGeneration"],
-                "model_type": "whisper",
-            },
-        ),
-        patch(
-            "mlx_manager.mlx_server.services.audio.transcribe_audio",
-            new_callable=AsyncMock,
-            return_value={"text": "Hello world"},
-        ),
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        return_value={
+            "architectures": ["WhisperForConditionalGeneration"],
+            "model_type": "whisper",
+        },
     ):
         probe = AudioProbe()
         steps = []
@@ -1284,24 +1286,24 @@ async def test_embeddings_probe_normalization_failure():
 @pytest.mark.asyncio
 async def test_embeddings_probe_max_length_failure():
     """Test EmbeddingsProbe handles max_length check failure."""
+    from mlx_manager.mlx_server.models.ir import EmbeddingResult
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.embeddings import EmbeddingsProbe
 
+    mock_adapter = MagicMock()
+    mock_adapter.generate_embeddings = AsyncMock(
+        return_value=EmbeddingResult(embeddings=[[0.5] * 384], dimensions=384, total_tokens=1)
+    )
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/embed-model"
+    mock_loaded.adapter = mock_adapter
 
     result = ProbeResult()
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.services.embeddings.generate_embeddings",
-            new_callable=AsyncMock,
-            return_value=([[0.5] * 384], None),
-        ),
-        patch(
-            "mlx_manager.utils.model_detection.read_model_config",
-            side_effect=Exception("Config read failed"),
-        ),
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        side_effect=Exception("Config read failed"),
     ):
         probe = EmbeddingsProbe()
         steps = []
@@ -1316,29 +1318,29 @@ async def test_embeddings_probe_max_length_failure():
 @pytest.mark.asyncio
 async def test_embeddings_probe_similarity_failure():
     """Test EmbeddingsProbe handles similarity check failure."""
+    from mlx_manager.mlx_server.models.ir import EmbeddingResult
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.embeddings import EmbeddingsProbe
 
+    mock_adapter = MagicMock()
+    mock_adapter.generate_embeddings = AsyncMock(
+        side_effect=[
+            # First call: test_encode
+            EmbeddingResult(embeddings=[[0.5] * 384], dimensions=384, total_tokens=1),
+            # Second call: test_similarity - fails
+            Exception("Embedding generation failed"),
+        ],
+    )
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/embed-model"
+    mock_loaded.adapter = mock_adapter
 
     result = ProbeResult()
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.services.embeddings.generate_embeddings",
-            new_callable=AsyncMock,
-            side_effect=[
-                # First call: test_encode
-                ([[0.5] * 384], None),
-                # Second call: test_similarity - fails
-                Exception("Embedding generation failed"),
-            ],
-        ),
-        patch(
-            "mlx_manager.utils.model_detection.read_model_config",
-            return_value={"max_position_embeddings": 512},
-        ),
+    with patch(
+        "mlx_manager.utils.model_detection.read_model_config",
+        return_value={"max_position_embeddings": 512},
     ):
         probe = EmbeddingsProbe()
         steps = []
@@ -2268,9 +2270,7 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
         ),
     ):
         probe = TextGenProbe()
-        supports, parser_id, diags = await probe._verify_thinking_support(
-            mock_loaded, mock_adapter
-        )
+        supports, parser_id, diags = await probe._verify_thinking_support(mock_loaded, mock_adapter)
         assert supports is False  # Could not verify empirically
         assert parser_id == "null"
         assert len(diags) == 1
@@ -2653,57 +2653,48 @@ async def test_vision_probe_generative_failure_doesnt_crash():
 
 @pytest.mark.asyncio
 async def test_vision_probe_generate_with_tools_and_thinking():
-    """Test VisionProbe._generate with tools and enable_thinking kwargs."""
+    """Test VisionProbe._generate delegates to adapter.generate with correct args."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.vision import VisionProbe
 
-    mock_processor = MagicMock()
-    mock_model = MagicMock()
+    mock_adapter = MagicMock()
+    mock_result = TextResult(content="Generated response")
+    mock_adapter.generate = AsyncMock(return_value=mock_result)
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/vision-model"
-    mock_loaded.tokenizer = mock_processor
-    mock_loaded.model = mock_model
-    mock_loaded.config = {}
-
-    # Mock VLM dependencies
-    mock_vlm_result = MagicMock()
-    mock_vlm_result.text = "Generated response"
+    mock_loaded.adapter = mock_adapter
+    mock_loaded.model = MagicMock()
 
     tools = [{"type": "function", "function": {"name": "test_tool"}}]
     messages = [{"role": "user", "content": "Test message"}]
 
-    with (
-        patch("mlx_vlm.generate", return_value=mock_vlm_result),
-        patch(
-            "mlx_vlm.prompt_utils.apply_chat_template", return_value="formatted"
-        ) as mock_template,
-        patch("mlx_vlm.utils.load_config", return_value={}),
-    ):
-        probe = VisionProbe()
-        result = await probe._generate(mock_loaded, messages, tools=tools, enable_thinking=True)
+    probe = VisionProbe()
+    result = await probe._generate(mock_loaded, messages, tools=tools, enable_thinking=True)
 
-        assert result == "Generated response"
-        # Verify tools and enable_thinking were passed through
-        mock_template.assert_called_once()
-        call_kwargs = mock_template.call_args[1]
-        assert call_kwargs.get("tools") == tools
-        assert call_kwargs.get("enable_thinking") is True
+    assert result == "Generated response"
+    # Verify adapter.generate was called with correct args
+    mock_adapter.generate.assert_called_once()
+    call_kwargs = mock_adapter.generate.call_args[1]
+    assert call_kwargs["tools"] == tools
+    assert call_kwargs["enable_thinking"] is True
+    assert call_kwargs["images"] is not None  # Synthetic test image
 
 
 @pytest.mark.asyncio
 async def test_vision_probe_messages_to_text_with_list_content():
-    """Test VisionProbe._generate with structured list content in messages."""
+    """Test VisionProbe._generate handles structured list content via adapter."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.vision import VisionProbe
 
-    mock_processor = MagicMock()
-    mock_model = MagicMock()
+    mock_adapter = MagicMock()
+    mock_result = TextResult(content="Response")
+    mock_adapter.generate = AsyncMock(return_value=mock_result)
+
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/vision-model"
-    mock_loaded.tokenizer = mock_processor
-    mock_loaded.model = mock_model
-    mock_loaded.config = {}
-
-    mock_vlm_result = MagicMock()
-    mock_vlm_result.text = "Response"
+    mock_loaded.adapter = mock_adapter
+    mock_loaded.model = MagicMock()
 
     # Messages with structured content (list format)
     messages = [
@@ -2717,23 +2708,14 @@ async def test_vision_probe_messages_to_text_with_list_content():
         }
     ]
 
-    with (
-        patch("mlx_vlm.generate", return_value=mock_vlm_result),
-        patch(
-            "mlx_vlm.prompt_utils.apply_chat_template", return_value="formatted"
-        ) as mock_template,
-        patch("mlx_vlm.utils.load_config", return_value={}),
-    ):
-        probe = VisionProbe()
-        result = await probe._generate(mock_loaded, messages)
+    probe = VisionProbe()
+    result = await probe._generate(mock_loaded, messages)
 
-        assert result == "Response"
-        # The first argument to apply_chat_template should be the text prompt
-        # which should have extracted text parts joined
-        call_args = mock_template.call_args[0]
-        text_prompt = call_args[2]  # Third positional arg is the text prompt
-        assert "First part" in text_prompt
-        assert "Second part" in text_prompt
+    assert result == "Response"
+    # Verify adapter.generate was called with messages
+    mock_adapter.generate.assert_called_once()
+    call_kwargs = mock_adapter.generate.call_args[1]
+    assert call_kwargs["messages"] == messages
 
 
 @pytest.mark.asyncio

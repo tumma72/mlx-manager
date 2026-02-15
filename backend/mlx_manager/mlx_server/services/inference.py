@@ -55,6 +55,10 @@ class _GenContext(BaseModel):
     created: int
     tools: list[dict[str, Any]] | None
     pixel_values: Any | None = None  # Vision: preprocessed images from PreparedInput
+    # Raw inputs for adapter.generate() delegation
+    messages: list[dict[str, Any]] | None = None
+    images: list[Any] | None = None
+    enable_prompt_injection: bool = False
 
 
 async def _prepare_generation(
@@ -78,9 +82,9 @@ async def _prepare_generation(
 
     adapter = loaded.adapter
     if adapter is None:
-        from mlx_manager.mlx_server.models.adapters.composable import DefaultAdapter
+        from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = DefaultAdapter(tokenizer)
+        adapter = create_adapter("default", tokenizer)
 
     # Use adapter.prepare_input() for message conversion, template, and stop tokens
     prepared = adapter.prepare_input(
@@ -125,6 +129,9 @@ async def _prepare_generation(
         created=created,
         tools=tools,
         pixel_values=prepared.pixel_values,
+        messages=messages,
+        images=images,
+        enable_prompt_injection=enable_prompt_injection,
     )
 
 
@@ -322,15 +329,62 @@ async def _stream_chat_ir(
 ) -> AsyncGenerator[StreamEvent | TextResult, None]:
     """Streaming generation yielding IR events.
 
+    When ctx.messages is available, delegates to adapter.generate_step()
+    which owns the full pipeline. Otherwise falls back to direct streaming
+    using the pre-computed prompt (legacy path).
+
     Yields StreamEvent for each token, then a final TextResult with
     finish_reason, tool_calls, and reasoning_content.
     """
+    if ctx.messages is not None:
+        # Modern path: adapter owns the full pipeline
+        completion_tokens = 0
+
+        if ctx.tools:
+            logger.debug(
+                f"Generation config: model={ctx.model_id}, max_tokens={ctx.max_tokens}, "
+                f"stop_tokens={ctx.stop_token_ids}, tools_count={len(ctx.tools)}"
+            )
+
+        async for item in ctx.adapter.generate_step(
+            model=ctx.model,
+            messages=ctx.messages,
+            max_tokens=ctx.max_tokens,
+            temperature=ctx.temperature,
+            top_p=ctx.top_p,
+            tools=ctx.tools,
+            enable_prompt_injection=ctx.enable_prompt_injection,
+            images=ctx.images,
+        ):
+            if isinstance(item, TextResult):
+                if item.tool_calls:
+                    logger.debug(
+                        "Detected {} tool calls in streaming response",
+                        len(item.tool_calls),
+                    )
+                logger.info(
+                    f"Chat stream complete: {ctx.completion_id}, "
+                    f"tokens={completion_tokens}, reason={item.finish_reason}"
+                )
+                if LOGFIRE_AVAILABLE:
+                    logfire.info(
+                        "stream_completion_finished",
+                        completion_id=ctx.completion_id,
+                        completion_tokens=completion_tokens,
+                        finish_reason=item.finish_reason,
+                        has_tool_calls=item.tool_calls is not None,
+                    )
+                yield item
+            else:
+                completion_tokens += 1
+                yield item
+        return
+
+    # Legacy path: use pre-computed prompt
     if ctx.pixel_values is not None:
-        # Vision path: non-streaming generation, simulate streaming
         from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
         def run_vision_generation() -> str:
-            """Run vision generation in dedicated thread (owns Metal context)."""
             from mlx_vlm import generate as vlm_generate
 
             response = vlm_generate(
@@ -345,16 +399,11 @@ async def _stream_chat_ir(
             return str(response.text)
 
         response_text = await run_on_metal_thread(run_vision_generation, timeout=600.0)
-
-        # Yield the full response as a single content event
         yield StreamEvent(type="content", content=response_text)
-
-        # Process with adapter for tool/thinking extraction
         result = ctx.adapter.process_complete(response_text, "stop")
         yield result
         return
 
-    # Text path: existing streaming logic
     from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
     completion_tokens = 0
@@ -367,12 +416,10 @@ async def _stream_chat_ir(
         )
 
     def produce_tokens() -> Iterator[tuple[str, int | None, bool]]:
-        """Yield (token_text, token_id, is_stop) tuples on Metal thread."""
         from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
         sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
-
         for response in stream_generate(
             ctx.model,
             ctx.tokenizer,
@@ -382,18 +429,14 @@ async def _stream_chat_ir(
         ):
             token_id = getattr(response, "token", None)
             token_text = getattr(response, "text", str(response))
-
             is_stop = token_id is not None and token_id in ctx.stop_token_ids
             yield (token_text, token_id, is_stop)
-
             if is_stop:
                 return
 
     finish_reason = "length"
-
     async for token_text, token_id, is_stop in stream_from_metal_thread(produce_tokens):
         completion_tokens += 1
-
         if is_stop:
             finish_reason = "stop"
             stream_processor.feed(token_text)
@@ -402,12 +445,10 @@ async def _stream_chat_ir(
                 f"token_text={repr(token_text)}, tokens_so_far={completion_tokens}"
             )
             break
-
         event = stream_processor.feed(token_text)
         if event.reasoning_content or event.content:
             yield event
 
-    # Finalize: use adapter.process_complete() on accumulated text
     raw_text = stream_processor.get_accumulated_text()
     if ctx.tools:
         logger.debug(
@@ -433,86 +474,90 @@ async def _stream_chat_ir(
             has_tool_calls=result.tool_calls is not None,
         )
 
-    # Yield final TextResult as terminal event
     yield result
 
 
 async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
     """Non-streaming generation returning IR result.
 
-    Uses run_on_metal_thread for Metal GPU thread affinity.
+    When ctx.messages is available, delegates to adapter.generate() which
+    owns the full pipeline. Otherwise falls back to direct generation using
+    the pre-computed prompt (legacy path).
     """
     from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     actual_tokenizer = getattr(ctx.tokenizer, "tokenizer", ctx.tokenizer)
     prompt_tokens = len(actual_tokenizer.encode(ctx.prompt))
 
-    if ctx.pixel_values is not None:
-        # Vision path: use mlx_vlm.generate (blocking, not streaming)
-        def run_vision_generation() -> tuple[str, str]:
-            """Run vision generation in dedicated thread (owns Metal context)."""
-            from mlx_vlm import generate as vlm_generate
-
-            response = vlm_generate(
-                ctx.model,
-                ctx.tokenizer,  # This is actually the Processor for vision models
-                ctx.prompt,
-                ctx.pixel_values,
-                max_tokens=ctx.max_tokens,
-                temp=ctx.temperature,
-                verbose=False,
-            )
-            return (str(response.text), "stop")
-
-        response_text, finish_reason = await run_on_metal_thread(
-            run_vision_generation, timeout=600.0
+    if ctx.messages is not None:
+        # Modern path: adapter owns the full pipeline
+        result = await ctx.adapter.generate(
+            model=ctx.model,
+            messages=ctx.messages,
+            max_tokens=ctx.max_tokens,
+            temperature=ctx.temperature,
+            top_p=ctx.top_p,
+            tools=ctx.tools,
+            enable_prompt_injection=ctx.enable_prompt_injection,
+            images=ctx.images,
         )
-        completion_tokens = len(response_text.split())  # Rough estimate for vision
+        completion_tokens = (
+            len(result.content.split()) if ctx.images else len(ctx.tokenizer.encode(result.content))
+        )
     else:
-        # Text path: existing stream_generate logic
-        def run_generation() -> tuple[str, str]:
-            """Run complete generation in dedicated thread (owns Metal context)."""
-            from mlx_lm import stream_generate
-            from mlx_lm.sample_utils import make_sampler
+        # Legacy path: use pre-computed prompt
+        if ctx.pixel_values is not None:
 
-            response_text = ""
-            finish_reason = "length"
+            def run_vision_generation() -> tuple[str, str]:
+                from mlx_vlm import generate as vlm_generate
 
-            sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
+                response = vlm_generate(
+                    ctx.model,
+                    ctx.tokenizer,
+                    ctx.prompt,
+                    ctx.pixel_values,
+                    max_tokens=ctx.max_tokens,
+                    temp=ctx.temperature,
+                    verbose=False,
+                )
+                return (str(response.text), "stop")
 
-            for response in stream_generate(
-                ctx.model,
-                ctx.tokenizer,
-                ctx.prompt,
-                max_tokens=ctx.max_tokens,
-                sampler=sampler,
-            ):
-                token_id = getattr(response, "token", None)
-                token_text = getattr(response, "text", str(response))
+            response_text, finish_reason = await run_on_metal_thread(
+                run_vision_generation, timeout=600.0
+            )
+            completion_tokens = len(response_text.split())
+        else:
 
-                if token_id is not None and token_id in ctx.stop_token_ids:
-                    finish_reason = "stop"
-                    break
+            def run_generation() -> tuple[str, str]:
+                from mlx_lm import stream_generate
+                from mlx_lm.sample_utils import make_sampler
 
-                response_text += token_text
+                response_text = ""
+                finish_reason = "length"
+                sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
+                for response in stream_generate(
+                    ctx.model,
+                    ctx.tokenizer,
+                    ctx.prompt,
+                    max_tokens=ctx.max_tokens,
+                    sampler=sampler,
+                ):
+                    token_id = getattr(response, "token", None)
+                    token_text = getattr(response, "text", str(response))
+                    if token_id is not None and token_id in ctx.stop_token_ids:
+                        finish_reason = "stop"
+                        break
+                    response_text += token_text
+                return (response_text, finish_reason)
 
-            return (response_text, finish_reason)
+            response_text, finish_reason = await run_on_metal_thread(run_generation)
+            completion_tokens = len(ctx.tokenizer.encode(response_text))
 
-        response_text, finish_reason = await run_on_metal_thread(run_generation)
-        completion_tokens = len(ctx.tokenizer.encode(response_text))
-
-    # Post-process with adapter.process_complete()
-    adapter = ctx.adapter
-    if adapter is None:
-        # No adapter - return raw response without parsing
-        result = TextResult(content=response_text, finish_reason=finish_reason)
-        return InferenceResult(
-            result=result,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-        )
-
-    result = adapter.process_complete(response_text, finish_reason)
+        adapter = ctx.adapter
+        if adapter is None:
+            result = TextResult(content=response_text, finish_reason=finish_reason)
+        else:
+            result = adapter.process_complete(response_text, finish_reason)
 
     if result.tool_calls:
         logger.debug(f"Detected {len(result.tool_calls)} tool calls in response")
@@ -697,10 +742,10 @@ async def generate_completion(
     else:
         # Fallback: compute directly from tokenizer
         from mlx_manager.mlx_server.models.adapters.composable import (
-            DefaultAdapter,
+            create_adapter,
         )
 
-        adapter = DefaultAdapter(tokenizer)
+        adapter = create_adapter("default", tokenizer)
         stop_tokens = set(adapter.stop_tokens)
 
     # Generate unique ID

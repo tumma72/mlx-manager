@@ -6,10 +6,11 @@ that are not covered by the general probe package tests.
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mlx_manager.mlx_server.models.ir import AudioResult, TranscriptionResult
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.services.probe.audio import AudioProbe, _detect_audio_capabilities
 from mlx_manager.services.probe.steps import ProbeResult
@@ -147,16 +148,14 @@ async def test_test_tts_timeout():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/tts-model"
 
-    # Mock generate_speech to hang forever
+    # Mock adapter.generate_speech to hang forever
     async def hanging_generate(*args, **kwargs):
         await asyncio.sleep(1000)
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.generate_speech",
-        side_effect=hanging_generate,
-    ):
-        with pytest.raises(TimeoutError):
-            await _test_tts(mock_loaded, timeout=0.1)
+    mock_loaded.adapter.generate_speech = hanging_generate
+
+    with pytest.raises(TimeoutError):
+        await _test_tts(mock_loaded, timeout=0.1)
 
 
 @pytest.mark.asyncio
@@ -167,12 +166,12 @@ async def test_test_tts_generation_error():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/tts-model"
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.generate_speech",
+    mock_loaded.adapter.generate_speech = AsyncMock(
         side_effect=RuntimeError("Model loading failed"),
-    ):
-        with pytest.raises(RuntimeError, match="Model loading failed"):
-            await _test_tts(mock_loaded, timeout=60.0)
+    )
+
+    with pytest.raises(RuntimeError, match="Model loading failed"):
+        await _test_tts(mock_loaded, timeout=60.0)
 
 
 @pytest.mark.asyncio
@@ -183,12 +182,12 @@ async def test_test_tts_empty_audio():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/tts-model"
 
-    # Return empty bytes
-    with patch(
-        "mlx_manager.mlx_server.services.audio.generate_speech",
-        return_value=(b"", 24000),
-    ):
-        success, audio_bytes = await _test_tts(mock_loaded, timeout=60.0)
+    # Return AudioResult with empty bytes
+    mock_loaded.adapter.generate_speech = AsyncMock(
+        return_value=AudioResult(audio_bytes=b"", sample_rate=24000, format="wav"),
+    )
+
+    success, audio_bytes = await _test_tts(mock_loaded, timeout=60.0)
 
     assert success is False
     assert audio_bytes is None
@@ -207,21 +206,17 @@ async def test_test_stt_generates_minimal_wav():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/stt-model"
 
-    # Mock transcribe_audio to capture the generated audio
+    # Mock adapter.transcribe to capture the generated audio
     captured_audio = None
 
-    async def capture_audio(model_id, audio_data):
+    async def capture_audio(model, audio_data):
         nonlocal captured_audio
         captured_audio = audio_data
-        return {"text": "test transcript"}
+        return TranscriptionResult(text="test transcript")
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
-        side_effect=capture_audio,
-    ):
-        success, transcript, used_audio = await _test_stt(
-            mock_loaded, audio_bytes=None, timeout=60.0
-        )
+    mock_loaded.adapter.transcribe = capture_audio
+
+    success, transcript, used_audio = await _test_stt(mock_loaded, audio_bytes=None, timeout=60.0)
 
     assert success is True
     assert transcript == "test transcript"
@@ -240,16 +235,14 @@ async def test_test_stt_timeout():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/stt-model"
 
-    # Mock transcribe_audio to hang forever
+    # Mock adapter.transcribe to hang forever
     async def hanging_transcribe(*args, **kwargs):
         await asyncio.sleep(1000)
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
-        side_effect=hanging_transcribe,
-    ):
-        with pytest.raises(TimeoutError):
-            await _test_stt(mock_loaded, audio_bytes=b"fake audio", timeout=0.1)
+    mock_loaded.adapter.transcribe = hanging_transcribe
+
+    with pytest.raises(TimeoutError):
+        await _test_stt(mock_loaded, audio_bytes=b"fake audio", timeout=0.1)
 
 
 @pytest.mark.asyncio
@@ -260,12 +253,12 @@ async def test_test_stt_transcription_error():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/stt-model"
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
+    mock_loaded.adapter.transcribe = AsyncMock(
         side_effect=RuntimeError("Model loading failed"),
-    ):
-        with pytest.raises(RuntimeError, match="Model loading failed"):
-            await _test_stt(mock_loaded, audio_bytes=b"fake audio", timeout=60.0)
+    )
+
+    with pytest.raises(RuntimeError, match="Model loading failed"):
+        await _test_stt(mock_loaded, audio_bytes=b"fake audio", timeout=60.0)
 
 
 @pytest.mark.asyncio
@@ -276,17 +269,17 @@ async def test_test_stt_empty_transcript():
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/stt-model"
 
-    # Return empty transcript
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
-        return_value={"text": ""},
-    ):
-        success, transcript, used_audio = await _test_stt(
-            mock_loaded, audio_bytes=b"fake audio", timeout=60.0
-        )
+    # Return TranscriptionResult with empty text
+    mock_loaded.adapter.transcribe = AsyncMock(
+        return_value=TranscriptionResult(text=""),
+    )
 
-    assert success is True
-    assert transcript is None  # Empty string becomes None
+    success, transcript, used_audio = await _test_stt(
+        mock_loaded, audio_bytes=b"fake audio", timeout=60.0
+    )
+
+    assert success is False
+    assert transcript is None
     assert used_audio == b"fake audio"
 
 
@@ -300,13 +293,13 @@ async def test_test_stt_with_provided_audio():
 
     test_audio = b"RIFF....WAVE...."
 
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
-        return_value={"text": "hello world"},
-    ):
-        success, transcript, used_audio = await _test_stt(
-            mock_loaded, audio_bytes=test_audio, timeout=60.0
-        )
+    mock_loaded.adapter.transcribe = AsyncMock(
+        return_value=TranscriptionResult(text="hello world"),
+    )
+
+    success, transcript, used_audio = await _test_stt(
+        mock_loaded, audio_bytes=test_audio, timeout=60.0
+    )
 
     assert success is True
     assert transcript == "hello world"
@@ -614,20 +607,20 @@ def test_detect_audio_capabilities_stt_config():
 
 @pytest.mark.asyncio
 async def test_test_stt_invalid_result_format():
-    """Test _test_stt when result doesn't have expected 'text' key."""
+    """Test _test_stt when result has empty text (default TranscriptionResult)."""
     from mlx_manager.services.probe.audio import _test_stt
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/stt-model"
 
-    # Return result without 'text' key
-    with patch(
-        "mlx_manager.mlx_server.services.audio.transcribe_audio",
-        return_value={"error": "Something went wrong"},
-    ):
-        success, transcript, used_audio = await _test_stt(
-            mock_loaded, audio_bytes=b"fake audio", timeout=60.0
-        )
+    # Return TranscriptionResult with default empty text
+    mock_loaded.adapter.transcribe = AsyncMock(
+        return_value=TranscriptionResult(),
+    )
+
+    success, transcript, used_audio = await _test_stt(
+        mock_loaded, audio_bytes=b"fake audio", timeout=60.0
+    )
 
     assert success is False
     assert transcript is None

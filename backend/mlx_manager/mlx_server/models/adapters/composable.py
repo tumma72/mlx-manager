@@ -2,26 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import re
-from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, cast
 
-from loguru import logger
-
 if TYPE_CHECKING:
-    from mlx_manager.mlx_server.models.ir import PreparedInput, TextResult
+    from mlx_manager.mlx_server.models.ir import (
+        AudioResult,
+        EmbeddingResult,
+        PreparedInput,
+        TextResult,
+        TranscriptionResult,
+    )
     from mlx_manager.mlx_server.services.response_processor import StreamProcessor
 
+from mlx_manager.mlx_server.models.adapters.configs import FAMILY_CONFIGS, FamilyConfig
 from mlx_manager.mlx_server.parsers import (
-    Glm4NativeParser,
-    HermesJsonParser,
-    LlamaXmlParser,
     NullThinkingParser,
     NullToolParser,
     ThinkingParser,
-    ThinkTagParser,
     ToolCallParser,
 )
 
@@ -38,47 +36,52 @@ COMMON_SPECIAL_TOKENS = [
 ]
 
 
-class ModelAdapter(ABC):
-    """Stateful adapter with injected parsers.
+class ModelAdapter:
+    """Stateful adapter configured from FamilyConfig with injected parsers.
 
-    Created once per loaded model, holds tokenizer reference + parser
-    instances. Replaces the old Protocol-based stateless ModelAdapter.
+    Created once per loaded model. Holds tokenizer reference + parser
+    instances. Behavior is driven by the FamilyConfig data object and
+    optional strategy functions—no subclassing needed.
     """
 
     def __init__(
         self,
+        config: FamilyConfig | None = None,
         tokenizer: Any | None = None,
         tool_parser: ToolCallParser | None = None,
         thinking_parser: ThinkingParser | None = None,
         model_id: str | None = None,
     ) -> None:
+        self._config = config or FAMILY_CONFIGS["default"]
         self._tokenizer = tokenizer
         # Get actual tokenizer (Processor wraps tokenizer, regular is itself)
         # Audio adapters pass None; text/vision always have a tokenizer.
         self._actual_tokenizer: Any = (
             getattr(tokenizer, "tokenizer", tokenizer) if tokenizer is not None else None
         )
-        self._tool_parser = tool_parser or self._default_tool_parser()
-        self._thinking_parser = thinking_parser or self._default_thinking_parser()
+        # Parsers: explicit override > config factory > NullParser
+        if tool_parser is not None:
+            self._tool_parser = tool_parser
+        elif self._config.tool_parser_factory:
+            self._tool_parser = self._config.tool_parser_factory()
+        else:
+            self._tool_parser = NullToolParser()
+
+        if thinking_parser is not None:
+            self._thinking_parser = thinking_parser
+        elif self._config.thinking_parser_factory:
+            self._thinking_parser = self._config.thinking_parser_factory()
+        else:
+            self._thinking_parser = NullThinkingParser()
+
         # Pre-compute stop tokens at init
         self._stop_tokens = self._compute_stop_tokens()
         self._model_id = model_id
 
     @property
-    @abstractmethod
     def family(self) -> str:
         """Model family identifier."""
-        ...
-
-    @abstractmethod
-    def _default_tool_parser(self) -> ToolCallParser:
-        """Default tool parser for this family."""
-        ...
-
-    @abstractmethod
-    def _default_thinking_parser(self) -> ThinkingParser:
-        """Default thinking parser for this family."""
-        ...
+        return self._config.family
 
     @property
     def tool_parser(self) -> ToolCallParser:
@@ -98,17 +101,32 @@ class ModelAdapter(ABC):
         return self._stop_tokens
 
     def _compute_stop_tokens(self) -> list[int]:
-        """Compute stop tokens from tokenizer. Override in subclasses."""
+        """Compute stop tokens from tokenizer + config extra_stop_tokens."""
         if self._actual_tokenizer is None:
             return []
-        return [self._actual_tokenizer.eos_token_id]
+        eos = getattr(self._actual_tokenizer, "eos_token_id", None)
+        stop_ids: list[int] = [eos] if eos is not None else []
+        for token_str in self._config.extra_stop_tokens:
+            try:
+                token_id = self._actual_tokenizer.convert_tokens_to_ids(token_str)
+                if (
+                    token_id is not None
+                    and token_id != getattr(self._actual_tokenizer, "unk_token_id", None)
+                    and token_id not in stop_ids
+                ):
+                    stop_ids.append(token_id)
+            except Exception:
+                pass
+        return stop_ids
 
     async def post_load_configure(self, model: Any, model_id: str) -> None:
-        """Post-load configuration hook. Override for model-specific fixups."""
+        """Post-load configuration hook. Delegates to config's post_load_hook."""
+        if self._config.post_load_hook:
+            await self._config.post_load_hook(model, model_id)
 
     def supports_native_tools(self) -> bool:
         """Whether adapter passes tools= to apply_chat_template."""
-        return False
+        return self._config.native_tools
 
     def supports_tool_calling(self) -> bool:
         """Whether adapter supports tool calling (native or injected)."""
@@ -175,6 +193,15 @@ class ModelAdapter(ABC):
     ) -> str:
         """Apply chat template with automatic tool delivery."""
         effective, native_tools = self._prepare_tools(messages, tools)
+        if self._config.template_strategy:
+            return self._config.template_strategy(
+                self._actual_tokenizer,
+                effective,
+                add_generation_prompt,
+                native_tools,
+                enable_thinking,
+            )
+        # Default: call tokenizer.apply_chat_template() directly
         kwargs: dict[str, Any] = {
             "add_generation_prompt": add_generation_prompt,
             "tokenize": False,
@@ -187,15 +214,32 @@ class ModelAdapter(ABC):
         )
 
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
-        """Default: no tool formatting (override in subclasses)."""
+        """Format tools for prompt injection. Delegates to config strategy."""
+        if self._config.tool_format_strategy:
+            return self._config.tool_format_strategy(tools)
         return ""
 
     def get_tool_call_stop_tokens(self) -> list[int]:
-        """Additional stop tokens when tools are enabled. Override."""
-        return []
+        """Additional stop tokens when tools are enabled."""
+        if not self._config.tool_call_stop_tokens or self._actual_tokenizer is None:
+            return []
+        stop_tokens: list[int] = []
+        for token_str in self._config.tool_call_stop_tokens:
+            try:
+                token_id = self._actual_tokenizer.convert_tokens_to_ids(token_str)
+                if token_id is not None and token_id != getattr(
+                    self._actual_tokenizer, "unk_token_id", None
+                ):
+                    stop_tokens.append(token_id)
+            except Exception:
+                pass
+        return stop_tokens
 
     def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Default safe fallback: convert tool messages to user messages."""
+        """Convert messages. Delegates to config strategy or uses default fallback."""
+        if self._config.message_convert_strategy:
+            return self._config.message_convert_strategy(messages)
+        # Default safe fallback: convert tool messages to user messages
         converted: list[dict[str, Any]] = []
         for msg in messages:
             role = msg.get("role")
@@ -265,6 +309,7 @@ class ModelAdapter(ABC):
         tools: list[dict[str, Any]] | None = None,
         enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
+        enable_thinking: bool = False,
     ) -> PreparedInput:
         """Prepare model-ready input from messages and optional tools.
 
@@ -331,15 +376,16 @@ class ModelAdapter(ABC):
             messages=converted,
             add_generation_prompt=True,
             tools=effective_tools,
+            enable_thinking=enable_thinking,
         )
 
-        stop_ids = set(self.stop_tokens)
+        stop_ids_set = set(self.stop_tokens)
         if use_tools:
-            stop_ids.update(self.get_tool_call_stop_tokens())
+            stop_ids_set.update(self.get_tool_call_stop_tokens())
 
         return PreparedInput(
             prompt=prompt,
-            stop_token_ids=list(stop_ids),
+            stop_token_ids=list(stop_ids_set),
         )
 
     def process_complete(self, raw_text: str, finish_reason: str = "stop") -> TextResult:
@@ -372,580 +418,397 @@ class ModelAdapter(ABC):
             finish_reason=finish_reason,
         )
 
+    # ── Full generation pipeline ─────────────────────────────────
 
-class DefaultAdapter(ModelAdapter):
-    """Default adapter for unknown model families."""
-
-    @property
-    def family(self) -> str:
-        return "default"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return NullToolParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return NullThinkingParser()
-
-
-class QwenAdapter(ModelAdapter):
-    """Qwen family: Hermes JSON tool calls, <think> reasoning."""
-
-    @property
-    def family(self) -> str:
-        return "qwen"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return HermesJsonParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return ThinkTagParser()
-
-    def _compute_stop_tokens(self) -> list[int]:
-        stop_tokens = [self._actual_tokenizer.eos_token_id]
-        try:
-            im_end_id = self._actual_tokenizer.convert_tokens_to_ids("<|im_end|>")
-            if im_end_id is not None and im_end_id != self._actual_tokenizer.unk_token_id:
-                stop_tokens.append(im_end_id)
-        except Exception:
-            pass
-        return stop_tokens
-
-    def apply_chat_template(
+    async def generate(
         self,
+        model: Any,
         messages: list[dict[str, Any]],
-        add_generation_prompt: bool = True,
+        max_tokens: int = 4096,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
         tools: list[dict[str, Any]] | None = None,
+        enable_prompt_injection: bool = False,
+        images: list[Any] | None = None,
         enable_thinking: bool = False,
-    ) -> str:
-        """Apply Qwen template with enable_thinking support."""
-        effective, native_tools = self._prepare_tools(messages, tools)
-        kwargs: dict[str, Any] = {
-            "add_generation_prompt": add_generation_prompt,
-            "tokenize": False,
-            "enable_thinking": True,
-        }
-        if native_tools:
-            kwargs["tools"] = native_tools
-        try:
-            return cast(
-                str,
-                self._actual_tokenizer.apply_chat_template(effective, **kwargs),
-            )
-        except (TypeError, ValueError, KeyError, AttributeError):
-            del kwargs["enable_thinking"]
-            return cast(
-                str,
-                self._actual_tokenizer.apply_chat_template(effective, **kwargs),
-            )
+    ) -> TextResult:
+        """Full generation pipeline: prepare → generate → process_complete.
 
-    def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
-        if not tools:
-            return ""
-        tool_docs: list[str] = []
-        for tool in tools:
-            func = tool.get("function", {})
-            name = func.get("name", "unknown")
-            description = func.get("description", "")
-            parameters = func.get("parameters", {})
-            doc = (
-                f'{{\n  "name": "{name}",\n'
-                f'  "description": "{description}",\n'
-                f'  "parameters": {json.dumps(parameters)}\n}}'
-            )
-            tool_docs.append(doc)
-        nl = "\n"
-        return (
-            f"<tools>\n{nl.join(tool_docs)}\n</tools>\n\n"
-            "When you need to call a tool, respond with:\n"
-            '<tool_call>{"name": "function_name", '
-            '"arguments": {"param": "value"}}</tool_call>\n\n'
-            "Only call tools when necessary. "
-            "If no tool call is needed, respond normally."
+        Owns the complete text/vision inference path. Services call this
+        instead of orchestrating prepare_input/generate/process_complete
+        themselves.
+        """
+        from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+        prepared = self.prepare_input(
+            messages,
+            tools=tools,
+            enable_prompt_injection=enable_prompt_injection,
+            images=images,
+            enable_thinking=enable_thinking,
         )
 
-    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Convert messages: tool→user, assistant tool_calls→Hermes tags."""
-        converted: list[dict[str, Any]] = []
-        for msg in messages:
-            role = msg.get("role")
-            if role == "tool":
-                tool_call_id = msg.get("tool_call_id", "unknown")
-                content = msg.get("content", "")
-                converted.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"[Tool Result for {tool_call_id}]\n"
-                            f"{content}\n[End Tool Result]\n\n"
-                            "Please provide your response based on "
-                            "this tool result."
-                        ),
-                    }
+        if images:
+            # Vision generation via mlx-vlm
+            def run_vision_gen() -> tuple[str, str]:
+                from mlx_vlm import generate as vlm_generate
+
+                response = vlm_generate(
+                    model,
+                    self._tokenizer,
+                    prepared.prompt,
+                    prepared.pixel_values,
+                    max_tokens=max_tokens,
+                    temp=temperature,
+                    verbose=False,
                 )
-            elif role == "assistant" and msg.get("tool_calls"):
-                tool_calls = msg.get("tool_calls", [])
-                tool_text = ""
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    tool_call_data = {
-                        "name": func.get("name"),
-                        "arguments": json.loads(func.get("arguments", "{}")),
-                    }
-                    tool_text += f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>"
-                content = (msg.get("content", "") or "") + tool_text
-                converted.append({"role": "assistant", "content": content})
-            else:
-                converted.append(msg)
-        return converted
+                return (str(response.text), "stop")
 
+            raw_text, finish_reason = await run_on_metal_thread(run_vision_gen, timeout=600.0)
+        else:
+            # Text generation via mlx-lm
+            stop_ids = set(prepared.stop_token_ids or [])
 
-class GLM4Adapter(ModelAdapter):
-    """GLM4 family: native tool support, <think> reasoning.
+            def run_text_gen() -> tuple[str, str]:
+                from mlx_lm import stream_generate
+                from mlx_lm.sample_utils import make_sampler
 
-    FIX: Unlike old GLM4Adapter, this passes tools= to tokenizer natively.
-    """
+                text = ""
+                finish = "length"
+                sampler = make_sampler(temp=temperature, top_p=top_p)
 
-    @property
-    def family(self) -> str:
-        return "glm4"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return Glm4NativeParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return ThinkTagParser()
-
-    def supports_native_tools(self) -> bool:
-        """GLM4.7 supports native tools."""
-        return True
-
-    def _compute_stop_tokens(self) -> list[int]:
-        stop_tokens: list[int] = [self._actual_tokenizer.eos_token_id]
-        special_tokens = ["<|user|>", "<|observation|>", "<|endoftext|>"]
-        for token_str in special_tokens:
-            try:
-                token_id = self._actual_tokenizer.convert_tokens_to_ids(token_str)
-                if (
-                    token_id is not None
-                    and token_id != self._actual_tokenizer.unk_token_id
-                    and token_id not in stop_tokens
+                for resp in stream_generate(
+                    model,
+                    self._tokenizer,  # type: ignore[arg-type]
+                    prepared.prompt,
+                    max_tokens=max_tokens,
+                    sampler=sampler,
                 ):
-                    stop_tokens.append(token_id)
-            except Exception:
-                pass
-        return stop_tokens
+                    token_id = getattr(resp, "token", None)
+                    if token_id is not None and token_id in stop_ids:
+                        finish = "stop"
+                        break
+                    text += getattr(resp, "text", str(resp))
+                return (text, finish)
 
-    def apply_chat_template(
+            raw_text, finish_reason = await run_on_metal_thread(run_text_gen)
+
+        return self.process_complete(raw_text, finish_reason)
+
+    async def generate_step(
         self,
+        model: Any,
         messages: list[dict[str, Any]],
-        add_generation_prompt: bool = True,
+        max_tokens: int = 4096,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
         tools: list[dict[str, Any]] | None = None,
+        enable_prompt_injection: bool = False,
+        images: list[Any] | None = None,
         enable_thinking: bool = False,
-    ) -> str:
-        """Apply GLM4 template with native tool support."""
-        effective, native_tools = self._prepare_tools(messages, tools)
-        if hasattr(self._actual_tokenizer, "apply_chat_template"):
-            try:
-                kwargs: dict[str, Any] = {
-                    "add_generation_prompt": add_generation_prompt,
-                    "tokenize": False,
-                }
-                if native_tools:
-                    kwargs["tools"] = native_tools
-                return cast(
-                    str,
-                    self._actual_tokenizer.apply_chat_template(effective, **kwargs),
-                )
-            except Exception as e:
-                logger.warning("GLM4 tokenizer.apply_chat_template failed: {}", e)
-        # Manual ChatML fallback
-        parts: list[str] = []
-        for msg in effective:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            parts.append(f"<|{role}|>\n{content}")
-        if add_generation_prompt:
-            parts.append("<|assistant|>")
-        return "\n".join(parts)
+    ) -> Any:
+        """Streaming generation yielding IR events.
 
-    def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
-        if not tools:
-            return ""
-        tool_docs: list[str] = []
-        for tool in tools:
-            func = tool.get("function", {})
-            name = func.get("name", "unknown")
-            description = func.get("description", "")
-            parameters = func.get("parameters", {})
-            doc = (
-                f"<tool>\n<name>{name}</name>\n"
-                f"<description>{description}</description>\n"
-                f"<parameters>{json.dumps(parameters)}</parameters>\n"
-                "</tool>"
-            )
-            tool_docs.append(doc)
-        nl = "\n"
-        return (
-            "You have access to the following tools:\n\n"
-            f"{nl.join(tool_docs)}\n\n"
-            "When you need to call a tool, use this format:\n"
-            "<tool_call>\n"
-            "<name>tool_name</name>\n"
-            '<arguments>{"param": "value"}</arguments>\n'
-            "</tool_call>\n\n"
-            "Only call tools when necessary."
+        Yields StreamEvent for each token, then a final TextResult.
+        Returns an async generator (use `async for event in adapter.generate_step(...)`).
+        """
+        from collections.abc import Iterator
+
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        prepared = self.prepare_input(
+            messages,
+            tools=tools,
+            enable_prompt_injection=enable_prompt_injection,
+            images=images,
+            enable_thinking=enable_thinking,
         )
 
-    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Convert messages for GLM4."""
-        converted: list[dict[str, Any]] = []
-        for msg in messages:
-            role = msg.get("role")
-            if role == "tool":
-                tool_call_id = msg.get("tool_call_id", "unknown")
-                content = msg.get("content", "")
-                converted.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"[Tool Result for {tool_call_id}]\n"
-                            f"{content}\n[End Tool Result]\n\n"
-                            "Please provide your response based on "
-                            "this tool result."
-                        ),
-                    }
+        if images:
+            # Vision: non-streaming, simulate single event
+            from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+            def run_vision_gen() -> str:
+                from mlx_vlm import generate as vlm_generate
+
+                response = vlm_generate(
+                    model,
+                    self._tokenizer,
+                    prepared.prompt,
+                    prepared.pixel_values,
+                    max_tokens=max_tokens,
+                    temp=temperature,
+                    verbose=False,
                 )
-            elif role == "assistant" and msg.get("tool_calls"):
-                tool_calls = msg.get("tool_calls", [])
-                tool_text = ""
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    tool_call_data = {
-                        "name": func.get("name"),
-                        "arguments": json.loads(func.get("arguments", "{}")),
-                    }
-                    tool_text += f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>"
-                content = msg.get("content", "") + tool_text
-                converted.append({"role": "assistant", "content": content})
-            else:
-                converted.append(msg)
-        return converted
+                return str(response.text)
 
+            response_text = await run_on_metal_thread(run_vision_gen, timeout=600.0)
+            yield StreamEvent(type="content", content=response_text)
+            yield self.process_complete(response_text, "stop")
+            return
 
-class LlamaAdapter(ModelAdapter):
-    """Llama family: XML tool calls, <think> reasoning."""
+        # Text: streaming generation
+        from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
-    @property
-    def family(self) -> str:
-        return "llama"
+        stop_ids = set(prepared.stop_token_ids or [])
+        stream_processor = self.create_stream_processor(prompt=prepared.prompt)
 
-    def _default_tool_parser(self) -> ToolCallParser:
-        return LlamaXmlParser()
+        def produce_tokens() -> Iterator[tuple[str, int | None, bool]]:
+            from mlx_lm import stream_generate
+            from mlx_lm.sample_utils import make_sampler
 
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return ThinkTagParser()
-
-    def _compute_stop_tokens(self) -> list[int]:
-        stop_tokens: list[int] = [self._actual_tokenizer.eos_token_id]
-        # Critical: <|eot_id|> for Llama 3.x
-        try:
-            eot_id = self._actual_tokenizer.convert_tokens_to_ids("<|eot_id|>")
-            if eot_id is not None and eot_id != self._actual_tokenizer.unk_token_id:
-                stop_tokens.append(eot_id)
-        except Exception:
-            pass
-        # Some variants have <|end_of_turn|>
-        try:
-            end_turn_id = self._actual_tokenizer.convert_tokens_to_ids("<|end_of_turn|>")
-            if (
-                end_turn_id is not None
-                and end_turn_id != self._actual_tokenizer.unk_token_id
-                and end_turn_id not in stop_tokens
+            sampler = make_sampler(temp=temperature, top_p=top_p)
+            for resp in stream_generate(
+                model,
+                self._tokenizer,  # type: ignore[arg-type]
+                prepared.prompt,
+                max_tokens=max_tokens,
+                sampler=sampler,
             ):
-                stop_tokens.append(end_turn_id)
-        except Exception:
-            pass
-        return stop_tokens
+                token_id = getattr(resp, "token", None)
+                token_text = getattr(resp, "text", str(resp))
+                is_stop = token_id is not None and token_id in stop_ids
+                yield (token_text, token_id, is_stop)
+                if is_stop:
+                    return
 
-    def get_tool_call_stop_tokens(self) -> list[int]:
-        stop_tokens: list[int] = []
-        try:
-            eom_id = self._actual_tokenizer.convert_tokens_to_ids("<|eom_id|>")
-            if eom_id is not None and eom_id != self._actual_tokenizer.unk_token_id:
-                stop_tokens.append(eom_id)
-        except Exception:
-            pass
-        return stop_tokens
+        finish_reason = "length"
+        async for token_text, token_id, is_stop in stream_from_metal_thread(produce_tokens):
+            if is_stop:
+                finish_reason = "stop"
+                stream_processor.feed(token_text)
+                break
+            event = stream_processor.feed(token_text)
+            if event.reasoning_content or event.content:
+                yield event
 
-    def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
-        if not tools:
-            return ""
-        tool_docs: list[str] = []
-        for tool in tools:
-            func = tool.get("function", {})
-            name = func.get("name", "unknown")
-            description = func.get("description", "")
-            parameters = func.get("parameters", {})
-            doc = (
-                f"{name}:\n"
-                f"  description: {description}\n"
-                f"  parameters: {json.dumps(parameters, indent=2)}"
-            )
-            tool_docs.append(doc)
-        nl = "\n"
-        return (
-            "You have access to the following functions:\n\n"
-            f"{nl.join(tool_docs)}\n\n"
-            "To call a function, respond with:\n"
-            '<function=function_name>{"param": "value"}</function>\n\n'
-            "Only call functions when necessary. "
-            "If no function call is needed, respond normally."
-        )
+        raw_text = stream_processor.get_accumulated_text()
+        yield self.process_complete(raw_text, finish_reason)
 
-    def convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Convert messages for Llama."""
-        converted: list[dict[str, Any]] = []
-        for msg in messages:
-            role = msg.get("role")
-            if role == "tool":
-                tool_call_id = msg.get("tool_call_id", "unknown")
-                content = msg.get("content", "")
-                converted.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"[Tool Result for {tool_call_id}]\n"
-                            f"{content}\n[End Tool Result]\n\n"
-                            "Please provide your response based on "
-                            "this tool result."
-                        ),
-                    }
-                )
-            elif role == "assistant" and msg.get("tool_calls"):
-                tool_calls = msg.get("tool_calls", [])
-                tool_text = ""
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    name = func.get("name", "unknown")
-                    args = func.get("arguments", "{}")
-                    tool_text += f"\n<function={name}>{args}</function>"
-                content = (msg.get("content", "") or "") + tool_text
-                converted.append({"role": "assistant", "content": content})
-            else:
-                converted.append(msg)
-        return converted
+    # ── Embeddings generation ────────────────────────────────────
 
-
-class GemmaAdapter(ModelAdapter):
-    """Gemma family: no tool support, no thinking."""
-
-    @property
-    def family(self) -> str:
-        return "gemma"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return NullToolParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return NullThinkingParser()
-
-    def _compute_stop_tokens(self) -> list[int]:
-        stop_tokens = [self._actual_tokenizer.eos_token_id]
-        try:
-            end_turn_id = self._actual_tokenizer.convert_tokens_to_ids("<end_of_turn>")
-            if end_turn_id is not None and end_turn_id != self._actual_tokenizer.unk_token_id:
-                stop_tokens.append(end_turn_id)
-        except Exception:
-            pass
-        return stop_tokens
-
-
-class MistralAdapter(ModelAdapter):
-    """Mistral family: no tool support, no thinking.
-
-    Handles system message prepend for v1/v2 compatibility.
-    """
-
-    @property
-    def family(self) -> str:
-        return "mistral"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return NullToolParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return NullThinkingParser()
-
-    def apply_chat_template(
+    async def generate_embeddings(
         self,
-        messages: list[dict[str, Any]],
-        add_generation_prompt: bool = True,
-        tools: list[dict[str, Any]] | None = None,
-        enable_thinking: bool = False,
-    ) -> str:
-        """Apply Mistral template with system message handling for v1/v2."""
-        effective, native_tools = self._prepare_tools(messages, tools)
-        # Mistral v1/v2: merge system message into first user message
-        processed = list(effective)
-        if processed and processed[0].get("role") == "system":
-            system_content = processed[0].get("content", "")
-            processed = processed[1:]
-            if processed and processed[0].get("role") == "user":
-                user_content = processed[0].get("content", "")
-                processed[0] = {
-                    "role": "user",
-                    "content": f"{system_content}\n\n{user_content}",
+        model: Any,
+        texts: list[str],
+    ) -> EmbeddingResult:
+        """Generate embeddings for a list of texts.
+
+        Owns the complete embeddings inference path. Services call this
+        instead of orchestrating tokenization/forward pass themselves.
+        """
+        from mlx_manager.mlx_server.models.ir import EmbeddingResult
+        from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+        tokenizer = self._tokenizer
+        assert tokenizer is not None, "Tokenizer required for embeddings generation"
+
+        def run_embeddings() -> tuple[list[list[float]], int]:
+            """Run embedding generation in dedicated thread (owns Metal context)."""
+            import mlx.core as mx
+
+            # Use inner tokenizer's __call__ for batch encoding.
+            # TokenizerWrapper from mlx-embeddings is not callable and
+            # batch_encode_plus was removed in transformers v5.
+            inner_tokenizer = getattr(tokenizer, "_tokenizer", tokenizer)
+            encoded = inner_tokenizer(
+                texts,
+                return_tensors=None,
+                padding=True,
+                truncation=True,
+                max_length=512,
+            )
+            inputs = {k: mx.array(v) for k, v in encoded.items()}
+
+            # Count tokens per input (not padded batch)
+            total_tokens = 0
+            for text in texts:
+                tokens = tokenizer.encode(text, truncation=True, max_length=512)
+                total_tokens += len(tokens)
+
+            # Forward pass
+            outputs = model(
+                inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+            )
+
+            # text_embeds are ALREADY L2-normalized (mean pooled + normalized)
+            embeddings = outputs.text_embeds
+
+            # Convert to Python lists
+            # NOTE: mx.eval() is the MLX framework tensor evaluation function
+            # It ensures computation is complete before converting to Python lists
+            mx.eval(embeddings)
+            embeddings_list = embeddings.tolist()
+
+            return (embeddings_list, total_tokens)
+
+        embeddings_list, total_tokens = await run_on_metal_thread(
+            run_embeddings, error_context="Embeddings generation failed"
+        )
+
+        return EmbeddingResult(
+            embeddings=embeddings_list,
+            dimensions=len(embeddings_list[0]) if embeddings_list else 0,
+            total_tokens=total_tokens,
+            finish_reason="stop",
+        )
+
+    # ── TTS generation ───────────────────────────────────────────
+
+    async def generate_speech(
+        self,
+        model: Any,
+        text: str,
+        voice: str = "af_heart",
+        speed: float = 1.0,
+        response_format: str = "wav",
+    ) -> AudioResult:
+        """Generate speech audio from text using a TTS model.
+
+        Owns the complete TTS inference path. Services call this
+        instead of orchestrating audio generation themselves.
+        """
+        from mlx_manager.mlx_server.models.ir import AudioResult
+        from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+        def run_tts() -> tuple[bytes, int]:
+            """Run TTS generation in dedicated thread (owns Metal context)."""
+            import io
+
+            import mlx.core as mx
+            import numpy as np
+
+            # Generate audio using model.generate()
+            # Returns an iterable of GenerationResult objects
+            gen_kwargs: dict[str, Any] = {
+                "text": text,
+                "voice": voice,
+                "speed": speed,
+                "verbose": False,
+            }
+
+            results = model.generate(**gen_kwargs)
+
+            # Collect all audio segments
+            audio_segments = []
+            sample_rate = getattr(model, "sample_rate", 24000)
+
+            for result in results:
+                audio_segments.append(result.audio)
+                if hasattr(result, "sample_rate"):
+                    sample_rate = result.sample_rate
+
+            if not audio_segments:
+                raise RuntimeError("TTS model produced no audio output")
+
+            # Concatenate segments if multiple
+            if len(audio_segments) > 1:
+                audio = mx.concatenate(audio_segments, axis=0)
+            else:
+                audio = audio_segments[0]
+
+            # Ensure computation is complete before converting
+            # NOTE: mx.eval() is the MLX framework tensor evaluation function
+            mx.eval(audio)
+
+            # Convert to numpy
+            audio_np = np.array(audio.tolist())
+
+            # Write to bytes buffer using soundfile (used internally by mlx-audio)
+            import soundfile as sf
+
+            buffer = io.BytesIO()
+            sf.write(buffer, audio_np, sample_rate, format=response_format.upper())
+            audio_bytes = buffer.getvalue()
+
+            return (audio_bytes, sample_rate)
+
+        audio_bytes, sample_rate = await run_on_metal_thread(
+            run_tts, error_context="TTS generation failed"
+        )
+
+        return AudioResult(
+            audio_bytes=audio_bytes,
+            sample_rate=sample_rate,
+            format=response_format,
+        )
+
+    # ── STT transcription ────────────────────────────────────────
+
+    async def transcribe(
+        self,
+        model: Any,
+        audio_data: bytes,
+        language: str | None = None,
+    ) -> TranscriptionResult:
+        """Transcribe audio to text using an STT model.
+
+        Owns the complete STT inference path. Services call this
+        instead of orchestrating transcription themselves.
+        """
+        from mlx_manager.mlx_server.models.ir import TranscriptionResult
+        from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+        def run_stt() -> dict[str, Any]:
+            """Run STT transcription in dedicated thread (owns Metal context)."""
+            import os
+            import tempfile
+
+            from mlx_audio.stt.generate import generate_transcription
+
+            # Write audio data to a temporary file since generate_transcription
+            # expects a file path for the audio parameter
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(audio_data)
+                tmp_path = tmp.name
+
+            try:
+                # Build kwargs
+                kwargs: dict[str, Any] = {}
+                if language:
+                    kwargs["language"] = language
+
+                # Run transcription
+                segments = generate_transcription(
+                    model=model,
+                    audio=tmp_path,
+                    verbose=False,
+                    **kwargs,
+                )
+
+                # Extract results from STTOutput
+                result_dict: dict[str, Any] = {
+                    "text": getattr(segments, "text", ""),
                 }
-        kwargs: dict[str, Any] = {
-            "add_generation_prompt": add_generation_prompt,
-            "tokenize": False,
-        }
-        if native_tools:
-            kwargs["tools"] = native_tools
-        return cast(
-            str,
-            self._actual_tokenizer.apply_chat_template(processed, **kwargs),
+
+                if hasattr(segments, "segments") and segments.segments:
+                    result_dict["segments"] = segments.segments
+
+                if hasattr(segments, "language") and segments.language:
+                    result_dict["language"] = segments.language
+
+                return result_dict
+
+            finally:
+                os.unlink(tmp_path)
+
+        result = await run_on_metal_thread(run_stt, error_context="STT transcription failed")
+
+        return TranscriptionResult(
+            text=result.get("text", ""),
+            segments=result.get("segments"),
+            language=result.get("language"),
         )
 
 
-class LiquidAdapter(ModelAdapter):
-    """Adapter for LiquidAI LFM2/LFM2.5 family models."""
-
-    @property
-    def family(self) -> str:
-        return "liquid"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        from mlx_manager.mlx_server.parsers.tool_call import LiquidPythonParser
-
-        return LiquidPythonParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return ThinkTagParser()
-
-    def supports_native_tools(self) -> bool:
-        return True
-
-    def _compute_stop_tokens(self) -> list[int]:
-        stop_ids = []
-        eos = getattr(self._actual_tokenizer, "eos_token_id", None)
-        if eos is not None:
-            stop_ids.append(eos)
-        for token_str in ("<|im_end|>",):
-            try:
-                tid = self._actual_tokenizer.convert_tokens_to_ids(token_str)
-                if (
-                    tid is not None
-                    and tid != getattr(self._actual_tokenizer, "unk_token_id", None)
-                    and tid not in stop_ids
-                ):
-                    stop_ids.append(tid)
-            except Exception:
-                pass
-        return stop_ids
-
-
-# --- Audio Adapters ---
-
-
-class BaseAudioAdapter(ModelAdapter):
-    """Base adapter for audio models (TTS/STT).
-
-    Audio models have no tokenizer, so stop_tokens are empty
-    and tool/thinking parsers are null.
-    """
-
-    @property
-    def family(self) -> str:
-        return "audio_default"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return NullToolParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return NullThinkingParser()
-
-
-class WhisperAdapter(BaseAudioAdapter):
-    """Whisper family: STT models that may need processor fixups.
-
-    MLX-community whisper repos often lack preprocessor_config.json.
-    When mlx-audio loads these models, _processor is set to None,
-    causing STT to fail. post_load_configure loads the processor
-    from the canonical OpenAI repo as a fallback.
-    """
-
-    @property
-    def family(self) -> str:
-        return "whisper"
-
-    async def post_load_configure(self, model: Any, model_id: str) -> None:
-        """Fix missing/broken WhisperProcessor on mlx-community models."""
-        proc = getattr(model, "_processor", None)
-        tok = getattr(proc, "tokenizer", None) if proc else None
-        if proc is not None and tok is not None and getattr(tok, "vocab_size", 0) > 0:
-            return  # Processor is fine
-
-        # Derive the canonical repo: mlx-community/whisper-X → openai/whisper-X
-        name = model_id.split("/")[-1] if "/" in model_id else model_id
-        canonical_repo = f"openai/{name}"
-
-        try:
-            from transformers import WhisperProcessor
-
-            processor = await asyncio.to_thread(WhisperProcessor.from_pretrained, canonical_repo)
-            model._processor = processor
-            logger.info(f"Loaded WhisperProcessor from fallback repo: {canonical_repo}")
-        except Exception as e:
-            logger.warning(f"Could not load WhisperProcessor from {canonical_repo}: {e}")
-
-
-class KokoroAdapter(BaseAudioAdapter):
-    """Kokoro family: TTS models."""
-
-    @property
-    def family(self) -> str:
-        return "kokoro"
-
-
-class DefaultAudioAdapter(BaseAudioAdapter):
-    """Catchall adapter for unknown audio model families."""
-
-
-class EmbeddingsAdapter(ModelAdapter):
-    """Adapter for embedding models.
-
-    Embedding models have no streaming, tool calling, or thinking support.
-    They use a simple batch tokenize → forward pass → normalize pipeline.
-    """
-
-    @property
-    def family(self) -> str:
-        return "embeddings"
-
-    def _default_tool_parser(self) -> ToolCallParser:
-        return NullToolParser()
-
-    def _default_thinking_parser(self) -> ThinkingParser:
-        return NullThinkingParser()
+# --- Backward-compatible aliases ---
+# These allow existing code that checks isinstance() or references
+# specific subclass names to continue working during migration.
+DefaultAdapter = ModelAdapter
 
 
 # --- Factory ---
-
-# Family name -> composable adapter class
-FAMILY_REGISTRY: dict[str, type[ModelAdapter]] = {
-    "qwen": QwenAdapter,
-    "glm4": GLM4Adapter,
-    "llama": LlamaAdapter,
-    "gemma": GemmaAdapter,
-    "mistral": MistralAdapter,
-    "liquid": LiquidAdapter,
-    "whisper": WhisperAdapter,
-    "kokoro": KokoroAdapter,
-    "audio_default": DefaultAudioAdapter,
-    "embeddings": EmbeddingsAdapter,
-    "default": DefaultAdapter,
-}
 
 
 def create_adapter(
@@ -967,10 +830,17 @@ def create_adapter(
     Returns:
         ModelAdapter instance
     """
-    cls = FAMILY_REGISTRY.get(family, DefaultAdapter)
-    return cls(
+    config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
+    return ModelAdapter(
+        config=config,
         tokenizer=tokenizer,
         tool_parser=tool_parser,
         thinking_parser=thinking_parser,
         model_id=model_id,
     )
+
+
+# Backward-compatible registry: maps family name -> FAMILY_CONFIGS keys
+# Code that used `FAMILY_REGISTRY` for checking registered families
+# can use `FAMILY_CONFIGS` directly instead. This alias eases migration.
+FAMILY_REGISTRY = FAMILY_CONFIGS

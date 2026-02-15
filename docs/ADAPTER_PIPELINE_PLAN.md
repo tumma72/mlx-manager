@@ -7,6 +7,25 @@
 
 ---
 
+> **SUPERSEDED (2026-02-15):** This plan documented the migration from the old
+> 2-layer architecture to the 3-layer pipeline with family-specific adapter
+> subclasses. The 3-layer pipeline has since been **further unified** into the
+> **Unified Adapter Architecture**, which replaces the 12 family-specific
+> subclasses (QwenAdapter, GLM4Adapter, etc.) with a single `ModelAdapter`
+> class configured from `FamilyConfig` data objects.
+>
+> For the current architecture, see:
+> - `/backend/mlx_manager/mlx_server/ARCHITECTURE.md` § 6 (Adapter Architecture)
+> - `/backend/mlx_manager/ARCHITECTURE.md` § 6.3 (mlx_server Integration)
+>
+> **Key change:** Config-driven adapters (`FamilyConfig` + strategy functions)
+> instead of inheritance-based adapters (`QwenAdapter`, `GLM4Adapter`, etc.).
+> The adapter still owns all generation for all model types (TEXT_GEN, VISION,
+> EMBEDDINGS, AUDIO) as designed in this plan, but the implementation is now
+> simplified through composition rather than subclassing.
+
+---
+
 ## Executive Summary
 
 This plan details the incremental refactoring of the MLX Server adapter architecture from the current 2-layer design (ModelAdapter + StreamingProcessor) into a clean 3-layer pipeline (ModelAdapter + StreamProcessor + ProtocolFormatter). The refactor will:

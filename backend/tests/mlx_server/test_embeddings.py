@@ -1,10 +1,11 @@
 """Tests for embeddings endpoint and service."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from mlx_manager.mlx_server.api.v1.embeddings import create_embeddings
+from mlx_manager.mlx_server.models.ir import EmbeddingResult
 from mlx_manager.mlx_server.schemas.openai import (
     EmbeddingRequest,
     EmbeddingResponse,
@@ -109,8 +110,6 @@ class TestEmbeddingsEndpoint:
             mock_detect.return_value = ModelType.EMBEDDINGS
 
             with patch("mlx_manager.mlx_server.api.v1.embeddings.generate_embeddings") as mock_gen:
-                from mlx_manager.mlx_server.models.ir import EmbeddingResult
-
                 # Return mock embeddings
                 mock_gen.return_value = EmbeddingResult(
                     embeddings=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
@@ -150,71 +149,45 @@ class TestEmbeddingsService:
 
         assert inspect.iscoroutinefunction(generate_embeddings)
 
-    def test_service_imports_pool(self):
-        """Verify service can import model pool."""
+    def test_service_delegates_to_adapter(self):
+        """Verify service delegates to adapter (not direct mlx calls)."""
         import inspect
 
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
         source = inspect.getsource(generate_embeddings)
         assert "get_model_pool" in source
-        assert "text_embeds" in source
+        assert "loaded.adapter.generate_embeddings" in source
 
 
 class TestGenerateEmbeddingsService:
-    """Tests for generate_embeddings service with mocked Metal thread."""
+    """Tests for generate_embeddings service with mocked adapter."""
 
     @pytest.mark.asyncio
     async def test_generate_embeddings_basic(self):
-        """Generate embeddings returns vectors and token count."""
-        from unittest.mock import AsyncMock, MagicMock
-
+        """Generate embeddings returns result from adapter."""
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
-        # Mock tokenizer with inner _tokenizer for batch encoding
-        mock_inner_tokenizer = MagicMock()
-        mock_inner_tokenizer.return_value = {
-            "input_ids": [[1, 2, 3], [4, 5, 6]],
-            "attention_mask": [[1, 1, 1], [1, 1, 1]],
-        }
+        expected_result = EmbeddingResult(
+            embeddings=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+            dimensions=3,
+            total_tokens=7,
+            finish_reason="stop",
+        )
 
-        mock_tokenizer = MagicMock()
-        mock_tokenizer._tokenizer = mock_inner_tokenizer
-        mock_tokenizer.encode.side_effect = [
-            [1, 2, 3],  # 3 tokens for "Hello"
-            [4, 5, 6, 7],  # 4 tokens for "World"
-        ]
-
-        # Mock model output
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        mock_output.text_embeds = mock_text_embeds
-
-        mock_model = MagicMock()
-        mock_model.return_value = mock_output
+        mock_adapter = MagicMock()
+        mock_adapter.generate_embeddings = AsyncMock(return_value=expected_result)
 
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await generate_embeddings(
                 model_id="test-embed-model",
@@ -222,57 +195,39 @@ class TestGenerateEmbeddingsService:
             )
 
             assert result.embeddings == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-            assert result.total_tokens == 7  # 3 + 4
+            assert result.total_tokens == 7
             assert result.dimensions == 3
             assert result.finish_reason == "stop"
             mock_pool.get_model.assert_called_once_with("test-embed-model")
+            mock_adapter.generate_embeddings.assert_called_once_with(
+                mock_loaded.model, ["Hello", "World"]
+            )
 
     @pytest.mark.asyncio
     async def test_generate_embeddings_single_text(self):
         """Generate embeddings for a single text input."""
-        from unittest.mock import AsyncMock, MagicMock
-
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
-        mock_inner_tokenizer = MagicMock()
-        mock_inner_tokenizer.return_value = {
-            "input_ids": [[1, 2, 3, 4, 5]],
-            "attention_mask": [[1, 1, 1, 1, 1]],
-        }
+        expected_result = EmbeddingResult(
+            embeddings=[[0.1, 0.2, 0.3, 0.4]],
+            dimensions=4,
+            total_tokens=5,
+            finish_reason="stop",
+        )
 
-        mock_tokenizer = MagicMock()
-        mock_tokenizer._tokenizer = mock_inner_tokenizer
-        mock_tokenizer.encode.return_value = [1, 2, 3, 4, 5]
-
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[0.1, 0.2, 0.3, 0.4]]
-        mock_output.text_embeds = mock_text_embeds
-
-        mock_model = MagicMock()
-        mock_model.return_value = mock_output
+        mock_adapter = MagicMock()
+        mock_adapter.generate_embeddings = AsyncMock(return_value=expected_result)
 
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await generate_embeddings(
                 model_id="test-embed",
@@ -285,208 +240,84 @@ class TestGenerateEmbeddingsService:
             assert result.finish_reason == "stop"
 
     @pytest.mark.asyncio
-    async def test_generate_embeddings_tokenizer_without_inner(self):
-        """Tokenizer without _tokenizer attr uses itself for batch encoding."""
-        from unittest.mock import AsyncMock, MagicMock
-
+    async def test_generate_embeddings_passes_model_and_texts(self):
+        """Verify adapter is called with the loaded model and texts."""
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
-        # Tokenizer without _tokenizer attribute; getattr fallback returns self
-        mock_tokenizer = MagicMock(spec=["encode", "__call__"])
-        mock_tokenizer.return_value = {
-            "input_ids": [[1, 2]],
-            "attention_mask": [[1, 1]],
-        }
-        mock_tokenizer.encode.return_value = [1, 2]
+        expected_result = EmbeddingResult(
+            embeddings=[[1.0, 2.0]],
+            dimensions=2,
+            total_tokens=2,
+            finish_reason="stop",
+        )
 
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[0.5, 0.6]]
-        mock_output.text_embeds = mock_text_embeds
+        mock_adapter = MagicMock()
+        mock_adapter.generate_embeddings = AsyncMock(return_value=expected_result)
 
         mock_model = MagicMock()
-        mock_model.return_value = mock_output
-
         mock_loaded = MagicMock()
         mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
-        ):
-            result = await generate_embeddings(
-                model_id="test-embed",
-                texts=["Hi"],
-            )
-
-            assert result.embeddings == [[0.5, 0.6]]
-            assert result.total_tokens == 2
-            assert result.dimensions == 2
-            assert result.finish_reason == "stop"
-            # Since no _tokenizer, getattr falls back to tokenizer itself
-            mock_tokenizer.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_embeddings_model_forward_pass(self):
-        """Verify model is called with input_ids and attention_mask from tokenizer."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        from mlx_manager.mlx_server.services.embeddings import generate_embeddings
-
-        mock_inner_tokenizer = MagicMock()
-        mock_inner_tokenizer.return_value = {
-            "input_ids": [[10, 20]],
-            "attention_mask": [[1, 1]],
-        }
-
-        mock_tokenizer = MagicMock()
-        mock_tokenizer._tokenizer = mock_inner_tokenizer
-        mock_tokenizer.encode.return_value = [10, 20]
-
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[1.0, 2.0]]
-        mock_output.text_embeds = mock_text_embeds
-
-        mock_model = MagicMock()
-        mock_model.return_value = mock_output
-
-        mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=mock_loaded)
-
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             await generate_embeddings(
                 model_id="test-embed",
                 texts=["Test"],
             )
 
-            # Verify model was called with input_ids and attention_mask
-            mock_model.assert_called_once()
-            call_args = mock_model.call_args
-            assert call_args[0][0] == [[10, 20]]  # input_ids (batched)
-            assert call_args[1]["attention_mask"] == [[1, 1]]  # attention_mask
+            # Verify adapter was called with the correct model and texts
+            mock_adapter.generate_embeddings.assert_called_once_with(mock_model, ["Test"])
 
     @pytest.mark.asyncio
-    async def test_generate_embeddings_tokenizer_called_correctly(self):
-        """Verify inner tokenizer is called with correct batch params."""
-        from unittest.mock import AsyncMock, MagicMock
-
+    async def test_generate_embeddings_error_propagates(self):
+        """Errors from adapter propagate through the service."""
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
-        mock_inner_tokenizer = MagicMock()
-        mock_inner_tokenizer.return_value = {
-            "input_ids": [[1], [2]],
-            "attention_mask": [[1], [1]],
-        }
-
-        mock_tokenizer = MagicMock()
-        mock_tokenizer._tokenizer = mock_inner_tokenizer
-        mock_tokenizer.encode.return_value = [1]
-
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[0.1], [0.2]]
-        mock_output.text_embeds = mock_text_embeds
-
-        mock_model = MagicMock()
-        mock_model.return_value = mock_output
+        mock_adapter = MagicMock()
+        mock_adapter.generate_embeddings = AsyncMock(
+            side_effect=RuntimeError("Embeddings generation failed: Metal error")
+        )
 
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
-            await generate_embeddings(
-                model_id="test-embed",
-                texts=["A", "B"],
-            )
-
-            mock_inner_tokenizer.assert_called_once_with(
-                ["A", "B"],
-                return_tensors=None,
-                padding=True,
-                truncation=True,
-                max_length=512,
-            )
+            with pytest.raises(RuntimeError, match="Embeddings generation failed"):
+                await generate_embeddings(
+                    model_id="test-embed",
+                    texts=["Hello"],
+                )
 
     @pytest.mark.asyncio
-    async def test_generate_embeddings_error_propagates(self):
-        """Errors from run_on_metal_thread propagate."""
-        from unittest.mock import AsyncMock, MagicMock
-
+    async def test_generate_embeddings_no_adapter_raises(self):
+        """AssertionError when loaded model has no adapter."""
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
         mock_loaded = MagicMock()
         mock_loaded.model = MagicMock()
-        mock_loaded.tokenizer = MagicMock()
+        mock_loaded.adapter = None
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def raise_error(fn, **kwargs):
-            raise RuntimeError("Embeddings generation failed: Metal error")
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=raise_error,
-            ),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
-            with pytest.raises(RuntimeError, match="Embeddings generation failed"):
+            with pytest.raises(AssertionError, match="No adapter"):
                 await generate_embeddings(
                     model_id="test-embed",
                     texts=["Hello"],
@@ -503,8 +334,6 @@ class TestGenerateEmbeddingsService:
         )
 
         with patch("mlx_manager.mlx_server.api.v1.embeddings.detect_model_type") as mock_detect:
-            from unittest.mock import AsyncMock
-
             from mlx_manager.mlx_server.models.types import ModelType
 
             mock_detect.return_value = ModelType.EMBEDDINGS
@@ -523,8 +352,6 @@ class TestGenerateEmbeddingsService:
     @pytest.mark.asyncio
     async def test_endpoint_generic_exception_returns_500(self):
         """Generic exception during embeddings generation returns 500."""
-        from unittest.mock import AsyncMock
-
         from fastapi import HTTPException
 
         request = EmbeddingRequest(
@@ -551,59 +378,38 @@ class TestGenerateEmbeddingsService:
                 assert exc_info.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_generate_embeddings_multiple_texts_token_count(self):
-        """Total tokens is sum of individual text tokens, not padded batch."""
-        from unittest.mock import AsyncMock, MagicMock
-
+    async def test_generate_embeddings_multiple_texts(self):
+        """Multiple texts are passed through to adapter correctly."""
         from mlx_manager.mlx_server.services.embeddings import generate_embeddings
 
-        mock_inner_tokenizer = MagicMock()
-        mock_inner_tokenizer.return_value = {
-            "input_ids": [[1, 2, 3, 0], [4, 5, 0, 0], [6, 7, 8, 9]],
-            "attention_mask": [[1, 1, 1, 0], [1, 1, 0, 0], [1, 1, 1, 1]],
-        }
+        expected_result = EmbeddingResult(
+            embeddings=[[0.1], [0.2], [0.3]],
+            dimensions=1,
+            total_tokens=9,
+            finish_reason="stop",
+        )
 
-        mock_tokenizer = MagicMock()
-        mock_tokenizer._tokenizer = mock_inner_tokenizer
-        mock_tokenizer.encode.side_effect = [
-            [1, 2, 3],  # 3 tokens
-            [4, 5],  # 2 tokens
-            [6, 7, 8, 9],  # 4 tokens
-        ]
-
-        mock_output = MagicMock()
-        mock_text_embeds = MagicMock()
-        mock_text_embeds.tolist.return_value = [[0.1], [0.2], [0.3]]
-        mock_output.text_embeds = mock_text_embeds
-
-        mock_model = MagicMock()
-        mock_model.return_value = mock_output
+        mock_adapter = MagicMock()
+        mock_adapter.generate_embeddings = AsyncMock(return_value=expected_result)
 
         mock_loaded = MagicMock()
-        mock_loaded.model = mock_model
-        mock_loaded.tokenizer = mock_tokenizer
+        mock_loaded.model = MagicMock()
+        mock_loaded.adapter = mock_adapter
 
         mock_pool = MagicMock()
         mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
-        async def run_fn_directly(fn, **kwargs):
-            return fn()
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch(
-                "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
-                side_effect=run_fn_directly,
-            ),
-            patch("mlx.core.array", side_effect=lambda v: v),
-            patch("mlx.core.eval"),
+        with patch(
+            "mlx_manager.mlx_server.models.pool.get_model_pool",
+            return_value=mock_pool,
         ):
             result = await generate_embeddings(
                 model_id="test-embed",
                 texts=["text1", "text2", "text3"],
             )
 
-            assert result.total_tokens == 9  # 3 + 2 + 4
+            assert result.total_tokens == 9
+            assert len(result.embeddings) == 3
+            mock_adapter.generate_embeddings.assert_called_once_with(
+                mock_loaded.model, ["text1", "text2", "text3"]
+            )

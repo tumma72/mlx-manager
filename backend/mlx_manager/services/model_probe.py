@@ -7,7 +7,6 @@ Results are stored in the DB for use at inference time.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
@@ -153,64 +152,11 @@ async def probe_model(model_id: str):
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
     """Estimate practical max tokens based on model config and available memory.
 
-    Uses the formula:
-    kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2  (bytes, fp16)
-    available_bytes = (device_memory * 0.75 - model_size_gb - 1.0) * 1e9
-    practical_max = min(max_position_embeddings, available_bytes / kv_per_token)
+    Delegates to the shared KV cache estimation utility.
     """
-    try:
-        # Try to read config.json for model parameters
-        from huggingface_hub import hf_hub_download
+    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
 
-        config_path = hf_hub_download(model_id, "config.json")
-        with open(config_path) as f:
-            config = json.load(f)
-
-        max_pos = config.get(
-            "max_position_embeddings",
-            config.get("max_sequence_length", config.get("seq_length")),
-        )
-        if max_pos is None:
-            return None
-
-        num_layers = config.get(
-            "num_hidden_layers", config.get("n_layer", config.get("num_layers"))
-        )
-        num_kv_heads = config.get(
-            "num_key_value_heads",
-            config.get("num_attention_heads", config.get("n_head")),
-        )
-        head_dim = config.get("head_dim")
-        if head_dim is None:
-            hidden_size = config.get("hidden_size", config.get("d_model"))
-            num_heads = config.get("num_attention_heads", config.get("n_head"))
-            if hidden_size and num_heads:
-                head_dim = hidden_size // num_heads
-
-        if not all([num_layers, num_kv_heads, head_dim]):
-            return int(max_pos)
-
-        # KV cache cost per token in bytes (fp16)
-        kv_per_token = 2 * num_layers * num_kv_heads * head_dim * 2
-
-        # Available memory
-        from mlx_manager.mlx_server.utils.memory import get_device_memory_gb
-
-        device_memory_gb = get_device_memory_gb()
-        model_size_gb = loaded.size_gb
-
-        available_gb = (device_memory_gb * 0.75) - model_size_gb - 1.0
-        if available_gb <= 0:
-            return int(min(max_pos, 2048))  # Minimum practical context
-
-        available_bytes = available_gb * 1e9
-        practical_max = int(min(max_pos, available_bytes / kv_per_token))
-
-        return max(practical_max, 512)  # At least 512 tokens
-
-    except Exception as e:
-        logger.debug(f"Could not estimate practical max tokens for {model_id}: {e}")
-        return None
+    return estimate_practical_max_tokens(model_id, loaded.size_gb)
 
 
 async def _save_capabilities(model_id: str, result: ProbeResult) -> None:

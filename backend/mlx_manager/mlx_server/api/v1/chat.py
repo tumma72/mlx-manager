@@ -513,11 +513,9 @@ async def _handle_batched_request(
     adapter = loaded.adapter
     if adapter is None:
         # Fallback for edge cases
-        from mlx_manager.mlx_server.models.adapters.composable import (
-            DefaultAdapter,
-        )
+        from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = DefaultAdapter(loaded.tokenizer)
+        adapter = create_adapter("default", loaded.tokenizer)
 
     # Get actual tokenizer (handle Processor wrapper for vision models)
     actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)

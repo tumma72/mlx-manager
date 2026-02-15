@@ -105,7 +105,7 @@ class TestAudioAdapterCreation:
 
         mock_processor = MagicMock()
         with patch(
-            "mlx_manager.mlx_server.models.adapters.composable.asyncio.to_thread",
+            "mlx_manager.mlx_server.models.adapters.strategies.asyncio.to_thread",
             new_callable=AsyncMock,
             return_value=mock_processor,
         ):
@@ -129,7 +129,7 @@ class TestAudioAdapterCreation:
         mock_model._processor = mock_processor
 
         with patch(
-            "mlx_manager.mlx_server.models.adapters.composable.asyncio.to_thread",
+            "mlx_manager.mlx_server.models.adapters.strategies.asyncio.to_thread",
             new_callable=AsyncMock,
         ) as mock_thread:
             await adapter.post_load_configure(mock_model, "mlx-community/whisper-large-v3-turbo")
@@ -148,7 +148,7 @@ class TestAudioAdapterCreation:
         mock_model._processor = None
 
         with patch(
-            "mlx_manager.mlx_server.models.adapters.composable.asyncio.to_thread",
+            "mlx_manager.mlx_server.models.adapters.strategies.asyncio.to_thread",
             new_callable=AsyncMock,
             side_effect=Exception("Network error"),
         ):

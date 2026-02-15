@@ -226,20 +226,23 @@ def _detect_audio_capabilities(model_id: str) -> tuple[bool, bool, str | None]:
 async def _test_tts(loaded: LoadedModel, *, timeout: float = 60.0) -> tuple[bool, bytes | None]:
     """Test TTS by generating a short audio clip from minimal text."""
     try:
-        from mlx_manager.mlx_server.services.audio import generate_speech
+        adapter = loaded.adapter
+        if adapter is None:
+            msg = "No adapter available for TTS"
+            raise RuntimeError(msg)
 
-        audio_bytes, sample_rate = await asyncio.wait_for(
-            generate_speech(
-                model_id=loaded.model_id,
-                text=_TTS_TEST_TEXT,
-                voice="af_heart",  # Kokoro default voice
+        result = await asyncio.wait_for(
+            adapter.generate_speech(
+                loaded.model,
+                _TTS_TEST_TEXT,
+                voice="af_heart",
                 speed=1.0,
                 response_format="wav",
             ),
             timeout=timeout,
         )
-        if len(audio_bytes) > 0:
-            return True, audio_bytes
+        if len(result.audio_bytes) > 0:
+            return True, result.audio_bytes
         return False, None
     except TimeoutError:
         logger.warning(f"TTS test timed out after {timeout}s for {loaded.model_id}")
@@ -263,7 +266,10 @@ async def _test_stt(
     Returns (success, transcript, audio_bytes_used).
     """
     try:
-        from mlx_manager.mlx_server.services.audio import transcribe_audio
+        adapter = loaded.adapter
+        if adapter is None:
+            msg = "No adapter available for STT"
+            raise RuntimeError(msg)
 
         if audio_bytes is None:
             import struct
@@ -294,14 +300,14 @@ async def _test_stt(
             audio_bytes = wav_header + audio_data
 
         result = await asyncio.wait_for(
-            transcribe_audio(
-                model_id=loaded.model_id,
-                audio_data=audio_bytes,
+            adapter.transcribe(
+                loaded.model,
+                audio_bytes,
             ),
             timeout=timeout,
         )
-        if isinstance(result, dict) and "text" in result:
-            return True, result["text"] or None, audio_bytes
+        if result.text:
+            return True, result.text, audio_bytes
         return False, None, audio_bytes
     except TimeoutError:
         logger.warning(f"STT test timed out after {timeout}s for {loaded.model_id}")
