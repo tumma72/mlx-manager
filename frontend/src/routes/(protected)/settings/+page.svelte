@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Tabs } from 'bits-ui';
 	import {
 		ProviderSection,
 		ModelPoolSettings,
@@ -6,65 +7,110 @@
 		TimeoutSettings,
 		AuditLogPanel
 	} from '$lib/components/settings';
+
+	let activeTab = $state('providers');
 </script>
 
 <svelte:head>
 	<title>Settings | MLX Manager</title>
 </svelte:head>
 
-<div class="space-y-8">
+<div class="space-y-6">
 	<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
 
-	<!-- Cloud Providers -->
-	<section>
-		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Cloud Providers</h2>
-		<p class="text-sm text-muted-foreground mb-4">
-			Configure API keys for cloud inference providers. Keys are encrypted at rest.
-		</p>
-		<ProviderSection />
-	</section>
+	<Tabs.Root bind:value={activeTab}>
+		<Tabs.List
+			class="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground"
+		>
+			<Tabs.Trigger
+				value="providers"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				Providers
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="pool"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				Model Pool
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="routing"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				Routing
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="timeouts"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				Timeouts
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="logs"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				Logs
+			</Tabs.Trigger>
+		</Tabs.List>
 
-	<hr class="border-gray-200 dark:border-gray-700" />
+		<!-- Cloud Providers Tab -->
+		<Tabs.Content value="providers" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Cloud Providers</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					Configure API keys for cloud inference providers. Keys are encrypted at rest.
+				</p>
+			</div>
+			<ProviderSection />
+		</Tabs.Content>
 
-	<!-- Model Pool -->
-	<section>
-		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Pool</h2>
-		<p class="text-sm text-muted-foreground mb-4">
-			Configure memory limits and caching behavior for the local model pool.
-		</p>
-		<ModelPoolSettings />
-	</section>
+		<!-- Model Pool Tab -->
+		<Tabs.Content value="pool" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Pool</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					Configure memory limits and caching behavior for the local model pool.
+				</p>
+			</div>
+			<ModelPoolSettings />
+		</Tabs.Content>
 
-	<hr class="border-gray-200 dark:border-gray-700" />
+		<!-- Routing Rules Tab -->
+		<Tabs.Content value="routing" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+					Model Routing Rules
+				</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					Configure model-to-backend routing rules with pattern matching. Rules are evaluated by
+					priority (lower number = higher priority).
+				</p>
+			</div>
+			<RoutingRulesSection />
+		</Tabs.Content>
 
-	<!-- Routing Rules -->
-	<section>
-		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Routing Rules</h2>
-		<p class="text-sm text-muted-foreground mb-4">
-			Configure model-to-backend routing rules with pattern matching. Rules are evaluated by priority (lower number = higher priority).
-		</p>
-		<RoutingRulesSection />
-	</section>
+		<!-- Timeouts Tab -->
+		<Tabs.Content value="timeouts" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Request Timeouts</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					Configure per-endpoint timeouts for inference requests. Longer timeouts allow for larger
+					models and longer outputs.
+				</p>
+			</div>
+			<TimeoutSettings />
+		</Tabs.Content>
 
-	<hr class="border-gray-200 dark:border-gray-700" />
-
-	<!-- Timeouts -->
-	<section>
-		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Request Timeouts</h2>
-		<p class="text-sm text-muted-foreground mb-4">
-			Configure per-endpoint timeouts for inference requests. Longer timeouts allow for larger models and longer outputs.
-		</p>
-		<TimeoutSettings />
-	</section>
-
-	<hr class="border-gray-200 dark:border-gray-700" />
-
-	<!-- Audit Logs -->
-	<section>
-		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Request Logs</h2>
-		<p class="text-sm text-muted-foreground mb-4">
-			View and export inference request logs. Live updates when connected.
-		</p>
-		<AuditLogPanel />
-	</section>
+		<!-- Request Logs Tab -->
+		<Tabs.Content value="logs" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Request Logs</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					View and export inference request logs. Live updates when connected.
+				</p>
+			</div>
+			<AuditLogPanel />
+		</Tabs.Content>
+	</Tabs.Root>
 </div>
