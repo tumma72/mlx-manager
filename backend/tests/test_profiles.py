@@ -365,3 +365,113 @@ async def test_update_profile_invalid_model_id(auth_client, sample_profile_data)
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Model not found"
+
+
+@pytest.mark.asyncio
+async def test_create_profile_with_model_options(auth_client, sample_profile_data):
+    """Test creating a profile with model_options."""
+    profile_data = sample_profile_data.copy()
+    profile_data["model_options"] = {"enable_thinking": False, "custom_param": "value"}
+
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 201
+
+    data = response.json()
+    assert data["model_options"] == {"enable_thinking": False, "custom_param": "value"}
+    assert data["name"] == profile_data["name"]
+    assert data["model_id"] == profile_data["model_id"]
+
+
+@pytest.mark.asyncio
+async def test_update_profile_model_options(auth_client, sample_profile_data):
+    """Test updating a profile's model_options."""
+    # Create a profile without model_options
+    create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
+    profile_id = create_response.json()["id"]
+
+    # Update with model_options
+    update_data = {"model_options": {"enable_thinking": True, "max_thinking_tokens": 1000}}
+    response = await auth_client.put(f"/api/profiles/{profile_id}", json=update_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["model_options"] == {"enable_thinking": True, "max_thinking_tokens": 1000}
+    # Other fields should remain unchanged
+    assert data["name"] == sample_profile_data["name"]
+    assert data["model_id"] == sample_profile_data["model_id"]
+
+    # Update model_options again with different values
+    update_data = {"model_options": {"enable_thinking": False}}
+    response = await auth_client.put(f"/api/profiles/{profile_id}", json=update_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["model_options"] == {"enable_thinking": False}
+
+
+@pytest.mark.asyncio
+async def test_create_profile_without_model_options(auth_client, sample_profile_data):
+    """Test creating a profile without model_options (backward compatibility)."""
+    # Ensure sample_profile_data doesn't have model_options
+    profile_data = sample_profile_data.copy()
+    profile_data.pop("model_options", None)
+
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 201
+
+    data = response.json()
+    # model_options should be null when not provided
+    assert data["model_options"] is None
+    assert data["name"] == profile_data["name"]
+    assert data["model_id"] == profile_data["model_id"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_profile_with_model_options(auth_client):
+    """Test that duplicating a profile copies model_options correctly."""
+    # Create a profile with model_options
+    profile_data = {
+        "name": "Profile with Options",
+        "description": "Test description",
+        "model_id": 1,
+        "inference": {"temperature": 0.7, "max_tokens": 1000, "top_p": 0.9},
+        "model_options": {"enable_thinking": True, "custom_setting": "test"},
+    }
+    create_response = await auth_client.post("/api/profiles", json=profile_data)
+    assert create_response.status_code == 201
+    profile_id = create_response.json()["id"]
+
+    # Duplicate the profile
+    response = await auth_client.post(
+        f"/api/profiles/{profile_id}/duplicate?new_name=Duplicated%20Options%20Profile"
+    )
+    assert response.status_code == 201
+
+    data = response.json()
+    # Verify model_options was copied
+    assert data["model_options"] == {"enable_thinking": True, "custom_setting": "test"}
+    assert data["name"] == "Duplicated Options Profile"
+    assert data["model_id"] == profile_data["model_id"]
+    assert data["inference"]["temperature"] == profile_data["inference"]["temperature"]
+    # Should have new ID
+    assert data["id"] != profile_id
+
+
+@pytest.mark.asyncio
+async def test_update_profile_clear_model_options(auth_client, sample_profile_data):
+    """Test clearing model_options by setting to empty dict."""
+    # Create a profile with model_options
+    profile_data = sample_profile_data.copy()
+    profile_data["model_options"] = {"enable_thinking": True}
+
+    create_response = await auth_client.post("/api/profiles", json=profile_data)
+    profile_id = create_response.json()["id"]
+
+    # Clear model_options with empty dict
+    update_data = {"model_options": {}}
+    response = await auth_client.put(f"/api/profiles/{profile_id}", json=update_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    # Empty dict should be stored as None
+    assert data["model_options"] is None

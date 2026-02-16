@@ -36,6 +36,7 @@ function createMockProfile(
     profile_type: "inference",
     auto_start: false,
     launchd_installed: false,
+    model_options: null,
     inference: { temperature: 0.7, max_tokens: 4096, top_p: 1.0 },
     context: { context_length: 4096, system_prompt: null, enable_tool_injection: false },
     audio: null,

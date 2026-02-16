@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ExecutionProfile, ExecutionProfileCreate, ExecutionProfileUpdate, DownloadedModel } from '$api';
+	import type { ExecutionProfile, ExecutionProfileCreate, ExecutionProfileUpdate, DownloadedModel, TemplateParamInfo } from '$api';
 	import { models as modelsApi } from '$api';
 	import { Card, Button, Input } from '$components/ui';
 	import { resolve } from '$app/paths';
@@ -40,6 +40,9 @@
 	let ttsSampleRate = $state<number | null>(null);
 	let sttDefaultLanguage = $state<string | null>(null);
 
+	// Model-specific template options
+	let modelOptions = $state<Record<string, unknown>>({});
+
 	let showAdvanced = $state(false);
 
 	// Derive model type from selected model
@@ -47,6 +50,9 @@
 	const modelType = $derived(selectedModel?.model_type ?? null);
 	const isTextOrVision = $derived(modelType === 'text-gen' || modelType === 'vision');
 	const isAudio = $derived(modelType === 'audio');
+
+	// Derive template params from selected model's capabilities
+	const templateParams = $derived(selectedModel?.capabilities?.template_params ?? null);
 
 	// Load downloaded models on mount
 	onMount(async () => {
@@ -77,6 +83,8 @@
 		ttsDefaultSpeed = profile?.audio?.tts_speed ?? null;
 		ttsSampleRate = profile?.audio?.tts_sample_rate ?? null;
 		sttDefaultLanguage = profile?.audio?.stt_language ?? null;
+		// Model options
+		modelOptions = profile?.model_options ?? {};
 	});
 
 	async function handleSubmit(e: Event) {
@@ -120,6 +128,8 @@
 							stt_language: sttDefaultLanguage ?? null,
 						}
 					: undefined,
+				// Model-specific template options
+				model_options: Object.keys(modelOptions).length > 0 ? modelOptions : undefined,
 			};
 
 			await onSubmit(data);
@@ -351,6 +361,53 @@
 								placeholder="e.g., en"
 							/>
 						</div>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Model Options (from discovered template params) -->
+			{#if templateParams && Object.keys(templateParams).length > 0}
+				<div class="pt-4 border-t">
+					<h3 class="text-sm font-medium mb-3">Model Options</h3>
+					<p class="text-xs text-muted-foreground mb-4">
+						Options discovered from this model's chat template. Changes affect how the model processes conversations.
+					</p>
+
+					<div class="space-y-3">
+						{#each Object.entries(templateParams) as [key, param]}
+							{#if param.param_type === 'bool'}
+								<div class="space-y-1">
+									<label class="flex items-center gap-2">
+										<input
+											type="checkbox"
+											checked={modelOptions[key] !== undefined
+												? Boolean(modelOptions[key])
+												: Boolean(param.default)}
+											onchange={(e) => {
+												modelOptions = { ...modelOptions, [key]: e.currentTarget.checked };
+											}}
+											class="rounded"
+										/>
+										<span class="text-sm">{param.label}</span>
+									</label>
+									<p class="text-xs text-muted-foreground ml-6">{param.description}</p>
+								</div>
+							{:else}
+								<div>
+									<label for={`opt-${key}`} class="block text-sm font-medium mb-1">{param.label}</label>
+									<Input
+										id={`opt-${key}`}
+										value={String(modelOptions[key] ?? param.default ?? '')}
+										oninput={(e: Event) => {
+											const target = e.currentTarget as HTMLInputElement;
+											modelOptions = { ...modelOptions, [key]: target.value || null };
+										}}
+										placeholder={param.default ? String(param.default) : ''}
+									/>
+									<p class="text-xs text-muted-foreground mt-1">{param.description}</p>
+								</div>
+							{/if}
+						{/each}
 					</div>
 				</div>
 			{/if}

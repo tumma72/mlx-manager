@@ -3,11 +3,12 @@
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel, col
+from sqlmodel import col
 
 from mlx_manager.config import ensure_data_dir, settings
 from mlx_manager.models.enums import DownloadStatusEnum
@@ -32,153 +33,80 @@ async_session = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# Stamp revision: the last migration before the catch-up migration.
+# Pre-Alembic databases (created by create_all) are stamped here so that
+# only the catch-up migration (e1a2b3c4d5f6) runs on first upgrade.
+_PRE_ALEMBIC_STAMP = "d8e3f5a7b912"
 
-async def migrate_schema() -> None:
-    """Add missing columns to existing tables.
 
-    SQLite doesn't support adding columns in CREATE TABLE IF NOT EXISTS,
-    so we need to manually add new columns to existing databases.
+def _run_upgrade(connection, alembic_cfg) -> None:
+    """Run alembic upgrade head using the provided synchronous connection."""
+    from alembic import command
+
+    alembic_cfg.attributes["connection"] = connection
+    command.upgrade(alembic_cfg, "head")
+
+
+def _stamp_revision(connection, alembic_cfg, revision: str) -> None:
+    """Stamp a revision without running migrations."""
+    from alembic import command
+
+    alembic_cfg.attributes["connection"] = connection
+    command.stamp(alembic_cfg, revision)
+
+
+async def run_alembic_upgrade() -> None:
+    """Run Alembic migrations programmatically.
+
+    Handles three scenarios:
+    1. Fresh install (no DB): runs full migration chain from scratch.
+    2. Pre-Alembic DB (has tables but no alembic_version): stamps to
+       the last known revision, then upgrades to head.
+    3. Existing Alembic DB: upgrades from current revision to head.
     """
-    # Define columns that may be missing from existing databases
-    # Format: (table_name, column_name, column_type, default_value)
-    migrations: list[tuple[str, str, str, str | None]] = [
-        ("server_profiles", "tool_call_parser", "TEXT", None),
-        ("server_profiles", "reasoning_parser", "TEXT", None),
-        ("server_profiles", "message_converter", "TEXT", None),
-        ("server_profiles", "system_prompt", "TEXT", None),
-        # Generation parameters (Phase 15-08: Profile model cleanup)
-        ("server_profiles", "temperature", "REAL", "0.7"),
-        ("server_profiles", "max_tokens", "INTEGER", "4096"),
-        ("server_profiles", "top_p", "REAL", "1.0"),
-        # CloudCredential columns for provider configuration (Phase 14 bug fix)
-        ("cloud_credentials", "api_type", "TEXT", "'openai'"),
-        ("cloud_credentials", "name", "TEXT", "''"),
-        # Tool calling settings
-        ("server_profiles", "force_tool_injection", "INTEGER", "0"),
-        # Audio params on server_profiles
-        ("server_profiles", "tts_default_voice", "TEXT", None),
-        ("server_profiles", "tts_default_speed", "REAL", None),
-        ("server_profiles", "tts_sample_rate", "INTEGER", None),
-        ("server_profiles", "stt_default_language", "TEXT", None),
-        # FK to models table
-        ("server_profiles", "model_id", "INTEGER", None),
-    ]
+    from alembic.config import Config
 
-    # Obsolete columns to drop from server_profiles (unified server approach)
-    obsolete_columns = [
-        "port",
-        "host",
-        "max_concurrency",
-        "queue_timeout",
-        "queue_size",
-        "enable_auto_tool_choice",
-        "trust_remote_code",
-        "chat_template_file",
-        "log_level",
-        "log_file",
-        "no_log_file",
-        "model_path",
-        "model_type",
-    ]
+    alembic_ini = Path(__file__).parent.parent / "alembic.ini"
+    alembic_cfg = Config(str(alembic_ini))
 
     async with engine.begin() as conn:
-        for table, column, col_type, default in migrations:
-            # Check if table and column exist
-            result = await conn.execute(text(f"PRAGMA table_info({table})"))
-            columns = [row[1] for row in result.fetchall()]
+        # Check if this is a pre-Alembic database
+        has_alembic = await conn.run_sync(_check_alembic_version_table)
+        has_tables = await conn.run_sync(_check_has_existing_tables)
 
-            # Skip if table doesn't exist (no columns returned)
-            # Fresh databases will have the column from CREATE TABLE
-            if not columns:
-                continue
-
-            if column not in columns:
-                # Add the column
-                default_clause = f" DEFAULT {default}" if default is not None else ""
-                sql = f"ALTER TABLE {table} ADD COLUMN {column} {col_type}{default_clause}"
-                logger.info(f"Migrating database: {sql}")
-                await conn.execute(text(sql))
-
-        # Migrate model_path → model_id for existing profiles
-        result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
-        sp_columns = [row[1] for row in result.fetchall()]
-
-        if "model_path" in sp_columns and "model_id" in sp_columns:
-            # Read profiles that need migration (have model_path but no model_id)
-            rows = await conn.execute(
-                text(
-                    "SELECT id, model_path, model_type FROM server_profiles "
-                    "WHERE model_path IS NOT NULL AND (model_id IS NULL OR model_id = 0)"
-                )
+        if has_tables and not has_alembic:
+            # Pre-Alembic database: stamp so only the catch-up migration runs
+            logger.info(
+                f"Pre-Alembic database detected, stamping to {_PRE_ALEMBIC_STAMP}"
             )
-            profiles_to_migrate = rows.fetchall()
+            await conn.run_sync(_stamp_revision, alembic_cfg, _PRE_ALEMBIC_STAMP)
 
-            for profile_id, model_path, model_type in profiles_to_migrate:
-                # Find existing Model record by repo_id
-                model_row = await conn.execute(
-                    text("SELECT id FROM models WHERE repo_id = :repo_id"),
-                    {"repo_id": model_path},
-                )
-                model = model_row.fetchone()
+        # Run upgrade to head
+        await conn.run_sync(_run_upgrade, alembic_cfg)
+        logger.info("Database schema is up to date")
 
-                if model:
-                    model_id = model[0]
-                else:
-                    # Create a Model record for this profile's model
-                    # Map old model_type to new: "lm" -> "text-gen", "multimodal" -> "vision"
-                    mapped_type = "text-gen"
-                    if model_type == "multimodal":
-                        mapped_type = "vision"
-                    elif model_type in ("text-gen", "vision", "embeddings", "audio"):
-                        mapped_type = model_type
 
-                    await conn.execute(
-                        text(
-                            "INSERT INTO models (repo_id, model_type) "
-                            "VALUES (:repo_id, :model_type)"
-                        ),
-                        {"repo_id": model_path, "model_type": mapped_type},
-                    )
+def _check_alembic_version_table(connection) -> bool:
+    """Check if alembic_version table exists."""
+    result = connection.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='alembic_version'"
+        )
+    )
+    return result.fetchone() is not None
 
-                    # Get the ID of the just-inserted model
-                    id_row = await conn.execute(text("SELECT last_insert_rowid()"))
-                    row = id_row.fetchone()
-                    model_id = row[0] if row else None
 
-                # Update the profile's model_id
-                await conn.execute(
-                    text("UPDATE server_profiles SET model_id = :model_id WHERE id = :profile_id"),
-                    {"model_id": model_id, "profile_id": profile_id},
-                )
-                logger.info(
-                    f"Migrated profile {profile_id}: model_path={model_path} → model_id={model_id}"
-                )
-
-        # Drop obsolete columns from server_profiles (SQLite 3.35+ supports DROP COLUMN)
-        result = await conn.execute(text("PRAGMA table_info(server_profiles)"))
-        existing_columns = [row[1] for row in result.fetchall()]
-        for column in obsolete_columns:
-            if column in existing_columns:
-                sql = f"ALTER TABLE server_profiles DROP COLUMN {column}"
-                logger.info(f"Migrating database: {sql}")
-                await conn.execute(text(sql))
-
-        # Drop legacy tables replaced by unified 'models' table
-        # Note: model_capabilities is now a real JTI table — only drop the
-        # old legacy table if it has the wrong schema (no capability_type column).
-        for table in ("downloaded_models",):
-            result = await conn.execute(text(f"PRAGMA table_info({table})"))
-            if result.fetchall():  # Table exists
-                sql = f"DROP TABLE {table}"
-                logger.info(f"Migrating database: {sql}")
-                await conn.execute(text(sql))
-
-        # Drop old-format model_capabilities table (lacks capability_type column)
-        result = await conn.execute(text("PRAGMA table_info(model_capabilities)"))
-        mc_columns = {row[1] for row in result.fetchall()}
-        if mc_columns and "capability_type" not in mc_columns:
-            logger.info("Migrating database: DROP TABLE model_capabilities (legacy format)")
-            await conn.execute(text("DROP TABLE model_capabilities"))
+def _check_has_existing_tables(connection) -> bool:
+    """Check if the database has any application tables (not just alembic_version)."""
+    result = connection.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+            "AND name != 'alembic_version' LIMIT 1"
+        )
+    )
+    return result.fetchone() is not None
 
 
 async def recover_incomplete_downloads() -> list[tuple[int, str]]:
@@ -229,22 +157,20 @@ async def _repair_orphaned_profiles() -> None:
     'Unknown model' in the UI and can be reassigned manually).
     """
     async with engine.begin() as conn:
-        # Check if server_profiles table exists (legacy) or execution_profiles (new)
-        sql_check_server = (
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='server_profiles'"
+        # Check which profile table exists
+        result = await conn.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('execution_profiles', 'server_profiles')"
+            )
         )
-        result = await conn.execute(text(sql_check_server))
-        has_server_profiles = result.fetchone() is not None
+        tables = {row[0] for row in result.fetchall()}
 
-        sql_check_execution = (
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='execution_profiles'"
-        )
-        result = await conn.execute(text(sql_check_execution))
-        has_execution_profiles = result.fetchone() is not None
-
-        # Determine which table to query
-        table_name = "server_profiles" if has_server_profiles else "execution_profiles"
-        if not (has_server_profiles or has_execution_profiles):
+        if "execution_profiles" in tables:
+            table_name = "execution_profiles"
+        elif "server_profiles" in tables:
+            table_name = "server_profiles"
+        else:
             return  # No profiles table exists yet (fresh install)
 
         # Find profiles missing model_id
@@ -300,13 +226,12 @@ async def _repair_orphaned_profiles() -> None:
 
 
 async def init_db() -> None:
-    """Initialize the database and create tables."""
+    """Initialize the database and run migrations."""
     ensure_data_dir()
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
 
-    # Run schema migrations for existing databases
-    await migrate_schema()
+    # Single schema management system: Alembic handles both fresh installs
+    # and upgrades. No more create_all() or hand-rolled ALTER TABLE statements.
+    await run_alembic_upgrade()
 
     # Recover any incomplete downloads from previous runs
     await recover_incomplete_downloads()

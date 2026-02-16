@@ -27,15 +27,15 @@ from mlx_manager.mlx_server.models.adapters.strategies import (
 class FakeTokenizer:
     """Minimal tokenizer implementation for testing template strategies."""
 
-    def __init__(self, should_fail: bool = False, fail_on_enable_thinking: bool = False):
+    def __init__(self, should_fail: bool = False, fail_on_template_options: bool = False):
         """Initialize fake tokenizer.
 
         Args:
             should_fail: If True, apply_chat_template always raises an exception
-            fail_on_enable_thinking: If True, fail only when enable_thinking is passed
+            fail_on_template_options: If True, fail only when template_options is passed
         """
         self.should_fail = should_fail
-        self.fail_on_enable_thinking = fail_on_enable_thinking
+        self.fail_on_template_options = fail_on_template_options
 
     def apply_chat_template(
         self,
@@ -43,14 +43,14 @@ class FakeTokenizer:
         add_generation_prompt: bool = True,
         tokenize: bool = False,
         tools: list[dict[str, Any]] | None = None,
-        enable_thinking: bool | None = None,
+        template_options: dict[str, Any] | None = None,
     ) -> str:
         """Fake implementation of apply_chat_template."""
         if self.should_fail:
             raise ValueError("Tokenizer error")
 
-        if self.fail_on_enable_thinking and enable_thinking is not None:
-            raise TypeError("enable_thinking not supported")
+        if self.fail_on_template_options and template_options is not None:
+            raise TypeError("template_options not supported")
 
         parts = []
         for msg in messages:
@@ -86,7 +86,7 @@ def test_qwen_template_basic():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=True,
+        template_options={"enable_thinking": True},
     )
 
     assert "user: Hello" in result
@@ -113,34 +113,34 @@ def test_qwen_template_with_tools():
         messages=messages,
         add_generation_prompt=True,
         native_tools=tools,
-        enable_thinking=True,
+        template_options={"enable_thinking": True},
     )
 
     assert "user: Hello" in result
     assert "[TOOLS: 1]" in result
 
 
-def test_qwen_template_enable_thinking_fallback():
-    """Test qwen_template fallback when enable_thinking not supported (lines 47-49)."""
-    tokenizer = FakeTokenizer(fail_on_enable_thinking=True)
+def test_qwen_template_template_options_fallback():
+    """Test qwen_template fallback when template_options not supported (lines 47-49)."""
+    tokenizer = FakeTokenizer(fail_on_template_options=True)
     messages = [{"role": "user", "content": "Hello"}]
 
-    # Should succeed by falling back to version without enable_thinking
+    # Should succeed by falling back to version without template_options
     result = qwen_template(
         tokenizer=tokenizer,
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=True,
+        template_options={"enable_thinking": True},
     )
 
     assert "user: Hello" in result
     assert "assistant:" in result
 
 
-def test_qwen_template_enable_thinking_fallback_with_tools():
-    """Test qwen_template fallback with both tools and enable_thinking error."""
-    tokenizer = FakeTokenizer(fail_on_enable_thinking=True)
+def test_qwen_template_template_options_fallback_with_tools():
+    """Test qwen_template fallback with both tools and template_options error."""
+    tokenizer = FakeTokenizer(fail_on_template_options=True)
     messages = [{"role": "user", "content": "Hello"}]
     tools = [
         {
@@ -158,7 +158,7 @@ def test_qwen_template_enable_thinking_fallback_with_tools():
         messages=messages,
         add_generation_prompt=True,
         native_tools=tools,
-        enable_thinking=True,
+        template_options={"enable_thinking": True},
     )
 
     assert "user: Hello" in result
@@ -175,7 +175,7 @@ def test_glm4_template_basic():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     assert "user: Hello" in result
@@ -202,7 +202,7 @@ def test_glm4_template_with_tools():
         messages=messages,
         add_generation_prompt=True,
         native_tools=tools,
-        enable_thinking=False,
+        template_options=None,
     )
 
     assert "user: Hello" in result
@@ -222,7 +222,7 @@ def test_glm4_template_chatml_fallback():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     # Should use manual ChatML format
@@ -243,7 +243,7 @@ def test_glm4_template_chatml_fallback_no_generation_prompt():
         messages=messages,
         add_generation_prompt=False,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     assert "<|user|>" in result
@@ -261,7 +261,7 @@ def test_glm4_template_no_template_method():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     # Should fall back to ChatML
@@ -280,7 +280,7 @@ def test_mistral_template_basic():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     assert "user: Hello" in result
@@ -307,7 +307,7 @@ def test_mistral_template_with_tools():
         messages=messages,
         add_generation_prompt=True,
         native_tools=tools,
-        enable_thinking=False,
+        template_options=None,
     )
 
     assert "user: Hello" in result
@@ -327,7 +327,7 @@ def test_mistral_template_system_message_merge():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     # Should merge system into user
@@ -344,7 +344,7 @@ def test_mistral_template_system_only():
         messages=messages,
         add_generation_prompt=True,
         native_tools=None,
-        enable_thinking=False,
+        template_options=None,
     )
 
     # System message removed, but no user message to merge into

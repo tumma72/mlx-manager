@@ -189,7 +189,7 @@ class ModelAdapter:
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
         tools: list[dict[str, Any]] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> str:
         """Apply chat template with automatic tool delivery."""
         effective, native_tools = self._prepare_tools(messages, tools)
@@ -199,7 +199,7 @@ class ModelAdapter:
                 effective,
                 add_generation_prompt,
                 native_tools,
-                enable_thinking,
+                template_options,
             )
         # Default: call tokenizer.apply_chat_template() directly
         kwargs: dict[str, Any] = {
@@ -208,10 +208,27 @@ class ModelAdapter:
         }
         if native_tools:
             kwargs["tools"] = native_tools
-        return cast(
-            str,
-            self._actual_tokenizer.apply_chat_template(effective, **kwargs),
-        )
+        # Pass template options as extra kwargs (Jinja2 ignores unknown ones)
+        if template_options:
+            for key, value in template_options.items():
+                kwargs[key] = value
+        try:
+            return cast(
+                str,
+                self._actual_tokenizer.apply_chat_template(effective, **kwargs),
+            )
+        except TypeError:
+            # Fallback: strip template_options if tokenizer rejects them
+            fallback_kwargs: dict[str, Any] = {
+                "add_generation_prompt": add_generation_prompt,
+                "tokenize": False,
+            }
+            if native_tools:
+                fallback_kwargs["tools"] = native_tools
+            return cast(
+                str,
+                self._actual_tokenizer.apply_chat_template(effective, **fallback_kwargs),
+            )
 
     def format_tools_for_prompt(self, tools: list[dict[str, Any]]) -> str:
         """Format tools for prompt injection. Delegates to config strategy."""
@@ -309,7 +326,7 @@ class ModelAdapter:
         tools: list[dict[str, Any]] | None = None,
         enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> PreparedInput:
         """Prepare model-ready input from messages and optional tools.
 
@@ -376,7 +393,7 @@ class ModelAdapter:
             messages=converted,
             add_generation_prompt=True,
             tools=effective_tools,
-            enable_thinking=enable_thinking,
+            template_options=template_options,
         )
 
         stop_ids_set = set(self.stop_tokens)
@@ -430,7 +447,7 @@ class ModelAdapter:
         tools: list[dict[str, Any]] | None = None,
         enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> TextResult:
         """Full generation pipeline: prepare → generate → process_complete.
 
@@ -445,7 +462,7 @@ class ModelAdapter:
             tools=tools,
             enable_prompt_injection=enable_prompt_injection,
             images=images,
-            enable_thinking=enable_thinking,
+            template_options=template_options,
         )
 
         if images:
@@ -505,7 +522,7 @@ class ModelAdapter:
         tools: list[dict[str, Any]] | None = None,
         enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> Any:
         """Streaming generation yielding IR events.
 
@@ -521,7 +538,7 @@ class ModelAdapter:
             tools=tools,
             enable_prompt_injection=enable_prompt_injection,
             images=images,
-            enable_thinking=enable_thinking,
+            template_options=template_options,
         )
 
         if images:

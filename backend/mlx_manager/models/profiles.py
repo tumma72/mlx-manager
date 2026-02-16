@@ -9,10 +9,12 @@ Profile types:
 - ``base`` (EMBEDDINGS): model selection only, no extra defaults.
 """
 
+import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel
+from sqlalchemy import Column, Text
 from sqlmodel import Field, Relationship, SQLModel
 
 from mlx_manager.models.enums import ProfileType
@@ -61,6 +63,12 @@ class ExecutionProfile(SQLModel, table=True):
     default_tts_sample_rate: int | None = None
     default_stt_language: str | None = None
 
+    # --- Model-specific template options (JSON text) ---
+    model_options: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+
     # Relationship
     model: Optional["Model"] = Relationship(back_populates="profiles")
 
@@ -81,6 +89,7 @@ class ExecutionProfileCreate(BaseModel):
     inference: InferenceParams | None = None
     context: InferenceContext | None = None
     audio: AudioDefaults | None = None
+    model_options: dict[str, Any] | None = None
 
 
 class ExecutionProfileUpdate(BaseModel):
@@ -93,6 +102,7 @@ class ExecutionProfileUpdate(BaseModel):
     inference: InferenceParams | None = None
     context: InferenceContext | None = None
     audio: AudioDefaults | None = None
+    model_options: dict[str, Any] | None = None
 
 
 class ExecutionProfileResponse(BaseModel):
@@ -110,6 +120,7 @@ class ExecutionProfileResponse(BaseModel):
     inference: InferenceParams | None = None
     context: InferenceContext | None = None
     audio: AudioDefaults | None = None
+    model_options: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -158,6 +169,14 @@ def profile_to_response(profile: ExecutionProfile) -> ExecutionProfileResponse:
             stt_language=profile.default_stt_language,
         )
 
+    # Deserialize model_options from JSON text
+    model_options: dict[str, Any] | None = None
+    if profile.model_options:
+        try:
+            model_options = json.loads(profile.model_options)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return ExecutionProfileResponse(
         id=profile.id,  # type: ignore[arg-type]
         name=profile.name,
@@ -171,6 +190,7 @@ def profile_to_response(profile: ExecutionProfile) -> ExecutionProfileResponse:
         inference=inference,
         context=context,
         audio=audio,
+        model_options=model_options,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )

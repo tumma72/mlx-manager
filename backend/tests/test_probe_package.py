@@ -232,7 +232,10 @@ async def test_orchestrator_full_flow_text_gen():
     """Test full orchestrator flow with text-gen model."""
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/text-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 2.0
     mock_loaded.config = {"max_position_embeddings": 8192}
 
@@ -300,7 +303,10 @@ async def test_orchestrator_full_flow_embeddings():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/embed-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = mock_adapter
 
     mock_pool = MagicMock()
@@ -413,7 +419,10 @@ async def test_orchestrator_preloaded_model_not_unloaded():
     """Test orchestrator doesn't unload pre-loaded models."""
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/preloaded"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 1.0
     mock_loaded.config = {}
     mock_loaded.capabilities = None
@@ -465,7 +474,10 @@ async def test_orchestrator_save_failure_doesnt_crash():
     """Test orchestrator handles save failure gracefully."""
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.config = {}
 
     mock_pool = MagicMock()
@@ -523,7 +535,10 @@ async def test_text_gen_probe_happy_path():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/text-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = MagicMock()
     mock_loaded.size_gb = 2.0
     mock_loaded.config = {
@@ -979,7 +994,10 @@ async def test_orchestrator_cleanup_failure():
     """Test orchestrator handles cleanup failure gracefully."""
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.config = {}
 
     mock_pool = MagicMock()
@@ -1028,7 +1046,10 @@ async def test_text_gen_probe_context_check_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.config = {}
 
     result = ProbeResult()
@@ -1065,13 +1086,17 @@ async def test_text_gen_probe_thinking_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.config = {}
 
     result = ProbeResult()
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
+    with patch.object(
+        TextGenProbe,
+        "_verify_thinking_support",
         side_effect=Exception("Thinking check failed"),
     ):
         probe = TextGenProbe()
@@ -1092,7 +1117,10 @@ async def test_text_gen_probe_tools_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = MagicMock()
     mock_loaded.adapter.supports_native_tools.return_value = False
     mock_loaded.adapter.format_tools_for_prompt.return_value = ""
@@ -1161,7 +1189,10 @@ async def test_vision_probe_multi_image_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/vision-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.tokenizer.image_processor = MagicMock()
     mock_loaded.config = {}
 
@@ -1189,7 +1220,10 @@ async def test_vision_probe_video_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/vision-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.tokenizer.image_processor = MagicMock()
     mock_loaded.config = {}
 
@@ -1228,7 +1262,10 @@ async def test_vision_probe_context_failure():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/vision-model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.tokenizer.image_processor = MagicMock()
     mock_loaded.config = {}
     mock_loaded.size_gb = 4.0
@@ -1569,7 +1606,10 @@ async def test_text_gen_probe_max_tokens_no_max_pos():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 2.0
 
     result = ProbeResult()
@@ -1610,7 +1650,10 @@ async def test_text_gen_probe_max_tokens_missing_params():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 2.0
 
     result = ProbeResult()
@@ -1651,7 +1694,10 @@ async def test_text_gen_probe_max_tokens_low_memory():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 15.0  # Large model
 
     result = ProbeResult()
@@ -1824,7 +1870,10 @@ async def test_text_gen_probe_head_dim_calculation():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.size_gb = 2.0
 
     result = ProbeResult()
@@ -2075,7 +2124,10 @@ async def test_text_gen_probe_template_delivery():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = True
     mock_adapter.tool_parser.parser_id = "hermes_json"
@@ -2107,7 +2159,10 @@ async def test_text_gen_probe_adapter_delivery():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = False
     mock_adapter.tool_parser.parser_id = "hermes_json"
@@ -2140,7 +2195,10 @@ async def test_text_gen_probe_fallback_parser_sweep():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = True
     mock_adapter.tool_parser.parser_id = "glm4_native"
@@ -2192,7 +2250,10 @@ async def test_text_gen_probe_no_adapter_skips():
 
     mock_loaded = MagicMock()
     mock_loaded.model_id = "test/model"
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = None  # No adapter
     mock_loaded.config = {}
 
@@ -2223,7 +2284,10 @@ async def test_text_gen_probe_thinking_generation_based():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.thinking_parser.parser_id = "think_tag"
     mock_adapter.thinking_parser.extract.return_value = "Some thinking content"
@@ -2253,7 +2317,10 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.thinking_parser.parser_id = "think_tag"
     mock_adapter.thinking_parser.extract.return_value = None  # No tags in output
@@ -2270,7 +2337,9 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
         ),
     ):
         probe = TextGenProbe()
-        supports, parser_id, diags = await probe._verify_thinking_support(mock_loaded, mock_adapter)
+        supports, parser_id, diags = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter, template_params={"enable_thinking": {"default": True}}
+        )
         assert supports is False  # Could not verify empirically
         assert parser_id == "null"
         assert len(diags) == 1
@@ -2283,7 +2352,10 @@ async def test_text_gen_probe_no_tool_support_detected():
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = False
     mock_adapter.format_tools_for_prompt.return_value = ""  # No adapter delivery either
@@ -2670,14 +2742,16 @@ async def test_vision_probe_generate_with_tools_and_thinking():
     messages = [{"role": "user", "content": "Test message"}]
 
     probe = VisionProbe()
-    result = await probe._generate(mock_loaded, messages, tools=tools, enable_thinking=True)
+    result = await probe._generate(
+        mock_loaded, messages, tools=tools, template_options={"enable_thinking": True}
+    )
 
     assert result == "Generated response"
     # Verify adapter.generate was called with correct args
     mock_adapter.generate.assert_called_once()
     call_kwargs = mock_adapter.generate.call_args[1]
     assert call_kwargs["tools"] == tools
-    assert call_kwargs["enable_thinking"] is True
+    assert call_kwargs["template_options"] == {"enable_thinking": True}
     assert call_kwargs["images"] is not None  # Synthetic test image
 
 

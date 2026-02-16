@@ -89,4 +89,10 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    # Programmatic mode: connection provided by run_alembic_upgrade()
+    connectable = config.attributes.get("connection", None)
+    if connectable is not None:
+        do_run_migrations(connectable)
+    else:
+        # CLI mode: create async engine
+        asyncio.run(run_migrations_online())

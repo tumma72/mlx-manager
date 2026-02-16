@@ -265,28 +265,6 @@ class TestInitDb:
         assert len(matching) == 1
 
 
-class TestMigrateSchema:
-    """Tests for the migrate_schema function."""
-
-    @pytest.mark.asyncio
-    async def test_migrate_schema_adds_missing_columns(self, test_engine):
-        """Test migrate_schema adds columns that don't exist yet."""
-        from mlx_manager.database import migrate_schema
-
-        with patch("mlx_manager.database.engine", test_engine):
-            # migrate_schema should run without error
-            await migrate_schema()
-
-    @pytest.mark.asyncio
-    async def test_migrate_schema_column_already_exists(self, test_engine):
-        """Test migrate_schema handles columns that already exist."""
-        from mlx_manager.database import migrate_schema
-
-        with patch("mlx_manager.database.engine", test_engine):
-            # Run twice - second time columns already exist
-            await migrate_schema()
-            await migrate_schema()  # Should not raise
-
 
 class TestRecoverIncompleteDownloads:
     """Tests for the recover_incomplete_downloads function."""

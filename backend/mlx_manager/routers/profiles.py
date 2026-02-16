@@ -194,6 +194,8 @@ async def duplicate_profile(
         default_tts_speed=profile.default_tts_speed,
         default_tts_sample_rate=profile.default_tts_sample_rate,
         default_stt_language=profile.default_stt_language,
+        # Model-specific template options
+        model_options=profile.model_options,
     )
 
     session.add(new_profile)
@@ -233,6 +235,8 @@ def _apply_dto_to_entity(
     profile_type: str,
 ) -> None:
     """Flatten value objects from DTO into entity columns."""
+    import json
+
     if profile_type in (ProfileType.INFERENCE, ProfileType.BASE):
         if dto.inference is not None:
             profile.default_temperature = dto.inference.temperature
@@ -248,3 +252,7 @@ def _apply_dto_to_entity(
             profile.default_tts_speed = dto.audio.tts_speed
             profile.default_tts_sample_rate = dto.audio.tts_sample_rate
             profile.default_stt_language = dto.audio.stt_language
+
+    # Model-specific template options (any profile type)
+    if dto.model_options is not None:
+        profile.model_options = json.dumps(dto.model_options) if dto.model_options else None

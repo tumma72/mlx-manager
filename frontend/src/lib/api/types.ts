@@ -2,6 +2,14 @@
 
 export type ModelType = "text-gen" | "vision" | "embeddings" | "audio";
 
+export interface TemplateParamInfo {
+  name: string;
+  param_type: "bool" | "string";
+  default: boolean | string | null;
+  label: string;
+  description: string;
+}
+
 export interface CapabilitiesData {
   capability_type: ModelType;
   probed_at: string | null;
@@ -24,6 +32,8 @@ export interface CapabilitiesData {
   // Audio
   supports_tts: boolean | null;
   supports_stt: boolean | null;
+  // Template options
+  template_params: Record<string, TemplateParamInfo> | null;
 }
 
 export interface DownloadedModel {
@@ -91,6 +101,7 @@ export interface ExecutionProfile {
   inference: InferenceParams | null;
   context: InferenceContext | null;
   audio: AudioDefaults | null;
+  model_options: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -103,6 +114,7 @@ export interface ExecutionProfileCreate {
   inference?: InferenceParams;
   context?: InferenceContext;
   audio?: AudioDefaults;
+  model_options?: Record<string, unknown>;
 }
 
 export interface ExecutionProfileUpdate {
@@ -113,6 +125,7 @@ export interface ExecutionProfileUpdate {
   inference?: InferenceParams;
   context?: InferenceContext;
   audio?: AudioDefaults;
+  model_options?: Record<string, unknown>;
 }
 
 export interface RunningServer {

@@ -153,23 +153,34 @@ class TestHasThinkingSupport:
         tok = _make_thinking_tokenizer(template="Hello {{ messages }}")
         assert has_thinking_support(tok) is False
 
-    def test_template_with_thinking_keyword_and_acceptance_returns_true(self) -> None:
+    def test_template_with_thinking_keyword_only_returns_false(self) -> None:
+        """Generic 'thinking' keyword without 'enable_thinking' is not enough."""
         tok = _make_thinking_tokenizer(
             template="{% if thinking %}think{% endif %} {{ messages }}",
-            accept_thinking=True,
+            accept_thinking=False,  # Won't be called since Phase 1 fails
         )
-        assert has_thinking_support(tok) is True
+        assert has_thinking_support(tok) is False
 
     def test_template_with_enable_thinking_keyword_and_acceptance_returns_true(self) -> None:
+        """Qwen-style template with enable_thinking parameter."""
         tok = _make_thinking_tokenizer(
             template="{% if enable_thinking %}think{% endif %}",
             accept_thinking=True,
         )
         assert has_thinking_support(tok) is True
 
-    def test_template_with_thinking_keyword_but_rejection_returns_false(self) -> None:
+    def test_template_with_keep_past_thinking_only_returns_false(self) -> None:
+        """Liquid-style keep_past_thinking without enable_thinking is not supported."""
         tok = _make_thinking_tokenizer(
-            template="{% if thinking %}think{% endif %} {{ messages }}",
+            template="{% if keep_past_thinking %}{{ thinking }}{% endif %}",
+            accept_thinking=False,  # Won't be called since Phase 1 fails
+        )
+        assert has_thinking_support(tok) is False
+
+    def test_template_with_enable_thinking_keyword_but_rejection_returns_false(self) -> None:
+        """Template has enable_thinking but tokenizer rejects the parameter."""
+        tok = _make_thinking_tokenizer(
+            template="{% if enable_thinking %}think{% endif %} {{ messages }}",
             accept_thinking=False,
         )
         assert has_thinking_support(tok) is False
@@ -188,7 +199,7 @@ class TestHasThinkingSupport:
     def test_processor_wrapper_is_unwrapped(self) -> None:
         """Processor objects wrap the real tokenizer in .tokenizer attribute."""
         inner = _make_thinking_tokenizer(
-            template="thinking is here",
+            template="enable_thinking is here",
             accept_thinking=True,
         )
         processor = MagicMock()
@@ -198,20 +209,20 @@ class TestHasThinkingSupport:
 
     def test_clear_cache_resets_detection(self) -> None:
         tok = _make_thinking_tokenizer(
-            template="thinking present",
+            template="enable_thinking present",
             accept_thinking=True,
         )
         assert has_thinking_support(tok) is True
         clear_thinking_cache()
 
         # Now make it reject — should re-evaluate
-        tok.apply_chat_template.side_effect = TypeError("thinking")
+        tok.apply_chat_template.side_effect = TypeError("enable_thinking")
         assert has_thinking_support(tok) is False
 
     def test_generic_exception_returns_false(self) -> None:
         """Non-TypeError exceptions during trial call should return False."""
         tok = _make_thinking_tokenizer(
-            template="thinking keyword present",
+            template="enable_thinking keyword present",
         )
         tok.apply_chat_template.side_effect = RuntimeError("template broken")
         assert has_thinking_support(tok) is False

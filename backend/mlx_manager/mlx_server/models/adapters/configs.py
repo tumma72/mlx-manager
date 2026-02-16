@@ -18,6 +18,7 @@ from mlx_manager.mlx_server.models.adapters.strategies import (
     glm4_template,
     glm4_tool_formatter,
     hermes_message_converter,
+    liquid_template,
     llama_message_converter,
     llama_tool_formatter,
     mistral_template,
@@ -100,6 +101,7 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
         thinking_parser_factory=lambda: ThinkTagParser(),
         extra_stop_tokens=["<|im_end|>"],
         native_tools=True,
+        template_strategy=liquid_template,
     ),
     "whisper": FamilyConfig(
         family="whisper",

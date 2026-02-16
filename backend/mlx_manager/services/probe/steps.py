@@ -99,6 +99,9 @@ class ProbeResult(BaseModel):
     supports_tts: bool | None = None
     supports_stt: bool | None = None
 
+    # Template options
+    template_params: dict[str, Any] | None = None
+
     # Metadata
     model_type: str | None = None
     errors: list[str] = Field(default_factory=list)

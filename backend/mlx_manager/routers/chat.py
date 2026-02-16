@@ -110,6 +110,16 @@ async def chat_completions(
                 _, image_urls = _extract_text_and_images(request.messages)
                 images = await preprocess_images(image_urls) if image_urls else None
 
+            # Build template_options from profile's model_options
+            template_options: dict[str, object] | None = None
+            if profile.model_options:
+                import json as _json
+
+                try:
+                    template_options = _json.loads(profile.model_options)
+                except (ValueError, TypeError):
+                    pass
+
             # Unified text and vision inference
             # Images (if present) will be handled by the adapter's prepare_input()
             gen = await generate_chat_completion(
@@ -122,6 +132,7 @@ async def chat_completions(
                 tools=request.tools,
                 enable_prompt_injection=profile.default_enable_tool_injection,
                 images=images,
+                template_options=template_options,
             )
 
             # Cast to async generator (both functions return AsyncGenerator when stream=True)

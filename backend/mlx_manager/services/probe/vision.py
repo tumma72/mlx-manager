@@ -8,7 +8,7 @@ tests thinking and tool calling capabilities.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -33,7 +33,7 @@ class VisionProbe(GenerativeProbe):
         loaded: LoadedModel,
         messages: list[dict],
         tools: list[dict] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
     ) -> str:
         """Generate a response using adapter's vision pipeline with a synthetic test image."""
@@ -53,7 +53,7 @@ class VisionProbe(GenerativeProbe):
             max_tokens=max_tokens,
             temperature=0.7,
             tools=tools,
-            enable_thinking=enable_thinking,
+            template_options=template_options,
             images=[test_image],
         )
         return result.content

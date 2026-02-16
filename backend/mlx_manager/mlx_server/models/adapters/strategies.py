@@ -32,13 +32,15 @@ def qwen_template(
     messages: list[dict[str, Any]],
     add_generation_prompt: bool,
     native_tools: list[dict[str, Any]] | None,
-    enable_thinking: bool,
+    template_options: dict[str, Any] | None,
 ) -> str:
     """Apply Qwen template with enable_thinking support."""
+    opts = template_options or {}
+    enable_thinking = opts.get("enable_thinking", True)
     kwargs: dict[str, Any] = {
         "add_generation_prompt": add_generation_prompt,
         "tokenize": False,
-        "enable_thinking": True,
+        "enable_thinking": enable_thinking,
     }
     if native_tools:
         kwargs["tools"] = native_tools
@@ -54,7 +56,7 @@ def glm4_template(
     messages: list[dict[str, Any]],
     add_generation_prompt: bool,
     native_tools: list[dict[str, Any]] | None,
-    enable_thinking: bool,
+    template_options: dict[str, Any] | None,
 ) -> str:
     """Apply GLM4 template with native tool support and ChatML fallback."""
     if hasattr(tokenizer, "apply_chat_template"):
@@ -84,7 +86,7 @@ def mistral_template(
     messages: list[dict[str, Any]],
     add_generation_prompt: bool,
     native_tools: list[dict[str, Any]] | None,
-    enable_thinking: bool,
+    template_options: dict[str, Any] | None,
 ) -> str:
     """Apply Mistral template with system message handling for v1/v2."""
     # Mistral v1/v2: merge system message into first user message
@@ -105,6 +107,38 @@ def mistral_template(
     if native_tools:
         kwargs["tools"] = native_tools
     return cast(str, tokenizer.apply_chat_template(processed, **kwargs))
+
+
+def liquid_template(
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    add_generation_prompt: bool,
+    native_tools: list[dict[str, Any]] | None,
+    template_options: dict[str, Any] | None,
+) -> str:
+    """Apply Liquid template with keep_past_thinking and native tool support."""
+    opts = template_options or {}
+    kwargs: dict[str, Any] = {
+        "add_generation_prompt": add_generation_prompt,
+        "tokenize": False,
+    }
+    if native_tools:
+        kwargs["tools"] = native_tools
+    # Pass known template options as kwargs to tokenizer
+    if "keep_past_thinking" in opts:
+        kwargs["keep_past_thinking"] = opts["keep_past_thinking"]
+    try:
+        return cast(str, tokenizer.apply_chat_template(messages, **kwargs))
+    except (TypeError, ValueError, KeyError, AttributeError) as e:
+        # Fallback: remove extra kwargs
+        logger.debug("Liquid template with options failed: {}, retrying without", e)
+        fallback_kwargs: dict[str, Any] = {
+            "add_generation_prompt": add_generation_prompt,
+            "tokenize": False,
+        }
+        if native_tools:
+            fallback_kwargs["tools"] = native_tools
+        return cast(str, tokenizer.apply_chat_template(messages, **fallback_kwargs))
 
 
 # ── Tool format strategies ───────────────────────────────────────────

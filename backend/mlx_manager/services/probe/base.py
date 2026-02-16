@@ -104,7 +104,7 @@ class GenerativeProbe(BaseProbe):
         loaded: LoadedModel,
         messages: list[dict],
         tools: list[dict] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
     ) -> str:
         """Generate a response using the adapter's full pipeline.
@@ -123,7 +123,7 @@ class GenerativeProbe(BaseProbe):
             max_tokens=max_tokens,
             temperature=0.7,
             tools=tools,
-            enable_thinking=enable_thinking,
+            template_options=template_options,
         )
         return result.content
 
@@ -132,92 +132,89 @@ class GenerativeProbe(BaseProbe):
     # ------------------------------------------------------------------
 
     async def _verify_thinking_support(
-        self, loaded: LoadedModel, adapter: ModelAdapter
+        self,
+        loaded: LoadedModel,
+        adapter: ModelAdapter,
+        template_params: dict[str, Any] | None = None,
     ) -> tuple[bool, str, list[ProbeDiagnostic]]:
         """Verify thinking support via generation and parser validation.
 
-        Uses a 2-attempt strategy:
-        1. Generate with max_tokens=800 and a brevity hint
-        2. If output has unclosed thinking tags (truncated), retry with
-           max_tokens=2000 and feedback about the truncation
+        Two detection paths run in sequence:
+        - **Path A** (opt-in thinking): If ``enable_thinking`` is among the
+          discovered template params, generate with it enabled and check output.
+        - **Path B** (always-thinks): Generate without ``enable_thinking`` and
+          check for thinking tags anyway — catches models that always emit
+          ``<think>`` tags regardless of template options (e.g. Liquid Thinking).
 
         Returns (supports_thinking, thinking_parser_id, diagnostics).
         """
         from mlx_manager.mlx_server.parsers import THINKING_PARSERS
-        from mlx_manager.mlx_server.utils.template_tools import has_thinking_support
 
-        tokenizer = loaded.tokenizer
-        template_supports = has_thinking_support(tokenizer)
         diagnostics: list[ProbeDiagnostic] = []
+        messages = [{"role": "user", "content": "What is 2 + 2? Answer briefly."}]
+        has_enable_thinking = template_params is not None and "enable_thinking" in template_params
 
-        if not template_supports:
-            return (False, "null", diagnostics)
+        # --- Path A: explicit enable_thinking parameter ---
+        if has_enable_thinking:
+            try:
+                output = await self._generate(
+                    loaded, messages, template_options={"enable_thinking": True}
+                )
+                result = self._match_thinking_parsers(output, adapter, THINKING_PARSERS)
+                if result is not None:
+                    return (True, result, diagnostics)
 
+                # Check for unclosed tags (truncation)
+                unclosed_tag = _find_unclosed_thinking_tag(output)
+                if unclosed_tag:
+                    logger.info(
+                        "Thinking probe: found unclosed <{}> tag, retrying with more tokens",
+                        unclosed_tag,
+                    )
+                    retry_messages = [
+                        {"role": "user", "content": "What is 2 + 2? Answer briefly."},
+                        {"role": "assistant", "content": output},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your previous response was truncated because you "
+                                "weren't concise enough as requested. Please answer "
+                                "the same question again, keeping your response "
+                                "very brief."
+                            ),
+                        },
+                    ]
+                    retry_output = await self._generate(
+                        loaded,
+                        retry_messages,
+                        template_options={"enable_thinking": True},
+                        max_tokens=2000,
+                    )
+                    retry_result = self._match_thinking_parsers(
+                        retry_output, adapter, THINKING_PARSERS
+                    )
+                    if retry_result is not None:
+                        logger.info(
+                            "Thinking probe: verified on retry (parser={})",
+                            retry_result,
+                        )
+                        return (True, retry_result, diagnostics)
+
+            except Exception as e:
+                logger.debug("Path A thinking generation failed: {}", e)
+
+        # --- Path B: always-thinks detection (no enable_thinking) ---
         try:
-            messages = [{"role": "user", "content": "What is 2 + 2? Answer briefly."}]
-            output = await self._generate(loaded, messages, enable_thinking=True)
-
-            # Try to match thinking tags via adapter parser then sweep
+            output = await self._generate(loaded, messages)
             result = self._match_thinking_parsers(output, adapter, THINKING_PARSERS)
             if result is not None:
-                return (True, result, diagnostics)
-
-            # Check for unclosed thinking tags (model was truncated mid-thought)
-            unclosed_tag = _find_unclosed_thinking_tag(output)
-            if unclosed_tag:
                 logger.info(
-                    "Thinking probe: found unclosed <{}> tag, retrying with more tokens",
-                    unclosed_tag,
+                    "Thinking probe: model always emits thinking tags (parser={})",
+                    result,
                 )
-                retry_messages = [
-                    {"role": "user", "content": "What is 2 + 2? Answer briefly."},
-                    {"role": "assistant", "content": output},
-                    {
-                        "role": "user",
-                        "content": (
-                            "Your previous response was truncated because you "
-                            "weren't concise enough as requested. Please answer "
-                            "the same question again, keeping your response "
-                            "very brief."
-                        ),
-                    },
-                ]
-                retry_output = await self._generate(
-                    loaded, retry_messages, enable_thinking=True, max_tokens=2000
-                )
-                retry_result = self._match_thinking_parsers(retry_output, adapter, THINKING_PARSERS)
-                if retry_result is not None:
-                    logger.info(
-                        "Thinking probe: verified on retry (parser={})",
-                        retry_result,
-                    )
-                    return (True, retry_result, diagnostics)
-
-            # Template claims support but we couldn't verify it empirically.
-            # Report as NOT supported — the probe's job is to verify, not trust config.
-            logger.info(
-                "Thinking probe: template claims thinking support but no tags "
-                "found in output after {} — reporting as unverified",
-                "retry" if unclosed_tag else "first attempt",
-            )
-            diagnostics.append(
-                ProbeDiagnostic(
-                    level=DiagnosticLevel.WARNING,
-                    category=DiagnosticCategory.THINKING_DIALECT,
-                    message=(
-                        "Template claims thinking support but probe could not "
-                        "verify it — no thinking tags found in generated output"
-                    ),
-                    details={
-                        "raw_output_sample": output[:300],
-                        "registered_parsers": [pid for pid in THINKING_PARSERS if pid != "null"],
-                    },
-                )
-            )
-            return (False, "null", diagnostics)
-
+                return (True, result, diagnostics)
         except Exception as e:
-            logger.debug("Thinking generation failed: {}", e)
+            logger.debug("Path B thinking generation failed: {}", e)
             diagnostics.append(
                 ProbeDiagnostic(
                     level=DiagnosticLevel.WARNING,
@@ -229,6 +226,28 @@ class GenerativeProbe(BaseProbe):
                 )
             )
             return (False, "null", diagnostics)
+
+        # Neither path found thinking tags
+        if has_enable_thinking:
+            logger.info(
+                "Thinking probe: template has enable_thinking param but no tags "
+                "found in output — reporting as unverified"
+            )
+            diagnostics.append(
+                ProbeDiagnostic(
+                    level=DiagnosticLevel.WARNING,
+                    category=DiagnosticCategory.THINKING_DIALECT,
+                    message=(
+                        "Template has enable_thinking parameter but probe could not "
+                        "verify thinking support — no thinking tags found in output"
+                    ),
+                    details={
+                        "registered_parsers": [pid for pid in THINKING_PARSERS if pid != "null"],
+                    },
+                )
+            )
+
+        return (False, "null", diagnostics)
 
     @staticmethod
     def _match_thinking_parsers(
@@ -459,6 +478,20 @@ class GenerativeProbe(BaseProbe):
             yield ProbeStep(step="test_tools", status="skipped")
             return
 
+        # Discover template parameters
+        discovered_params: dict[str, Any] | None = None
+        if tokenizer is not None:
+            from mlx_manager.mlx_server.utils.template_params import discover_template_params
+
+            discovered_params = discover_template_params(tokenizer)
+            if discovered_params:
+                result.template_params = discovered_params
+                logger.info(
+                    "Discovered template params for {}: {}",
+                    model_id,
+                    list(discovered_params.keys()),
+                )
+
         # Test thinking support
         if tokenizer is not None:
             yield ProbeStep(step="test_thinking", status="running")
@@ -467,7 +500,9 @@ class GenerativeProbe(BaseProbe):
                     supports_thinking,
                     thinking_parser_id,
                     thinking_diags,
-                ) = await self._verify_thinking_support(loaded, adapter)
+                ) = await self._verify_thinking_support(
+                    loaded, adapter, template_params=discovered_params
+                )
                 result.supports_thinking = supports_thinking
                 result.thinking_parser_id = thinking_parser_id
                 result.diagnostics.extend(thinking_diags)

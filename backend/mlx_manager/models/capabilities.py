@@ -8,11 +8,12 @@ columns.  The ``capability_type`` column identifies which subset of fields
 is meaningful for a given model (text-gen, vision, embeddings, audio).
 """
 
+import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -69,6 +70,12 @@ class ModelCapabilities(SQLModel, table=True):
     supports_tts: bool | None = None
     supports_stt: bool | None = None
 
+    # --- Template options ---
+    template_params: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+
     # Relationship back to Model
     model: Optional["Model"] = Relationship(back_populates="capabilities")
 
@@ -111,6 +118,9 @@ class CapabilitiesResponse(BaseModel):
     supports_tts: bool | None = None
     supports_stt: bool | None = None
 
+    # Template options
+    template_params: dict[str, Any] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Factory helpers
@@ -119,6 +129,14 @@ class CapabilitiesResponse(BaseModel):
 
 def capabilities_to_response(caps: ModelCapabilities) -> CapabilitiesResponse:
     """Serialize a ModelCapabilities instance to a flat DTO."""
+    # Deserialize template_params from JSON text
+    template_params: dict[str, Any] | None = None
+    if caps.template_params:
+        try:
+            template_params = json.loads(caps.template_params)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return CapabilitiesResponse(
         capability_type=caps.capability_type,
         probed_at=caps.probed_at,
@@ -137,4 +155,5 @@ def capabilities_to_response(caps: ModelCapabilities) -> CapabilitiesResponse:
         is_normalized=caps.is_normalized,
         supports_tts=caps.supports_tts,
         supports_stt=caps.supports_stt,
+        template_params=template_params,
     )

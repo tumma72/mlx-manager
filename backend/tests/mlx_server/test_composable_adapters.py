@@ -72,7 +72,8 @@ class FakeTokenizer:
         if "tools" in kwargs:
             tools_info = "[TOOLS_PASSED]"
         thinking_info = ""
-        if kwargs.get("enable_thinking"):
+        template_options = kwargs.get("template_options", {})
+        if isinstance(template_options, dict) and template_options.get("enable_thinking"):
             thinking_info = "[THINKING_ON]"
         return "".join(parts) + suffix + tools_info + thinking_info
 
@@ -875,7 +876,7 @@ class TestApplyChatTemplate:
         result = adapter.apply_chat_template(
             [{"role": "user", "content": "hello"}],
         )
-        # Qwen template strategy adds enable_thinking=True
+        # Qwen template strategy is used
         assert "hello" in result
 
 
@@ -1028,7 +1029,7 @@ class TestPrepareInput:
         adapter = create_adapter("qwen", FakeTokenizer())
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "Think about this"}],
-            enable_thinking=True,
+            template_options={"enable_thinking": True},
         )
         assert isinstance(result, PreparedInput)
 

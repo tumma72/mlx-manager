@@ -59,6 +59,7 @@ class _GenContext(BaseModel):
     messages: list[dict[str, Any]] | None = None
     images: list[Any] | None = None
     enable_prompt_injection: bool = False
+    template_options: dict[str, Any] | None = None
 
 
 async def _prepare_generation(
@@ -71,6 +72,7 @@ async def _prepare_generation(
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
     images: list[Any] | None = None,
+    template_options: dict[str, Any] | None = None,
 ) -> _GenContext:
     """Prepare shared context for chat generation (model, adapter, prompt, stop tokens)."""
     from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -92,6 +94,7 @@ async def _prepare_generation(
         tools=tools,
         enable_prompt_injection=enable_prompt_injection,
         images=images,
+        template_options=template_options,
     )
 
     if tools and not (adapter.supports_tool_calling() or enable_prompt_injection):
@@ -132,6 +135,7 @@ async def _prepare_generation(
         messages=messages,
         images=images,
         enable_prompt_injection=enable_prompt_injection,
+        template_options=template_options,
     )
 
 
@@ -148,6 +152,7 @@ async def generate_chat_stream(
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
     images: list[Any] | None = None,
+    template_options: dict[str, Any] | None = None,
 ) -> AsyncGenerator[StreamEvent | TextResult, None]:
     """Streaming chat generation returning IR events.
 
@@ -168,6 +173,7 @@ async def generate_chat_stream(
         tools,
         enable_prompt_injection,
         images,
+        template_options,
     )
 
     span_context = None
@@ -203,6 +209,7 @@ async def generate_chat_complete_response(
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
     images: list[Any] | None = None,
+    template_options: dict[str, Any] | None = None,
 ) -> InferenceResult:
     """Non-streaming chat generation returning IR result.
 
@@ -219,6 +226,7 @@ async def generate_chat_complete_response(
         tools,
         enable_prompt_injection,
         images,
+        template_options,
     )
 
     span_context = None
@@ -254,6 +262,7 @@ async def generate_chat_completion(
     tools: list[dict[str, Any]] | None = None,
     enable_prompt_injection: bool = False,
     images: list[Any] | None = None,
+    template_options: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict, None] | dict:
     """Generate a chat completion in OpenAI format.
 
@@ -274,6 +283,7 @@ async def generate_chat_completion(
         tools,
         enable_prompt_injection,
         images,
+        template_options,
     )
 
     span_context = None
@@ -355,6 +365,7 @@ async def _stream_chat_ir(
             tools=ctx.tools,
             enable_prompt_injection=ctx.enable_prompt_injection,
             images=ctx.images,
+            template_options=ctx.template_options,
         ):
             if isinstance(item, TextResult):
                 if item.tool_calls:
@@ -500,6 +511,7 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
             tools=ctx.tools,
             enable_prompt_injection=ctx.enable_prompt_injection,
             images=ctx.images,
+            template_options=ctx.template_options,
         )
         completion_tokens = (
             len(result.content.split()) if ctx.images else len(ctx.tokenizer.encode(result.content))

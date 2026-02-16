@@ -226,6 +226,14 @@ async def _save_capabilities(model_id: str, result: ProbeResult) -> None:
         caps_dict["supports_tts"] = result.supports_tts
     if result.supports_stt is not None:
         caps_dict["supports_stt"] = result.supports_stt
+    if result.template_params is not None:
+        import json
+
+        caps_dict["template_params"] = json.dumps(
+            {k: v.model_dump() for k, v in result.template_params.items()}
+            if hasattr(next(iter(result.template_params.values()), None), "model_dump")
+            else result.template_params
+        )
     caps_dict["probe_version"] = 2
     await update_model_capabilities(model_id, **caps_dict)
     logger.info(f"Saved capabilities for {model_id}")

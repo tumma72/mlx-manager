@@ -123,7 +123,7 @@ def has_thinking_support(tokenizer: Any) -> bool:
 
     # Phase 1: fast string check
     template: str | None = getattr(actual, "chat_template", None)
-    if template is None or ("thinking" not in template and "enable_thinking" not in template):
+    if template is None or "enable_thinking" not in template:
         _thinking_cache[tok_id] = False
         return False
 

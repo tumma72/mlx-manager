@@ -3,6 +3,7 @@
 Focuses on GenerativeProbe edge cases and error paths.
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,7 +30,7 @@ class ConcreteProbe(GenerativeProbe):
         loaded,
         messages: list[dict],
         tools: list[dict] | None = None,
-        enable_thinking: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> str:
         """Mock implementation returns predefined output."""
         return self._mock_output
@@ -56,7 +57,10 @@ async def test_verify_thinking_sweeps_all_parsers():
     probe.set_mock_output("<think>Some thinking here</think>")
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     # Mock adapter with null parser
     mock_adapter = MagicMock()
@@ -97,7 +101,10 @@ async def test_verify_thinking_fallback_when_no_parser_matches():
     probe.set_mock_output("4")  # Plain output without thinking tags
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     # Mock adapter with non-null parser that doesn't match
     mock_adapter = MagicMock()
@@ -120,23 +127,20 @@ async def test_verify_thinking_fallback_when_no_parser_matches():
 
     with (
         patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=True,
-        ),
-        patch(
             "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
             {"null": MagicMock, "think_tag": mock_sweep_parser, "reasoning_tag": mock_other_parser},
         ),
     ):
         supports, parser_id, diagnostics = await probe._verify_thinking_support(
-            mock_loaded, mock_adapter
+            mock_loaded, mock_adapter, template_params={"enable_thinking": {"default": True}}
         )
 
-        # Probe couldn't verify — report as unverified, don't trust config
+        # Probe couldn't verify with enable_thinking, fallback to always-thinks path also failed
         assert supports is False
         assert parser_id == "null"
         # Should produce a diagnostic about unverified thinking
         assert len(diagnostics) == 1
+        assert diagnostics[0].level.value == "warning"
         assert diagnostics[0].category.value == "thinking_dialect"
 
 
@@ -152,27 +156,28 @@ async def test_verify_thinking_exception_handling():
     probe._generate = failing_generate
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     mock_adapter = MagicMock()
     mock_thinking_parser = MagicMock()
     mock_thinking_parser.parser_id = "think_tag"
     mock_adapter.thinking_parser = mock_thinking_parser
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-        return_value=True,
-    ):
-        supports, parser_id, diagnostics = await probe._verify_thinking_support(
-            mock_loaded, mock_adapter
-        )
+    supports, parser_id, diagnostics = await probe._verify_thinking_support(
+        mock_loaded, mock_adapter, template_params={"enable_thinking": {"default": True}}
+    )
 
-        # Generation failed — can't verify, report as unverified
-        assert supports is False
-        assert parser_id == "null"
-        assert len(diagnostics) == 1
-        assert diagnostics[0].category.value == "thinking_dialect"
-        assert "generation error" in diagnostics[0].message
+    # Generation failed — both paths fail, report as unverified
+    assert supports is False
+    assert parser_id == "null"
+    # Should produce a diagnostic about generation failure
+    assert len(diagnostics) == 1
+    assert diagnostics[0].level.value == "warning"
+    assert diagnostics[0].category.value == "thinking_dialect"
+    assert "generation error" in diagnostics[0].message.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +192,10 @@ async def test_verify_tool_template_delivery_no_parser_match():
     probe.set_mock_output("I'll check the weather for you")  # Natural language, no tool call
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = True
@@ -224,7 +232,10 @@ async def test_verify_tool_adapter_delivery_no_parser_match():
     probe.set_mock_output("I'll check the weather for you")
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = False
@@ -259,7 +270,10 @@ async def test_verify_tool_partial_markers_warning():
     probe.set_mock_output("<tool_call>Incomplete tool call without closing tag")
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = False
@@ -297,7 +311,10 @@ async def test_verify_tool_unknown_xml_tags_warning():
     probe.set_mock_output("<custom_tag>Some content</custom_tag>")
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = False
@@ -501,7 +518,10 @@ async def test_probe_generative_capabilities_no_adapter():
     probe = ConcreteProbe()
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = None  # No adapter
 
     result = ProbeResult()
@@ -568,7 +588,10 @@ async def test_probe_generative_capabilities_thinking_test_exception():
     probe._verify_thinking_support = failing_verify
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = MagicMock()
 
     result = ProbeResult()
@@ -607,7 +630,10 @@ async def test_probe_generative_capabilities_tool_test_exception():
     probe._verify_tool_support = failing_verify
 
     mock_loaded = MagicMock()
-    mock_loaded.tokenizer = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
+    mock_loaded.tokenizer = mock_tokenizer
     mock_loaded.adapter = MagicMock()
 
     result = ProbeResult()
