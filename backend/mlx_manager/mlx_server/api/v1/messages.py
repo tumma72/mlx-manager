@@ -81,6 +81,8 @@ async def _handle_non_streaming(
         temperature=internal.params.temperature,
         top_p=internal.params.top_p or 1.0,
         stop=internal.stop,
+        tools=internal.tools,
+        images=internal.images,
     )
 
     formatter = AnthropicFormatter(
@@ -130,6 +132,8 @@ async def _handle_streaming(
             temperature=internal.params.temperature,
             top_p=internal.params.top_p or 1.0,
             stop=internal.stop,
+            tools=internal.tools,
+            images=internal.images,
         )
 
         output_tokens = 0

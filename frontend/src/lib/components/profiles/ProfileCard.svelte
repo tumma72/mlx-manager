@@ -5,6 +5,7 @@
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore } from '$stores';
 	import { formatDuration } from '$lib/utils/format';
+	import { isChatCapable } from '$lib/utils';
 	import { Card, Button, Badge, ConfirmDialog } from '$components/ui';
 	import {
 		Play,
@@ -347,9 +348,11 @@
 		<div class="flex shrink-0 gap-1">
 			<!-- Server Control Buttons -->
 			{#if isRunning}
-				<Button variant="outline" size="sm" onclick={handleChat} disabled={loading} title="Chat">
-					<MessageSquare class="h-4 w-4" />
-				</Button>
+				{#if isChatCapable(profile.model_type)}
+					<Button variant="outline" size="sm" onclick={handleChat} disabled={loading} title="Chat">
+						<MessageSquare class="h-4 w-4" />
+					</Button>
+				{/if}
 				<Button variant="outline" size="sm" onclick={handleRestart} disabled={loading} title="Restart">
 					<RotateCw class="h-4 w-4" />
 				</Button>

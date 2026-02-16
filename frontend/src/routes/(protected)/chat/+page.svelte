@@ -7,6 +7,7 @@
 	import { Send, Loader2, Bot, User, Paperclip, X, AlertCircle, Wrench, Copy, Square } from 'lucide-svelte';
 	import { mcp } from '$lib/api/client';
 	import type { Attachment, ContentPart, ToolDefinition } from '$lib/api/types';
+	import { isChatCapable } from '$lib/utils';
 
 	const TEXT_EXTENSIONS = new Set([
 		'txt', 'md', 'csv', 'json', 'xml', 'yaml', 'yml',
@@ -68,10 +69,13 @@
 	let toolsLoaded = $state(false);
 	let copyFeedback = $state(false);
 	let abortController = $state<AbortController | null>(null);
+	let protocol = $state<'openai' | 'anthropic'>('openai');
 
 	// With embedded server, all profiles can be used for chat
 	// The model will be loaded on-demand by the embedded MLX Server
-	const availableProfiles = $derived(profileStore.profiles);
+	const availableProfiles = $derived(
+		profileStore.profiles.filter(p => isChatCapable(p.model_type) && serverStore.isRunning(p.id))
+	);
 
 	const selectedProfile = $derived(availableProfiles.find((p) => p.id === selectedProfileId));
 
@@ -80,10 +84,12 @@
 		selectedProfile?.model_type === 'vision'
 	);
 
-	// Accept string based on model capabilities - CHANGE 2
+	// Accept string based on model capabilities and protocol
 	const acceptedFormats = $derived(
 		isMultimodal
-			? 'image/*,video/*,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml'
+			? (protocol === 'anthropic'
+				? 'image/*,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml'
+				: 'image/*,video/*,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml')
 			: '.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.sql,.conf,.ini,.toml'
 	);
 
@@ -146,7 +152,7 @@
 		});
 	}
 
-	// Add attachment with validation - CHANGE 3 & 4
+	// Add attachment with validation
 	async function addAttachment(file: File): Promise<void> {
 		if (attachments.length >= 3) {
 			chatError = { summary: 'Maximum 3 attachments per message' };
@@ -181,6 +187,12 @@
 			return;
 		}
 
+		// Anthropic protocol: reject video files
+		if (isVideo && protocol === 'anthropic') {
+			chatError = { summary: 'Video attachments are not supported with the Anthropic protocol' };
+			return;
+		}
+
 		// Multimodal models: accept everything
 		// Text models: accept only text files
 
@@ -200,7 +212,7 @@
 		});
 	}
 
-	// Remove attachment and cleanup object URL - CHANGE 5
+	// Remove attachment and cleanup object URL
 	function removeAttachment(index: number): void {
 		const attachment = attachments[index];
 		// Only revoke object URLs (not filenames for text files)
@@ -258,32 +270,69 @@
 		});
 	}
 
-	async function buildMessageContent(text: string, currentAttachments: Attachment[]): Promise<string | ContentPart[]> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	async function buildMessageContent(text: string, currentAttachments: Attachment[]): Promise<string | any[]> {
 		if (currentAttachments.length === 0) {
 			return text;
 		}
 
-		const parts: ContentPart[] = [{ type: 'text', text }];
+		if (protocol === 'anthropic') {
+			// Anthropic content format
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const parts: any[] = [{ type: 'text', text }];
 
-		for (const attachment of currentAttachments) {
-			if (attachment.type === 'text') {
-				// Read text files as plain text and include inline
-				const fileContent = await readFileAsText(attachment.file);
-				parts.push({
-					type: 'text',
-					text: `[File: ${attachment.file.name}]\n${fileContent}`
-				});
-			} else {
-				// Images and videos: encode as base64 data URL
-				const base64 = await encodeFileAsBase64(attachment.file);
-				parts.push({
-					type: 'image_url',
-					image_url: { url: base64 }
-				});
+			for (const attachment of currentAttachments) {
+				if (attachment.type === 'text') {
+					const fileContent = await readFileAsText(attachment.file);
+					parts.push({
+						type: 'text',
+						text: `[File: ${attachment.file.name}]\n${fileContent}`
+					});
+				} else if (attachment.type === 'image') {
+					// Anthropic expects raw base64 with media_type
+					const dataUrl = await encodeFileAsBase64(attachment.file);
+					// Strip "data:image/png;base64," prefix to get raw base64
+					const commaIdx = dataUrl.indexOf(',');
+					const rawBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+					// Extract media type from data URL
+					const mediaTypeMatch = dataUrl.match(/^data:([^;]+);/);
+					const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/png';
+					parts.push({
+						type: 'image',
+						source: {
+							type: 'base64',
+							media_type: mediaType,
+							data: rawBase64
+						}
+					});
+				}
+				// Video attachments are blocked for Anthropic in addAttachment()
 			}
-		}
 
-		return parts;
+			return parts;
+		} else {
+			// OpenAI content format
+			const parts: ContentPart[] = [{ type: 'text', text }];
+
+			for (const attachment of currentAttachments) {
+				if (attachment.type === 'text') {
+					const fileContent = await readFileAsText(attachment.file);
+					parts.push({
+						type: 'text',
+						text: `[File: ${attachment.file.name}]\n${fileContent}`
+					});
+				} else {
+					// Images and videos: encode as base64 data URL
+					const base64 = await encodeFileAsBase64(attachment.file);
+					parts.push({
+						type: 'image_url',
+						image_url: { url: base64 }
+					});
+				}
+			}
+
+			return parts;
+		}
 	}
 
 	interface StreamResult {
@@ -295,7 +344,8 @@
 		error: { summary: string; details?: string } | null;
 	}
 
-	async function processSSEStream(response: Response): Promise<StreamResult> {
+	// OpenAI SSE stream parser
+	async function processOpenAISSEStream(response: Response): Promise<StreamResult> {
 		const result: StreamResult = {
 			content: '',
 			thinking: '',
@@ -310,7 +360,10 @@
 
 		const decoder = new TextDecoder();
 		let buffer = '';
-		let modelLoadNotified = false; // Track if we've notified about model load
+		let modelLoadNotified = false;
+		let thinkingStartTime: number | null = null;
+		// Track tool calls by index for accumulation
+		const toolCallsByIndex: Record<number, { id: string; name: string; arguments: string }> = {};
 
 		while (true) {
 			const { done, value } = await reader.read();
@@ -321,89 +374,306 @@
 			buffer = lines.pop() || '';
 
 			for (const line of lines) {
-				if (!line.startsWith('data: ')) continue;
+				const trimmed = line.trim();
+				if (!trimmed.startsWith('data: ')) continue;
+
+				const dataStr = trimmed.slice(6);
+				if (dataStr === '[DONE]') {
+					// Stream complete - finalize tool calls if any
+					const toolValues = Object.values(toolCallsByIndex);
+					if (toolValues.length > 0) {
+						result.toolCalls = toolValues;
+						result.toolCallsDone = true;
+					}
+					// Finalize thinking duration if we were still thinking
+					if (thinkingStartTime !== null && result.thinkingDur === undefined) {
+						result.thinkingDur = (Date.now() - thinkingStartTime) / 1000;
+						thinkingDuration = result.thinkingDur;
+					}
+					continue;
+				}
+
 				try {
-					const data = JSON.parse(line.slice(6));
-					switch (data.type) {
-						case 'thinking':
-							result.thinking += data.content;
-							streamingThinking += data.content;
-							// Refresh serverStore once model is loaded (first chunk means model loaded)
-							if (!modelLoadNotified) {
-								modelLoadNotified = true;
-								serverStore.refresh();
-							}
-							break;
-						case 'thinking_done':
-							result.thinkingDur = data.duration;
-							thinkingDuration = data.duration;
-							break;
-						case 'response':
-							result.content += data.content;
-							streamingResponse += data.content;
-							// Refresh serverStore once model is loaded (first chunk means model loaded)
-							if (!modelLoadNotified) {
-								modelLoadNotified = true;
-								serverStore.refresh();
-							}
-							break;
-						case 'tool_call': {
-							const tc = data.tool_call;
-							const existing = result.toolCalls.find(t => t.id === tc.id);
+					const data = JSON.parse(dataStr);
+
+					// Check for error responses
+					if (data.error) {
+						const errMsg = typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error);
+						result.error = { summary: 'Inference error', details: errMsg };
+						continue;
+					}
+
+					const choice = data.choices?.[0];
+					if (!choice) continue;
+
+					const delta = choice.delta || {};
+					const finishReason = choice.finish_reason;
+
+					// Handle reasoning_content (thinking)
+					if (delta.reasoning_content) {
+						if (thinkingStartTime === null) {
+							thinkingStartTime = Date.now();
+						}
+						result.thinking += delta.reasoning_content;
+						streamingThinking += delta.reasoning_content;
+						if (!modelLoadNotified) {
+							modelLoadNotified = true;
+							serverStore.refresh();
+						}
+					}
+
+					// Handle content
+					if (delta.content) {
+						// If we were in thinking mode, compute thinking duration on first content chunk
+						if (thinkingStartTime !== null && result.thinkingDur === undefined) {
+							result.thinkingDur = (Date.now() - thinkingStartTime) / 1000;
+							thinkingDuration = result.thinkingDur;
+						}
+						result.content += delta.content;
+						streamingResponse += delta.content;
+						if (!modelLoadNotified) {
+							modelLoadNotified = true;
+							serverStore.refresh();
+						}
+					}
+
+					// Handle tool_calls
+					if (delta.tool_calls) {
+						for (const tc of delta.tool_calls) {
+							const idx = tc.index ?? 0;
+							const existing = toolCallsByIndex[idx];
 							if (existing) {
-								existing.arguments += tc.function?.arguments || '';
-							} else if (tc.id) {
-								result.toolCalls.push({
-									id: tc.id,
+								if (tc.function?.arguments) {
+									existing.arguments += tc.function.arguments;
+								}
+							} else {
+								toolCallsByIndex[idx] = {
+									id: tc.id || '',
 									name: tc.function?.name || '',
 									arguments: tc.function?.arguments || '',
-								});
+								};
 							}
-							break;
 						}
-						case 'tool_calls_done':
-							result.toolCallsDone = true;
-							break;
-						case 'error':
-							if (data.content.includes('Model not available') || data.content.includes('not found')) {
-								result.error = { summary: 'Model not available', details: data.content };
-							} else if (data.content.includes('timed out')) {
-								result.error = { summary: 'Request timed out', details: data.content };
-							} else if (data.content.includes('loading') || data.content.includes('Loading')) {
-								result.error = { summary: 'Model loading', details: data.content };
-							} else {
-								result.error = { summary: 'Inference error', details: data.content };
-							}
-							break;
-						case 'done':
-							break;
 					}
+
+					// Handle finish_reason
+					if (finishReason === 'tool_calls') {
+						result.toolCalls = Object.values(toolCallsByIndex);
+						result.toolCallsDone = true;
+					}
+
 				} catch {
-					// Ignore parse errors
+					// Ignore parse errors on individual lines
 				}
 			}
 		}
+
+		// Ensure tool calls are captured even without explicit finish_reason
+		const finalToolValues = Object.values(toolCallsByIndex);
+		if (finalToolValues.length > 0 && result.toolCalls.length === 0) {
+			result.toolCalls = finalToolValues;
+			result.toolCallsDone = true;
+		}
+
 		return result;
 	}
 
-	async function sendWithRetry(userContent: string | ContentPart[], userAttachments: Attachment[], attempt: number = 1): Promise<boolean> {
+	// Anthropic SSE stream parser
+	async function processAnthropicSSEStream(response: Response): Promise<StreamResult> {
+		const result: StreamResult = {
+			content: '',
+			thinking: '',
+			thinkingDur: undefined,
+			toolCalls: [],
+			toolCallsDone: false,
+			error: null,
+		};
+
+		const reader = response.body?.getReader();
+		if (!reader) return result;
+
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let modelLoadNotified = false;
+		// Track current event type from "event:" lines
+		let currentEventType = '';
+		// Track content blocks for tool use accumulation
+		const toolBlocks: Record<number, { id: string; name: string; arguments: string }> = {};
+
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			for (const line of lines) {
+				const trimmed = line.trim();
+
+				// Track event type
+				if (trimmed.startsWith('event: ')) {
+					currentEventType = trimmed.slice(7).trim();
+					continue;
+				}
+
+				// Skip empty lines and comments
+				if (!trimmed.startsWith('data: ')) continue;
+
+				const dataStr = trimmed.slice(6);
+
+				try {
+					const data = JSON.parse(dataStr);
+
+					// Check for error events
+					if (data.type === 'error' || data.error) {
+						const errMsg = data.error?.message || data.message || JSON.stringify(data);
+						result.error = { summary: 'Inference error', details: errMsg };
+						continue;
+					}
+
+					switch (currentEventType) {
+						case 'message_start': {
+							// Extract metadata if needed
+							if (!modelLoadNotified) {
+								modelLoadNotified = true;
+								serverStore.refresh();
+							}
+							break;
+						}
+
+						case 'content_block_start': {
+							const block = data.content_block;
+							if (block?.type === 'tool_use') {
+								toolBlocks[data.index] = {
+									id: block.id || '',
+									name: block.name || '',
+									arguments: '',
+								};
+							}
+							break;
+						}
+
+						case 'content_block_delta': {
+							const delta = data.delta;
+							if (delta?.type === 'text_delta') {
+								result.content += delta.text || '';
+								streamingResponse += delta.text || '';
+								if (!modelLoadNotified) {
+									modelLoadNotified = true;
+									serverStore.refresh();
+								}
+							} else if (delta?.type === 'input_json_delta') {
+								const block = toolBlocks[data.index];
+								if (block) {
+									block.arguments += delta.partial_json || '';
+								}
+							}
+							break;
+						}
+
+						case 'content_block_stop': {
+							// Finalize tool block if it was a tool_use block
+							// (nothing special needed - data is already accumulated)
+							break;
+						}
+
+						case 'message_delta': {
+							const stopReason = data.delta?.stop_reason;
+							if (stopReason === 'tool_use') {
+								result.toolCalls = Object.values(toolBlocks);
+								result.toolCallsDone = true;
+							}
+							break;
+						}
+
+						case 'message_stop': {
+							// Stream complete
+							const remainingTools = Object.values(toolBlocks);
+							if (remainingTools.length > 0 && result.toolCalls.length === 0) {
+								result.toolCalls = remainingTools;
+								result.toolCallsDone = true;
+							}
+							break;
+						}
+					}
+
+				} catch {
+					// Ignore parse errors on individual lines
+				}
+			}
+		}
+
+		return result;
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	function buildOpenAIRequest(apiMessages: any[]): { url: string; body: Record<string, unknown> } {
+		return {
+			url: '/v1/chat/completions',
+			body: {
+				model: selectedProfile!.model_repo_id,
+				messages: apiMessages,
+				stream: true,
+				temperature: selectedProfile!.inference?.temperature ?? 0.7,
+				max_tokens: selectedProfile!.inference?.max_tokens ?? 4096,
+				top_p: selectedProfile!.inference?.top_p ?? 1.0,
+				...(toolsEnabled && availableTools.length > 0
+					? { tools: availableTools, tool_choice: 'auto' }
+					: {}),
+			},
+		};
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	function buildAnthropicRequest(apiMessages: any[]): { url: string; body: Record<string, unknown> } {
+		const systemPrompt = selectedProfile!.context?.system_prompt;
+		// Filter system messages out for Anthropic (system goes in separate field)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const anthropicMessages = apiMessages.filter((m: any) => m.role !== 'system');
+		return {
+			url: '/v1/messages',
+			body: {
+				model: selectedProfile!.model_repo_id,
+				max_tokens: selectedProfile!.inference?.max_tokens ?? 4096,
+				...(systemPrompt ? { system: systemPrompt } : {}),
+				messages: anthropicMessages,
+				stream: true,
+				temperature: Math.min(selectedProfile!.inference?.temperature ?? 0.7, 1.0),
+				top_p: selectedProfile!.inference?.top_p ?? 1.0,
+				...(toolsEnabled && availableTools.length > 0
+					? {
+						tools: availableTools.map(t => ({
+							name: t.function.name,
+							description: t.function.description,
+							input_schema: t.function.parameters,
+						})),
+					}
+					: {}),
+			},
+		};
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	async function sendWithRetry(userContent: string | any[], userAttachments: Attachment[], attempt: number = 1): Promise<boolean> {
 		retryAttempt = attempt;
 		isRetrying = attempt > 1;
 
 		if (!selectedProfile) return false;
 
-		// Build messages array for API (use full content with images)
-		const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string | ContentPart[] }> = [];
+		// Build messages array for API
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const apiMessages: any[] = [];
 
-		// Add system prompt as first message if present
+		// Add system prompt as first message (OpenAI puts it in messages; Anthropic filters it out later)
 		if (selectedProfile.context?.system_prompt) {
 			apiMessages.push({ role: 'system', content: selectedProfile.context.system_prompt });
 		}
 
 		// Add conversation history (exclude last user message since we're about to add it)
-		messages.slice(0, -1).forEach(m => {
+		for (const m of messages.slice(0, -1)) {
 			apiMessages.push({ role: m.role, content: m.content });
-		});
+		}
 
 		// Add current user message
 		apiMessages.push({ role: 'user', content: userContent });
@@ -412,16 +682,11 @@
 			// Create abort controller for this request
 			abortController = new AbortController();
 
-			const requestBody: Record<string, unknown> = {
-				profile_id: selectedProfile.id,
-				messages: apiMessages,
-			};
-			if (toolsEnabled && availableTools.length > 0) {
-				requestBody.tools = availableTools;
-				requestBody.tool_choice = 'auto';
-			}
+			const { url, body: requestBody } = protocol === 'anthropic'
+				? buildAnthropicRequest(apiMessages)
+				: buildOpenAIRequest(apiMessages);
 
-			const response = await fetch('/api/chat/completions', {
+			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -446,8 +711,10 @@
 				throw new Error(`Server error: ${response.status}`);
 			}
 
-			// Process the SSE stream
-			const streamResult = await processSSEStream(response);
+			// Process the SSE stream based on protocol
+			const streamResult = protocol === 'anthropic'
+				? await processAnthropicSSEStream(response)
+				: await processOpenAISSEStream(response);
 
 			if (streamResult.error) {
 				chatError = streamResult.error;
@@ -482,35 +749,49 @@
 					streamingToolCalls = [...streamingToolCalls, callData];
 
 					// Add assistant tool_calls message and tool result to apiMessages
-					apiMessages.push({
-						role: 'assistant',
-						content: '',
-						tool_calls: [{
-							id: toolCall.id,
-							type: 'function',
-							function: { name: toolCall.name, arguments: toolCall.arguments }
-						}]
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					} as any);
-					apiMessages.push({
-						role: 'tool',
-						tool_call_id: toolCall.id,
-						content: callData.result || callData.error || ''
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					} as any);
+					// Format differs by protocol
+					if (protocol === 'anthropic') {
+						apiMessages.push({
+							role: 'assistant',
+							content: [{
+								type: 'tool_use',
+								id: toolCall.id,
+								name: toolCall.name,
+								input: JSON.parse(toolCall.arguments || '{}'),
+							}]
+						});
+						apiMessages.push({
+							role: 'user',
+							content: [{
+								type: 'tool_result',
+								tool_use_id: toolCall.id,
+								content: callData.result || callData.error || '',
+							}]
+						});
+					} else {
+						apiMessages.push({
+							role: 'assistant',
+							content: '',
+							tool_calls: [{
+								id: toolCall.id,
+								type: 'function',
+								function: { name: toolCall.name, arguments: toolCall.arguments }
+							}]
+						});
+						apiMessages.push({
+							role: 'tool',
+							tool_call_id: toolCall.id,
+							content: callData.result || callData.error || ''
+						});
+					}
 				}
 
 				// Send follow-up request with tool results
-				const followUpBody: Record<string, unknown> = {
-					profile_id: selectedProfile!.id,
-					messages: apiMessages,
-				};
-				if (toolsEnabled && availableTools.length > 0) {
-					followUpBody.tools = availableTools;
-					followUpBody.tool_choice = 'auto';
-				}
+				const { url: followUpUrl, body: followUpBody } = protocol === 'anthropic'
+					? buildAnthropicRequest(apiMessages)
+					: buildOpenAIRequest(apiMessages);
 
-				const followUpRes = await fetch('/api/chat/completions', {
+				const followUpRes = await fetch(followUpUrl, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
@@ -526,7 +807,9 @@
 				}
 
 				// Process follow-up stream (may contain more tool calls)
-				currentResult = await processSSEStream(followUpRes);
+				currentResult = protocol === 'anthropic'
+					? await processAnthropicSSEStream(followUpRes)
+					: await processOpenAISSEStream(followUpRes);
 
 				// Debug: log what we got from follow-up
 				console.log('Follow-up result:', {
@@ -625,7 +908,7 @@
 		// Store attachments for potential retry
 		const currentAttachments = [...attachments];
 
-		// Clear attachments - CHANGE 8
+		// Clear attachments
 		for (const attachment of attachments) {
 			if (attachment.type !== 'text') {
 				URL.revokeObjectURL(attachment.preview);
@@ -666,6 +949,7 @@
 		const parts: string[] = [];
 		parts.push(`# Chat Transcript`);
 		parts.push(`Model: ${selectedProfile?.model_repo_id || 'Unknown'}`);
+		parts.push(`Protocol: ${protocol === 'openai' ? 'OpenAI' : 'Anthropic'}`);
 		parts.push(`Date: ${new Date().toISOString()}`);
 		parts.push('');
 
@@ -739,7 +1023,7 @@
 		selectedProfileId = target.value ? parseInt(target.value, 10) : null;
 		messages = [];
 		chatError = null;
-		// Clear attachments when switching profiles - CHANGE 7
+		// Clear attachments when switching profiles
 		for (const attachment of attachments) {
 			if (attachment.type !== 'text') {
 				URL.revokeObjectURL(attachment.preview);
@@ -831,6 +1115,22 @@
 					</option>
 				{/each}
 			</Select>
+			<div class="flex items-center rounded-lg border bg-muted p-0.5">
+				<button
+					type="button"
+					class="px-3 py-1 text-xs font-medium rounded-md transition-colors {protocol === 'openai' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => { protocol = 'openai'; messages = []; chatError = null; }}
+				>
+					OpenAI
+				</button>
+				<button
+					type="button"
+					class="px-3 py-1 text-xs font-medium rounded-md transition-colors {protocol === 'anthropic' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+					onclick={() => { protocol = 'anthropic'; messages = []; chatError = null; }}
+				>
+					Anthropic
+				</button>
+			</div>
 			{#if messages.length > 0}
 				<Button variant="outline" onclick={handleCopyChat} title="Copy chat transcript to clipboard">
 					<Copy class="w-4 h-4 mr-2" />
@@ -847,8 +1147,8 @@
 		<Card class="flex-1 flex items-center justify-center">
 			<div class="text-center">
 				<Bot class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-muted-foreground mb-4">No profiles configured.</p>
-				<Button href="/profiles">Create a Profile</Button>
+				<p class="text-muted-foreground mb-4">No running chat-capable profiles.</p>
+				<Button href="/profiles">Manage Profiles</Button>
 			</div>
 		</Card>
 	{:else if !selectedProfile}
@@ -875,7 +1175,7 @@
 						<div class="text-center text-muted-foreground">
 							<Bot class="w-12 h-12 mx-auto mb-4" />
 							<p>Start a conversation with <strong>{selectedProfile.name}</strong></p>
-							<p class="text-sm mt-1">Model: {selectedProfile.model_repo_id ?? 'Unknown'}</p>
+							<p class="text-sm mt-1">Model: {selectedProfile.model_repo_id ?? 'Unknown'} ({protocol === 'openai' ? 'OpenAI' : 'Anthropic'} API)</p>
 						</div>
 					</div>
 				{:else}
@@ -998,7 +1298,7 @@
 										// Re-add user message to UI
 										const displayContent = typeof lastFailedMessage.content === 'string'
 											? lastFailedMessage.content
-											: lastFailedMessage.content.find(p => p.type === 'text')?.text || '';
+											: lastFailedMessage.content.find((p: ContentPart) => p.type === 'text')?.text || '';
 										messages.push({ role: 'user', content: displayContent });
 										// Reset streaming state
 										streamingThinking = '';
@@ -1082,6 +1382,7 @@
 						size="icon"
 						onclick={() => fileInputRef?.click()}
 						disabled={loading || attachments.length >= 3}
+						title={protocol === 'anthropic' && isMultimodal ? 'Attach files (video not supported with Anthropic)' : 'Attach files'}
 					>
 						<Paperclip class="w-4 h-4" />
 					</Button>

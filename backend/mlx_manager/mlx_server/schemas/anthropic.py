@@ -32,8 +32,33 @@ class ImageBlockParam(BaseModel):
     source: ImageSource
 
 
+class ToolUseBlockParam(BaseModel):
+    """Tool use content block in a message (assistant requesting tool execution)."""
+
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+class ToolResultBlockParam(BaseModel):
+    """Tool result content block in a message (user providing tool output)."""
+
+    type: Literal["tool_result"] = "tool_result"
+    tool_use_id: str
+    content: str | list[TextBlockParam]
+
+
+class AnthropicToolDefinition(BaseModel):
+    """Tool definition for Anthropic Messages API."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
 # Union type for content blocks
-ContentBlock = TextBlockParam | ImageBlockParam
+ContentBlock = TextBlockParam | ImageBlockParam | ToolUseBlockParam | ToolResultBlockParam
 
 
 # --- Message Types ---
@@ -74,6 +99,8 @@ class AnthropicMessagesRequest(BaseModel):
     stop_sequences: list[str] | None = None
     stream: bool = False
     metadata: dict[str, Any] | None = None
+    tools: list[AnthropicToolDefinition] | None = None
+    tool_choice: dict[str, Any] | None = None
 
 
 # --- Response Models ---
@@ -139,12 +166,21 @@ class ContentBlockStartBlock(BaseModel):
     text: str = ""
 
 
+class ToolUseStartBlock(BaseModel):
+    """Tool use block in content_block_start event."""
+
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
 class ContentBlockStartEvent(BaseModel):
     """SSE event: content_block_start."""
 
     type: Literal["content_block_start"] = "content_block_start"
     index: int
-    content_block: ContentBlockStartBlock
+    content_block: ContentBlockStartBlock | ToolUseStartBlock
 
 
 class TextDelta(BaseModel):
@@ -154,12 +190,19 @@ class TextDelta(BaseModel):
     text: str
 
 
+class InputJsonDelta(BaseModel):
+    """Input JSON delta in content_block_delta event for tool use."""
+
+    type: Literal["input_json_delta"] = "input_json_delta"
+    partial_json: str
+
+
 class ContentBlockDeltaEvent(BaseModel):
     """SSE event: content_block_delta."""
 
     type: Literal["content_block_delta"] = "content_block_delta"
     index: int
-    delta: TextDelta
+    delta: TextDelta | InputJsonDelta
 
 
 class ContentBlockStopEvent(BaseModel):

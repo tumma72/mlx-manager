@@ -47,10 +47,12 @@ class InternalRequest(BaseModel):
     """Internal request format used by inference service."""
 
     model: str
-    messages: list[dict[str, str]]
+    messages: list[dict[str, Any]]
     params: InferenceParams
     stream: bool = False
     stop: list[str] | None = None
+    tools: list[dict[str, Any]] | None = None
+    images: list[str] | None = None  # Base64 data URLs for vision
 
 
 def openai_stop_to_anthropic(stop_reason: str | None) -> str:
@@ -106,7 +108,8 @@ class AnthropicFormatter(ProtocolFormatter):
     @staticmethod
     def parse_request(request: AnthropicMessagesRequest) -> InternalRequest:
         """Convert Anthropic Messages request to internal format."""
-        messages: list[dict[str, str]] = []
+        messages: list[dict[str, Any]] = []
+        images: list[str] = []
 
         # Handle system prompt (Anthropic has separate field)
         if request.system:
@@ -117,10 +120,113 @@ class AnthropicFormatter(ProtocolFormatter):
                 system_text = " ".join(b.text for b in request.system)
             messages.append({"role": "system", "content": system_text})
 
-        # Convert content blocks to simple content
+        # Convert tools from Anthropic to OpenAI format
+        tools = None
+        if request.tools:
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    },
+                }
+                for t in request.tools
+            ]
+
+        # Convert content blocks to internal format
         for msg in request.messages:
-            content = _extract_text_content(msg.content)
-            messages.append({"role": msg.role, "content": content})
+            if isinstance(msg.content, str):
+                messages.append({"role": msg.role, "content": msg.content})
+            elif isinstance(msg.content, list):
+                text_parts = []
+                for block in msg.content:
+                    if hasattr(block, "type"):
+                        if block.type == "text":
+                            text_parts.append(block.text)
+                        elif block.type == "image":
+                            # Convert Anthropic image to data URL
+                            data_url = f"data:{block.source.media_type};base64,{block.source.data}"
+                            images.append(data_url)
+                        elif block.type == "tool_use":
+                            # Tool use from assistant - convert to OpenAI format
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [
+                                        {
+                                            "id": block.id,
+                                            "type": "function",
+                                            "function": {
+                                                "name": block.name,
+                                                "arguments": json.dumps(block.input),
+                                            },
+                                        }
+                                    ],
+                                }
+                            )
+                            continue
+                        elif block.type == "tool_result":
+                            # Tool result from user - convert to OpenAI format
+                            if isinstance(block.content, str):
+                                result_content = block.content
+                            else:
+                                result_content = " ".join(
+                                    b.text for b in block.content if hasattr(b, "text")
+                                )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": block.tool_use_id,
+                                    "content": result_content,
+                                }
+                            )
+                            continue
+                    elif isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "image":
+                            source = block.get("source", {})
+                            media_type = source.get("media_type", "image/png")
+                            data = source.get("data", "")
+                            data_url = f"data:{media_type};base64,{data}"
+                            images.append(data_url)
+                        elif block.get("type") == "tool_use":
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": "",
+                                    "tool_calls": [
+                                        {
+                                            "id": block["id"],
+                                            "type": "function",
+                                            "function": {
+                                                "name": block["name"],
+                                                "arguments": json.dumps(block.get("input", {})),
+                                            },
+                                        }
+                                    ],
+                                }
+                            )
+                            continue
+                        elif block.get("type") == "tool_result":
+                            rc = block.get("content", "")
+                            if isinstance(rc, list):
+                                rc = " ".join(
+                                    b.get("text", "") for b in rc if b.get("type") == "text"
+                                )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": block["tool_use_id"],
+                                    "content": rc,
+                                }
+                            )
+                            continue
+                if text_parts:
+                    messages.append({"role": msg.role, "content": " ".join(text_parts)})
 
         return InternalRequest(
             model=request.model,
@@ -132,6 +238,8 @@ class AnthropicFormatter(ProtocolFormatter):
             ),
             stream=request.stream,
             stop=request.stop_sequences,
+            tools=tools,
+            images=images if images else None,
         )
 
     # ── streaming ────────────────────────────────────────────────────
@@ -194,7 +302,10 @@ class AnthropicFormatter(ProtocolFormatter):
         output_tokens: int = 0,
     ) -> list[dict[str, Any]]:
         anthropic_stop = openai_stop_to_anthropic(finish_reason)
-        return [
+        events: list[dict[str, Any]] = []
+
+        # Close the text content block
+        events.append(
             {
                 "event": "content_block_stop",
                 "data": json.dumps(
@@ -203,7 +314,53 @@ class AnthropicFormatter(ProtocolFormatter):
                         "index": 0,
                     }
                 ),
-            },
+            }
+        )
+
+        # Emit tool_use content blocks if present
+        if tool_calls:
+            for i, tc in enumerate(tool_calls):
+                block_index = i + 1  # text block is index 0
+                func = tc.get("function", {})
+                tool_id = tc.get("id", f"toolu_{i}")
+                tool_name = func.get("name", "")
+                try:
+                    tool_input = json.loads(func.get("arguments", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    tool_input = {}
+
+                # content_block_start for tool_use
+                events.append(
+                    {
+                        "event": "content_block_start",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_start",
+                                "index": block_index,
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": tool_id,
+                                    "name": tool_name,
+                                    "input": tool_input,
+                                },
+                            }
+                        ),
+                    }
+                )
+                # content_block_stop for tool_use
+                events.append(
+                    {
+                        "event": "content_block_stop",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_stop",
+                                "index": block_index,
+                            }
+                        ),
+                    }
+                )
+
+        events.append(
             {
                 "event": "message_delta",
                 "data": json.dumps(
@@ -216,12 +373,16 @@ class AnthropicFormatter(ProtocolFormatter):
                         "usage": {"output_tokens": output_tokens},
                     }
                 ),
-            },
+            }
+        )
+        events.append(
             {
                 "event": "message_stop",
                 "data": json.dumps({"type": "message_stop"}),
-            },
-        ]
+            }
+        )
+
+        return events
 
     # ── non-streaming ────────────────────────────────────────────────
 

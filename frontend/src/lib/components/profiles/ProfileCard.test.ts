@@ -71,7 +71,7 @@ function createMockProfile(
     description: null,
     model_id: 1,
     model_repo_id: "mlx-community/test-model",
-    model_type: "lm",
+    model_type: "text-gen",
     profile_type: "inference",
     auto_start: false,
     launchd_installed: false,

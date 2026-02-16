@@ -2,10 +2,13 @@
 
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
+    AnthropicToolDefinition,
     ImageBlockParam,
     ImageSource,
     MessageParam,
     TextBlockParam,
+    ToolResultBlockParam,
+    ToolUseBlockParam,
 )
 from mlx_manager.mlx_server.services.formatters import (
     AnthropicFormatter,
@@ -98,8 +101,8 @@ class TestParseRequest:
 
         assert internal.messages[0]["content"] == "First text. Second text."
 
-    def test_mixed_content_extracts_only_text(self) -> None:
-        """Mixed content (text + images) extracts only text."""
+    def test_mixed_content_extracts_text_and_images(self) -> None:
+        """Mixed content (text + images) extracts both text and images."""
         request = AnthropicMessagesRequest(
             model="claude-3",
             max_tokens=1000,
@@ -120,6 +123,9 @@ class TestParseRequest:
         internal = AnthropicFormatter.parse_request(request)
 
         assert internal.messages[0]["content"] == "Look at this: What is it?"
+        assert internal.images is not None
+        assert len(internal.images) == 1
+        assert internal.images[0] == "data:image/jpeg;base64,base64data..."
 
     def test_multiple_messages_preserved_in_order(self) -> None:
         """Multiple messages maintain their order."""
@@ -174,6 +180,144 @@ class TestParseRequest:
         assert internal.params.temperature == 0.7
         assert internal.params.top_p == 0.9
         assert internal.stream is True
+
+    def test_tools_converted_to_openai_format(self) -> None:
+        """Tools are converted from Anthropic to OpenAI format."""
+        request = AnthropicMessagesRequest(
+            model="claude-3",
+            max_tokens=1000,
+            messages=[MessageParam(role="user", content="What's the weather?")],
+            tools=[
+                AnthropicToolDefinition(
+                    name="get_weather",
+                    description="Get the weather for a location",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string"},
+                        },
+                        "required": ["location"],
+                    },
+                )
+            ],
+        )
+
+        internal = AnthropicFormatter.parse_request(request)
+
+        assert internal.tools is not None
+        assert len(internal.tools) == 1
+        assert internal.tools[0]["type"] == "function"
+        assert internal.tools[0]["function"]["name"] == "get_weather"
+        assert internal.tools[0]["function"]["description"] == "Get the weather for a location"
+        assert internal.tools[0]["function"]["parameters"]["type"] == "object"
+
+    def test_tool_use_block_converted_to_openai(self) -> None:
+        """Tool use blocks are converted to OpenAI tool_calls format."""
+        request = AnthropicMessagesRequest(
+            model="claude-3",
+            max_tokens=1000,
+            messages=[
+                MessageParam(role="user", content="What's the weather in Paris?"),
+                MessageParam(
+                    role="assistant",
+                    content=[
+                        ToolUseBlockParam(
+                            id="toolu_1",
+                            name="get_weather",
+                            input={"location": "Paris"},
+                        )
+                    ],
+                ),
+            ],
+        )
+
+        internal = AnthropicFormatter.parse_request(request)
+
+        assert len(internal.messages) == 2
+        assert internal.messages[1]["role"] == "assistant"
+        assert internal.messages[1]["content"] == ""
+        assert "tool_calls" in internal.messages[1]
+        assert len(internal.messages[1]["tool_calls"]) == 1
+
+        tool_call = internal.messages[1]["tool_calls"][0]
+        assert tool_call["id"] == "toolu_1"
+        assert tool_call["type"] == "function"
+        assert tool_call["function"]["name"] == "get_weather"
+        assert '"location": "Paris"' in tool_call["function"]["arguments"]
+
+    def test_tool_result_block_converted_to_openai(self) -> None:
+        """Tool result blocks are converted to OpenAI tool role format."""
+        request = AnthropicMessagesRequest(
+            model="claude-3",
+            max_tokens=1000,
+            messages=[
+                MessageParam(
+                    role="user",
+                    content=[
+                        ToolResultBlockParam(
+                            tool_use_id="toolu_1",
+                            content="The weather in Paris is sunny, 22°C",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        internal = AnthropicFormatter.parse_request(request)
+
+        assert len(internal.messages) == 1
+        assert internal.messages[0]["role"] == "tool"
+        assert internal.messages[0]["tool_call_id"] == "toolu_1"
+        assert internal.messages[0]["content"] == "The weather in Paris is sunny, 22°C"
+
+    def test_tool_result_with_list_content(self) -> None:
+        """Tool result with list of text blocks is concatenated."""
+        request = AnthropicMessagesRequest(
+            model="claude-3",
+            max_tokens=1000,
+            messages=[
+                MessageParam(
+                    role="user",
+                    content=[
+                        ToolResultBlockParam(
+                            tool_use_id="toolu_1",
+                            content=[
+                                TextBlockParam(text="Temperature: 22°C. "),
+                                TextBlockParam(text="Condition: Sunny."),
+                            ],
+                        )
+                    ],
+                )
+            ],
+        )
+
+        internal = AnthropicFormatter.parse_request(request)
+
+        assert internal.messages[0]["content"] == "Temperature: 22°C.  Condition: Sunny."
+
+    def test_image_blocks_extracted_to_images_list(self) -> None:
+        """Image blocks are extracted to separate images list."""
+        request = AnthropicMessagesRequest(
+            model="claude-3",
+            max_tokens=1000,
+            messages=[
+                MessageParam(
+                    role="user",
+                    content=[
+                        TextBlockParam(text="Analyze these images:"),
+                        ImageBlockParam(source=ImageSource(media_type="image/png", data="data1")),
+                        ImageBlockParam(source=ImageSource(media_type="image/jpeg", data="data2")),
+                    ],
+                )
+            ],
+        )
+
+        internal = AnthropicFormatter.parse_request(request)
+
+        assert internal.images is not None
+        assert len(internal.images) == 2
+        assert internal.images[0] == "data:image/png;base64,data1"
+        assert internal.images[1] == "data:image/jpeg;base64,data2"
 
 
 class TestExtractTextContent:
@@ -316,3 +460,26 @@ class TestInternalRequest:
 
         assert request.params.top_p is None
         assert request.stop is None
+
+    def test_tools_and_images_fields(self) -> None:
+        """InternalRequest supports tools and images fields."""
+        request = InternalRequest(
+            model="test-model",
+            messages=[{"role": "user", "content": "Hello"}],
+            params=InferenceParams(
+                max_tokens=100,
+                temperature=1.0,
+            ),
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "test_tool", "parameters": {}},
+                }
+            ],
+            images=["data:image/png;base64,abc123"],
+        )
+
+        assert request.tools is not None
+        assert len(request.tools) == 1
+        assert request.images is not None
+        assert len(request.images) == 1

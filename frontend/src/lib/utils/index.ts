@@ -7,3 +7,7 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export function isChatCapable(modelType: string | null | undefined): boolean {
+  return modelType === 'text-gen' || modelType === 'vision';
+}

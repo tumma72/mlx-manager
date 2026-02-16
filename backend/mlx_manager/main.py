@@ -49,7 +49,6 @@ from mlx_manager.mlx_server.models.pool import ModelPoolManager
 from mlx_manager.mlx_server.utils.memory import set_memory_limit
 from mlx_manager.routers import (
     auth_router,
-    chat_router,
     mcp_router,
     models_router,
     profiles_router,
@@ -236,7 +235,6 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(auth_router)
-app.include_router(chat_router)
 app.include_router(mcp_router)
 app.include_router(profiles_router)
 app.include_router(models_router)
