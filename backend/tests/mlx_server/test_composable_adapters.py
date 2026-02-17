@@ -209,7 +209,7 @@ class TestQwenAdapter:
 
     def test_supports_native_tools(self) -> None:
         adapter = create_adapter("qwen", FakeTokenizer())
-        assert adapter.supports_native_tools() is False
+        assert adapter.supports_native_tools() is True
 
     def test_stop_tokens_includes_im_end(self) -> None:
         adapter = create_adapter("qwen", FakeTokenizer())
@@ -795,9 +795,29 @@ class TestPrepareTools:
         assert effective is msgs
         assert native is tools
 
-    def test_non_native_tools_injects_into_system_message(self) -> None:
-        """Qwen injects tools into system message (non-native delivery)."""
+    def test_qwen_native_tools_pass_through(self) -> None:
+        """Qwen now has native_tools=True, so tools pass through to template."""
         adapter = create_adapter("qwen", FakeTokenizer())
+        msgs = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "hi"},
+        ]
+        tools = [
+            {
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {"type": "object"},
+                }
+            }
+        ]
+        effective, native = adapter._prepare_tools(msgs, tools)
+        assert effective is msgs
+        assert native is tools
+
+    def test_non_native_tools_injects_into_system_message(self) -> None:
+        """Llama injects tools into system message (non-native delivery)."""
+        adapter = create_adapter("llama", FakeTokenizer())
         msgs = [
             {"role": "system", "content": "You are helpful"},
             {"role": "user", "content": "hi"},
@@ -819,7 +839,7 @@ class TestPrepareTools:
 
     def test_non_native_tools_creates_system_message_when_missing(self) -> None:
         """When no system message exists, one is created for tool injection."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer())
         msgs = [{"role": "user", "content": "hi"}]
         tools = [
             {
@@ -1014,22 +1034,20 @@ class TestPrepareInput:
         # No tool stop tokens added
         assert result.stop_token_ids == [0]
 
-    def test_text_input_tools_with_prompt_injection(self) -> None:
-        """enable_prompt_injection forces tool delivery even on default adapter."""
-        adapter = create_adapter("default", FakeTokenizer())
+    def test_text_input_tools_with_injection_config(self) -> None:
+        """enable_tool_injection on adapter forces tool delivery even on default adapter."""
+        adapter = create_adapter("default", FakeTokenizer(), enable_tool_injection=True)
         tools = [{"function": {"name": "test"}}]
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "hi"}],
             tools=tools,
-            enable_prompt_injection=True,
         )
         assert isinstance(result, PreparedInput)
 
     def test_text_input_with_thinking(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), template_options={"enable_thinking": True})
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "Think about this"}],
-            template_options={"enable_thinking": True},
         )
         assert isinstance(result, PreparedInput)
 

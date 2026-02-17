@@ -58,8 +58,6 @@ mlx_manager/
     profiles.py             # CRUD /api/profiles
     models.py               # /api/models/search, download, local, SSE progress
     servers.py              # /api/servers — model pool control
-    chat.py                 # POST /api/chat/completions — SSE streaming
-                            # Selects protocol formatter, pipes through adapter pipeline
     settings.py             # Cloud providers, routing rules, pool config, timeouts
     system.py               # System info, launchd, audit log proxy, WebSocket
     mcp.py                  # MCP tool listing and execution
@@ -360,24 +358,27 @@ async generator:
 EventSource.onmessage → update download store
 ```
 
-### 5.3 SSE — Chat Streaming
+### 5.3 Chat Streaming (Direct to /v1/)
+
+The Chat panel in the frontend sends requests directly to the embedded mlx_server's
+OpenAI and Anthropic compatible endpoints. No middleman `/api/chat/` router exists.
 
 ```
-Frontend: fetch("/api/chat/completions", { method: "POST", body, headers })
-    │  Authorization: Bearer <jwt>
+Frontend: fetch("/v1/chat/completions", { method: "POST", body, headers })  (OpenAI)
+Frontend: fetch("/v1/messages", { method: "POST", body, headers })          (Anthropic)
+    │
     ▼
-chat_router.chat_completions()
-    │  Depends(get_current_user)
-    │  Select protocol formatter (OpenAI / Anthropic) based on request
+mlx_server API endpoints (api/v1/chat.py or api/v1/messages.py)
+    │  Validate against schema
+    │  Create ProtocolFormatter (OpenAI or Anthropic)
     ▼
-mlx_server.services.inference.generate_*()
-    │  ← Routes to correct service based on model type
-    │  ← All model types use same 3-layer adapter pipeline
+mlx_server.services.inference.generate_chat_stream()
     │
     │  LAYER 1: ModelAdapter (persistent, stored in LoadedModel)
-    │  ├── adapter.prepare_input(messages, tools) → PreparedInput
-    │  │   ├── Apply chat template
-    │  │   ├── Format tool definitions
+    │  ├── adapter.prepare_input(messages, tools, images) → PreparedInput
+    │  │   ├── Inject default system prompt if not present
+    │  │   ├── Apply chat template (with stored template_options)
+    │  │   ├── Format tool definitions (native or injected, per adapter config)
     │  │   └── Prepare multimodal inputs (vision models)
     │  │
     │  ├── model.generate(prepared_input) → raw tokens
@@ -398,14 +399,16 @@ StreamingResponse (text/event-stream):
 ```
 
 **Key principles**:
-- Model adapter created once at load time, reused across all requests
+- Frontend hits `/v1/` endpoints directly — no `/api/chat/` middleman
+- Model adapter created once at load time with Profile settings, reused across all requests
+- Adapter stores system prompt, tool injection preference, and template options
 - StreamProcessor + ProtocolFormatter created fresh per request
 - Vision models use same TEXT output pipeline with multimodal INPUT preprocessing
 - Protocol translation happens at formatter layer, not in adapter/service
 - No model type conditionals in streaming logic — unified pipeline
 
-Note: Chat streaming uses POST + fetch (not EventSource), so the Authorization
-header works normally. No query parameter needed.
+Note: Chat streaming uses POST + fetch (not EventSource). The frontend includes
+a protocol toggle allowing users to switch between OpenAI and Anthropic formats.
 
 ### 5.4 WebSocket — Audit Log Stream
 
@@ -520,6 +523,11 @@ VISION, EMBEDDINGS, AUDIO) use this single adapter implementation.
 │ ─────────────────────────────────────────────────────────────     │
 │ • Created once at model load, stored in LoadedModel.adapter      │
 │ • Configured from FamilyConfig (11 configs: qwen, glm4, ...)     │
+│ • Also configured with Profile settings at load time:           │
+│   - system_prompt (injected idempotently if missing)            │
+│   - enable_tool_injection (for non-native-tool models)          │
+│   - template_options (e.g., enable_thinking)                    │
+│ • configure() method for reconfiguring settings (probe, etc.)   │
 │ • Owns ALL generation for ALL model types                        │
 │                                                                   │
 │ Config-driven behavior:                                           │
@@ -530,7 +538,8 @@ VISION, EMBEDDINGS, AUDIO) use this single adapter implementation.
 │   • Stop tokens → family-specific stop sequences                 │
 │                                                                   │
 │ ALL model type methods:                                           │
-│   prepare_input() → PreparedInput  (all types)                   │
+│   prepare_input() → PreparedInput  (all types, uses stored config)│
+│   configure() → None               (reconfigure Profile settings) │
 │   generate() → output              (all types)                   │
 │   generate_step() → Iterator[str]  (text/vision streaming)       │
 │   create_stream_processor()        (text/vision)                 │
@@ -547,17 +556,17 @@ VISION, EMBEDDINGS, AUDIO) use this single adapter implementation.
 **FamilyConfig Structure:**
 
 ```python
-@dataclass
-class FamilyConfig:
-    family: str                                    # "qwen", "glm4", etc.
-    model_type: ModelType                          # TEXT_GEN, VISION, etc.
-    tool_parser_factory: Callable[[], ToolCallParser]
-    thinking_parser_factory: Callable[[], ThinkingParser]
-    stop_tokens: list[str] = field(default_factory=list)
-    template_strategy: Callable | None = None      # Custom apply_chat_template
-    tool_formatter: Callable | None = None         # Tool definition format
-    message_converter: Callable | None = None      # Message role converter
-    post_load_hook: Callable | None = None         # Model post-processing
+class FamilyConfig(BaseModel):
+    family: str
+    tool_parser_factory: Any | None = None
+    thinking_parser_factory: Any | None = None
+    extra_stop_tokens: list[str] = []
+    tool_call_stop_tokens: list[str] = []
+    native_tools: bool = False
+    template_strategy: TemplateStrategy | None = None
+    tool_format_strategy: ToolFormatStrategy | None = None
+    message_convert_strategy: MessageConvertStrategy | None = None
+    post_load_hook: PostLoadHook | None = None
 
 # 11 configs in FAMILY_CONFIGS dict:
 # qwen, glm4, llama, gemma, mistral, liquid,
@@ -891,7 +900,6 @@ export const someStore = new SomeStore();
 FastAPI app (port 10242)
     │
     ├── /api/auth/*         ← auth_router
-    ├── /api/chat/*         ← chat_router
     ├── /api/mcp/*          ← mcp_router
     ├── /api/models/*       ← models_router
     ├── /api/profiles/*     ← profiles_router
@@ -1010,7 +1018,6 @@ These properties must hold at all times:
 | POST   | `/api/servers/{id}/restart`                 | REST      | Legacy                   |
 | GET    | `/api/servers/{id}/status`                  | REST      |                          |
 | GET    | `/api/servers/{id}/health`                  | REST      |                          |
-| POST   | `/api/chat/completions`                     | **SSE**   | POST+fetch (header auth) |
 | GET    | `/api/settings/providers`                   | REST      |                          |
 | POST   | `/api/settings/providers`                   | REST      |                          |
 | DELETE | `/api/settings/providers/{type}`            | REST      |                          |
@@ -1123,9 +1130,9 @@ runs the model, feeds tokens to `stream_processor`, and pipes events through the
 ### 14.5 Easier Extension
 
 **Adding a new model family:**
-1. Create adapter subclass with family-specific template
+1. Create a FamilyConfig entry with appropriate strategy functions
 2. Register parsers (or reuse existing)
-3. Add to `FAMILY_REGISTRY`
+3. Add to `FAMILY_CONFIGS`
 4. Done — no changes to routers, services, or formatters
 
 **Adding a new protocol:**

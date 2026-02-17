@@ -117,15 +117,23 @@ class GenerativeProbe(BaseProbe):
             msg = "No adapter available for generation"
             raise RuntimeError(msg)
 
-        result = await adapter.generate(
-            model=loaded.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.7,
-            tools=tools,
-            template_options=template_options,
-        )
-        return result.content
+        # Temporarily configure adapter with probe-specific template options
+        if template_options is not None:
+            adapter.configure(template_options=template_options)
+
+        try:
+            result = await adapter.generate(
+                model=loaded.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.7,
+                tools=tools,
+            )
+            return result.content
+        finally:
+            # Reset template options after probe
+            if template_options is not None:
+                adapter.configure(template_options=None)
 
     # ------------------------------------------------------------------
     # Shared thinking/tool verification

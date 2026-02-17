@@ -260,7 +260,7 @@ async def start_server(
     for inference once loading completes. Use the health endpoint to check
     if the model is loaded.
     """
-    from mlx_manager.mlx_server.models.pool import get_model_pool
+    from mlx_manager.mlx_server.models.pool import ProfileSettings, get_model_pool
 
     # Get the profile to find which model it uses
     result = await db.execute(
@@ -276,8 +276,28 @@ async def start_server(
 
     model_id = profile.model.repo_id
 
+    # Parse model_options JSON to template_options dict
+    template_options = None
+    if profile.model_options:
+        import json
+
+        try:
+            template_options = json.loads(profile.model_options)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     try:
         pool = get_model_pool()
+
+        # Register Profile settings so the adapter is configured when the model loads
+        pool.register_profile_settings(
+            model_id,
+            ProfileSettings(
+                system_prompt=profile.default_system_prompt,
+                enable_tool_injection=profile.default_enable_tool_injection,
+                template_options=template_options,
+            ),
+        )
 
         # Check if already loaded
         if pool.is_loaded(model_id):
@@ -327,6 +347,9 @@ async def stop_server(
     try:
         pool = get_model_pool()
         model_id = profile.model.repo_id
+
+        # Unregister Profile settings from the pool
+        pool.unregister_profile_settings(model_id)
 
         # Check if model is loaded
         if not pool.is_loaded(model_id):

@@ -51,6 +51,10 @@ class ModelAdapter:
         tool_parser: ToolCallParser | None = None,
         thinking_parser: ThinkingParser | None = None,
         model_id: str | None = None,
+        # Profile settings (configured once at load time, used at request time)
+        system_prompt: str | None = None,
+        enable_tool_injection: bool = False,
+        template_options: dict[str, Any] | None = None,
     ) -> None:
         self._config = config or FAMILY_CONFIGS["default"]
         self._tokenizer = tokenizer
@@ -77,6 +81,11 @@ class ModelAdapter:
         # Pre-compute stop tokens at init
         self._stop_tokens = self._compute_stop_tokens()
         self._model_id = model_id
+
+        # Profile settings — stored once, used at every request
+        self._system_prompt = system_prompt
+        self._enable_tool_injection = enable_tool_injection
+        self._template_options = template_options
 
     @property
     def family(self) -> str:
@@ -189,9 +198,12 @@ class ModelAdapter:
         messages: list[dict[str, Any]],
         add_generation_prompt: bool = True,
         tools: list[dict[str, Any]] | None = None,
-        template_options: dict[str, Any] | None = None,
     ) -> str:
-        """Apply chat template with automatic tool delivery."""
+        """Apply chat template with automatic tool delivery.
+
+        Template options are read from the adapter's stored Profile settings
+        (self._template_options), not from parameters.
+        """
         effective, native_tools = self._prepare_tools(messages, tools)
         if self._config.template_strategy:
             return self._config.template_strategy(
@@ -199,7 +211,7 @@ class ModelAdapter:
                 effective,
                 add_generation_prompt,
                 native_tools,
-                template_options,
+                self._template_options,
             )
         # Default: call tokenizer.apply_chat_template() directly
         kwargs: dict[str, Any] = {
@@ -209,8 +221,8 @@ class ModelAdapter:
         if native_tools:
             kwargs["tools"] = native_tools
         # Pass template options as extra kwargs (Jinja2 ignores unknown ones)
-        if template_options:
-            for key, value in template_options.items():
+        if self._template_options:
+            for key, value in self._template_options.items():
                 kwargs[key] = value
         try:
             return cast(
@@ -320,26 +332,64 @@ class ModelAdapter:
 
         return StreamProcessor(adapter=self, starts_in_thinking=starts_in_thinking)
 
+    def configure(
+        self,
+        system_prompt: str | None = None,
+        enable_tool_injection: bool | None = None,
+        template_options: dict[str, Any] | None = None,
+    ) -> None:
+        """Reconfigure adapter settings (e.g., for probe or Profile changes).
+
+        Only updates fields that are explicitly provided (not None).
+        """
+        if system_prompt is not None:
+            self._system_prompt = system_prompt
+        if enable_tool_injection is not None:
+            self._enable_tool_injection = enable_tool_injection
+        if template_options is not None:
+            self._template_options = template_options
+
+    def _ensure_system_prompt(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Inject the Profile's default system prompt if not already present.
+
+        Idempotent: if the first message is already a system message (from the
+        client resending conversation history), the messages pass through unchanged.
+        """
+        if not self._system_prompt:
+            return messages
+        # Check if messages already have a system message
+        if messages and messages[0].get("role") == "system":
+            return messages
+        # Prepend the default system prompt
+        return [{"role": "system", "content": self._system_prompt}, *messages]
+
     def prepare_input(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
-        enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        template_options: dict[str, Any] | None = None,
     ) -> PreparedInput:
         """Prepare model-ready input from messages and optional tools.
 
         Encapsulates the full input pipeline:
-        1. convert_messages() — format conversion
-        2. Tool capability check
-        3. apply_chat_template() — prompt generation
-        4. Stop token aggregation
+        1. Inject default system prompt if missing (from Profile config)
+        2. convert_messages() — format conversion
+        3. Tool handling (native or injected, based on adapter config)
+        4. apply_chat_template() — prompt generation
+        5. Stop token aggregation
+
+        All configuration (system_prompt, enable_tool_injection, template_options)
+        is read from the adapter's stored Profile settings, not from parameters.
 
         When images are provided (vision models), uses mlx-vlm chat template
         instead of the regular tokenizer template.
         """
         from mlx_manager.mlx_server.models.ir import PreparedInput
+
+        # Inject default system prompt if not already present in messages
+        messages = self._ensure_system_prompt(messages)
 
         # Vision path: use mlx-vlm chat template
         if images:
@@ -386,14 +436,16 @@ class ModelAdapter:
         # Text path: regular chat template
         converted = self.convert_messages(messages)
 
-        use_tools = tools and (self.supports_tool_calling() or enable_prompt_injection)
+        # Tool handling uses adapter config, not runtime flags
+        use_tools = tools and (
+            self.supports_tool_calling() or self._enable_tool_injection
+        )
         effective_tools = tools if use_tools else None
 
         prompt = self.apply_chat_template(
             messages=converted,
             add_generation_prompt=True,
             tools=effective_tools,
-            template_options=template_options,
         )
 
         stop_ids_set = set(self.stop_tokens)
@@ -445,24 +497,23 @@ class ModelAdapter:
         temperature: float = 1.0,
         top_p: float = 1.0,
         tools: list[dict[str, Any]] | None = None,
-        enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        template_options: dict[str, Any] | None = None,
     ) -> TextResult:
         """Full generation pipeline: prepare → generate → process_complete.
 
         Owns the complete text/vision inference path. Services call this
         instead of orchestrating prepare_input/generate/process_complete
         themselves.
+
+        All configuration (system_prompt, tool_injection, template_options)
+        is read from the adapter's stored Profile settings.
         """
         from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
         prepared = self.prepare_input(
             messages,
             tools=tools,
-            enable_prompt_injection=enable_prompt_injection,
             images=images,
-            template_options=template_options,
         )
 
         if images:
@@ -520,14 +571,15 @@ class ModelAdapter:
         temperature: float = 1.0,
         top_p: float = 1.0,
         tools: list[dict[str, Any]] | None = None,
-        enable_prompt_injection: bool = False,
         images: list[Any] | None = None,
-        template_options: dict[str, Any] | None = None,
     ) -> Any:
         """Streaming generation yielding IR events.
 
         Yields StreamEvent for each token, then a final TextResult.
         Returns an async generator (use `async for event in adapter.generate_step(...)`).
+
+        All configuration (system_prompt, tool_injection, template_options)
+        is read from the adapter's stored Profile settings.
         """
         from collections.abc import Iterator
 
@@ -536,9 +588,7 @@ class ModelAdapter:
         prepared = self.prepare_input(
             messages,
             tools=tools,
-            enable_prompt_injection=enable_prompt_injection,
             images=images,
-            template_options=template_options,
         )
 
         if images:
@@ -834,6 +884,10 @@ def create_adapter(
     tool_parser: ToolCallParser | None = None,
     thinking_parser: ThinkingParser | None = None,
     model_id: str | None = None,
+    # Profile settings
+    system_prompt: str | None = None,
+    enable_tool_injection: bool = False,
+    template_options: dict[str, Any] | None = None,
 ) -> ModelAdapter:
     """Create a composable adapter for a model family.
 
@@ -843,6 +897,9 @@ def create_adapter(
         tool_parser: Override default tool parser
         thinking_parser: Override default thinking parser
         model_id: Model identifier (needed for vision models to load config)
+        system_prompt: Default system prompt from Profile (injected if missing from request)
+        enable_tool_injection: Whether to inject tool instructions for non-native-tool models
+        template_options: Template options from Profile's model_options (e.g., enable_thinking)
 
     Returns:
         ModelAdapter instance
@@ -854,6 +911,9 @@ def create_adapter(
         tool_parser=tool_parser,
         thinking_parser=thinking_parser,
         model_id=model_id,
+        system_prompt=system_prompt,
+        enable_tool_injection=enable_tool_injection,
+        template_options=template_options,
     )
 
 

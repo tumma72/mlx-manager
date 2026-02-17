@@ -62,6 +62,7 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
         tool_parser_factory=lambda: HermesJsonParser(),
         thinking_parser_factory=lambda: ThinkTagParser(),
         extra_stop_tokens=["<|im_end|>"],
+        native_tools=True,
         template_strategy=qwen_template,
         tool_format_strategy=qwen_tool_formatter,
         message_convert_strategy=hermes_message_converter,

@@ -47,16 +47,23 @@ class VisionProbe(GenerativeProbe):
         # Synthetic 64x64 gray test image
         test_image = Image.new("RGB", (64, 64), color=(128, 128, 128))
 
-        result = await adapter.generate(
-            model=loaded.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.7,
-            tools=tools,
-            template_options=template_options,
-            images=[test_image],
-        )
-        return result.content
+        # Temporarily configure adapter with probe-specific template options
+        if template_options is not None:
+            adapter.configure(template_options=template_options)
+
+        try:
+            result = await adapter.generate(
+                model=loaded.model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.7,
+                tools=tools,
+                images=[test_image],
+            )
+            return result.content
+        finally:
+            if template_options is not None:
+                adapter.configure(template_options=None)
 
     async def probe(
         self, model_id: str, loaded: LoadedModel, result: ProbeResult

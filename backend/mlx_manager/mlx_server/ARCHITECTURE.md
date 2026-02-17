@@ -136,7 +136,7 @@ mlx_server/
     pool.py               # ModelPoolManager — LRU cache, adapter-aware loading
     adapters/
       composable.py       # ModelAdapter (single concrete class for all model types)
-      configs.py          # FamilyConfig dataclasses + FAMILY_CONFIGS registry
+      configs.py          # FamilyConfig (Pydantic BaseModel) + FAMILY_CONFIGS registry
       strategies.py       # Strategy functions (template, tool format, message conversion)
       registry.py         # Adapter factory: create_adapter(), detect_model_family()
 
@@ -528,21 +528,32 @@ class ModelAdapter:
 
     def __init__(
         self,
-        tokenizer: Any,
-        family_config: FamilyConfig,
-        capabilities: ModelCapabilities | None = None,
+        config: FamilyConfig | None = None,
+        tokenizer: Any | None = None,
+        tool_parser: ToolCallParser | None = None,
+        thinking_parser: ThinkingParser | None = None,
+        model_id: str | None = None,
+        # Profile settings (configured once at load time, used at request time)
+        system_prompt: str | None = None,
+        enable_tool_injection: bool = False,
+        template_options: dict[str, Any] | None = None,
     ):
         self.tokenizer = tokenizer
-        self.config = family_config
-        self.capabilities = capabilities
+        self.config = config
+        self.model_id = model_id
 
-        # Create parsers from config factories
-        self.tool_parser = family_config.tool_parser_factory()
-        self.thinking_parser = family_config.thinking_parser_factory()
+        # Create parsers from config factories (or use injected instances)
+        self.tool_parser = tool_parser or (config.tool_parser_factory() if config else NullToolParser())
+        self.thinking_parser = thinking_parser or (config.thinking_parser_factory() if config else NullThinkingParser())
 
         # Pre-compute stop tokens and stream markers
         self._stop_token_ids: list[int] = self._compute_stop_tokens()
         self._stream_markers: list[tuple[str, str]] = self._compute_stream_markers()
+
+        # Profile settings — stored once, used at every request
+        self._system_prompt = system_prompt
+        self._enable_tool_injection = enable_tool_injection
+        self._template_options = template_options
 
     # --- Identity ---
 
@@ -550,6 +561,34 @@ class ModelAdapter:
     def family(self) -> str:
         """Model family identifier from config."""
         return self.config.family
+
+    # --- Configuration ---
+
+    def configure(
+        self,
+        system_prompt: str | None = None,
+        enable_tool_injection: bool | None = None,
+        template_options: dict[str, Any] | None = None,
+    ) -> None:
+        """Reconfigure adapter settings (e.g., for probe or Profile changes).
+        Only updates fields that are explicitly provided (not None)."""
+        if system_prompt is not None:
+            self._system_prompt = system_prompt
+        if enable_tool_injection is not None:
+            self._enable_tool_injection = enable_tool_injection
+        if template_options is not None:
+            self._template_options = template_options
+
+    # --- Idempotent System Prompt ---
+
+    def _ensure_system_prompt(self, messages: list[dict]) -> list[dict]:
+        """Inject Profile's default system prompt if not already present.
+        Idempotent: if messages[0] is already a system message, pass through."""
+        if not self._system_prompt:
+            return messages
+        if messages and messages[0].get("role") == "system":
+            return messages
+        return [{"role": "system", "content": self._system_prompt}, *messages]
 
     # --- INPUT PIPELINE (all model types) ---
 
@@ -559,6 +598,7 @@ class ModelAdapter:
         *,
         tools: list[dict] | None = None,
         enable_thinking: bool | None = None,
+        images: list[Any] | None = None,
         texts: list[str] | None = None,      # Embeddings
         audio_data: bytes | None = None,      # Audio STT
         text_for_tts: str | None = None,      # Audio TTS
@@ -566,10 +606,8 @@ class ModelAdapter:
     ) -> PreparedInput:
         """Full input preparation pipeline for all model types.
 
-        Dispatches to appropriate strategy based on model type:
-        - TEXT_GEN/VISION: apply chat template, format tools, handle images
-        - EMBEDDINGS: tokenize text batch
-        - AUDIO: preprocess audio bytes or TTS parameters
+        All configuration (system_prompt, enable_tool_injection, template_options)
+        is read from the adapter's stored Profile settings, not from parameters.
         """
         # Dispatch based on model type (via strategy pattern)
         if self.config.model_type in (ModelType.TEXT_GEN, ModelType.VISION):
@@ -581,24 +619,26 @@ class ModelAdapter:
 
     def _prepare_text_input(self, messages, tools, enable_thinking, **kwargs):
         """TEXT_GEN / VISION input preparation."""
-        # 1. Message conversion (handle tool roles) via config strategy
-        converted = self.config.message_converter(messages) if self.config.message_converter else messages
+        # 1. Inject default system prompt if not already present
+        messages = self._ensure_system_prompt(messages)
 
-        # 2. Apply chat template via config strategy
-        if self.config.template_strategy:
-            prompt = self.config.template_strategy(self.tokenizer, converted, tools, enable_thinking)
-        else:
-            prompt = self.tokenizer.apply_chat_template(converted, tokenize=False)
+        # 2. Message conversion (handle tool roles) via config strategy
+        converted = self.config.message_convert_strategy(messages) if self.config.message_convert_strategy else messages
 
-        # 3. Format tools if needed via config strategy
-        if tools and self.config.tool_formatter:
-            tool_prompt = self.config.tool_formatter(tools)
-            # Inject into system message
-            converted = self._inject_tool_prompt(converted, tool_prompt)
+        # 3. Tool handling uses adapter config, not runtime flags
+        use_tools = tools and (self.supports_tool_calling() or self._enable_tool_injection)
+        effective_tools = tools if use_tools else None
 
-        # 4. Vision: preprocess images
+        # 4. Apply chat template via config strategy (uses stored template_options)
+        prompt = self.apply_chat_template(
+            messages=converted,
+            add_generation_prompt=True,
+            tools=effective_tools,
+        )
+
+        # 5. Vision: preprocess images
         pixel_values = None
-        if self.config.model_type == ModelType.VISION and kwargs.get("images"):
+        if kwargs.get("images"):
             pixel_values = self._preprocess_images(kwargs["images"])
 
         return PreparedInput(
@@ -805,92 +845,86 @@ subclasses, the system uses `FamilyConfig` objects that define family-specific
 behavior via strategy functions:
 
 ```python
-@dataclass
-class FamilyConfig:
+class FamilyConfig(BaseModel):
     """Configuration for a model family."""
     family: str
-    model_type: ModelType
-    tool_parser_factory: Callable[[], ToolCallParser]
-    thinking_parser_factory: Callable[[], ThinkingParser]
-    stop_tokens: list[str] = field(default_factory=list)
-    template_strategy: Callable | None = None      # Custom chat template
-    tool_formatter: Callable | None = None         # Tool definition formatter
-    message_converter: Callable | None = None      # Message role converter
-    post_load_hook: Callable | None = None         # Model post-processing
+    tool_parser_factory: Any | None = None   # Callable[[], ToolCallParser]
+    thinking_parser_factory: Any | None = None  # Callable[[], ThinkingParser]
+    extra_stop_tokens: list[str] = []
+    tool_call_stop_tokens: list[str] = []
+    native_tools: bool = False
+    template_strategy: TemplateStrategy | None = None
+    tool_format_strategy: ToolFormatStrategy | None = None
+    message_convert_strategy: MessageConvertStrategy | None = None
+    post_load_hook: PostLoadHook | None = None
 
 # Registry of family configs
 FAMILY_CONFIGS: dict[str, FamilyConfig] = {
     "qwen": FamilyConfig(
         family="qwen",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: HermesJsonParser(),
         thinking_parser_factory=lambda: ThinkTagParser(),
-        template_strategy=strategies.apply_qwen_template,
-        message_converter=strategies.convert_hermes_messages,
+        extra_stop_tokens=["<|im_end|>"],
+        native_tools=True,
+        template_strategy=qwen_template,
+        tool_format_strategy=qwen_tool_formatter,
+        message_convert_strategy=hermes_message_converter,
     ),
     "glm4": FamilyConfig(
         family="glm4",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: Glm4NativeParser(),
         thinking_parser_factory=lambda: ThinkTagParser(),
-        template_strategy=strategies.apply_glm4_template,
-        stop_tokens=["<|user|>", "<|observation|>"],
+        native_tools=True,
+        template_strategy=glm4_template,
+        extra_stop_tokens=["<|user|>", "<|observation|>"],
     ),
     "llama": FamilyConfig(
         family="llama",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: LlamaXmlParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
-        tool_formatter=strategies.format_llama_tools_yaml,
-        message_converter=strategies.convert_llama_messages,
+        tool_format_strategy=llama_tool_formatter,
+        message_convert_strategy=llama_message_converter,
     ),
     "gemma": FamilyConfig(
         family="gemma",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
     ),
     "mistral": FamilyConfig(
         family="mistral",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
-        template_strategy=strategies.apply_mistral_template,
+        template_strategy=mistral_template,
     ),
     "liquid": FamilyConfig(
         family="liquid",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: LiquidPythonParser(),
         thinking_parser_factory=lambda: ThinkTagParser(),
+        template_strategy=liquid_template,
     ),
     "whisper": FamilyConfig(
         family="whisper",
-        model_type=ModelType.AUDIO,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
-        post_load_hook=strategies.whisper_post_load,
+        post_load_hook=whisper_post_load,
     ),
     "kokoro": FamilyConfig(
         family="kokoro",
-        model_type=ModelType.AUDIO,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
     ),
     "audio_default": FamilyConfig(
         family="audio_default",
-        model_type=ModelType.AUDIO,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
     ),
     "embeddings": FamilyConfig(
         family="embeddings",
-        model_type=ModelType.EMBEDDINGS,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
     ),
     "default": FamilyConfig(
         family="default",
-        model_type=ModelType.TEXT_GEN,
         tool_parser_factory=lambda: NullToolParser(),
         thinking_parser_factory=lambda: NullThinkingParser(),
     ),
@@ -901,7 +935,7 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
 
 ```python
 # Template strategies
-def apply_qwen_template(tokenizer, messages, tools, enable_thinking):
+def qwen_template(tokenizer, messages, tools, enable_thinking, template_options):
     """Qwen-specific template with thinking toggle."""
     return tokenizer.apply_chat_template(
         messages,
@@ -910,29 +944,37 @@ def apply_qwen_template(tokenizer, messages, tools, enable_thinking):
         tokenize=False,
     )
 
-def apply_glm4_template(tokenizer, messages, tools, enable_thinking):
+def glm4_template(tokenizer, messages, tools, enable_thinking, template_options):
     """GLM-4 template with XML-style tool integration."""
     # Custom template logic
     ...
 
+def mistral_template(tokenizer, messages, tools, enable_thinking, template_options):
+    """Mistral-specific template."""
+    ...
+
+def liquid_template(tokenizer, messages, tools, enable_thinking, template_options):
+    """Liquid LFM template."""
+    ...
+
 # Tool formatters
-def format_qwen_tools_xml(tools: list[dict]) -> str:
+def qwen_tool_formatter(tools: list[dict]) -> str:
     """Format tools as Qwen-style XML."""
     # XML formatting logic
     ...
 
-def format_llama_tools_yaml(tools: list[dict]) -> str:
+def llama_tool_formatter(tools: list[dict]) -> str:
     """Format tools as YAML for Llama."""
     # YAML formatting logic
     ...
 
 # Message converters
-def convert_hermes_messages(messages: list[dict]) -> list[dict]:
+def hermes_message_converter(messages: list[dict]) -> list[dict]:
     """Convert tool roles to user/assistant for Hermes format."""
     # Conversion logic
     ...
 
-def convert_llama_messages(messages: list[dict]) -> list[dict]:
+def llama_message_converter(messages: list[dict]) -> list[dict]:
     """Convert tool roles for Llama-specific format."""
     # Conversion logic
     ...
@@ -958,36 +1000,40 @@ The adapter factory creates a single `ModelAdapter` instance configured from
 ```python
 def create_adapter(
     family: str,
-    tokenizer: Any,
-    model_type: ModelType,
-    capabilities: ModelCapabilities | None = None,
+    tokenizer: Any | None = None,
+    tool_parser: ToolCallParser | None = None,
+    thinking_parser: ThinkingParser | None = None,
+    model_id: str | None = None,
+    # Profile settings
+    system_prompt: str | None = None,
+    enable_tool_injection: bool = False,
+    template_options: dict[str, Any] | None = None,
 ) -> ModelAdapter:
     """Create a configured adapter instance for a loaded model.
 
-    Uses family + model_type to select FamilyConfig, then creates a single
-    ModelAdapter with that config. Parser overrides from DB capabilities
-    take precedence over config defaults.
+    Uses family to select FamilyConfig, then creates a single ModelAdapter
+    with that config. Parser overrides from DB capabilities take precedence
+    over config defaults. Profile settings are stored on the adapter and
+    applied at every request.
     """
     # Get base config for this family
-    base_config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
+    config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
 
-    # Adjust config for model type if needed
-    if model_type != base_config.model_type:
-        config = base_config.with_model_type(model_type)
-    else:
-        config = base_config
+    # Override parsers if explicitly provided (from DB capabilities)
+    resolved_tool_parser = tool_parser or (config.tool_parser_factory() if config.tool_parser_factory else None)
+    resolved_thinking_parser = thinking_parser or (config.thinking_parser_factory() if config.thinking_parser_factory else None)
 
-    # Override parser factories if DB specifies them (text/vision only)
-    if model_type in (ModelType.TEXT_GEN, ModelType.VISION):
-        if capabilities and capabilities.tool_parser_id:
-            parser_class = resolve_tool_parser(capabilities.tool_parser_id)
-            config = config.with_tool_parser(lambda: parser_class())
-        if capabilities and capabilities.thinking_parser_id:
-            parser_class = resolve_thinking_parser(capabilities.thinking_parser_id)
-            config = config.with_thinking_parser(lambda: parser_class())
-
-    # Create single unified adapter with config
-    return ModelAdapter(tokenizer, config, capabilities)
+    # Create single unified adapter with config + Profile settings
+    return ModelAdapter(
+        config=config,
+        tokenizer=tokenizer,
+        tool_parser=resolved_tool_parser,
+        thinking_parser=resolved_thinking_parser,
+        model_id=model_id,
+        system_prompt=system_prompt,
+        enable_tool_injection=enable_tool_injection,
+        template_options=template_options,
+    )
 ```
 
 **Key Design Points:**
@@ -997,6 +1043,8 @@ def create_adapter(
 - **Strategy pattern**: Family-specific logic lives in strategy functions
 - **Parser override**: DB capabilities can override config defaults
 - **All model types**: Single adapter handles TEXT_GEN, VISION, EMBEDDINGS, AUDIO
+- **Profile settings at creation**: System prompt, tool injection, template options configured once via `configure()` — zero per-request configuration
+- **Idempotent system prompt**: `_ensure_system_prompt()` checks if messages already have a system message before injecting
 
 ### 6.5 Message Conversion Contract
 
@@ -1576,6 +1624,9 @@ async def generate_chat_completion(
 - Tool call extraction (adapter's parser's job)
 - Thinking extraction (adapter's parser's job)
 - Protocol formatting (formatter's job)
+- System prompt injection (stored on adapter, applied via `_ensure_system_prompt()`)
+- Tool injection decisions (stored as `_enable_tool_injection` on adapter)
+- Template option passing (stored as `_template_options` on adapter)
 
 ### 10.3 Service Layer per Model Type
 
@@ -1696,6 +1747,9 @@ pool.get_model(model_id):
        → Resolve parser IDs to instances via registry
        → create_adapter(family, tokenizer, capabilities)
        → Adapter pre-computes stop tokens in __init__
+    5b. Apply Profile settings from registry (if registered):
+       → pool._profile_settings.get(model_id)
+       → adapter.configure(system_prompt, enable_tool_injection, template_options)
     6. Attach adapter to LoadedModel:
        loaded.adapter = adapter
     7. Return LoadedModel (ready for inference)
@@ -1754,6 +1808,7 @@ adapter's `prepare_input()` and the stream processor's `feed()` / `finalize()`.
 - **Adapter-aware loading**: Creates and attaches adapter during load
 - **Preload protection**: Pinned models exempt from eviction
 - **LoRA support**: LoRA adapter loading via `get_model_with_adapter()`
+- **Profile settings registry**: `register_profile_settings()` / `unregister_profile_settings()` bridge Profile lifecycle to adapter configuration. When a Profile starts, its settings are registered; when it stops, they're cleared. If a model is already loaded, `configure()` reconfigures the adapter immediately.
 
 ---
 

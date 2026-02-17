@@ -49,6 +49,18 @@ class LoadedModel(BaseModel):
         self.last_used = time.time()
 
 
+class ProfileSettings(BaseModel):
+    """Profile-level settings for adapter configuration.
+
+    Registered when a Profile is started, used when the model's adapter
+    is created or reconfigured. Unregistered when the Profile is stopped.
+    """
+
+    system_prompt: str | None = None
+    enable_tool_injection: bool = False
+    template_options: dict[str, Any] | None = None
+
+
 class ModelPoolManager:
     """Manages loading and caching of MLX models.
 
@@ -76,9 +88,52 @@ class ModelPoolManager:
         self.max_memory_gb = max_memory_gb
         self.max_models = max_models
         self._memory_limit_pct = memory_limit_pct
+        # Profile settings registry: model_id → settings for adapter configuration
+        self._profile_settings: dict[str, ProfileSettings] = {}
         logger.info(
             f"ModelPoolManager initialized (max_memory={max_memory_gb}GB, max_models={max_models})"
         )
+
+    def register_profile_settings(
+        self, model_id: str, settings: ProfileSettings
+    ) -> None:
+        """Register Profile settings for a model.
+
+        Called when a Profile is started. When the model is loaded, the adapter
+        will be configured with these settings (system_prompt, tool_injection, etc.).
+
+        If the model is already loaded, reconfigures the existing adapter immediately.
+        """
+        self._profile_settings[model_id] = settings
+        logger.debug(f"Registered profile settings for {model_id}")
+
+        # If model is already loaded, reconfigure its adapter
+        loaded = self._models.get(model_id)
+        if loaded and loaded.adapter:
+            loaded.adapter.configure(
+                system_prompt=settings.system_prompt,
+                enable_tool_injection=settings.enable_tool_injection,
+                template_options=settings.template_options,
+            )
+            logger.info(f"Reconfigured adapter for already-loaded model {model_id}")
+
+    def unregister_profile_settings(self, model_id: str) -> None:
+        """Unregister Profile settings for a model.
+
+        Called when a Profile is stopped. Clears the adapter's Profile-specific
+        settings so it returns to default behavior.
+        """
+        self._profile_settings.pop(model_id, None)
+        logger.debug(f"Unregistered profile settings for {model_id}")
+
+        # If model is still loaded, reset adapter to default config
+        loaded = self._models.get(model_id)
+        if loaded and loaded.adapter:
+            loaded.adapter.configure(
+                system_prompt=None,
+                enable_tool_injection=False,
+                template_options=None,
+            )
 
     def _get_effective_memory_limit(self) -> float:
         """Get the effective memory limit in GB.
@@ -481,12 +536,17 @@ class ModelPoolManager:
                     if family == "default" and model_type == ModelType.AUDIO:
                         family = "audio_default"
 
+                # Apply Profile settings if registered for this model
+                profile = self._profile_settings.get(model_id)
                 loaded.adapter = create_adapter(
                     family=family,
                     tokenizer=tokenizer,
                     tool_parser=tool_parser,
                     thinking_parser=thinking_parser,
                     model_id=model_id,
+                    system_prompt=profile.system_prompt if profile else None,
+                    enable_tool_injection=profile.enable_tool_injection if profile else False,
+                    template_options=profile.template_options if profile else None,
                 )
                 logger.info(
                     "Created {} adapter for {} (tool={}, think={})",

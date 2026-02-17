@@ -555,39 +555,9 @@ class TestLogfireInstrumentation:
 
 
 class TestToolWarnings:
-    """Test warning log when tools requested but not supported."""
+    """Test tool-related logging."""
 
-    async def test_warning_when_tools_not_supported(self) -> None:
-        """Log warning when tools requested but model doesn't support them."""
-        from mlx_manager.mlx_server.services.inference import _prepare_generation
-
-        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("default")
-
-        mock_pool = MagicMock()
-        mock_pool.get_model = AsyncMock(return_value=loaded)
-
-        # Override adapter to not support tools
-        adapter.supports_tool_calling = MagicMock(return_value=False)
-
-        with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.get_model_pool",
-                return_value=mock_pool,
-            ),
-            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
-        ):
-            await _prepare_generation(
-                model_id="test/model",
-                messages=[{"role": "user", "content": "Test"}],
-                tools=[{"type": "function", "function": {"name": "search"}}],
-                enable_prompt_injection=False,
-            )
-
-        # Logger.info should be called with warning message
-        mock_logger.info.assert_called()
-        # Check that warning message contains expected text
-        call_args = [call[0][0] for call in mock_logger.info.call_args_list]
-        assert any("does not support tool calling" in str(msg) for msg in call_args)
+    pass  # Tool support checks moved to adapter creation time
 
 
 # ---------------------------------------------------------------------------

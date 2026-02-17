@@ -2747,11 +2747,15 @@ async def test_vision_probe_generate_with_tools_and_thinking():
     )
 
     assert result == "Generated response"
-    # Verify adapter.generate was called with correct args
+    # Verify adapter was configured with template_options before generation
+    mock_adapter.configure.assert_called()
+    configure_calls = mock_adapter.configure.call_args_list
+    assert configure_calls[0][1]["template_options"] == {"enable_thinking": True}
+    # Verify adapter.generate was called with correct args (no template_options param)
     mock_adapter.generate.assert_called_once()
     call_kwargs = mock_adapter.generate.call_args[1]
     assert call_kwargs["tools"] == tools
-    assert call_kwargs["template_options"] == {"enable_thinking": True}
+    assert "template_options" not in call_kwargs
     assert call_kwargs["images"] is not None  # Synthetic test image
 
 

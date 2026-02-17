@@ -636,19 +636,6 @@ class TestGenerateChatCompletion:
         call_kwargs = adapter.prepare_input.call_args
         assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
 
-    async def test_prompt_injection_forwarded_to_prepare_input(self) -> None:
-        """enable_prompt_injection is forwarded to adapter.prepare_input()."""
-        _, adapter, _ = await self._run_generate(
-            tools=SAMPLE_TOOLS,
-            adapter_kwargs={"supports_tools": False},
-            extra_kwargs={"enable_prompt_injection": True},
-        )
-
-        adapter.prepare_input.assert_called_once()
-        call_kwargs = adapter.prepare_input.call_args
-        assert call_kwargs.kwargs.get("tools") == SAMPLE_TOOLS
-        assert call_kwargs.kwargs.get("enable_prompt_injection") is True
-
     async def test_no_tools_passes_none_to_prepare_input(self) -> None:
         """Without tools, prepare_input receives tools=None."""
         _, adapter, _ = await self._run_generate(tools=None)
