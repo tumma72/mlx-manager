@@ -513,7 +513,12 @@ class ProbingCoordinator:
             has_native_tool_support,
         )
 
-        from .base import _TOOL_PROBE_MESSAGES, _TOOL_PROBE_TOOL, _detect_unknown_xml_tags
+        from .base import (
+            _TOOL_PROBE_MESSAGES,
+            _TOOL_PROBE_TOOL,
+            _detect_unknown_xml_tags,
+            _has_tokenization_artifacts,
+        )
 
         diagnostics: list[ProbeDiagnostic] = []
         adapter = loaded.adapter
@@ -600,27 +605,52 @@ class ProbingCoordinator:
             ]
             found_markers = [m for m in tool_markers if m in last_output]
             if found_markers:
-                logger.warning(
-                    "Tool probe: model attempted tool use (markers: %s) but "
-                    "no parser matched. Raw output: %s",
-                    found_markers,
-                    last_output[:300],
-                )
-                diagnostics.append(
-                    ProbeDiagnostic(
-                        level=DiagnosticLevel.ACTION_NEEDED,
-                        category=DiagnosticCategory.TOOL_DIALECT,
-                        message=(
-                            "Unknown tool dialect — model produced tool-like markers "
-                            "but no registered parser could parse the output"
-                        ),
-                        details={
-                            "found_markers": found_markers,
-                            "raw_output_sample": last_output[:300],
-                            "registered_parsers": registered_parsers,
-                        },
+                # Check if output has tokenization artifacts (garbled detokenization)
+                if _has_tokenization_artifacts(last_output):
+                    logger.warning(
+                        "Tool probe: output has tokenization artifacts — "
+                        "model architecture likely not fully supported by "
+                        "installed mlx-lm. Raw output: %s",
+                        last_output[:300],
                     )
-                )
+                    diagnostics.append(
+                        ProbeDiagnostic(
+                            level=DiagnosticLevel.ACTION_NEEDED,
+                            category=DiagnosticCategory.UNSUPPORTED,
+                            message=(
+                                "Model architecture not fully supported by installed "
+                                "mlx-lm — output is garbled due to tokenizer "
+                                "incompatibility. Tool calling will not work until "
+                                "mlx-lm adds proper support for this architecture."
+                            ),
+                            details={
+                                "found_markers": found_markers,
+                                "raw_output_sample": last_output[:300],
+                            },
+                        )
+                    )
+                else:
+                    logger.warning(
+                        "Tool probe: model attempted tool use (markers: %s) but "
+                        "no parser matched. Raw output: %s",
+                        found_markers,
+                        last_output[:300],
+                    )
+                    diagnostics.append(
+                        ProbeDiagnostic(
+                            level=DiagnosticLevel.ACTION_NEEDED,
+                            category=DiagnosticCategory.TOOL_DIALECT,
+                            message=(
+                                "Unknown tool dialect — model produced tool-like markers "
+                                "but no registered parser could parse the output"
+                            ),
+                            details={
+                                "found_markers": found_markers,
+                                "raw_output_sample": last_output[:300],
+                                "registered_parsers": registered_parsers,
+                            },
+                        )
+                    )
             else:
                 unknown_tags = _detect_unknown_xml_tags(last_output)
                 if unknown_tags:

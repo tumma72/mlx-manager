@@ -369,27 +369,52 @@ class GenerativeProbe(BaseProbe):
             ]
             found_markers = [m for m in tool_markers if m in last_output]
             if found_markers:
-                logger.warning(
-                    "Tool probe: model attempted tool use (found markers: {}) "
-                    "but output could not be parsed. Raw output: {}",
-                    found_markers,
-                    last_output[:300],
-                )
-                diagnostics.append(
-                    ProbeDiagnostic(
-                        level=DiagnosticLevel.ACTION_NEEDED,
-                        category=DiagnosticCategory.TOOL_DIALECT,
-                        message=(
-                            "Unknown tool dialect — model produced tool-like markers "
-                            "but no registered parser could parse the output"
-                        ),
-                        details={
-                            "found_markers": found_markers,
-                            "raw_output_sample": last_output[:300],
-                            "registered_parsers": registered_parsers,
-                        },
+                # Check if output has tokenization artifacts (garbled detokenization)
+                if _has_tokenization_artifacts(last_output):
+                    logger.warning(
+                        "Tool probe: output has tokenization artifacts — "
+                        "model architecture likely not fully supported by "
+                        "installed mlx-lm. Raw output: {}",
+                        last_output[:300],
                     )
-                )
+                    diagnostics.append(
+                        ProbeDiagnostic(
+                            level=DiagnosticLevel.ACTION_NEEDED,
+                            category=DiagnosticCategory.UNSUPPORTED,
+                            message=(
+                                "Model architecture not fully supported by installed "
+                                "mlx-lm — output is garbled due to tokenizer "
+                                "incompatibility. Tool calling will not work until "
+                                "mlx-lm adds proper support for this architecture."
+                            ),
+                            details={
+                                "found_markers": found_markers,
+                                "raw_output_sample": last_output[:300],
+                            },
+                        )
+                    )
+                else:
+                    logger.warning(
+                        "Tool probe: model attempted tool use (markers: {}) "
+                        "but no parser matched. Raw output: {}",
+                        found_markers,
+                        last_output[:300],
+                    )
+                    diagnostics.append(
+                        ProbeDiagnostic(
+                            level=DiagnosticLevel.ACTION_NEEDED,
+                            category=DiagnosticCategory.TOOL_DIALECT,
+                            message=(
+                                "Unknown tool dialect — model produced tool-like markers "
+                                "but no registered parser could parse the output"
+                            ),
+                            details={
+                                "found_markers": found_markers,
+                                "raw_output_sample": last_output[:300],
+                                "registered_parsers": registered_parsers,
+                            },
+                        )
+                    )
             else:
                 unknown_tags = _detect_unknown_xml_tags(last_output)
                 if unknown_tags:
@@ -619,3 +644,24 @@ def _detect_unknown_xml_tags(output: str) -> set[str]:
 
     unknown = found_tags - _KNOWN_XML_TAGS
     return unknown
+
+
+# Sentencepiece boundary marker left in detokenized output
+_SP_MARKER = "\u2581"  # ▁
+
+# Regex: space inside a JSON quoted key, e.g. '" name "' instead of '"name"'
+_SPACED_JSON_KEY = re.compile(r'"\s+\w+\s+"')
+
+
+def _has_tokenization_artifacts(output: str) -> bool:
+    """Detect garbled output from broken detokenization.
+
+    Returns True if the output contains sentencepiece boundary markers (▁)
+    or has spaces inside JSON string delimiters — strong signals that the
+    model architecture is not properly supported by the installed mlx-lm.
+    """
+    if _SP_MARKER in output:
+        return True
+    if _SPACED_JSON_KEY.search(output):
+        return True
+    return False
