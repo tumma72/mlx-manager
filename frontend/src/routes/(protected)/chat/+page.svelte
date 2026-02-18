@@ -627,8 +627,7 @@
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function buildAnthropicRequest(apiMessages: any[]): { url: string; body: Record<string, unknown> } {
-		const systemPrompt = selectedProfile!.context?.system_prompt;
-		// Filter system messages out for Anthropic (system goes in separate field)
+		// No system prompt — the server-side adapter handles it via _ensure_system_prompt()
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const anthropicMessages = apiMessages.filter((m: any) => m.role !== 'system');
 		return {
@@ -636,7 +635,6 @@
 			body: {
 				model: selectedProfile!.model_repo_id,
 				max_tokens: selectedProfile!.inference?.max_tokens ?? 4096,
-				...(systemPrompt ? { system: systemPrompt } : {}),
 				messages: anthropicMessages,
 				stream: true,
 				temperature: Math.min(selectedProfile!.inference?.temperature ?? 0.7, 1.0),
@@ -665,10 +663,8 @@
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const apiMessages: any[] = [];
 
-		// Add system prompt as first message (OpenAI puts it in messages; Anthropic filters it out later)
-		if (selectedProfile.context?.system_prompt) {
-			apiMessages.push({ role: 'system', content: selectedProfile.context.system_prompt });
-		}
+		// No system prompt injection — the server-side adapter handles system prompts
+		// via _ensure_system_prompt(), so sending one here would cause double injection.
 
 		// Add conversation history (exclude last user message since we're about to add it)
 		for (const m of messages.slice(0, -1)) {

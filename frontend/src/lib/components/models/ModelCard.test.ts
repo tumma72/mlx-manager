@@ -107,12 +107,21 @@ describe("ModelCard", () => {
       expect(screen.getByText("Downloaded")).toBeInTheDocument();
     });
 
-    it("shows Use and Delete buttons when model is downloaded", () => {
+    it("shows Use and Delete buttons when model is downloaded and onUse provided", () => {
+      render(ModelCard, {
+        props: { model: createMockModel({ is_downloaded: true }), onUse: vi.fn() },
+      });
+
+      expect(screen.getByRole("button", { name: /use/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
+    });
+
+    it("hides Use button when onUse is not provided", () => {
       render(ModelCard, {
         props: { model: createMockModel({ is_downloaded: true }) },
       });
 
-      expect(screen.getByRole("button", { name: /use/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /use/i })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
     });
   });
@@ -557,21 +566,14 @@ describe("ModelCard", () => {
       expect(onUse).toHaveBeenCalledWith("mlx-community/test");
     });
 
-    it("does nothing when onUse is not provided", async () => {
+    it("does not render Use button when onUse is not provided", () => {
       render(ModelCard, {
         props: {
           model: createMockModel({ is_downloaded: true }),
         },
       });
 
-      const useButtons = screen.getAllByRole("button", { name: /^use$/i });
-      const useButton = useButtons.find(btn => !(btn as HTMLButtonElement).disabled);
-      expect(useButton).toBeDefined();
-
-      // Use fireEvent to bypass pointer-events issues
-      await fireEvent.click(useButton!);
-
-      // Should not throw error
+      expect(screen.queryByRole("button", { name: /^use$/i })).not.toBeInTheDocument();
     });
   });
 

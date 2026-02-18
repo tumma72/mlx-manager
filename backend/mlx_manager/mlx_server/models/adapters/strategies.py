@@ -247,9 +247,7 @@ def hermes_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, A
                     "role": "user",
                     "content": (
                         f"[Tool Result for {tool_call_id}]\n"
-                        f"{content}\n[End Tool Result]\n\n"
-                        "Please provide your response based on "
-                        "this tool result."
+                        f"{content}\n[End Tool Result]"
                     ),
                 }
             )
@@ -283,9 +281,7 @@ def llama_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, An
                     "role": "user",
                     "content": (
                         f"[Tool Result for {tool_call_id}]\n"
-                        f"{content}\n[End Tool Result]\n\n"
-                        "Please provide your response based on "
-                        "this tool result."
+                        f"{content}\n[End Tool Result]"
                     ),
                 }
             )
