@@ -254,7 +254,7 @@ async def test_orchestrator_full_flow_text_gen():
             return_value=ModelType.TEXT_GEN,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ) as mock_save,
         patch(
@@ -324,7 +324,7 @@ async def test_orchestrator_full_flow_embeddings():
             return_value=ModelType.EMBEDDINGS,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ) as mock_save,
         patch(
@@ -442,7 +442,7 @@ async def test_orchestrator_preloaded_model_not_unloaded():
             return_value=ModelType.TEXT_GEN,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -495,7 +495,7 @@ async def test_orchestrator_save_failure_doesnt_crash():
             return_value=ModelType.TEXT_GEN,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
             side_effect=Exception("Database error"),
         ),
@@ -529,7 +529,11 @@ async def test_orchestrator_save_failure_doesnt_crash():
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_happy_path():
-    """Test TextGenProbe with all capabilities enabled."""
+    """Test TextGenProbe static checks (context estimation).
+
+    Generative capability checks (thinking, tools) are now handled
+    by ProbingCoordinator, not the strategy.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
@@ -551,16 +555,6 @@ async def test_text_gen_probe_happy_path():
     result = ProbeResult()
 
     with (
-        patch.object(
-            TextGenProbe,
-            "_verify_thinking_support",
-            return_value=(True, "think_tag", []),
-        ),
-        patch.object(
-            TextGenProbe,
-            "_verify_tool_support",
-            return_value=("template", "hermes_json", []),
-        ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=16.0),
     ):
@@ -577,24 +571,28 @@ async def test_text_gen_probe_happy_path():
         async for step in probe.probe("test/text-model", mock_loaded, result):
             steps.append(step)
 
-        # Verify capabilities populated
-        assert result.supports_thinking is True
-        assert result.supports_native_tools is True
-        assert result.tool_format == "template"
+        # Verify context estimation populated (strategy's responsibility)
         assert result.practical_max_tokens is not None
         assert isinstance(result.practical_max_tokens, int)
         assert result.practical_max_tokens > 0
 
-        # Verify steps
+        # Verify static check steps are present
         step_names = [s.step for s in steps]
         assert "check_context" in step_names
-        assert "test_thinking" in step_names
-        assert "test_tools" in step_names
+
+        # Generative steps (thinking, tools) are coordinator's job — not emitted by strategy
+        assert "test_thinking" not in step_names
+        assert "test_tools" not in step_names
 
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_tokenizer_none():
-    """Test TextGenProbe skips thinking/tools when tokenizer is None."""
+    """Test TextGenProbe runs static checks even with no tokenizer.
+
+    Generative capability checks (thinking, tools) are now handled
+    by ProbingCoordinator, not the strategy. The strategy only does
+    static checks (context estimation).
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
@@ -610,16 +608,13 @@ async def test_text_gen_probe_tokenizer_none():
     async for step in probe.probe("test/text-model", mock_loaded, result):
         steps.append(step)
 
-    # Thinking and tools should be skipped
-    thinking_steps = [s for s in steps if s.step == "test_thinking"]
-    assert len(thinking_steps) == 1
-    assert thinking_steps[0].status == "skipped"
+    # Strategy only emits check_context — thinking/tools are coordinator's job
+    step_names = [s.step for s in steps]
+    assert "check_context" in step_names
+    assert "test_thinking" not in step_names
+    assert "test_tools" not in step_names
 
-    tools_steps = [s for s in steps if s.step == "test_tools"]
-    assert len(tools_steps) == 1
-    assert tools_steps[0].status == "skipped"
-
-    # Result should not have thinking/tools set
+    # Result should not have thinking/tools set (coordinator not involved)
     assert result.supports_thinking is None
     assert result.supports_native_tools is None
 
@@ -957,7 +952,11 @@ async def test_orchestrator_strategy_not_found():
     """Test orchestrator handles missing strategy gracefully."""
     from mlx_manager.mlx_server.models.detection import TypeDetectionResult
 
+    mock_loaded = MagicMock()
     mock_pool = MagicMock()
+    mock_pool._models = {}  # Model not preloaded
+    mock_pool._profile_settings = {}
+    mock_pool.get_model = AsyncMock(return_value=mock_loaded)
     mock_type = MagicMock(value="unknown_type")
 
     with (
@@ -1015,7 +1014,7 @@ async def test_orchestrator_cleanup_failure():
             return_value=ModelType.TEXT_GEN,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -1080,7 +1079,13 @@ async def test_text_gen_probe_context_check_failure():
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_thinking_failure():
-    """Test TextGenProbe handles thinking check failure."""
+    """Test coordinator handles thinking check failure (not the strategy).
+
+    Thinking verification moved to ProbingCoordinator._sweep_thinking().
+    The TextGenProbe strategy only does static checks (check_context).
+    This test verifies the strategy still runs without error when
+    thinking-related mocks fail (since strategy never calls them).
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
@@ -1094,24 +1099,25 @@ async def test_text_gen_probe_thinking_failure():
 
     result = ProbeResult()
 
-    with patch.object(
-        TextGenProbe,
-        "_verify_thinking_support",
-        side_effect=Exception("Thinking check failed"),
-    ):
-        probe = TextGenProbe()
-        steps = []
-        async for step in probe.probe("test/model", mock_loaded, result):
-            steps.append(step)
+    probe = TextGenProbe()
+    steps = []
+    async for step in probe.probe("test/model", mock_loaded, result):
+        steps.append(step)
 
-        # Thinking test should fail
-        thinking_steps = [s for s in steps if s.step == "test_thinking"]
-        assert any(s.status == "failed" for s in thinking_steps)
+    # Strategy only does check_context — thinking is handled by coordinator
+    step_names = [s.step for s in steps]
+    assert "check_context" in step_names
+    assert "test_thinking" not in step_names
 
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_tools_failure():
-    """Test TextGenProbe handles tool verification failure gracefully."""
+    """Test that tool verification is handled by coordinator, not strategy.
+
+    Tool verification moved to ProbingCoordinator._sweep_tools().
+    The TextGenProbe strategy only does static checks (check_context).
+    This test verifies the probe runs correctly without tool-related patches.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
@@ -1128,30 +1134,23 @@ async def test_text_gen_probe_tools_failure():
 
     result = ProbeResult()
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-            return_value=False,
-        ),
-        patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=False,
-        ),
-        patch(
-            "huggingface_hub.hf_hub_download",
-            side_effect=Exception("Config not found"),
-        ),
+    with patch(
+        "huggingface_hub.hf_hub_download",
+        side_effect=Exception("Config not found"),
     ):
         probe = TextGenProbe()
         steps = []
         async for step in probe.probe("test/model", mock_loaded, result):
             steps.append(step)
 
-        # Tools should complete with no support detected
-        tools_steps = [s for s in steps if s.step == "test_tools"]
-        assert any(s.status == "completed" for s in tools_steps)
+        # Strategy only does check_context — tools are handled by coordinator
+        step_names = [s.step for s in steps]
+        assert "check_context" in step_names
+        assert "test_tools" not in step_names
+
+        # Tool-related result fields remain unset (coordinator sets them)
         assert result.tool_format is None
-        assert result.supports_native_tools is False
+        assert result.supports_native_tools is None
 
 
 @pytest.mark.asyncio
@@ -1488,7 +1487,7 @@ async def test_save_capabilities_creates_new():
     """Test _save_capabilities creates new Model record."""
 
     from mlx_manager.services.probe import ProbeResult
-    from mlx_manager.services.probe.service import _save_capabilities
+    from mlx_manager.services.probe.coordinator import _save_capabilities
 
     result = ProbeResult(
         model_type="text-gen",
@@ -1519,7 +1518,7 @@ async def test_save_capabilities_updates_existing():
     """Test _save_capabilities updates existing Model record."""
 
     from mlx_manager.services.probe import ProbeResult
-    from mlx_manager.services.probe.service import _save_capabilities
+    from mlx_manager.services.probe.coordinator import _save_capabilities
 
     result = ProbeResult(
         model_type="vision",
@@ -1549,7 +1548,7 @@ async def test_save_capabilities_updates_existing():
 async def test_save_capabilities_all_fields():
     """Test _save_capabilities passes all field types to update_model_capabilities."""
     from mlx_manager.services.probe import ProbeResult
-    from mlx_manager.services.probe.service import _save_capabilities
+    from mlx_manager.services.probe.coordinator import _save_capabilities
 
     result = ProbeResult(
         model_type="embeddings",
@@ -2244,7 +2243,12 @@ def test_detect_unknown_xml_tags():
 
 @pytest.mark.asyncio
 async def test_text_gen_probe_no_adapter_skips():
-    """Test TextGenProbe skips thinking/tools when adapter is None."""
+    """Test TextGenProbe runs static checks regardless of adapter presence.
+
+    Thinking/tool skipping when adapter is None is now handled by
+    ProbingCoordinator._sweep_generative_capabilities(). The strategy
+    only does check_context — adapter presence is irrelevant there.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
@@ -2268,14 +2272,13 @@ async def test_text_gen_probe_no_adapter_skips():
         async for step in probe.probe("test/model", mock_loaded, result):
             steps.append(step)
 
-        # Both should be skipped
-        thinking_steps = [s for s in steps if s.step == "test_thinking"]
-        assert len(thinking_steps) == 1
-        assert thinking_steps[0].status == "skipped"
+        # Strategy only emits check_context
+        step_names = [s.step for s in steps]
+        assert "check_context" in step_names
 
-        tools_steps = [s for s in steps if s.step == "test_tools"]
-        assert len(tools_steps) == 1
-        assert tools_steps[0].status == "skipped"
+        # Thinking/tools skipping is coordinator's responsibility
+        assert "test_thinking" not in step_names
+        assert "test_tools" not in step_names
 
 
 @pytest.mark.asyncio
@@ -2520,7 +2523,12 @@ def test_audio_probe_is_not_generative():
 
 @pytest.mark.asyncio
 async def test_vision_probe_discovers_thinking():
-    """VisionProbe should discover thinking support when adapter is present."""
+    """VisionProbe should run static vision checks when adapter is present.
+
+    Generative capability discovery (thinking, tools) is now handled by
+    ProbingCoordinator._sweep_generative_capabilities(), not the strategy.
+    This test verifies the strategy's static checks work correctly.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.vision import VisionProbe
 
@@ -2544,16 +2552,6 @@ async def test_vision_probe_discovers_thinking():
         ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=32.0),
-        patch.object(
-            VisionProbe,
-            "_verify_thinking_support",
-            return_value=(True, "think_tag", []),
-        ),
-        patch.object(
-            VisionProbe,
-            "_verify_tool_support",
-            return_value=("template", "hermes_json", []),
-        ),
     ):
         import tempfile
 
@@ -2575,31 +2573,31 @@ async def test_vision_probe_discovers_thinking():
         async for step in probe.probe("test/vision-thinking-model", mock_loaded, result):
             steps.append(step)
 
-        # Verify vision-specific capabilities
+        # Verify vision-specific capabilities (strategy's responsibility)
         assert result.supports_multi_image is True
         assert result.supports_video is True
         assert result.practical_max_tokens is not None
 
-        # Verify generative capabilities also detected
-        assert result.supports_thinking is True
-        assert result.thinking_parser_id == "think_tag"
-        assert result.supports_native_tools is True
-        assert result.tool_format == "template"
-        assert result.tool_parser_id == "hermes_json"
-
-        # Verify all steps present
+        # Verify static vision steps are present
         step_names = [s.step for s in steps]
         assert "check_processor" in step_names
         assert "check_multi_image" in step_names
         assert "check_video" in step_names
         assert "check_context" in step_names
-        assert "test_thinking" in step_names
-        assert "test_tools" in step_names
+
+        # Generative steps are coordinator's job — not emitted by strategy
+        assert "test_thinking" not in step_names
+        assert "test_tools" not in step_names
 
 
 @pytest.mark.asyncio
 async def test_vision_probe_no_adapter_skips_generative():
-    """VisionProbe should skip thinking/tools when adapter is None."""
+    """VisionProbe should complete static checks regardless of adapter presence.
+
+    Thinking/tool skipping when adapter is None is now handled by
+    ProbingCoordinator._sweep_generative_capabilities(). The strategy
+    only does vision static checks.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.vision import VisionProbe
 
@@ -2636,30 +2634,30 @@ async def test_vision_probe_no_adapter_skips_generative():
         async for step in probe.probe("test/vision-model", mock_loaded, result):
             steps.append(step)
 
-        # Vision-specific steps should complete
+        # Vision-specific steps should complete (strategy's responsibility)
         step_names = [s.step for s in steps]
         assert "check_processor" in step_names
         assert "check_multi_image" in step_names
         assert "check_video" in step_names
         assert "check_context" in step_names
 
-        # Thinking and tools should be skipped
-        thinking_steps = [s for s in steps if s.step == "test_thinking"]
-        assert len(thinking_steps) == 1
-        assert thinking_steps[0].status == "skipped"
+        # Thinking/tools skipping is coordinator's responsibility — not emitted by strategy
+        assert "test_thinking" not in step_names
+        assert "test_tools" not in step_names
 
-        tools_steps = [s for s in steps if s.step == "test_tools"]
-        assert len(tools_steps) == 1
-        assert tools_steps[0].status == "skipped"
-
-        # Generative results should remain None
+        # Generative results remain None (coordinator not involved in this test)
         assert result.supports_thinking is None
         assert result.supports_native_tools is None
 
 
 @pytest.mark.asyncio
 async def test_vision_probe_generative_failure_doesnt_crash():
-    """VisionProbe should handle generative probe failure gracefully."""
+    """VisionProbe static checks should complete even if generative probing would fail.
+
+    Generative capability probing (thinking, tools) is now handled by
+    ProbingCoordinator, not the strategy. The strategy's static checks
+    should run and complete regardless of adapter state.
+    """
     from mlx_manager.services.probe import ProbeResult
     from mlx_manager.services.probe.vision import VisionProbe
 
@@ -2683,16 +2681,6 @@ async def test_vision_probe_generative_failure_doesnt_crash():
         ),
         patch("huggingface_hub.hf_hub_download") as mock_download,
         patch("mlx_manager.mlx_server.utils.memory.get_device_memory_gb", return_value=32.0),
-        patch.object(
-            VisionProbe,
-            "_verify_thinking_support",
-            side_effect=Exception("Generation failed"),
-        ),
-        patch.object(
-            VisionProbe,
-            "_verify_tool_support",
-            side_effect=Exception("Generation failed"),
-        ),
     ):
         import tempfile
 
@@ -2707,15 +2695,16 @@ async def test_vision_probe_generative_failure_doesnt_crash():
         async for step in probe.probe("test/vision-model", mock_loaded, result):
             steps.append(step)
 
-        # Thinking and tools should fail but not crash the probe
-        thinking_steps = [s for s in steps if s.step == "test_thinking"]
-        assert any(s.status == "failed" for s in thinking_steps)
+        # Vision-specific static steps should complete without crashing
+        step_names = [s.step for s in steps]
+        assert "check_processor" in step_names
+        assert "check_multi_image" in step_names
+        assert "check_video" in step_names
+        assert "check_context" in step_names
 
-        tools_steps = [s for s in steps if s.step == "test_tools"]
-        assert any(s.status == "failed" for s in tools_steps)
-
-        # Vision-specific steps should still have completed
-        assert "check_processor" in [s.step for s in steps]
+        # Thinking/tools are coordinator's job — strategy does not emit them
+        assert "test_thinking" not in step_names
+        assert "test_tools" not in step_names
 
 
 # ============================================================================

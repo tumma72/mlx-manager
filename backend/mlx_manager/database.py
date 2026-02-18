@@ -76,9 +76,7 @@ async def run_alembic_upgrade() -> None:
 
         if has_tables and not has_alembic:
             # Pre-Alembic database: stamp so only the catch-up migration runs
-            logger.info(
-                f"Pre-Alembic database detected, stamping to {_PRE_ALEMBIC_STAMP}"
-            )
+            logger.info(f"Pre-Alembic database detected, stamping to {_PRE_ALEMBIC_STAMP}")
             await conn.run_sync(_stamp_revision, alembic_cfg, _PRE_ALEMBIC_STAMP)
 
         # Run upgrade to head
@@ -89,10 +87,7 @@ async def run_alembic_upgrade() -> None:
 def _check_alembic_version_table(connection) -> bool:
     """Check if alembic_version table exists."""
     result = connection.execute(
-        text(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='alembic_version'"
-        )
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
     )
     return result.fetchone() is not None
 

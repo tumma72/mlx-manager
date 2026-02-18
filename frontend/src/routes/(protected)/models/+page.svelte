@@ -368,9 +368,11 @@
 						<Trash2 class="w-4 h-4 mr-1" />
 						Delete
 					</Button>
-					<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
-						Use
-					</Button>
+					{#if probed}
+						<Button size="sm" onclick={() => handleUseModel(model.model_id)}>
+							Use
+						</Button>
+					{/if}
 				</div>
 			</div>
 		</Card>
@@ -429,7 +431,11 @@
 			</h2>
 			<div class="grid gap-4">
 				{#each displayResults() as model (model.model_id)}
-					<ModelCard {model} onUse={handleUseModel} onDeleted={handleModelDeleted} />
+					<ModelCard
+					{model}
+					onUse={capabilitiesMap.has(model.model_id) ? handleUseModel : undefined}
+					onDeleted={handleModelDeleted}
+				/>
 				{/each}
 			</div>
 		</section>

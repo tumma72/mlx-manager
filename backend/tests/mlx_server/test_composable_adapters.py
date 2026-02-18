@@ -1045,7 +1045,9 @@ class TestPrepareInput:
         assert isinstance(result, PreparedInput)
 
     def test_text_input_with_thinking(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer(), template_options={"enable_thinking": True})
+        adapter = create_adapter(
+            "qwen", FakeTokenizer(), template_options={"enable_thinking": True}
+        )
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "Think about this"}],
         )

@@ -36,6 +36,10 @@ COMMON_SPECIAL_TOKENS = [
 ]
 
 
+# Sentinel for "not provided" in configure() — distinct from None which means "clear"
+_UNSET: Any = object()
+
+
 class ModelAdapter:
     """Stateful adapter configured from FamilyConfig with injected parsers.
 
@@ -334,24 +338,60 @@ class ModelAdapter:
 
     def configure(
         self,
-        system_prompt: str | None = None,
-        enable_tool_injection: bool | None = None,
-        template_options: dict[str, Any] | None = None,
+        system_prompt: str | None = _UNSET,
+        enable_tool_injection: bool | None = _UNSET,
+        template_options: dict[str, Any] | None = _UNSET,
+        tool_parser: ToolCallParser | None = _UNSET,
+        thinking_parser: ThinkingParser | None = _UNSET,
     ) -> None:
         """Reconfigure adapter settings (e.g., for probe or Profile changes).
 
-        Only updates fields that are explicitly provided (not None).
+        Pass a value to update, pass None to clear, omit to leave unchanged.
+        Parsers: pass an instance to swap, pass None to reset to family default,
+        omit to leave unchanged.
         """
-        if system_prompt is not None:
+        if system_prompt is not _UNSET:
             self._system_prompt = system_prompt
-        if enable_tool_injection is not None:
-            self._enable_tool_injection = enable_tool_injection
-        if template_options is not None:
+        if enable_tool_injection is not _UNSET:
+            self._enable_tool_injection = (
+                enable_tool_injection if enable_tool_injection is not None else False
+            )
+        if template_options is not _UNSET:
             self._template_options = template_options
+        if tool_parser is not _UNSET:
+            if tool_parser is not None:
+                self._tool_parser = tool_parser
+            elif self._config.tool_parser_factory:
+                self._tool_parser = self._config.tool_parser_factory()
+            else:
+                self._tool_parser = NullToolParser()
+        if thinking_parser is not _UNSET:
+            if thinking_parser is not None:
+                self._thinking_parser = thinking_parser
+            elif self._config.thinking_parser_factory:
+                self._thinking_parser = self._config.thinking_parser_factory()
+            else:
+                self._thinking_parser = NullThinkingParser()
 
-    def _ensure_system_prompt(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def reset_to_defaults(self) -> None:
+        """Reset all Profile/probe settings back to family-config defaults.
+
+        Restores parsers from config factories, clears system prompt,
+        disables tool injection, and clears template options.
+        """
+        self._system_prompt = None
+        self._enable_tool_injection = False
+        self._template_options = None
+        if self._config.tool_parser_factory:
+            self._tool_parser = self._config.tool_parser_factory()
+        else:
+            self._tool_parser = NullToolParser()
+        if self._config.thinking_parser_factory:
+            self._thinking_parser = self._config.thinking_parser_factory()
+        else:
+            self._thinking_parser = NullThinkingParser()
+
+    def _ensure_system_prompt(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Inject the Profile's default system prompt if not already present.
 
         Idempotent: if the first message is already a system message (from the
@@ -437,9 +477,7 @@ class ModelAdapter:
         converted = self.convert_messages(messages)
 
         # Tool handling uses adapter config, not runtime flags
-        use_tools = tools and (
-            self.supports_tool_calling() or self._enable_tool_injection
-        )
+        use_tools = tools and (self.supports_tool_calling() or self._enable_tool_injection)
         effective_tools = tools if use_tools else None
 
         prompt = self.apply_chat_template(

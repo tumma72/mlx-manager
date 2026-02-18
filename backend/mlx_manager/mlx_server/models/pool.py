@@ -54,11 +54,17 @@ class ProfileSettings(BaseModel):
 
     Registered when a Profile is started, used when the model's adapter
     is created or reconfigured. Unregistered when the Profile is stopped.
+
+    Parser fields (tool_parser_id, thinking_parser_id) are primarily used
+    by the ProbingCoordinator to test different parser configurations
+    through the same Profile path.
     """
 
     system_prompt: str | None = None
     enable_tool_injection: bool = False
     template_options: dict[str, Any] | None = None
+    tool_parser_id: str | None = None
+    thinking_parser_id: str | None = None
 
 
 class ModelPoolManager:
@@ -94,9 +100,7 @@ class ModelPoolManager:
             f"ModelPoolManager initialized (max_memory={max_memory_gb}GB, max_models={max_models})"
         )
 
-    def register_profile_settings(
-        self, model_id: str, settings: ProfileSettings
-    ) -> None:
+    def register_profile_settings(self, model_id: str, settings: ProfileSettings) -> None:
         """Register Profile settings for a model.
 
         Called when a Profile is started. When the model is loaded, the adapter
@@ -110,30 +114,57 @@ class ModelPoolManager:
         # If model is already loaded, reconfigure its adapter
         loaded = self._models.get(model_id)
         if loaded and loaded.adapter:
-            loaded.adapter.configure(
-                system_prompt=settings.system_prompt,
-                enable_tool_injection=settings.enable_tool_injection,
-                template_options=settings.template_options,
-            )
+            # Resolve parser overrides if specified
+            tool_parser = None
+            thinking_parser = None
+            if settings.tool_parser_id:
+                from mlx_manager.mlx_server.parsers import resolve_tool_parser
+
+                try:
+                    tool_parser = resolve_tool_parser(settings.tool_parser_id)
+                except KeyError:
+                    logger.warning(
+                        "Unknown tool parser %r for %s, ignoring",
+                        settings.tool_parser_id,
+                        model_id,
+                    )
+            if settings.thinking_parser_id:
+                from mlx_manager.mlx_server.parsers import resolve_thinking_parser
+
+                try:
+                    thinking_parser = resolve_thinking_parser(settings.thinking_parser_id)
+                except KeyError:
+                    logger.warning(
+                        "Unknown thinking parser %r for %s, ignoring",
+                        settings.thinking_parser_id,
+                        model_id,
+                    )
+
+            configure_kwargs: dict[str, object] = {
+                "system_prompt": settings.system_prompt,
+                "enable_tool_injection": settings.enable_tool_injection,
+                "template_options": settings.template_options,
+            }
+            if tool_parser is not None:
+                configure_kwargs["tool_parser"] = tool_parser
+            if thinking_parser is not None:
+                configure_kwargs["thinking_parser"] = thinking_parser
+            loaded.adapter.configure(**configure_kwargs)  # type: ignore[arg-type]
             logger.info(f"Reconfigured adapter for already-loaded model {model_id}")
 
     def unregister_profile_settings(self, model_id: str) -> None:
         """Unregister Profile settings for a model.
 
-        Called when a Profile is stopped. Clears the adapter's Profile-specific
-        settings so it returns to default behavior.
+        Called when a Profile is stopped. Resets the adapter to family-config
+        defaults (parsers, system prompt, template options).
         """
         self._profile_settings.pop(model_id, None)
         logger.debug(f"Unregistered profile settings for {model_id}")
 
-        # If model is still loaded, reset adapter to default config
+        # If model is still loaded, reset adapter to family defaults
         loaded = self._models.get(model_id)
         if loaded and loaded.adapter:
-            loaded.adapter.configure(
-                system_prompt=None,
-                enable_tool_injection=False,
-                template_options=None,
-            )
+            loaded.adapter.reset_to_defaults()
 
     def _get_effective_memory_limit(self) -> float:
         """Get the effective memory limit in GB.
@@ -538,6 +569,32 @@ class ModelPoolManager:
 
                 # Apply Profile settings if registered for this model
                 profile = self._profile_settings.get(model_id)
+
+                # ProfileSettings parser IDs override family defaults
+                # but DB-cached parsers (from capabilities) take priority
+                if profile and not tool_parser and profile.tool_parser_id:
+                    from mlx_manager.mlx_server.parsers import resolve_tool_parser
+
+                    try:
+                        tool_parser = resolve_tool_parser(profile.tool_parser_id)
+                    except KeyError:
+                        logger.warning(
+                            "Unknown tool parser %r from profile for %s",
+                            profile.tool_parser_id,
+                            model_id,
+                        )
+                if profile and not thinking_parser and profile.thinking_parser_id:
+                    from mlx_manager.mlx_server.parsers import resolve_thinking_parser
+
+                    try:
+                        thinking_parser = resolve_thinking_parser(profile.thinking_parser_id)
+                    except KeyError:
+                        logger.warning(
+                            "Unknown thinking parser %r from profile for %s",
+                            profile.thinking_parser_id,
+                            model_id,
+                        )
+
                 loaded.adapter = create_adapter(
                     family=family,
                     tokenizer=tokenizer,
@@ -936,6 +993,42 @@ class ModelPoolManager:
                 model_type=model_type.value,
                 size_gb=memory["active_gb"],
             )
+
+            # Create composable adapter (same logic as _load_model)
+            try:
+                from mlx_manager.mlx_server.models.adapters.composable import (
+                    create_adapter,
+                )
+                from mlx_manager.mlx_server.models.adapters.registry import (
+                    detect_model_family,
+                )
+
+                family = detect_model_family(model_id)
+                # For audio models, map "default" to "audio_default"
+                if family == "default" and model_type == ModelType.AUDIO:
+                    family = "audio_default"
+
+                loaded.adapter = create_adapter(
+                    family=family,
+                    tokenizer=tokenizer,
+                    model_id=model_id,
+                )
+                logger.info(
+                    "Created {} adapter for {} (tool={}, think={})",
+                    family,
+                    model_id,
+                    loaded.adapter.tool_parser.parser_id,
+                    loaded.adapter.thinking_parser.parser_id,
+                )
+
+                # Run post-load configuration hook
+                await loaded.adapter.post_load_configure(model, model_id)
+            except Exception as e:
+                logger.warning(
+                    "Could not create composable adapter for {}: {}",
+                    model_id,
+                    e,
+                )
 
             async with self._lock:
                 self._models[model_id] = loaded

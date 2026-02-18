@@ -145,9 +145,11 @@
 				<Trash2 class="w-4 h-4 mr-1" />
 				{deleting ? 'Deleting...' : 'Delete'}
 			</Button>
-			<Button variant="default" size="sm" onclick={handleUse}>
-				Use
-			</Button>
+			{#if onUse}
+				<Button variant="default" size="sm" onclick={handleUse}>
+					Use
+				</Button>
+			{/if}
 		{:else}
 			<Button variant="default" size="sm" onclick={handleDownload}>
 				<Download class="w-4 h-4 mr-1" />

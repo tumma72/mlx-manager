@@ -50,9 +50,15 @@ class TextGenProbe(GenerativeProbe):
     async def probe(
         self, model_id: str, loaded: LoadedModel, result: ProbeResult
     ) -> AsyncGenerator[ProbeStep, None]:
+        """Type-specific static checks for text-gen models.
+
+        Generative capability probing (thinking, tools) is handled by
+        the ProbingCoordinator which calls this strategy first for
+        static checks, then runs its own parser sweep.
+        """
         result.model_type = ModelType.TEXT_GEN
 
-        # Detect model family
+        # Detect model family (used by coordinator for adapter config)
         from mlx_manager.mlx_server.models.adapters.registry import (
             detect_model_family,
         )
@@ -73,10 +79,6 @@ class TextGenProbe(GenerativeProbe):
         except Exception as e:
             logger.warning("Context check failed for {}: {}", model_id, e)
             yield ProbeStep(step="check_context", status="failed", error=str(e))
-
-        # Steps 2-3: Thinking and tool verification (shared with VisionProbe)
-        async for step in self._probe_generative_capabilities(model_id, loaded, result):
-            yield step
 
 
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:

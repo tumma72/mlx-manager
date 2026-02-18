@@ -30,9 +30,7 @@ def _table_exists(table_name: str) -> bool:
     """Check if a table exists in the current database."""
     conn = op.get_bind()
     result = conn.execute(
-        sa.text(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=:name"
-        ),
+        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
         {"name": table_name},
     )
     return result.fetchone() is not None
@@ -48,9 +46,7 @@ def upgrade() -> None:
             sa.Column("email", sa.String(), nullable=False),
             sa.Column("hashed_password", sa.String(), nullable=False),
             sa.Column("is_admin", sa.Boolean(), nullable=False, server_default="0"),
-            sa.Column(
-                "status", sa.String(), nullable=False, server_default="'pending'"
-            ),
+            sa.Column("status", sa.String(), nullable=False, server_default="'pending'"),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.Column("approved_at", sa.DateTime(), nullable=True),
             sa.Column("approved_by", sa.Integer(), nullable=True),
@@ -74,9 +70,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("repo_id"),
         )
-        op.create_index(
-            op.f("ix_models_repo_id"), "models", ["repo_id"], unique=True
-        )
+        op.create_index(op.f("ix_models_repo_id"), "models", ["repo_id"], unique=True)
 
     # --- downloads ---
     if not _table_exists("downloads"):
@@ -84,13 +78,9 @@ def upgrade() -> None:
             "downloads",
             sa.Column("id", sa.Integer(), nullable=False),
             sa.Column("model_id", sa.String(), nullable=False),
-            sa.Column(
-                "status", sa.String(), nullable=False, server_default="'pending'"
-            ),
+            sa.Column("status", sa.String(), nullable=False, server_default="'pending'"),
             sa.Column("total_bytes", sa.Integer(), nullable=True),
-            sa.Column(
-                "downloaded_bytes", sa.Integer(), nullable=False, server_default="0"
-            ),
+            sa.Column("downloaded_bytes", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("error", sa.String(), nullable=True),
             sa.Column("started_at", sa.DateTime(), nullable=False),
             sa.Column("completed_at", sa.DateTime(), nullable=True),
@@ -164,9 +154,7 @@ def upgrade() -> None:
             "cloud_credentials",
             sa.Column("id", sa.Integer(), nullable=False),
             sa.Column("backend_type", sa.String(), nullable=False),
-            sa.Column(
-                "api_type", sa.String(), nullable=False, server_default="'openai'"
-            ),
+            sa.Column("api_type", sa.String(), nullable=False, server_default="'openai'"),
             sa.Column("name", sa.String(), nullable=False, server_default="''"),
             sa.Column("encrypted_api_key", sa.String(), nullable=False),
             sa.Column("base_url", sa.String(), nullable=True),
@@ -194,16 +182,10 @@ def upgrade() -> None:
             sa.Column("error_message", sa.String(), nullable=True),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(
-            op.f("ix_audit_logs_request_id"), "audit_logs", ["request_id"]
-        )
-        op.create_index(
-            op.f("ix_audit_logs_timestamp"), "audit_logs", ["timestamp"]
-        )
+        op.create_index(op.f("ix_audit_logs_request_id"), "audit_logs", ["request_id"])
+        op.create_index(op.f("ix_audit_logs_timestamp"), "audit_logs", ["timestamp"])
         op.create_index(op.f("ix_audit_logs_model"), "audit_logs", ["model"])
-        op.create_index(
-            op.f("ix_audit_logs_backend_type"), "audit_logs", ["backend_type"]
-        )
+        op.create_index(op.f("ix_audit_logs_backend_type"), "audit_logs", ["backend_type"])
         op.create_index(op.f("ix_audit_logs_status"), "audit_logs", ["status"])
 
     # --- Drop running_instances if it exists (unused legacy table) ---

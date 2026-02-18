@@ -91,3 +91,6 @@ test-results/
 
 # Claude Code local config
 .claude/settings.local.json
+
+# Remove my own FEEDBACK.md documentation
+FEEDBACK.md

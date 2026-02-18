@@ -265,7 +265,6 @@ class TestInitDb:
         assert len(matching) == 1
 
 
-
 class TestRecoverIncompleteDownloads:
     """Tests for the recover_incomplete_downloads function."""
 

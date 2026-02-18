@@ -1,4 +1,4 @@
-"""Additional coverage tests for probe/service.py uncovered lines."""
+"""Additional coverage tests for probe/coordinator.py uncovered lines."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,12 +11,16 @@ from mlx_manager.mlx_server.models.detection import TypeDetectionResult
 async def test_audio_codec_rejection():
     """Test that audio codec models are rejected during pre-validation.
 
-    Covers lines 69-82: Audio pre-validation for unsupported codec models.
+    Covers audio pre-validation for unsupported codec models. Execution short-
+    circuits at the load_model failure step before any strategy lookup occurs.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
     mock_pool = MagicMock()
     mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
 
     with (
         patch(
@@ -26,10 +30,6 @@ async def test_audio_codec_rejection():
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
             return_value=TypeDetectionResult(ModelType.AUDIO, "config_field", "TestArch"),
-        ),
-        patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
-            return_value=MagicMock(),  # Strategy exists for AUDIO
         ),
         patch(
             "mlx_manager.services.probe.audio._detect_audio_capabilities",
@@ -59,7 +59,9 @@ async def test_audio_codec_rejection():
 async def test_strategy_probe_exception():
     """Test that exceptions during strategy.probe() are caught and yielded.
 
-    Covers lines 98-100: Exception handling in strategy probe execution.
+    Uses EMBEDDINGS model type to avoid the parser sweep (_sweep_generative_capabilities),
+    which only runs for TEXT_GEN and VISION. Covers exception handling in strategy
+    probe execution.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -69,6 +71,9 @@ async def test_strategy_probe_exception():
 
     mock_pool = MagicMock()
     mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
     mock_pool.unload_model = AsyncMock()
 
@@ -88,14 +93,14 @@ async def test_strategy_probe_exception():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
     ):
@@ -120,12 +125,16 @@ async def test_strategy_probe_exception():
 async def test_load_model_exception():
     """Test that model loading failures are caught and yielded.
 
-    Covers lines 89-92: Exception during model loading.
+    Covers exception during model loading. register_profile_settings is called
+    before get_model in the new coordinator flow, so the pool must support it.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
     mock_pool = MagicMock()
     mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(side_effect=RuntimeError("Model load failed"))
 
     with (
@@ -136,10 +145,6 @@ async def test_load_model_exception():
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
             return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
-        ),
-        patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
-            return_value=MagicMock(),
         ),
     ):
         from mlx_manager.services.probe.service import probe_model
@@ -163,7 +168,9 @@ async def test_load_model_exception():
 async def test_preloaded_model_no_db_record():
     """Test cleanup path when preloaded model has no DB record.
 
-    Covers lines 138-140: Model record not found in DB during capability update.
+    Covers the cleanup branch for preloaded models where the DB query returns
+    no record — capabilities on the loaded model stay None.
+    Uses EMBEDDINGS to skip the parser sweep.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -174,6 +181,9 @@ async def test_preloaded_model_no_db_record():
 
     mock_pool = MagicMock()
     mock_pool._models = {"test/preloaded": mock_loaded}  # Already loaded
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
     # Mock strategy that completes successfully
@@ -200,14 +210,14 @@ async def test_preloaded_model_no_db_record():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -234,7 +244,8 @@ async def test_preloaded_model_no_db_record():
 async def test_preloaded_model_no_capabilities():
     """Test cleanup path when preloaded model DB record exists but has no capabilities.
 
-    Covers line 139-140: Model record found but capabilities is None.
+    Covers the branch where the model record is found but capabilities is None —
+    capabilities on the loaded model stay None. Uses EMBEDDINGS to skip parser sweep.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -245,6 +256,9 @@ async def test_preloaded_model_no_capabilities():
 
     mock_pool = MagicMock()
     mock_pool._models = {"test/preloaded": mock_loaded}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
     async def successful_probe(*args, **kwargs):
@@ -272,14 +286,14 @@ async def test_preloaded_model_no_capabilities():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -305,7 +319,8 @@ async def test_preloaded_model_no_capabilities():
 async def test_preloaded_model_with_capabilities():
     """Test cleanup path when preloaded model DB record has capabilities.
 
-    Covers line 140: Update capabilities on loaded model.
+    Covers the branch where the loaded model's capabilities attribute is updated
+    from the freshly-probed DB record. Uses EMBEDDINGS to skip parser sweep.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -316,6 +331,9 @@ async def test_preloaded_model_with_capabilities():
 
     mock_pool = MagicMock()
     mock_pool._models = {"test/preloaded": mock_loaded}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
     async def successful_probe(*args, **kwargs):
@@ -347,14 +365,14 @@ async def test_preloaded_model_with_capabilities():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -380,7 +398,8 @@ async def test_preloaded_model_with_capabilities():
 async def test_preloaded_model_db_exception():
     """Test cleanup path when DB query raises exception.
 
-    Covers lines 141-142: Exception during capability update is caught.
+    Covers the branch where an exception during capability update is silently
+    caught and cleanup still yields 'skipped'. Uses EMBEDDINGS to skip parser sweep.
     """
     from mlx_manager.mlx_server.models.types import ModelType
 
@@ -391,6 +410,9 @@ async def test_preloaded_model_db_exception():
 
     mock_pool = MagicMock()
     mock_pool._models = {"test/preloaded": mock_loaded}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
 
     async def successful_probe(*args, **kwargs):
@@ -412,14 +434,14 @@ async def test_preloaded_model_db_exception():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
         patch(
@@ -446,9 +468,10 @@ async def test_preloaded_model_db_exception():
 async def test_save_capabilities_all_fields():
     """Test _save_capabilities with all optional fields set.
 
-    Covers lines 160, 164, 166, 168: All optional capability fields.
+    Covers all optional capability fields in the caps_dict assembly.
+    Imported from coordinator.py (where _save_capabilities now lives).
     """
-    from mlx_manager.services.probe.service import _save_capabilities
+    from mlx_manager.services.probe.coordinator import _save_capabilities
     from mlx_manager.services.probe.steps import ProbeResult
 
     result = ProbeResult(
@@ -502,8 +525,9 @@ async def test_save_capabilities_minimal_fields():
     """Test _save_capabilities with minimal fields (only model_type).
 
     Ensures that None fields are NOT included in the update dict.
+    Imported from coordinator.py (where _save_capabilities now lives).
     """
-    from mlx_manager.services.probe.service import _save_capabilities
+    from mlx_manager.services.probe.coordinator import _save_capabilities
     from mlx_manager.services.probe.steps import ProbeResult
 
     result = ProbeResult(
@@ -539,6 +563,9 @@ async def test_detect_type_exception():
     """Test that detect_type failures are caught and yielded properly."""
     mock_pool = MagicMock()
     mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
 
     with (
         patch(
@@ -570,11 +597,25 @@ async def test_detect_type_exception():
 
 @pytest.mark.asyncio
 async def test_no_strategy_for_model_type():
-    """Test graceful handling when no probe strategy exists for model type."""
+    """Test graceful handling when no probe strategy exists for model type.
+
+    In the new coordinator flow, get_probe_strategy is called AFTER load_model
+    (step 4 vs step 3). So the model will be loaded successfully before the
+    find_strategy step fails. Cleanup (unload) should still happen since the
+    model was not preloaded.
+    """
     from mlx_manager.mlx_server.models.types import ModelType
 
+    mock_loaded = MagicMock()
+    mock_loaded.model_id = "test/model"
+
     mock_pool = MagicMock()
-    mock_pool._models = {}
+    mock_pool._models = {}  # Not preloaded
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
+    mock_pool.get_model = AsyncMock(return_value=mock_loaded)
+    mock_pool.unload_model = AsyncMock()
 
     with (
         patch(
@@ -586,7 +627,7 @@ async def test_no_strategy_for_model_type():
             return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=None,  # No strategy registered!
         ),
     ):
@@ -596,20 +637,28 @@ async def test_no_strategy_for_model_type():
         async for step in probe_model("test/model"):
             steps.append(step)
 
+        # Model should be loaded successfully (strategy lookup is AFTER load)
+        load_steps = [s for s in steps if s.step == "load_model"]
+        assert any(s.status == "completed" for s in load_steps)
+
         # Should fail at find_strategy
         strategy_steps = [s for s in steps if s.step == "find_strategy"]
         assert len(strategy_steps) == 1
         assert strategy_steps[0].status == "failed"
         assert "No probe strategy registered" in strategy_steps[0].error
 
-        # Should not proceed to loading
-        load_steps = [s for s in steps if s.step == "load_model"]
-        assert len(load_steps) == 0
+        # Should not reach save_results
+        save_steps = [s for s in steps if s.step == "save_results"]
+        assert len(save_steps) == 0
 
 
 @pytest.mark.asyncio
 async def test_save_results_exception():
-    """Test that save_results failures are caught and yielded."""
+    """Test that save_results failures are caught and yielded.
+
+    Uses EMBEDDINGS model type to avoid the parser sweep so the test stays
+    focused on the save_results error path and subsequent cleanup.
+    """
     from mlx_manager.mlx_server.models.types import ModelType
 
     mock_loaded = MagicMock()
@@ -618,6 +667,9 @@ async def test_save_results_exception():
 
     mock_pool = MagicMock()
     mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
     mock_pool.unload_model = AsyncMock()
 
@@ -635,14 +687,14 @@ async def test_save_results_exception():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             side_effect=Exception("Database connection lost"),
         ),
     ):
@@ -666,7 +718,11 @@ async def test_save_results_exception():
 
 @pytest.mark.asyncio
 async def test_cleanup_exception():
-    """Test that cleanup failures are caught and yielded."""
+    """Test that cleanup failures are caught and yielded.
+
+    Uses EMBEDDINGS model type to avoid the parser sweep so the test stays
+    focused on the cleanup error path.
+    """
     from mlx_manager.mlx_server.models.types import ModelType
 
     mock_loaded = MagicMock()
@@ -675,6 +731,9 @@ async def test_cleanup_exception():
 
     mock_pool = MagicMock()
     mock_pool._models = {}  # Not preloaded
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+    mock_pool.unregister_profile_settings = MagicMock()
     mock_pool.get_model = AsyncMock(return_value=mock_loaded)
     mock_pool.unload_model = AsyncMock(side_effect=Exception("Unload failed"))
 
@@ -692,14 +751,14 @@ async def test_cleanup_exception():
         ),
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
-            return_value=TypeDetectionResult(ModelType.TEXT_GEN, "config_field", "TestArch"),
+            return_value=TypeDetectionResult(ModelType.EMBEDDINGS, "config_field", "TestArch"),
         ),
         patch(
-            "mlx_manager.services.probe.service.get_probe_strategy",
+            "mlx_manager.services.probe.strategy.get_probe_strategy",
             return_value=mock_strategy,
         ),
         patch(
-            "mlx_manager.services.probe.service._save_capabilities",
+            "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
     ):

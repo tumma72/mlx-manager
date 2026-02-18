@@ -92,9 +92,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_server_profiles_name"), "server_profiles", ["name"], unique=False
-    )
+    op.create_index(op.f("ix_server_profiles_name"), "server_profiles", ["name"], unique=False)
 
     # --- settings ---
     op.create_table(
@@ -131,9 +129,7 @@ def upgrade() -> None:
             server_default="'percent'",
         ),
         sa.Column("memory_limit_value", sa.Integer(), nullable=False, server_default="80"),
-        sa.Column(
-            "eviction_policy", sa.String(), nullable=False, server_default="'lru'"
-        ),
+        sa.Column("eviction_policy", sa.String(), nullable=False, server_default="'lru'"),
         sa.Column("preload_models", sa.String(), nullable=False, server_default="'[]'"),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -144,9 +140,7 @@ def upgrade() -> None:
         "backend_mappings",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("model_pattern", sa.String(), nullable=False),
-        sa.Column(
-            "pattern_type", sa.String(), nullable=False, server_default="'exact'"
-        ),
+        sa.Column("pattern_type", sa.String(), nullable=False, server_default="'exact'"),
         sa.Column("backend_type", sa.String(), nullable=False),
         sa.Column("backend_model", sa.String(), nullable=True),
         sa.Column("fallback_backend", sa.String(), nullable=True),
@@ -167,9 +161,7 @@ def upgrade() -> None:
         "cloud_credentials",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("backend_type", sa.String(), nullable=False),
-        sa.Column(
-            "api_type", sa.String(), nullable=False, server_default="'openai'"
-        ),
+        sa.Column("api_type", sa.String(), nullable=False, server_default="'openai'"),
         sa.Column("name", sa.String(), nullable=False, server_default="''"),
         sa.Column("encrypted_api_key", sa.String(), nullable=False),
         sa.Column("base_url", sa.String(), nullable=True),
@@ -196,16 +188,10 @@ def upgrade() -> None:
         sa.Column("error_message", sa.String(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_audit_logs_request_id"), "audit_logs", ["request_id"]
-    )
-    op.create_index(
-        op.f("ix_audit_logs_timestamp"), "audit_logs", ["timestamp"]
-    )
+    op.create_index(op.f("ix_audit_logs_request_id"), "audit_logs", ["request_id"])
+    op.create_index(op.f("ix_audit_logs_timestamp"), "audit_logs", ["timestamp"])
     op.create_index(op.f("ix_audit_logs_model"), "audit_logs", ["model"])
-    op.create_index(
-        op.f("ix_audit_logs_backend_type"), "audit_logs", ["backend_type"]
-    )
+    op.create_index(op.f("ix_audit_logs_backend_type"), "audit_logs", ["backend_type"])
     op.create_index(op.f("ix_audit_logs_status"), "audit_logs", ["status"])
 
 
@@ -218,17 +204,13 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_audit_logs_request_id"), table_name="audit_logs")
     op.drop_table("audit_logs")
     op.drop_table("cloud_credentials")
-    op.drop_index(
-        op.f("ix_backend_mappings_model_pattern"), table_name="backend_mappings"
-    )
+    op.drop_index(op.f("ix_backend_mappings_model_pattern"), table_name="backend_mappings")
     op.drop_table("backend_mappings")
     op.drop_table("server_config")
     op.drop_index(op.f("ix_downloads_model_id"), table_name="downloads")
     op.drop_table("downloads")
     op.drop_table("settings")
-    op.drop_index(
-        op.f("ix_server_profiles_name"), table_name="server_profiles"
-    )
+    op.drop_index(op.f("ix_server_profiles_name"), table_name="server_profiles")
     op.drop_table("server_profiles")
     op.drop_index(op.f("ix_models_repo_id"), table_name="models")
     op.drop_table("models")

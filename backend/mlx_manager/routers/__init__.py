@@ -10,7 +10,6 @@ from mlx_manager.routers.system import router as system_router
 
 __all__ = [
     "auth_router",
-
     "mcp_router",
     "models_router",
     "profiles_router",

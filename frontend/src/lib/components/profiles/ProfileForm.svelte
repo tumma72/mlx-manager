@@ -57,7 +57,9 @@
 	// Load downloaded models on mount
 	onMount(async () => {
 		try {
-			downloadedModels = await modelsApi.listDownloaded();
+			const allModels = await modelsApi.listDownloaded();
+			// Only show probed models — unprobed models can't be used in profiles
+			downloadedModels = allModels.filter((m) => m.probed_at != null);
 		} catch (e) {
 			console.error('Failed to load models:', e);
 		} finally {
@@ -178,7 +180,7 @@
 					<p class="text-sm text-muted-foreground">Loading models...</p>
 				{:else if downloadedModels.length === 0}
 					<p class="text-sm text-muted-foreground">
-						No models downloaded. <a href={resolve('/models')} class="text-primary hover:underline">Download a model</a> first.
+						No probed models available. <a href={resolve('/models')} class="text-primary hover:underline">Download and probe a model</a> first.
 					</p>
 				{:else}
 					<select
