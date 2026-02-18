@@ -1,5 +1,7 @@
 """Tests for the profiles API router."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -475,3 +477,297 @@ async def test_update_profile_clear_model_options(auth_client, sample_profile_da
     data = response.json()
     # Empty dict should be stored as None
     assert data["model_options"] is None
+
+
+# ============================================================================
+# Audio Profile Tests (uncovered lines 219-220, 226, 249-254)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_audio_profile_with_audio_params(auth_client):
+    """Test creating an audio profile sets audio params correctly (lines 249-254).
+
+    Creates an audio model in the DB, then creates a profile with audio defaults.
+    """
+    from mlx_manager.database import get_db
+    from mlx_manager.main import app
+    from mlx_manager.models import Model
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    # Add an audio model to the DB by calling the session directly via the override
+    audio_model_id = None
+    db_override = app.dependency_overrides.get(get_db)
+    if db_override is not None:
+        async for session in db_override():
+            audio_model = Model(
+                repo_id="mlx-community/Kokoro-82M-4bit",
+                model_type="audio",
+                local_path="/fake/path/to/kokoro",
+            )
+            session.add(audio_model)
+            await session.commit()
+            await session.refresh(audio_model)
+            audio_model_id = audio_model.id
+            break
+
+    if audio_model_id is None:
+        pytest.skip("Could not create audio model via DB override")
+
+    # Create an audio profile with audio defaults
+    profile_data = {
+        "name": "Audio Profile",
+        "model_id": audio_model_id,
+        "audio": {
+            "tts_voice": "af_sky",
+            "tts_speed": 1.0,
+            "tts_sample_rate": 24000,
+            "stt_language": "en",
+        },
+    }
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 201
+
+    data = response.json()
+    assert data["profile_type"] == "audio"
+    assert data["audio"] is not None
+    assert data["audio"]["tts_voice"] == "af_sky"
+    assert data["audio"]["tts_speed"] == 1.0
+    assert data["audio"]["tts_sample_rate"] == 24000
+    assert data["audio"]["stt_language"] == "en"
+    assert data["inference"] is None
+    assert data["context"] is None
+
+
+@pytest.mark.asyncio
+async def test_audio_profile_rejects_inference_params(auth_client):
+    """Test that audio profile with inference params raises 422 (lines 219-220)."""
+    from mlx_manager.database import get_db
+    from mlx_manager.main import app
+    from mlx_manager.models import Model
+
+    # Add an audio model to the DB
+    audio_model_id = None
+    db_override = app.dependency_overrides.get(get_db)
+    if db_override is not None:
+        async for session in db_override():
+            audio_model = Model(
+                repo_id="mlx-community/Kokoro-audio-test",
+                model_type="audio",
+                local_path="/fake/path/to/audio",
+            )
+            session.add(audio_model)
+            await session.commit()
+            await session.refresh(audio_model)
+            audio_model_id = audio_model.id
+            break
+
+    if audio_model_id is None:
+        pytest.skip("Could not create audio model via DB override")
+
+    # Try to create audio profile with inference params - should fail
+    profile_data = {
+        "name": "Bad Audio Profile",
+        "model_id": audio_model_id,
+        "inference": {"temperature": 0.7, "max_tokens": 100},
+    }
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 422
+    assert "Audio profiles cannot have inference" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_audio_profile_rejects_context_params(auth_client):
+    """Test that audio profile with context params raises 422 (lines 219-220)."""
+    from mlx_manager.database import get_db
+    from mlx_manager.main import app
+    from mlx_manager.models import Model
+
+    # Add an audio model to the DB
+    audio_model_id = None
+    db_override = app.dependency_overrides.get(get_db)
+    if db_override is not None:
+        async for session in db_override():
+            audio_model = Model(
+                repo_id="mlx-community/Kokoro-audio-ctx-test",
+                model_type="audio",
+                local_path="/fake/path/to/audio-ctx",
+            )
+            session.add(audio_model)
+            await session.commit()
+            await session.refresh(audio_model)
+            audio_model_id = audio_model.id
+            break
+
+    if audio_model_id is None:
+        pytest.skip("Could not create audio model via DB override")
+
+    # Try to create audio profile with context params - should fail
+    profile_data = {
+        "name": "Bad Audio Context Profile",
+        "model_id": audio_model_id,
+        "context": {"system_prompt": "You are a TTS system."},
+    }
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 422
+    assert "Audio profiles cannot have inference" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_inference_profile_rejects_audio_params(auth_client):
+    """Test that inference profile with audio params raises 422 (line 226)."""
+    # model_id=1 is text-gen which becomes inference profile type
+    profile_data = {
+        "name": "Bad Inference Profile",
+        "model_id": 1,
+        "audio": {
+            "tts_voice": "af_sky",
+        },
+    }
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 422
+    assert "Inference profiles cannot have audio" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_vision_profile_rejects_audio_params(auth_client):
+    """Test that vision profile (inference type) with audio params raises 422 (line 226)."""
+    # model_id=3 is vision which becomes inference profile type
+    profile_data = {
+        "name": "Bad Vision Profile",
+        "model_id": 3,
+        "audio": {
+            "tts_voice": "voice1",
+        },
+    }
+    response = await auth_client.post("/api/profiles", json=profile_data)
+    assert response.status_code == 422
+    assert "Inference profiles cannot have audio" in response.json()["detail"]
+
+
+# ============================================================================
+# _validate_profile_fields and _apply_dto_to_entity - Direct function tests
+# ============================================================================
+
+
+def test_validate_profile_fields_audio_with_inference_raises():
+    """_validate_profile_fields raises 422 when audio profile has inference params (lines 219-220)."""
+    from fastapi import HTTPException
+    from mlx_manager.routers.profiles import _validate_profile_fields
+    from mlx_manager.models.profiles import ExecutionProfileCreate
+    from mlx_manager.models.value_objects import InferenceParams
+
+    dto = ExecutionProfileCreate(
+        name="test",
+        model_id=1,
+        inference=InferenceParams(temperature=0.7),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_profile_fields("audio", dto)
+    assert exc_info.value.status_code == 422
+    assert "Audio profiles" in exc_info.value.detail
+
+
+def test_validate_profile_fields_audio_with_context_raises():
+    """_validate_profile_fields raises 422 when audio profile has context params (lines 219-220)."""
+    from fastapi import HTTPException
+    from mlx_manager.routers.profiles import _validate_profile_fields
+    from mlx_manager.models.profiles import ExecutionProfileCreate
+    from mlx_manager.models.value_objects import InferenceContext
+
+    dto = ExecutionProfileCreate(
+        name="test",
+        model_id=1,
+        context=InferenceContext(system_prompt="hello"),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_profile_fields("audio", dto)
+    assert exc_info.value.status_code == 422
+    assert "Audio profiles" in exc_info.value.detail
+
+
+def test_validate_profile_fields_inference_with_audio_raises():
+    """_validate_profile_fields raises 422 when inference profile has audio params (line 226)."""
+    from fastapi import HTTPException
+    from mlx_manager.routers.profiles import _validate_profile_fields
+    from mlx_manager.models.profiles import ExecutionProfileCreate
+    from mlx_manager.models.value_objects import AudioDefaults
+
+    dto = ExecutionProfileCreate(
+        name="test",
+        model_id=1,
+        audio=AudioDefaults(tts_voice="voice1"),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_profile_fields("inference", dto)
+    assert exc_info.value.status_code == 422
+    assert "Inference profiles" in exc_info.value.detail
+
+
+def test_validate_profile_fields_base_with_audio_raises():
+    """_validate_profile_fields raises 422 when base profile has audio params (line 226)."""
+    from fastapi import HTTPException
+    from mlx_manager.routers.profiles import _validate_profile_fields
+    from mlx_manager.models.profiles import ExecutionProfileCreate
+    from mlx_manager.models.value_objects import AudioDefaults
+
+    dto = ExecutionProfileCreate(
+        name="test",
+        model_id=1,
+        audio=AudioDefaults(tts_voice="voice1"),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_profile_fields("base", dto)
+    assert exc_info.value.status_code == 422
+    assert "Inference profiles" in exc_info.value.detail
+
+
+def test_apply_dto_to_entity_audio_sets_tts_stt_fields():
+    """_apply_dto_to_entity sets tts/stt fields on audio profile (lines 249-254)."""
+    from mlx_manager.routers.profiles import _apply_dto_to_entity
+    from mlx_manager.models.profiles import ExecutionProfile, ExecutionProfileCreate
+    from mlx_manager.models.value_objects import AudioDefaults
+
+    profile = ExecutionProfile(
+        name="audio-profile",
+        model_id=1,
+        profile_type="audio",
+    )
+    dto = ExecutionProfileCreate(
+        name="audio-profile",
+        model_id=1,
+        audio=AudioDefaults(
+            tts_voice="af_sky",
+            tts_speed=1.2,
+            tts_sample_rate=22050,
+            stt_language="en",
+        ),
+    )
+    _apply_dto_to_entity(profile, dto, "audio")
+
+    assert profile.default_tts_voice == "af_sky"
+    assert profile.default_tts_speed == 1.2
+    assert profile.default_tts_sample_rate == 22050
+    assert profile.default_stt_language == "en"
+
+
+def test_apply_dto_to_entity_audio_with_none_audio_does_not_set():
+    """_apply_dto_to_entity does not set tts/stt fields when audio is None."""
+    from mlx_manager.routers.profiles import _apply_dto_to_entity
+    from mlx_manager.models.profiles import ExecutionProfile, ExecutionProfileCreate
+
+    profile = ExecutionProfile(
+        name="audio-profile",
+        model_id=1,
+        profile_type="audio",
+        default_tts_voice="original_voice",
+    )
+    dto = ExecutionProfileCreate(
+        name="audio-profile",
+        model_id=1,
+        audio=None,
+    )
+    _apply_dto_to_entity(profile, dto, "audio")
+
+    # Fields should remain unchanged
+    assert profile.default_tts_voice == "original_voice"

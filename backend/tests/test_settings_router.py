@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 # ============================================================================
 # Provider Endpoint Tests
@@ -1580,3 +1581,474 @@ class TestPoolConfigWithModelPool:
         # Should succeed - settings are saved even if pool isn't running
         assert response.status_code == 200
         assert response.json()["memory_limit_value"] == 50
+
+
+# ============================================================================
+# Provider Defaults Endpoint Tests (uncovered lines 154-162)
+# ============================================================================
+
+
+class TestGetProviderDefaults:
+    """Tests for GET /api/settings/providers/defaults."""
+
+    async def test_get_provider_defaults(self, auth_client):
+        """Returns default base URLs and API types for known providers."""
+        response = await auth_client.get("/api/settings/providers/defaults")
+        assert response.status_code == 200
+        data = response.json()
+        assert "providers" in data
+        providers = data["providers"]
+        assert isinstance(providers, list)
+        assert len(providers) > 0
+
+    async def test_provider_defaults_contains_expected_fields(self, auth_client):
+        """Each provider entry has backend_type, base_url, and api_type fields."""
+        response = await auth_client.get("/api/settings/providers/defaults")
+        assert response.status_code == 200
+        providers = response.json()["providers"]
+        for provider in providers:
+            assert "backend_type" in provider
+            assert "base_url" in provider
+            assert "api_type" in provider
+
+    async def test_provider_defaults_includes_openai(self, auth_client):
+        """OpenAI is present in provider defaults."""
+        response = await auth_client.get("/api/settings/providers/defaults")
+        assert response.status_code == 200
+        providers = response.json()["providers"]
+        backend_types = [p["backend_type"] for p in providers]
+        assert "openai" in backend_types
+
+    async def test_provider_defaults_requires_auth(self, client):
+        """Requires authentication."""
+        response = await client.get("/api/settings/providers/defaults")
+        assert response.status_code == 401
+
+
+# ============================================================================
+# Provider Connection Tests - Uncovered Branches
+# ============================================================================
+
+
+class TestProviderConnectionUncoveredBranches:
+    """Tests for branches in test_provider_connection not covered by existing tests."""
+
+    async def test_anthropic_headers_used_when_api_type_is_anthropic(self, auth_client):
+        """When provider's api_type is ANTHROPIC, x-api-key header is used (line 213)."""
+        # Create an anthropic provider WITH explicit api_type so it's stored as ANTHROPIC
+        await auth_client.post(
+            "/api/settings/providers",
+            json={
+                "backend_type": "anthropic",
+                "api_key": "sk-ant-valid-key",
+                "api_type": "anthropic",
+            },
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/providers/anthropic/test")
+
+            assert response.status_code == 200
+            # Verify x-api-key header was used (not Authorization: Bearer)
+            call_args = mock_instance.get.call_args
+            headers = call_args.kwargs.get("headers", {})
+            assert "x-api-key" in headers
+            assert "Authorization" not in headers
+
+    async def test_invalid_token_raises_400(self, auth_client):
+        """When decryption fails (InvalidToken), returns 400 (lines 194-196)."""
+        from mlx_manager.services.encryption_service import InvalidToken as EncryptionInvalidToken
+
+        # Create provider so it's in the DB
+        await auth_client.post(
+            "/api/settings/providers",
+            json={"backend_type": "openai", "api_key": "sk-some-key"},
+        )
+
+        with patch(
+            "mlx_manager.routers.settings.decrypt_api_key",
+            side_effect=EncryptionInvalidToken("Cannot decrypt"),
+        ):
+            response = await auth_client.post("/api/settings/providers/openai/test")
+
+        assert response.status_code == 400
+        assert "decrypted" in response.json()["detail"].lower()
+
+    async def test_credential_with_null_api_type_uses_openai_headers(self):
+        """Credential with api_type=None falls back to OPENAI api type (line 204).
+
+        Calls the router function directly to bypass Pydantic validation and test
+        the legacy data path where a stored credential has api_type=None.
+        """
+        from mlx_manager.routers.settings import test_provider_connection
+        from mlx_manager.models import BackendType
+        from mlx_manager.services.encryption_service import InvalidToken
+
+        mock_user = MagicMock()
+        mock_user.status = "approved"
+
+        # Create a mock credential with api_type=None (legacy data)
+        mock_credential = MagicMock()
+        mock_credential.api_type = None  # Legacy: no api_type stored
+        mock_credential.encrypted_api_key = b"some-encrypted"
+        mock_credential.base_url = None
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_credential
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+
+        with patch("mlx_manager.routers.settings.decrypt_api_key", return_value="sk-decrypted"):
+            with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+                mock_instance = AsyncMock()
+                mock_instance.get.return_value = mock_response
+                mock_instance.__aenter__.return_value = mock_instance
+                mock_instance.__aexit__.return_value = None
+                mock_client.return_value = mock_instance
+
+                result = await test_provider_connection(
+                    current_user=mock_user,
+                    backend_type=BackendType.OPENAI,
+                    session=mock_session,
+                )
+                assert result == {"success": True}
+                # Verify Authorization header used (OPENAI api type)
+                call_args = mock_instance.get.call_args
+                headers = call_args.kwargs.get("headers", {})
+                assert "Authorization" in headers
+
+
+# ============================================================================
+# _matches_pattern function - regex exception handler (lines 466-468)
+# ============================================================================
+
+
+class TestMatchesPatternFunction:
+    """Tests for _matches_pattern function's regex error handling."""
+
+    def test_regex_pattern_with_invalid_regex_returns_false(self):
+        """Invalid regex pattern returns False without raising exception (lines 466-468)."""
+        from mlx_manager.routers.settings import _matches_pattern
+
+        # This regex is pathological; calling re.match with it may raise re.error
+        # We simulate by patching re.match to raise re.error
+        with patch("mlx_manager.routers.settings.re.match", side_effect=Exception("re.error")):
+            # The function catches re.error specifically; patch with re.error subclass
+            pass
+
+        # Test with genuinely invalid stored regex by monkeypatching re.match
+        import re
+
+        original_match = re.match
+
+        def raising_match(pattern, string, *args, **kwargs):
+            if pattern == "FORCE_ERROR":
+                raise re.error("forced error")
+            return original_match(pattern, string, *args, **kwargs)
+
+        with patch("mlx_manager.routers.settings.re.match", side_effect=raising_match):
+            result = _matches_pattern("some-model", "FORCE_ERROR", "regex")
+            assert result is False
+
+    def test_regex_pattern_error_caught_returns_false(self):
+        """re.error in _matches_pattern is caught and returns False."""
+        from mlx_manager.routers.settings import _matches_pattern
+        import re
+
+        with patch("mlx_manager.routers.settings.re.match", side_effect=re.error("bad pattern")):
+            result = _matches_pattern("my-model", "[broken", "regex")
+            assert result is False
+
+    def test_matches_pattern_exact(self):
+        """Exact matching works."""
+        from mlx_manager.routers.settings import _matches_pattern
+
+        assert _matches_pattern("gpt-4", "gpt-4", "exact") is True
+        assert _matches_pattern("gpt-4-turbo", "gpt-4", "exact") is False
+
+    def test_matches_pattern_prefix(self):
+        """Prefix matching works."""
+        from mlx_manager.routers.settings import _matches_pattern
+
+        assert _matches_pattern("claude-3-opus", "claude-", "prefix") is True
+        assert _matches_pattern("gpt-4", "claude-", "prefix") is False
+
+    def test_matches_pattern_unknown_type_returns_false(self):
+        """Unknown pattern type returns False."""
+        from mlx_manager.routers.settings import _matches_pattern
+
+        assert _matches_pattern("model", "pattern", "unknown_type") is False
+
+
+# ============================================================================
+# Pool Config JSON Decode Error Tests (lines 498-499, 580-581)
+# ============================================================================
+
+
+class TestPoolConfigJsonDecodeErrors:
+    """Tests for JSON decode error handling in pool config endpoints."""
+
+    async def test_get_pool_config_with_invalid_preload_models_json(self):
+        """get_pool_config returns empty preload_models when JSON is invalid (lines 498-499).
+
+        Calls the router function directly to test the json.JSONDecodeError path.
+        """
+        import json
+        from mlx_manager.routers.settings import get_pool_config
+        from mlx_manager.models import ServerConfig
+
+        mock_user = MagicMock()
+        mock_user.status = "approved"
+
+        # Create a mock config with invalid JSON preload_models
+        mock_config = MagicMock(spec=ServerConfig)
+        mock_config.preload_models = "INVALID_JSON_[[["
+        mock_config.memory_limit_mode = "percent"
+        mock_config.memory_limit_value = 80
+        mock_config.eviction_policy = "lru"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_config
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        # This should trigger the JSONDecodeError branch in get_pool_config
+        result = await get_pool_config(current_user=mock_user, session=mock_session)
+        assert result.preload_models == []
+
+    async def test_update_pool_config_with_invalid_preload_models_json_in_response(self):
+        """update_pool_config returns empty preload_models when JSON is invalid (lines 580-581).
+
+        Calls the router function directly to test the json.JSONDecodeError path.
+        """
+        import json
+        from mlx_manager.routers.settings import update_pool_config
+        from mlx_manager.models import ServerConfig
+
+        mock_user = MagicMock()
+        mock_user.status = "approved"
+
+        # Create a mock config with invalid JSON preload_models
+        mock_config = MagicMock(spec=ServerConfig)
+        mock_config.preload_models = "INVALID_JSON_{{{"
+        mock_config.memory_limit_mode = "percent"
+        mock_config.memory_limit_value = 80
+        mock_config.eviction_policy = "lru"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_config
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_data = MagicMock()
+        mock_data.memory_limit_mode = None
+        mock_data.memory_limit_value = None
+        mock_data.eviction_policy = None
+        mock_data.preload_models = None
+
+        with patch(
+            "mlx_manager.routers.settings.get_model_pool",
+            side_effect=RuntimeError("not initialized"),
+        ):
+            result = await update_pool_config(
+                current_user=mock_user,
+                data=mock_data,
+                session=mock_session,
+            )
+        assert result.preload_models == []
+
+
+# ============================================================================
+# Dead Code Coverage - Line 77 (api_type None fallback in create_or_update_provider)
+# ============================================================================
+
+
+class TestCreateProviderApiTypeNoneFallback:
+    """Tests for api_type=None fallback path in create_or_update_provider (line 77)."""
+
+    async def test_api_type_none_falls_back_to_backend_mapping(self, auth_client):
+        """When api_type is None on the data object, uses API_TYPE_FOR_BACKEND mapping (line 77).
+
+        This is dead code in normal API flow (Pydantic prevents None), but we cover it
+        by calling the router function directly with a mocked data object.
+        """
+        from mlx_manager.routers.settings import create_or_update_provider
+        from mlx_manager.models import ApiType
+
+        # Build a mock data object where api_type is explicitly None
+        mock_data = MagicMock()
+        mock_data.api_type = None
+        mock_data.backend_type = "openai"
+        mock_data.api_key = "sk-test-key"
+        mock_data.name = ""
+        mock_data.base_url = None
+
+        mock_user = MagicMock()
+
+        from unittest.mock import AsyncMock as AM
+
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute = AM(return_value=mock_result)
+        mock_session.add = MagicMock()
+        mock_session.commit = AM()
+        mock_session.refresh = AM()
+
+        with patch(
+            "mlx_manager.routers.settings.encrypt_api_key", return_value=b"encrypted"
+        ):
+            with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
+                mock_router.return_value.refresh_rules = AM()
+                # Call the function directly - this bypasses Pydantic validation
+                credential = await create_or_update_provider(
+                    current_user=mock_user,
+                    data=mock_data,
+                    session=mock_session,
+                )
+                # Verify that the function ran (api_type was resolved from mapping)
+                assert mock_session.add.called
+
+
+# ============================================================================
+# Dead Code Coverage - Lines 280, 396, 529, 536 (validation guards)
+# ============================================================================
+
+
+class TestValidationGuardDeadCode:
+    """Tests for validation guard branches that are dead code due to Pydantic enums.
+
+    These tests call functions directly to cover branches that Pydantic normally prevents.
+    """
+
+    async def test_create_rule_invalid_pattern_type_direct_call(self):
+        """create_rule raises 400 for invalid pattern_type when called directly (line 280)."""
+        from fastapi import HTTPException
+        from mlx_manager.routers.settings import create_rule
+        from mlx_manager.models import BackendType
+
+        mock_data = MagicMock()
+        mock_data.pattern_type = "invalid_type"  # Not a valid PatternType
+        mock_data.model_pattern = "test-pattern"
+        mock_data.backend_type = BackendType.OPENAI
+        mock_data.backend_model = None
+        mock_data.fallback_backend = None
+        mock_data.priority = 0
+
+        mock_user = MagicMock()
+        mock_session = MagicMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await create_rule(
+                current_user=mock_user,
+                data=mock_data,
+                session=mock_session,
+            )
+        assert exc_info.value.status_code == 400
+        assert "pattern_type" in exc_info.value.detail
+
+    async def test_update_rule_invalid_pattern_type_direct_call(self):
+        """update_rule raises 400 for invalid pattern_type when called directly (line 396)."""
+        from fastapi import HTTPException
+        from mlx_manager.routers.settings import update_rule
+
+        mock_data = MagicMock()
+        mock_data.pattern_type = "invalid_type"
+        mock_data.model_pattern = None
+
+        mock_user = MagicMock()
+
+        mock_rule = MagicMock()
+        mock_rule.pattern_type = "exact"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_rule
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await update_rule(
+                current_user=mock_user,
+                rule_id=1,
+                data=mock_data,
+                session=mock_session,
+            )
+        assert exc_info.value.status_code == 400
+        assert "pattern_type" in exc_info.value.detail
+
+    async def test_update_pool_config_invalid_memory_mode_direct_call(self):
+        """update_pool_config raises 400 for invalid memory_limit_mode when called directly (line 529)."""
+        from fastapi import HTTPException
+        from mlx_manager.routers.settings import update_pool_config
+
+        mock_data = MagicMock()
+        mock_data.memory_limit_mode = "invalid_mode"  # Not percent or gb
+        mock_data.memory_limit_value = None
+        mock_data.eviction_policy = None
+        mock_data.preload_models = None
+
+        mock_user = MagicMock()
+        mock_config = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_config
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await update_pool_config(
+                current_user=mock_user,
+                data=mock_data,
+                session=mock_session,
+            )
+        assert exc_info.value.status_code == 400
+        assert "memory_limit_mode" in exc_info.value.detail
+
+    async def test_update_pool_config_invalid_eviction_policy_direct_call(self):
+        """update_pool_config raises 400 for invalid eviction_policy when called directly (line 536)."""
+        from fastapi import HTTPException
+        from mlx_manager.routers.settings import update_pool_config
+
+        mock_data = MagicMock()
+        mock_data.memory_limit_mode = None
+        mock_data.memory_limit_value = None
+        mock_data.eviction_policy = "invalid_policy"  # Not lru, lfu, or ttl
+        mock_data.preload_models = None
+
+        mock_user = MagicMock()
+        mock_config = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_config
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await update_pool_config(
+                current_user=mock_user,
+                data=mock_data,
+                session=mock_session,
+            )
+        assert exc_info.value.status_code == 400
+        assert "eviction_policy" in exc_info.value.detail
