@@ -2120,6 +2120,7 @@ async def test_vision_probe_processor_exception():
 @pytest.mark.asyncio
 async def test_text_gen_probe_template_delivery():
     """Test Attempt 1: template delivery returns ('template', parser_id)."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2136,9 +2137,11 @@ async def test_text_gen_probe_template_delivery():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value=(
-                '<tool_call>\n{"name": "get_weather",'
-                ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+            return_value=TextResult(
+                content=(
+                    '<tool_call>\n{"name": "get_weather",'
+                    ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+                )
             ),
         ),
         patch(
@@ -2155,6 +2158,7 @@ async def test_text_gen_probe_template_delivery():
 @pytest.mark.asyncio
 async def test_text_gen_probe_adapter_delivery():
     """Test Attempt 2: adapter delivery returns ('adapter', parser_id)."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2172,9 +2176,11 @@ async def test_text_gen_probe_adapter_delivery():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value=(
-                '<tool_call>\n{"name": "get_weather",'
-                ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+            return_value=TextResult(
+                content=(
+                    '<tool_call>\n{"name": "get_weather",'
+                    ' "arguments": {"location": "Tokyo"}}\n</tool_call>'
+                )
             ),
         ),
         patch(
@@ -2191,6 +2197,7 @@ async def test_text_gen_probe_adapter_delivery():
 @pytest.mark.asyncio
 async def test_text_gen_probe_fallback_parser_sweep():
     """Test fallback: adapter parser fails, sweep finds different parser."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2203,8 +2210,10 @@ async def test_text_gen_probe_fallback_parser_sweep():
     mock_adapter.tool_parser.parser_id = "glm4_native"
     mock_adapter.tool_parser.validates.return_value = False  # Adapter parser fails
 
-    output = (
-        '<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>'
+    output = TextResult(
+        content=(
+            '<tool_call>\n{"name": "get_weather", "arguments": {"location": "Tokyo"}}\n</tool_call>'
+        )
     )
 
     with (
@@ -2284,6 +2293,7 @@ async def test_text_gen_probe_no_adapter_skips():
 @pytest.mark.asyncio
 async def test_text_gen_probe_thinking_generation_based():
     """Test generation-based thinking verification via _verify_thinking_support."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2293,7 +2303,6 @@ async def test_text_gen_probe_thinking_generation_based():
     mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
     mock_adapter.thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser.extract.return_value = "Some thinking content"
 
     with (
         patch(
@@ -2303,7 +2312,11 @@ async def test_text_gen_probe_thinking_generation_based():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value="<think>Some thinking content</think>The answer is 4.",
+            # reasoning_content set by process_complete when thinking was extracted
+            return_value=TextResult(
+                content="The answer is 4.",
+                reasoning_content="Some thinking content",
+            ),
         ),
     ):
         probe = TextGenProbe()
@@ -2317,6 +2330,7 @@ async def test_text_gen_probe_thinking_generation_based():
 @pytest.mark.asyncio
 async def test_text_gen_probe_thinking_unverified_without_tags():
     """Test thinking: reports unverified when template supports but no tags in output."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2336,7 +2350,8 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value="The answer is 4.",  # No thinking tags
+            # No reasoning_content extracted → model didn't think
+            return_value=TextResult(content="The answer is 4."),
         ),
     ):
         probe = TextGenProbe()
@@ -2352,6 +2367,7 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
 @pytest.mark.asyncio
 async def test_text_gen_probe_no_tool_support_detected():
     """Test probe reports no tool support when both attempts fail."""
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
@@ -2371,7 +2387,7 @@ async def test_text_gen_probe_no_tool_support_detected():
         patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            return_value="I don't know how to call tools.",
+            return_value=TextResult(content="I don't know how to call tools."),
         ),
     ):
         probe = TextGenProbe()
@@ -2735,7 +2751,7 @@ async def test_vision_probe_generate_with_tools_and_thinking():
         mock_loaded, messages, tools=tools, template_options={"enable_thinking": True}
     )
 
-    assert result == "Generated response"
+    assert result.content == "Generated response"
     # Verify adapter was configured with template_options before generation
     mock_adapter.configure.assert_called()
     configure_calls = mock_adapter.configure.call_args_list
@@ -2778,7 +2794,7 @@ async def test_vision_probe_messages_to_text_with_list_content():
     probe = VisionProbe()
     result = await probe._generate(mock_loaded, messages)
 
-    assert result == "Response"
+    assert result.content == "Response"
     # Verify adapter.generate was called with messages
     mock_adapter.generate.assert_called_once()
     call_kwargs = mock_adapter.generate.call_args[1]

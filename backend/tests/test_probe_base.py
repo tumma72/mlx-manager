@@ -31,9 +31,12 @@ class ConcreteProbe(GenerativeProbe):
         messages: list[dict],
         tools: list[dict] | None = None,
         template_options: dict[str, Any] | None = None,
-    ) -> str:
-        """Mock implementation returns predefined output."""
-        return self._mock_output
+        max_tokens: int = 800,
+    ):
+        """Mock implementation returns predefined output as TextResult."""
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        return TextResult(content=self._mock_output)
 
     def set_mock_output(self, output: str):
         """Helper to set output for test assertions."""

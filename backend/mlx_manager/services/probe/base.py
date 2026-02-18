@@ -20,6 +20,7 @@ from .steps import DiagnosticCategory, DiagnosticLevel, ProbeDiagnostic, ProbeRe
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
 
@@ -106,11 +107,13 @@ class GenerativeProbe(BaseProbe):
         tools: list[dict] | None = None,
         template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
-    ) -> str:
+    ) -> TextResult:
         """Generate a response using the adapter's full pipeline.
 
         Uses adapter.generate() which handles prepare_input → generation
         → process_complete for all model types (text and vision).
+        Returns the full TextResult so callers can inspect reasoning_content
+        directly instead of re-parsing already-cleaned content.
         """
         adapter = loaded.adapter
         if adapter is None:
@@ -122,14 +125,13 @@ class GenerativeProbe(BaseProbe):
             adapter.configure(template_options=template_options)
 
         try:
-            result = await adapter.generate(
+            return await adapter.generate(
                 model=loaded.model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=0.7,
                 tools=tools,
             )
-            return result.content
         finally:
             # Reset template options after probe
             if template_options is not None:
@@ -159,47 +161,76 @@ class GenerativeProbe(BaseProbe):
         from mlx_manager.mlx_server.parsers import THINKING_PARSERS
 
         diagnostics: list[ProbeDiagnostic] = []
-        messages = [{"role": "user", "content": "What is 2 + 2? Answer briefly."}]
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "A farmer has 3 foxes and 5 chickens. Each fox eats 2 chickens per day. "
+                    "After 1 day, how many chickens are left? Explain your reasoning step by step."
+                ),
+            }
+        ]
         has_enable_thinking = template_params is not None and "enable_thinking" in template_params
 
         # --- Path A: explicit enable_thinking parameter ---
         if has_enable_thinking:
             try:
-                output = await self._generate(
+                gen_result = await self._generate(
                     loaded, messages, template_options={"enable_thinking": True}
                 )
+                output = gen_result.content
+                # process_complete already extracted thinking into reasoning_content
+                if gen_result.reasoning_content is not None:
+                    parser_id = adapter.thinking_parser.parser_id
+                    logger.info(
+                        "Thinking probe: Path A verified via reasoning_content (parser={})",
+                        parser_id,
+                    )
+                    return (True, parser_id, diagnostics)
+                # Fall back: try all parsers on the cleaned content
                 result = self._match_thinking_parsers(output, adapter, THINKING_PARSERS)
                 if result is not None:
                     return (True, result, diagnostics)
 
-                # Check for unclosed tags (truncation)
+                # Check for unclosed tags (truncation — tags were started but cut off)
                 unclosed_tag = _find_unclosed_thinking_tag(output)
                 if unclosed_tag:
                     logger.info(
                         "Thinking probe: found unclosed <{}> tag, retrying with more tokens",
                         unclosed_tag,
                     )
+                    _farmer_prompt = (
+                        "A farmer has 3 foxes and 5 chickens. "
+                        "Each fox eats 2 chickens per day. "
+                        "After 1 day, how many chickens are left? "
+                        "Explain your reasoning step by step."
+                    )
                     retry_messages = [
-                        {"role": "user", "content": "What is 2 + 2? Answer briefly."},
+                        {"role": "user", "content": _farmer_prompt},
                         {"role": "assistant", "content": output},
                         {
                             "role": "user",
                             "content": (
-                                "Your previous response was truncated because you "
-                                "weren't concise enough as requested. Please answer "
-                                "the same question again, keeping your response "
-                                "very brief."
+                                "Your previous response was truncated. Please answer "
+                                "the same question again more concisely."
                             ),
                         },
                     ]
-                    retry_output = await self._generate(
+                    retry_gen = await self._generate(
                         loaded,
                         retry_messages,
                         template_options={"enable_thinking": True},
                         max_tokens=2000,
                     )
+                    if retry_gen.reasoning_content is not None:
+                        parser_id = adapter.thinking_parser.parser_id
+                        logger.info(
+                            "Thinking probe: verified on retry via reasoning_content (parser={})",
+                            parser_id,
+                        )
+                        return (True, parser_id, diagnostics)
                     retry_result = self._match_thinking_parsers(
-                        retry_output, adapter, THINKING_PARSERS
+                        retry_gen.content, adapter, THINKING_PARSERS
                     )
                     if retry_result is not None:
                         logger.info(
@@ -213,7 +244,15 @@ class GenerativeProbe(BaseProbe):
 
         # --- Path B: always-thinks detection (no enable_thinking) ---
         try:
-            output = await self._generate(loaded, messages)
+            gen_result = await self._generate(loaded, messages)
+            output = gen_result.content
+            if gen_result.reasoning_content is not None:
+                parser_id = adapter.thinking_parser.parser_id
+                logger.info(
+                    "Thinking probe: always-thinks via reasoning_content (parser={})",
+                    parser_id,
+                )
+                return (True, parser_id, diagnostics)
             result = self._match_thinking_parsers(output, adapter, THINKING_PARSERS)
             if result is not None:
                 logger.info(
@@ -250,6 +289,24 @@ class GenerativeProbe(BaseProbe):
                         "verify thinking support — no thinking tags found in output"
                     ),
                     details={
+                        "registered_parsers": [pid for pid in THINKING_PARSERS if pid != "null"],
+                    },
+                )
+            )
+
+        # Check for unknown thinking tag patterns
+        unknown_tag = _detect_unknown_thinking_tags(output)
+        if unknown_tag:
+            diagnostics.append(
+                ProbeDiagnostic(
+                    level=DiagnosticLevel.WARNING,
+                    category=DiagnosticCategory.THINKING_DIALECT,
+                    message=(
+                        f"Detected unknown thinking-like tag <{unknown_tag}> in output "
+                        f"that doesn't match any registered parser"
+                    ),
+                    details={
+                        "detected_tag": unknown_tag,
                         "registered_parsers": [pid for pid in THINKING_PARSERS if pid != "null"],
                     },
                 )
@@ -312,9 +369,10 @@ class GenerativeProbe(BaseProbe):
         # Attempt 1: Template delivery
         if adapter.supports_native_tools() or has_native_tool_support(tokenizer):
             try:
-                last_output = await self._generate(
+                last_result = await self._generate(
                     loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
                 )
+                last_output = last_result.content
                 parser_id = _validate_tool_output(last_output, "get_weather", adapter)
                 if parser_id:
                     logger.info(
@@ -337,7 +395,8 @@ class GenerativeProbe(BaseProbe):
                     {"role": "system", "content": tool_prompt},
                     *_TOOL_PROBE_MESSAGES,
                 ]
-                last_output = await self._generate(loaded, messages_with_tools)
+                last_result = await self._generate(loaded, messages_with_tools)
+                last_output = last_result.content
                 parser_id = _validate_tool_output(last_output, "get_weather", adapter)
                 if parser_id:
                     logger.info(
@@ -356,7 +415,8 @@ class GenerativeProbe(BaseProbe):
         registered_parsers = [pid for pid in TOOL_PARSERS if pid != "null"]
         try:
             if last_output is None:
-                last_output = await self._generate(loaded, _TOOL_PROBE_MESSAGES)
+                last_gen = await self._generate(loaded, _TOOL_PROBE_MESSAGES)
+                last_output = last_gen.content
 
             # Check for partial/corrupted tool call markers
             tool_markers = [
@@ -597,6 +657,19 @@ def _find_unclosed_thinking_tag(output: str) -> str | None:
         close_re = re.compile(rf"</{tag}>", re.IGNORECASE)
         if open_re.search(output) and not close_re.search(output):
             return tag
+    return None
+
+
+_GENERIC_THINKING_RE = re.compile(r"^\s*<([a-z_]+)>([\s\S]+?)</\1>", re.IGNORECASE)
+_NON_THINKING_TAGS = {"tool_call", "function_call", "code", "output", "result"}
+
+
+def _detect_unknown_thinking_tags(output: str) -> str | None:
+    """Detect XML-like tags at start of output that look like thinking wrappers."""
+    match = _GENERIC_THINKING_RE.match(output)
+    if match:
+        tag = match.group(1).lower()
+        return None if tag in _NON_THINKING_TAGS else tag
     return None
 
 

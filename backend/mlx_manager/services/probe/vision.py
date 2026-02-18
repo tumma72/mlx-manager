@@ -18,6 +18,7 @@ from .base import GenerativeProbe
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
+    from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
 
@@ -35,7 +36,7 @@ class VisionProbe(GenerativeProbe):
         tools: list[dict] | None = None,
         template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
-    ) -> str:
+    ) -> TextResult:
         """Generate a response using adapter's vision pipeline with a synthetic test image."""
         from PIL import Image
 
@@ -52,7 +53,7 @@ class VisionProbe(GenerativeProbe):
             adapter.configure(template_options=template_options)
 
         try:
-            result = await adapter.generate(
+            return await adapter.generate(
                 model=loaded.model,
                 messages=messages,
                 max_tokens=max_tokens,
@@ -60,7 +61,6 @@ class VisionProbe(GenerativeProbe):
                 tools=tools,
                 images=[test_image],
             )
-            return result.content
         finally:
             if template_options is not None:
                 adapter.configure(template_options=None)

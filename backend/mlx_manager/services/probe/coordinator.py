@@ -376,10 +376,18 @@ class ProbingCoordinator:
         from mlx_manager.mlx_server.models.pool import ProfileSettings
         from mlx_manager.mlx_server.parsers import THINKING_PARSERS
 
-        from .base import _find_unclosed_thinking_tag
+        from .base import _detect_unknown_thinking_tags, _find_unclosed_thinking_tag
 
         diagnostics: list[ProbeDiagnostic] = []
-        messages = [{"role": "user", "content": "What is 2 + 2? Answer briefly."}]
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "A farmer has 3 foxes and 5 chickens. Each fox eats 2 chickens per day. "
+                    "After 1 day, how many chickens are left? Explain your reasoning step by step."
+                ),
+            }
+        ]
         has_enable_thinking = template_params is not None and "enable_thinking" in template_params
 
         # --- Path A: explicit enable_thinking parameter ---
@@ -395,45 +403,47 @@ class ProbingCoordinator:
                             thinking_parser_id=parser_id,
                         ),
                     )
-                    output = await strategy._generate(
+                    gen_result = await strategy._generate(
                         loaded,
                         messages,
                         template_options={"enable_thinking": True},
                     )
-                    adapter = loaded.adapter
-                    thinking_content = adapter.thinking_parser.extract(output)
-                    if thinking_content is not None:
+                    # process_complete already extracted thinking into reasoning_content
+                    if gen_result.reasoning_content is not None:
                         logger.info("Thinking probe: Path A verified (parser=%s)", parser_id)
                         return (True, parser_id, diagnostics)
 
-                    # Check for unclosed tags (truncation)
-                    unclosed_tag = _find_unclosed_thinking_tag(output)
+                    # Check for unclosed tags (truncation — tags started but output cut off)
+                    unclosed_tag = _find_unclosed_thinking_tag(gen_result.content)
                     if unclosed_tag:
                         logger.info(
                             "Thinking probe: found unclosed <%s> tag, retrying",
                             unclosed_tag,
                         )
+                        _farmer_prompt = (
+                            "A farmer has 3 foxes and 5 chickens. "
+                            "Each fox eats 2 chickens per day. "
+                            "After 1 day, how many chickens are left? "
+                            "Explain your reasoning step by step."
+                        )
                         retry_messages = [
-                            {"role": "user", "content": "What is 2 + 2? Answer briefly."},
-                            {"role": "assistant", "content": output},
+                            {"role": "user", "content": _farmer_prompt},
+                            {"role": "assistant", "content": gen_result.content},
                             {
                                 "role": "user",
                                 "content": (
-                                    "Your previous response was truncated because you "
-                                    "weren't concise enough as requested. Please answer "
-                                    "the same question again, keeping your response "
-                                    "very brief."
+                                    "Your previous response was truncated. Please answer "
+                                    "the same question again more concisely."
                                 ),
                             },
                         ]
-                        retry_output = await strategy._generate(
+                        retry_gen = await strategy._generate(
                             loaded,
                             retry_messages,
                             template_options={"enable_thinking": True},
                             max_tokens=2000,
                         )
-                        retry_content = adapter.thinking_parser.extract(retry_output)
-                        if retry_content is not None:
+                        if retry_gen.reasoning_content is not None:
                             logger.info(
                                 "Thinking probe: verified on retry (parser=%s)",
                                 parser_id,
@@ -443,6 +453,7 @@ class ProbingCoordinator:
                     logger.debug("Path A thinking with parser %s failed: %s", parser_id, e)
 
         # --- Path B: always-thinks detection (no enable_thinking) ---
+        last_output: str | None = None
         for parser_id in THINKING_PARSERS:
             if parser_id == "null":
                 continue
@@ -451,10 +462,10 @@ class ProbingCoordinator:
                     model_id,
                     ProfileSettings(thinking_parser_id=parser_id),
                 )
-                output = await strategy._generate(loaded, messages)
-                adapter = loaded.adapter
-                thinking_content = adapter.thinking_parser.extract(output)
-                if thinking_content is not None:
+                gen_result = await strategy._generate(loaded, messages)
+                last_output = gen_result.content
+                # process_complete already extracted thinking into reasoning_content
+                if gen_result.reasoning_content is not None:
                     logger.info(
                         "Thinking probe: always-thinks detected (parser=%s)",
                         parser_id,
@@ -487,6 +498,26 @@ class ProbingCoordinator:
                     },
                 )
             )
+
+        if last_output is not None:
+            unknown_tag = _detect_unknown_thinking_tags(last_output)
+            if unknown_tag:
+                diagnostics.append(
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.WARNING,
+                        category=DiagnosticCategory.THINKING_DIALECT,
+                        message=(
+                            f"Detected unknown thinking-like tag <{unknown_tag}> in output "
+                            f"that doesn't match any registered parser"
+                        ),
+                        details={
+                            "detected_tag": unknown_tag,
+                            "registered_parsers": [
+                                pid for pid in THINKING_PARSERS if pid != "null"
+                            ],
+                        },
+                    )
+                )
 
         return (False, "null", diagnostics)
 
@@ -536,9 +567,10 @@ class ProbingCoordinator:
                         model_id,
                         ProfileSettings(tool_parser_id=parser_id),
                     )
-                    last_output = await strategy._generate(
+                    gen_result = await strategy._generate(
                         loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
                     )
+                    last_output = gen_result.content
                     current_adapter = loaded.adapter
                     if current_adapter.tool_parser.validates(last_output, "get_weather"):
                         logger.info(
@@ -571,7 +603,8 @@ class ProbingCoordinator:
                         {"role": "system", "content": tool_prompt},
                         *_TOOL_PROBE_MESSAGES,
                     ]
-                    last_output = await strategy._generate(loaded, messages_with_tools)
+                    gen_result = await strategy._generate(loaded, messages_with_tools)
+                    last_output = gen_result.content
                     current_adapter = loaded.adapter
                     if current_adapter.tool_parser.validates(last_output, "get_weather"):
                         logger.info(
@@ -593,7 +626,8 @@ class ProbingCoordinator:
             if last_output is None:
                 # Reset to defaults and generate without tools
                 self._pool.register_profile_settings(model_id, ProfileSettings())
-                last_output = await strategy._generate(loaded, _TOOL_PROBE_MESSAGES)
+                gen_result = await strategy._generate(loaded, _TOOL_PROBE_MESSAGES)
+                last_output = gen_result.content
 
             tool_markers = [
                 "<tool_call>",
