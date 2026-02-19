@@ -22,4 +22,22 @@ describe("ThinkingBadge", () => {
     const badge = container.querySelector("div");
     expect(badge?.classList.contains("rounded-full")).toBe(true);
   });
+
+  it("shows checkmark when verified", () => {
+    const { container } = render(ThinkingBadge, { props: { verified: true } });
+    const badge = container.querySelector("div");
+    expect(badge?.getAttribute("title")).toBe("Verified by model probe");
+    // CheckCircle2 icon renders as an SVG
+    expect(badge?.querySelectorAll("svg").length).toBe(2);
+  });
+
+  it("does not show checkmark when not verified", () => {
+    const { container } = render(ThinkingBadge);
+    const badge = container.querySelector("div");
+    expect(badge?.getAttribute("title")).toBe(
+      "Detected from model configuration",
+    );
+    // Only Brain icon, no CheckCircle2
+    expect(badge?.querySelectorAll("svg").length).toBe(1);
+  });
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
 	import { serverStore, profileStore, authStore } from '$stores';
@@ -42,6 +43,7 @@
 	interface Message {
 		role: 'user' | 'assistant';
 		content: string | ContentPart[];
+		thinking?: string;
 		toolCalls?: ToolCallData[];
 		thinkingDuration?: number;
 	}
@@ -58,6 +60,7 @@
 	let streamingThinking = $state('');
 	let streamingResponse = $state('');
 	let thinkingDuration = $state<number | undefined>(undefined);
+	let thinkingBlockIndices = new SvelteSet<number>();
 	let streamingToolCalls = $state<ToolCallData[]>([]);
 	let retryAttempt = $state(0);
 	let retryMax = 3;
@@ -499,6 +502,8 @@
 		let currentEventType = '';
 		// Track content blocks for tool use accumulation
 		const toolBlocks: Record<number, { id: string; name: string; arguments: string }> = {};
+		// Track thinking block indices and timing
+		let thinkingStartTime: number | null = null;
 
 		while (true) {
 			const { done, value } = await reader.read();
@@ -550,6 +555,11 @@
 									name: block.name || '',
 									arguments: '',
 								};
+							} else if (block?.type === 'thinking') {
+								thinkingBlockIndices.add(data.index);
+								if (thinkingStartTime === null) {
+									thinkingStartTime = Date.now();
+								}
 							}
 							break;
 						}
@@ -557,11 +567,25 @@
 						case 'content_block_delta': {
 							const delta = data.delta;
 							if (delta?.type === 'text_delta') {
-								result.content += delta.text || '';
-								streamingResponse += delta.text || '';
+								if (thinkingBlockIndices.has(data.index)) {
+									result.thinking += delta.text || '';
+									streamingThinking += delta.text || '';
+									if (thinkingStartTime === null) {
+										thinkingStartTime = Date.now();
+									}
+								} else {
+									result.content += delta.text || '';
+									streamingResponse += delta.text || '';
+								}
 								if (!modelLoadNotified) {
 									modelLoadNotified = true;
 									serverStore.refresh();
+								}
+							} else if (delta?.type === 'thinking_delta') {
+								result.thinking += delta.thinking || '';
+								streamingThinking += delta.thinking || '';
+								if (thinkingStartTime === null) {
+									thinkingStartTime = Date.now();
 								}
 							} else if (delta?.type === 'input_json_delta') {
 								const block = toolBlocks[data.index];
@@ -583,6 +607,10 @@
 							if (stopReason === 'tool_use') {
 								result.toolCalls = Object.values(toolBlocks);
 								result.toolCallsDone = true;
+							}
+							if (thinkingStartTime !== null && result.thinkingDur === undefined) {
+								result.thinkingDur = (Date.now() - thinkingStartTime) / 1000;
+								thinkingDuration = result.thinkingDur;
 							}
 							break;
 						}
@@ -834,12 +862,10 @@
 			// Finalize message - clean the response to remove tool call JSON, special tokens
 			if (streamingResponse || streamingThinking || streamingToolCalls.length > 0) {
 				const cleanedResponse = cleanResponse(streamingResponse);
-				const finalContent = streamingThinking
-					? `<think>${streamingThinking}</think>${cleanedResponse}`
-					: cleanedResponse;
 				messages.push({
 					role: 'assistant',
-					content: finalContent,
+					content: cleanedResponse,
+					thinking: streamingThinking || undefined,
 					toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
 					thinkingDuration: thinkingDuration
 				});
@@ -919,6 +945,7 @@
 		streamingThinking = '';
 		streamingResponse = '';
 		thinkingDuration = undefined;
+		thinkingBlockIndices.clear();
 		streamingToolCalls = [];
 		loading = true;
 
@@ -955,28 +982,24 @@
 				parts.push(typeof message.content === 'string' ? message.content : '[multipart content]');
 			} else {
 				parts.push(`## Assistant`);
-				const parsed = parseThinking(message.content);
-				if (parsed.thinking) {
+				if (message.thinking) {
 					parts.push(`### Thinking${message.thinkingDuration ? ` (${message.thinkingDuration.toFixed(1)}s)` : ''}`);
-					parts.push(parsed.thinking);
+					parts.push(message.thinking);
 					parts.push('');
 				}
 				if (message.toolCalls && message.toolCalls.length > 0) {
 					parts.push(`### Tool Calls`);
 					for (const tc of message.toolCalls) {
 						parts.push(`**${tc.name}**(${tc.arguments})`);
-						if (tc.result) {
-							parts.push(`Result: ${tc.result}`);
-						}
-						if (tc.error) {
-							parts.push(`Error: ${tc.error}`);
-						}
+						if (tc.result) parts.push(`Result: ${tc.result}`);
+						if (tc.error) parts.push(`Error: ${tc.error}`);
 					}
 					parts.push('');
 				}
-				if (parsed.response) {
+				const responseContent = typeof message.content === 'string' ? message.content : '';
+				if (responseContent) {
 					parts.push(`### Response`);
-					parts.push(parsed.response);
+					parts.push(responseContent);
 				}
 			}
 			parts.push('');
@@ -997,12 +1020,11 @@
 		// Keep any partial response that was streamed
 		if (streamingResponse || streamingThinking) {
 			const cleanedResponse = cleanResponse(streamingResponse);
-			const finalContent = streamingThinking
-				? `<think>${streamingThinking}</think>${cleanedResponse}\n\n*[Generation stopped by user]*`
-				: cleanedResponse + '\n\n*[Generation stopped by user]*';
+			const stoppedResponse = cleanedResponse + '\n\n*[Generation stopped by user]*';
 			messages.push({
 				role: 'assistant',
-				content: finalContent,
+				content: stoppedResponse,
+				thinking: streamingThinking || undefined,
 				toolCalls: streamingToolCalls.length > 0 ? [...streamingToolCalls] : undefined,
 				thinkingDuration: thinkingDuration
 			});
@@ -1011,6 +1033,7 @@
 		streamingThinking = '';
 		streamingResponse = '';
 		thinkingDuration = undefined;
+		thinkingBlockIndices.clear();
 		streamingToolCalls = [];
 	}
 
@@ -1034,34 +1057,6 @@
 		return parts.length > 1 ? parts[parts.length - 1] : modelPath;
 	}
 
-	// Parse thinking content from assistant messages
-	// Supports multiple tag formats used by different model families:
-	// - <think>...</think> (Qwen3 style)
-	// - <thinking>...</thinking> (alternative format)
-	// - <reasoning>...</reasoning> (reasoning models)
-	function parseThinking(content: string | ContentPart[]): { thinking: string | null; response: string } {
-		// Content in stored messages is always string (ContentPart[] only used in API calls)
-		if (typeof content !== 'string') {
-			return { thinking: null, response: '' };
-		}
-		// Try each pattern in order of likelihood
-		const patterns = [
-			/<think>([\s\S]*?)<\/think>/,         // Qwen3 style
-			/<thinking>([\s\S]*?)<\/thinking>/,   // Alternative format
-			/<reasoning>([\s\S]*?)<\/reasoning>/, // Reasoning format
-		];
-
-		for (const pattern of patterns) {
-			const match = content.match(pattern);
-			if (match) {
-				const thinking = match[1].trim();
-				const response = content.replace(pattern, '').trim();
-				return { thinking, response };
-			}
-		}
-
-		return { thinking: null, response: content };
-	}
 
 	// Clean response text by removing tool call JSON, special tokens, etc.
 	// This handles cases where models output raw JSON tool calls inline
@@ -1215,14 +1210,13 @@
 									: 'bg-muted'}"
 							>
 								{#if message.role === 'assistant'}
-									{@const parsed = parseThinking(message.content)}
-									{#if parsed.thinking}
-										<ThinkingBubble content={parsed.thinking} duration={message.thinkingDuration} />
+									{#if message.thinking}
+										<ThinkingBubble content={message.thinking} duration={message.thinkingDuration} />
 									{/if}
 									{#if message.toolCalls && message.toolCalls.length > 0}
 										<ToolCallBubble calls={message.toolCalls} />
 									{/if}
-									<Markdown content={parsed.response} />
+									<Markdown content={typeof message.content === 'string' ? message.content : ''} />
 								{:else}
 									<p class="whitespace-pre-wrap">{typeof message.content === 'string' ? message.content : ''}</p>
 								{/if}
@@ -1300,6 +1294,7 @@
 										streamingThinking = '';
 										streamingResponse = '';
 										thinkingDuration = undefined;
+										thinkingBlockIndices.clear();
 										loading = true;
 										try {
 											const success = await sendWithRetry(lastFailedMessage.content, lastFailedMessage.attachments, 1);

@@ -9,10 +9,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter, create_adapter
-from mlx_manager.mlx_server.models.adapters.configs import FAMILY_CONFIGS, FamilyConfig
+from mlx_manager.mlx_server.models.adapters.configs import FAMILY_CONFIGS
 from mlx_manager.mlx_server.parsers import (
     HermesJsonParser,
     NullThinkingParser,

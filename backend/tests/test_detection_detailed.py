@@ -5,8 +5,6 @@ Targets: lines 213-214, 224, 234, 238-266, 287, 290, 319, 332
 
 from unittest.mock import patch
 
-import pytest
-
 from mlx_manager.mlx_server.models.detection import (
     TypeDetectionResult,
     detect_model_type,

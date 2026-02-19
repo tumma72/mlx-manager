@@ -1689,9 +1689,8 @@ class TestProviderConnectionUncoveredBranches:
         Calls the router function directly to bypass Pydantic validation and test
         the legacy data path where a stored credential has api_type=None.
         """
-        from mlx_manager.routers.settings import test_provider_connection
         from mlx_manager.models import BackendType
-        from mlx_manager.services.encryption_service import InvalidToken
+        from mlx_manager.routers.settings import test_provider_connection
 
         mock_user = MagicMock()
         mock_user.status = "approved"
@@ -1765,8 +1764,9 @@ class TestMatchesPatternFunction:
 
     def test_regex_pattern_error_caught_returns_false(self):
         """re.error in _matches_pattern is caught and returns False."""
-        from mlx_manager.routers.settings import _matches_pattern
         import re
+
+        from mlx_manager.routers.settings import _matches_pattern
 
         with patch("mlx_manager.routers.settings.re.match", side_effect=re.error("bad pattern")):
             result = _matches_pattern("my-model", "[broken", "regex")
@@ -1806,9 +1806,8 @@ class TestPoolConfigJsonDecodeErrors:
 
         Calls the router function directly to test the json.JSONDecodeError path.
         """
-        import json
-        from mlx_manager.routers.settings import get_pool_config
         from mlx_manager.models import ServerConfig
+        from mlx_manager.routers.settings import get_pool_config
 
         mock_user = MagicMock()
         mock_user.status = "approved"
@@ -1835,9 +1834,8 @@ class TestPoolConfigJsonDecodeErrors:
 
         Calls the router function directly to test the json.JSONDecodeError path.
         """
-        import json
-        from mlx_manager.routers.settings import update_pool_config
         from mlx_manager.models import ServerConfig
+        from mlx_manager.routers.settings import update_pool_config
 
         mock_user = MagicMock()
         mock_user.status = "approved"
@@ -1891,7 +1889,6 @@ class TestCreateProviderApiTypeNoneFallback:
         by calling the router function directly with a mocked data object.
         """
         from mlx_manager.routers.settings import create_or_update_provider
-        from mlx_manager.models import ApiType
 
         # Build a mock data object where api_type is explicitly None
         mock_data = MagicMock()
@@ -1942,8 +1939,9 @@ class TestValidationGuardDeadCode:
     async def test_create_rule_invalid_pattern_type_direct_call(self):
         """create_rule raises 400 for invalid pattern_type when called directly (line 280)."""
         from fastapi import HTTPException
-        from mlx_manager.routers.settings import create_rule
+
         from mlx_manager.models import BackendType
+        from mlx_manager.routers.settings import create_rule
 
         mock_data = MagicMock()
         mock_data.pattern_type = "invalid_type"  # Not a valid PatternType
@@ -1968,6 +1966,7 @@ class TestValidationGuardDeadCode:
     async def test_update_rule_invalid_pattern_type_direct_call(self):
         """update_rule raises 400 for invalid pattern_type when called directly (line 396)."""
         from fastapi import HTTPException
+
         from mlx_manager.routers.settings import update_rule
 
         mock_data = MagicMock()
@@ -1998,6 +1997,7 @@ class TestValidationGuardDeadCode:
     async def test_update_pool_config_invalid_memory_mode_direct_call(self):
         """update_pool_config raises 400 for invalid memory_limit_mode when called directly (line 529)."""
         from fastapi import HTTPException
+
         from mlx_manager.routers.settings import update_pool_config
 
         mock_data = MagicMock()
@@ -2027,6 +2027,7 @@ class TestValidationGuardDeadCode:
     async def test_update_pool_config_invalid_eviction_policy_direct_call(self):
         """update_pool_config raises 400 for invalid eviction_policy when called directly (line 536)."""
         from fastapi import HTTPException
+
         from mlx_manager.routers.settings import update_pool_config
 
         mock_data = MagicMock()

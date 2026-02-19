@@ -55,7 +55,7 @@ class ConcreteProbe(GenerativeProbe):
 
 @pytest.mark.asyncio
 async def test_verify_thinking_sweeps_all_parsers():
-    """Test that thinking verification sweeps all parsers when adapter parser fails."""
+    """Test that thinking verification sweeps all parsers on raw output."""
     probe = ConcreteProbe()
     probe.set_mock_output("<think>Some thinking here</think>")
 
@@ -65,11 +65,8 @@ async def test_verify_thinking_sweeps_all_parsers():
     mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
     mock_loaded.tokenizer = mock_tokenizer
 
-    # Mock adapter with null parser
+    # Mock adapter (not used for parser lookup in new design)
     mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "null"
-    mock_adapter.thinking_parser = mock_thinking_parser
 
     # Mock a parser that will match during sweep
     mock_sweep_parser = MagicMock()
@@ -77,15 +74,9 @@ async def test_verify_thinking_sweeps_all_parsers():
     mock_sweep_parser_instance.extract.return_value = "Some thinking here"
     mock_sweep_parser.return_value = mock_sweep_parser_instance
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=True,
-        ),
-        patch(
-            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-            {"null": MagicMock, "think_tag": mock_sweep_parser},
-        ),
+    with patch(
+        "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
+        {"null": MagicMock, "think_tag": mock_sweep_parser},
     ):
         supports, parser_id, diagnostics = await probe._verify_thinking_support(
             mock_loaded, mock_adapter
@@ -109,36 +100,27 @@ async def test_verify_thinking_fallback_when_no_parser_matches():
     mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
     mock_loaded.tokenizer = mock_tokenizer
 
-    # Mock adapter with non-null parser that doesn't match
     mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_thinking_parser.extract.return_value = None  # Doesn't match
-    mock_adapter.thinking_parser = mock_thinking_parser
 
-    # Mock sweep parser that also doesn't match
+    # Mock sweep parsers that don't match
     mock_sweep_parser = MagicMock()
     mock_sweep_parser_instance = MagicMock()
     mock_sweep_parser_instance.extract.return_value = None
     mock_sweep_parser.return_value = mock_sweep_parser_instance
 
-    # Mock another parser that also doesn't match
     mock_other_parser = MagicMock()
     mock_other_parser_instance = MagicMock()
     mock_other_parser_instance.extract.return_value = None
     mock_other_parser.return_value = mock_other_parser_instance
 
-    with (
-        patch(
-            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-            {"null": MagicMock, "think_tag": mock_sweep_parser, "reasoning_tag": mock_other_parser},
-        ),
+    with patch(
+        "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
+        {"null": MagicMock, "think_tag": mock_sweep_parser, "reasoning_tag": mock_other_parser},
     ):
         supports, parser_id, diagnostics = await probe._verify_thinking_support(
             mock_loaded, mock_adapter, template_params={"enable_thinking": {"default": True}}
         )
 
-        # Probe couldn't verify with enable_thinking, fallback to always-thinks path also failed
         assert supports is False
         assert parser_id == "null"
         # Should produce a diagnostic about unverified thinking

@@ -55,7 +55,7 @@
 			<QuantizationBadge bits={characteristics.quantization_bits} />
 		{/if}
 		{#if capabilities?.supports_thinking === true}
-			<ThinkingBadge />
+			<ThinkingBadge verified />
 		{/if}
 		{#if showToolUse}
 			<ToolUseBadge verified={toolUseVerified} />

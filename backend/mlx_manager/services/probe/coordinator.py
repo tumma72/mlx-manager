@@ -2,8 +2,8 @@
 
 Replaces the ad-hoc probe_model() orchestration with a design that:
 1. Loads models through the normal pool path (register_profile_settings + get_model)
-2. Iterates parser/config combinations via register_profile_settings() reconfiguration
-3. Keeps the model loaded once; only the adapter reconfigures per test
+2. Tests capabilities via generation with the null parser (raw text flows through)
+3. Keeps the model loaded once; thinking/tool detection scans raw output
 """
 
 from __future__ import annotations
@@ -367,18 +367,14 @@ class ProbingCoordinator:
         strategy: Any,
         template_params: dict[str, Any] | None,
     ) -> tuple[bool, str, list[ProbeDiagnostic]]:
-        """Test thinking support by iterating parser configurations.
-
-        Uses register_profile_settings() to swap thinking parsers.
-
-        Returns (supports_thinking, thinking_parser_id, diagnostics).
-        """
-        from mlx_manager.mlx_server.models.pool import ProfileSettings
+        """Detect thinking support: one generation, scan for known tag patterns."""
         from mlx_manager.mlx_server.parsers import THINKING_PARSERS
 
         from .base import _detect_unknown_thinking_tags, _find_unclosed_thinking_tag
 
         diagnostics: list[ProbeDiagnostic] = []
+        has_enable_thinking = template_params is not None and "enable_thinking" in template_params
+
         messages = [
             {
                 "role": "user",
@@ -388,103 +384,103 @@ class ProbingCoordinator:
                 ),
             }
         ]
-        has_enable_thinking = template_params is not None and "enable_thinking" in template_params
 
-        # --- Path A: explicit enable_thinking parameter ---
-        if has_enable_thinking:
-            for parser_id in THINKING_PARSERS:
-                if parser_id == "null":
-                    continue
-                try:
-                    self._pool.register_profile_settings(
-                        model_id,
-                        ProfileSettings(
-                            template_options={"enable_thinking": True},
-                            thinking_parser_id=parser_id,
-                        ),
-                    )
-                    gen_result = await strategy._generate(
-                        loaded,
-                        messages,
-                        template_options={"enable_thinking": True},
-                    )
-                    # process_complete already extracted thinking into reasoning_content
-                    if gen_result.reasoning_content is not None:
-                        logger.info("Thinking probe: Path A verified (parser=%s)", parser_id)
-                        return (True, parser_id, diagnostics)
+        # Generate with enable_thinking if the template supports it
+        template_options = {"enable_thinking": True} if has_enable_thinking else None
 
-                    # Check for unclosed tags (truncation — tags started but output cut off)
-                    unclosed_tag = _find_unclosed_thinking_tag(gen_result.content)
-                    if unclosed_tag:
-                        logger.info(
-                            "Thinking probe: found unclosed <%s> tag, retrying",
-                            unclosed_tag,
-                        )
-                        _farmer_prompt = (
-                            "A farmer has 3 foxes and 5 chickens. "
-                            "Each fox eats 2 chickens per day. "
-                            "After 1 day, how many chickens are left? "
-                            "Explain your reasoning step by step."
-                        )
-                        retry_messages = [
-                            {"role": "user", "content": _farmer_prompt},
-                            {"role": "assistant", "content": gen_result.content},
-                            {
-                                "role": "user",
-                                "content": (
-                                    "Your previous response was truncated. Please answer "
-                                    "the same question again more concisely."
-                                ),
-                            },
-                        ]
-                        retry_gen = await strategy._generate(
-                            loaded,
-                            retry_messages,
-                            template_options={"enable_thinking": True},
-                            max_tokens=2000,
-                        )
-                        if retry_gen.reasoning_content is not None:
-                            logger.info(
-                                "Thinking probe: verified on retry (parser=%s)",
-                                parser_id,
-                            )
-                            return (True, parser_id, diagnostics)
-                except Exception as e:
-                    logger.debug("Path A thinking with parser %s failed: %s", parser_id, e)
+        try:
+            gen_result = await strategy._generate(
+                loaded,
+                messages,
+                template_options=template_options,
+                max_tokens=2000,
+            )
+        except Exception as e:
+            logger.debug("Thinking probe generation failed: %s", e)
+            diagnostics.append(
+                ProbeDiagnostic(
+                    level=DiagnosticLevel.WARNING,
+                    category=DiagnosticCategory.THINKING_DIALECT,
+                    message="Thinking probe failed due to generation error",
+                    details={"error": str(e)},
+                )
+            )
+            return (False, "null", diagnostics)
 
-        # --- Path B: always-thinks detection (no enable_thinking) ---
-        last_output: str | None = None
-        for parser_id in THINKING_PARSERS:
+        raw_output = gen_result.content
+
+        # Scan raw output against each registered parser
+        for parser_id, parser_cls in THINKING_PARSERS.items():
             if parser_id == "null":
                 continue
-            try:
-                self._pool.register_profile_settings(
-                    model_id,
-                    ProfileSettings(thinking_parser_id=parser_id),
-                )
-                gen_result = await strategy._generate(loaded, messages)
-                last_output = gen_result.content
-                # process_complete already extracted thinking into reasoning_content
-                if gen_result.reasoning_content is not None:
-                    logger.info(
-                        "Thinking probe: always-thinks detected (parser=%s)",
-                        parser_id,
-                    )
-                    return (True, parser_id, diagnostics)
-            except Exception as e:
-                logger.debug("Path B thinking with parser %s failed: %s", parser_id, e)
-                diagnostics.append(
-                    ProbeDiagnostic(
-                        level=DiagnosticLevel.WARNING,
-                        category=DiagnosticCategory.THINKING_DIALECT,
-                        message="Thinking verification failed due to generation error",
-                        details={"error": str(e), "parser_id": parser_id},
-                    )
-                )
+            parser = parser_cls()
+            if parser.extract(raw_output) is not None:
+                logger.info("Thinking probe: detected (parser=%s)", parser_id)
+                return (True, parser_id, diagnostics)
 
-        # Neither path found thinking tags
-        if has_enable_thinking:
-            logger.info("Thinking probe: template has enable_thinking param but no tags found")
+        # Check for unclosed tags (model started thinking but output truncated)
+        unclosed = _find_unclosed_thinking_tag(raw_output)
+        if unclosed:
+            # Retry with more tokens
+            logger.info("Thinking probe: unclosed <%s> tag, retrying with more tokens", unclosed)
+            try:
+                retry_result = await strategy._generate(
+                    loaded,
+                    [
+                        messages[0],
+                        {"role": "assistant", "content": raw_output},
+                        {
+                            "role": "user",
+                            "content": "Please answer the same question more concisely.",
+                        },
+                    ],
+                    template_options=template_options,
+                    max_tokens=4000,
+                )
+                retry_output = retry_result.content
+                for parser_id, parser_cls in THINKING_PARSERS.items():
+                    if parser_id == "null":
+                        continue
+                    parser = parser_cls()
+                    if parser.extract(retry_output) is not None:
+                        logger.info("Thinking probe: detected on retry (parser=%s)", parser_id)
+                        return (True, parser_id, diagnostics)
+            except Exception as e:
+                logger.debug("Thinking probe retry failed: %s", e)
+
+            # Retry didn't produce a closed tag either — match unclosed tag
+            # against registered parsers' stream markers to identify the parser
+            for parser_id, parser_cls in THINKING_PARSERS.items():
+                if parser_id == "null":
+                    continue
+                parser = parser_cls()
+                for open_tag, _close_tag in parser.stream_markers:
+                    if open_tag.strip("<>").lower() == unclosed.lower():
+                        logger.info(
+                            "Thinking probe: unclosed <%s> matches parser=%s",
+                            unclosed,
+                            parser_id,
+                        )
+                        return (True, parser_id, diagnostics)
+
+        # Check for unknown tag patterns
+        unknown_tag = _detect_unknown_thinking_tags(raw_output)
+        if unknown_tag:
+            diagnostics.append(
+                ProbeDiagnostic(
+                    level=DiagnosticLevel.WARNING,
+                    category=DiagnosticCategory.THINKING_DIALECT,
+                    message=(
+                        f"Detected unknown thinking-like tag <{unknown_tag}> in output "
+                        f"that doesn't match any registered parser"
+                    ),
+                    details={
+                        "detected_tag": unknown_tag,
+                        "registered_parsers": [pid for pid in THINKING_PARSERS if pid != "null"],
+                    },
+                )
+            )
+        elif has_enable_thinking:
             diagnostics.append(
                 ProbeDiagnostic(
                     level=DiagnosticLevel.WARNING,
@@ -498,26 +494,6 @@ class ProbingCoordinator:
                     },
                 )
             )
-
-        if last_output is not None:
-            unknown_tag = _detect_unknown_thinking_tags(last_output)
-            if unknown_tag:
-                diagnostics.append(
-                    ProbeDiagnostic(
-                        level=DiagnosticLevel.WARNING,
-                        category=DiagnosticCategory.THINKING_DIALECT,
-                        message=(
-                            f"Detected unknown thinking-like tag <{unknown_tag}> in output "
-                            f"that doesn't match any registered parser"
-                        ),
-                        details={
-                            "detected_tag": unknown_tag,
-                            "registered_parsers": [
-                                pid for pid in THINKING_PARSERS if pid != "null"
-                            ],
-                        },
-                    )
-                )
 
         return (False, "null", diagnostics)
 

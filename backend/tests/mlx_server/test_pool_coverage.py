@@ -8,12 +8,9 @@ Targets:
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 
 from mlx_manager.mlx_server.models.pool import (
     LoadedModel,
@@ -21,7 +18,6 @@ from mlx_manager.mlx_server.models.pool import (
     ProfileSettings,
 )
 from mlx_manager.mlx_server.models.types import ModelType
-
 
 # ============================================================================
 # Fixtures

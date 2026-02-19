@@ -2302,21 +2302,24 @@ async def test_text_gen_probe_thinking_generation_based():
     mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
     mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
-    mock_adapter.thinking_parser.parser_id = "think_tag"
+
+    # Mock parser that matches raw output
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = "Some thinking content"
+    mock_parser_cls.return_value = mock_parser_instance
 
     with (
         patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=True,
-        ),
-        patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            # reasoning_content set by process_complete when thinking was extracted
             return_value=TextResult(
-                content="The answer is 4.",
-                reasoning_content="Some thinking content",
+                content="<think>Some thinking content</think>The answer is 4.",
             ),
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
+            {"null": MagicMock, "think_tag": mock_parser_cls},
         ),
     ):
         probe = TextGenProbe()
@@ -2325,6 +2328,51 @@ async def test_text_gen_probe_thinking_generation_based():
         )
         assert supports is True
         assert parser_id == "think_tag"
+
+
+@pytest.mark.asyncio
+async def test_text_gen_probe_thinking_unclosed_tag_matches_parser():
+    """Unclosed <think> tag matched against parser stream markers."""
+    from mlx_manager.mlx_server.models.ir import TextResult
+    from mlx_manager.services.probe.text_gen import TextGenProbe
+
+    mock_loaded = MagicMock()
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.chat_template = None
+    mock_tokenizer.tokenizer = None
+    mock_loaded.tokenizer = mock_tokenizer
+    mock_adapter = MagicMock()
+
+    # Parser that never extracts (simulates truncated output)
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = None
+    mock_parser_instance.stream_markers = [
+        ("<think>", "</think>"),
+        ("<thinking>", "</thinking>"),
+    ]
+    mock_parser_cls.return_value = mock_parser_instance
+
+    # Output has unclosed <think> — first gen AND retry both truncated
+    truncated_output = "<think>\nLet me think about this problem step by step..."
+    with (
+        patch(
+            "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
+            new_callable=AsyncMock,
+            return_value=TextResult(content=truncated_output),
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
+            {"null": MagicMock, "think_tag": mock_parser_cls},
+        ),
+    ):
+        probe = TextGenProbe()
+        supports, parser_id, diags = await probe._verify_thinking_support(
+            mock_loaded, mock_adapter
+        )
+        assert supports is True
+        assert parser_id == "think_tag"
+        assert len(diags) == 0
 
 
 @pytest.mark.asyncio
@@ -2339,19 +2387,23 @@ async def test_text_gen_probe_thinking_unverified_without_tags():
     mock_tokenizer.tokenizer = None  # Prevent processor.tokenizer fallback
     mock_loaded.tokenizer = mock_tokenizer
     mock_adapter = MagicMock()
-    mock_adapter.thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser.extract.return_value = None  # No tags in output
+
+    # Mock parser that doesn't match
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = None
+    mock_parser_cls.return_value = mock_parser_instance
 
     with (
         patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_thinking_support",
-            return_value=True,
-        ),
-        patch(
             "mlx_manager.services.probe.text_gen.TextGenProbe._generate",
             new_callable=AsyncMock,
-            # No reasoning_content extracted → model didn't think
+            # No thinking tags in output
             return_value=TextResult(content="The answer is 4."),
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
+            {"null": MagicMock, "think_tag": mock_parser_cls},
         ),
     ):
         probe = TextGenProbe()

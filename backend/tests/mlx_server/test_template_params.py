@@ -103,8 +103,22 @@ def test_both_params_in_template():
     assert result["keep_past_thinking"].default is False
 
 
-def test_pattern2_detection_without_set_default():
-    """Template using {% if enable_thinking %} without set...default detected via Pattern 2."""
+def test_qwen3_is_defined_pattern():
+    """Qwen3 uses 'is defined' pattern which regex missed but Jinja AST catches."""
+    template = """
+    {%- if enable_thinking is defined and enable_thinking is false %}
+    {%- set enable_thinking = false -%}
+    {%- else %}
+    {%- set enable_thinking = true -%}
+    {%- endif %}
+    """
+    tokenizer = MockTokenizer(template)
+    result = discover_template_params(tokenizer)
+    assert "enable_thinking" in result
+
+
+def test_jinja_ast_detection_without_set_default():
+    """Template using {% if enable_thinking %} without set...default detected via Jinja AST."""
     template = """
     {% for message in messages %}
     {% if enable_thinking %}
@@ -123,8 +137,8 @@ def test_pattern2_detection_without_set_default():
     assert result["enable_thinking"].name == "enable_thinking"
 
 
-def test_pattern2_with_variable_reference():
-    """Template using {{ enable_thinking }} should be detected via Pattern 2."""
+def test_jinja_ast_with_variable_reference():
+    """Template using {{ enable_thinking }} should be detected via Jinja AST."""
     template = """
     {% for message in messages %}
     <meta thinking="{{ enable_thinking }}">

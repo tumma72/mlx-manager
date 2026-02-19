@@ -1,6 +1,5 @@
 """Tests for the profiles API router."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -490,10 +489,10 @@ async def test_create_audio_profile_with_audio_params(auth_client):
 
     Creates an audio model in the DB, then creates a profile with audio defaults.
     """
+
     from mlx_manager.database import get_db
     from mlx_manager.main import app
     from mlx_manager.models import Model
-    from sqlalchemy.ext.asyncio import AsyncSession
 
     # Add an audio model to the DB by calling the session directly via the override
     audio_model_id = None
@@ -653,9 +652,10 @@ async def test_vision_profile_rejects_audio_params(auth_client):
 def test_validate_profile_fields_audio_with_inference_raises():
     """_validate_profile_fields raises 422 when audio profile has inference params (lines 219-220)."""
     from fastapi import HTTPException
-    from mlx_manager.routers.profiles import _validate_profile_fields
+
     from mlx_manager.models.profiles import ExecutionProfileCreate
     from mlx_manager.models.value_objects import InferenceParams
+    from mlx_manager.routers.profiles import _validate_profile_fields
 
     dto = ExecutionProfileCreate(
         name="test",
@@ -671,9 +671,10 @@ def test_validate_profile_fields_audio_with_inference_raises():
 def test_validate_profile_fields_audio_with_context_raises():
     """_validate_profile_fields raises 422 when audio profile has context params (lines 219-220)."""
     from fastapi import HTTPException
-    from mlx_manager.routers.profiles import _validate_profile_fields
+
     from mlx_manager.models.profiles import ExecutionProfileCreate
     from mlx_manager.models.value_objects import InferenceContext
+    from mlx_manager.routers.profiles import _validate_profile_fields
 
     dto = ExecutionProfileCreate(
         name="test",
@@ -689,9 +690,10 @@ def test_validate_profile_fields_audio_with_context_raises():
 def test_validate_profile_fields_inference_with_audio_raises():
     """_validate_profile_fields raises 422 when inference profile has audio params (line 226)."""
     from fastapi import HTTPException
-    from mlx_manager.routers.profiles import _validate_profile_fields
+
     from mlx_manager.models.profiles import ExecutionProfileCreate
     from mlx_manager.models.value_objects import AudioDefaults
+    from mlx_manager.routers.profiles import _validate_profile_fields
 
     dto = ExecutionProfileCreate(
         name="test",
@@ -707,9 +709,10 @@ def test_validate_profile_fields_inference_with_audio_raises():
 def test_validate_profile_fields_base_with_audio_raises():
     """_validate_profile_fields raises 422 when base profile has audio params (line 226)."""
     from fastapi import HTTPException
-    from mlx_manager.routers.profiles import _validate_profile_fields
+
     from mlx_manager.models.profiles import ExecutionProfileCreate
     from mlx_manager.models.value_objects import AudioDefaults
+    from mlx_manager.routers.profiles import _validate_profile_fields
 
     dto = ExecutionProfileCreate(
         name="test",
@@ -724,9 +727,9 @@ def test_validate_profile_fields_base_with_audio_raises():
 
 def test_apply_dto_to_entity_audio_sets_tts_stt_fields():
     """_apply_dto_to_entity sets tts/stt fields on audio profile (lines 249-254)."""
-    from mlx_manager.routers.profiles import _apply_dto_to_entity
     from mlx_manager.models.profiles import ExecutionProfile, ExecutionProfileCreate
     from mlx_manager.models.value_objects import AudioDefaults
+    from mlx_manager.routers.profiles import _apply_dto_to_entity
 
     profile = ExecutionProfile(
         name="audio-profile",
@@ -753,8 +756,8 @@ def test_apply_dto_to_entity_audio_sets_tts_stt_fields():
 
 def test_apply_dto_to_entity_audio_with_none_audio_does_not_set():
     """_apply_dto_to_entity does not set tts/stt fields when audio is None."""
-    from mlx_manager.routers.profiles import _apply_dto_to_entity
     from mlx_manager.models.profiles import ExecutionProfile, ExecutionProfileCreate
+    from mlx_manager.routers.profiles import _apply_dto_to_entity
 
     profile = ExecutionProfile(
         name="audio-profile",

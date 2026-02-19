@@ -36,18 +36,18 @@ def qwen_template(
 ) -> str:
     """Apply Qwen template with enable_thinking support."""
     opts = template_options or {}
-    enable_thinking = opts.get("enable_thinking", True)
     kwargs: dict[str, Any] = {
         "add_generation_prompt": add_generation_prompt,
         "tokenize": False,
-        "enable_thinking": enable_thinking,
     }
+    if "enable_thinking" in opts:
+        kwargs["enable_thinking"] = opts["enable_thinking"]
     if native_tools:
         kwargs["tools"] = native_tools
     try:
         return cast(str, tokenizer.apply_chat_template(messages, **kwargs))
     except (TypeError, ValueError, KeyError, AttributeError):
-        del kwargs["enable_thinking"]
+        kwargs.pop("enable_thinking", None)
         return cast(str, tokenizer.apply_chat_template(messages, **kwargs))
 
 
@@ -245,10 +245,7 @@ def hermes_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, A
             converted.append(
                 {
                     "role": "user",
-                    "content": (
-                        f"[Tool Result for {tool_call_id}]\n"
-                        f"{content}\n[End Tool Result]"
-                    ),
+                    "content": (f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]"),
                 }
             )
         elif role == "assistant" and msg.get("tool_calls"):
@@ -279,10 +276,7 @@ def llama_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, An
             converted.append(
                 {
                     "role": "user",
-                    "content": (
-                        f"[Tool Result for {tool_call_id}]\n"
-                        f"{content}\n[End Tool Result]"
-                    ),
+                    "content": (f"[Tool Result for {tool_call_id}]\n{content}\n[End Tool Result]"),
                 }
             )
         elif role == "assistant" and msg.get("tool_calls"):

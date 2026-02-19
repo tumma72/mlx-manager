@@ -552,8 +552,6 @@ async def test_start_endpoint_profile_no_model(auth_client):
 @pytest.mark.asyncio
 async def test_start_endpoint_with_invalid_model_options(auth_client, sample_profile_data):
     """Test start endpoint with invalid JSON in model_options is handled gracefully (lines 282-287)."""
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from sqlalchemy.orm import sessionmaker
 
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)

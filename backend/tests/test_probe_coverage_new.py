@@ -10,7 +10,6 @@ Targets uncovered lines in:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,11 +20,8 @@ from mlx_manager.services.probe.base import (
     GenerativeProbe,
     _find_unclosed_thinking_tag,
     _has_tokenization_artifacts,
-    _detect_unknown_xml_tags,
-    _validate_tool_output,
 )
-from mlx_manager.services.probe.steps import ProbeResult, ProbeStep
-
+from mlx_manager.services.probe.steps import ProbeResult
 
 # ---------------------------------------------------------------------------
 # Concrete probe for testing GenerativeProbe methods
@@ -145,17 +141,18 @@ async def test_generate_returns_text_result():
 
 
 @pytest.mark.asyncio
-async def test_verify_thinking_path_a_succeeds_immediately():
-    """Path A: thinking detected directly without retry."""
+async def test_verify_thinking_succeeds_with_parser_match():
+    """Thinking detected when parser matches raw output."""
     from mlx_manager.mlx_server.models.ir import TextResult
 
     call_count = 0
 
-    async def generate_with_tags(loaded, messages, tools=None, template_options=None, max_tokens=800):
+    async def generate_with_tags(
+        loaded, messages, tools=None, template_options=None, max_tokens=800
+    ):
         nonlocal call_count
         call_count += 1
-        # reasoning_content is set by process_complete when thinking tags are found
-        return TextResult(content="Answer: 4", reasoning_content="Some reasoning")
+        return TextResult(content="<think>Some reasoning</think>Answer: 4")
 
     probe = SimpleProbe()
     probe._generate = generate_with_tags
@@ -164,13 +161,16 @@ async def test_verify_thinking_path_a_succeeds_immediately():
     mock_loaded.tokenizer = MagicMock()
 
     mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
+
+    # Mock parser that matches
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = "Some reasoning"
+    mock_parser_cls.return_value = mock_parser_instance
 
     with patch(
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-        {"null": MagicMock, "think_tag": MagicMock},
+        {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
         supports, parser_id, diags = await probe._verify_thinking_support(
             mock_loaded,
@@ -184,8 +184,8 @@ async def test_verify_thinking_path_a_succeeds_immediately():
 
 
 @pytest.mark.asyncio
-async def test_verify_thinking_path_a_unclosed_tag_retry_succeeds():
-    """Path A: unclosed thinking tag triggers retry; retry succeeds."""
+async def test_verify_thinking_unclosed_tag_retry_succeeds():
+    """Unclosed thinking tag triggers retry; retry succeeds."""
     from mlx_manager.mlx_server.models.ir import TextResult
 
     calls = []
@@ -195,11 +195,11 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_succeeds():
     ):
         calls.append(len(messages))
         if len(messages) == 1:
-            # Unclosed tag remains in content (process_complete failed to extract)
+            # Unclosed tag in raw output
             return TextResult(content="<think>Thinking without closing tag")
         else:
-            # Retry: thinking fully extracted
-            return TextResult(content="Answer", reasoning_content="Complete thinking")
+            # Retry: complete tags in raw output
+            return TextResult(content="<think>Complete thinking</think>Answer")
 
     probe = SimpleProbe()
     probe._generate = generate_with_unclosed_then_complete
@@ -208,16 +208,19 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_succeeds():
     mock_loaded.tokenizer = MagicMock()
 
     mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    # extract() returns None for unclosed content (parser can't extract incomplete tags)
-    mock_thinking_parser.extract = MagicMock(return_value=None)
-    mock_adapter.thinking_parser = mock_thinking_parser
 
-    # Mock a sweep parser that also can't extract from unclosed content
+    # Mock parser: fails on unclosed, succeeds on complete
     mock_parser_cls = MagicMock()
+    extract_calls = [0]
+
+    def extract_side_effect(text):
+        extract_calls[0] += 1
+        if "</think>" in text:
+            return "Complete thinking"
+        return None
+
     mock_parser_instance = MagicMock()
-    mock_parser_instance.extract = MagicMock(return_value=None)
+    mock_parser_instance.extract = MagicMock(side_effect=extract_side_effect)
     mock_parser_cls.return_value = mock_parser_instance
 
     with patch(
@@ -236,15 +239,15 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_succeeds():
 
 
 @pytest.mark.asyncio
-async def test_verify_thinking_path_a_unclosed_tag_retry_fails():
-    """Path A: unclosed tag retry fails → falls through to Path B."""
+async def test_verify_thinking_unclosed_tag_retry_fails():
+    """Unclosed tag retry also fails -> not detected, diagnostic emitted."""
     from mlx_manager.mlx_server.models.ir import TextResult
 
     calls = []
 
     async def always_unclosed(loaded, messages, tools=None, template_options=None, max_tokens=800):
         calls.append(True)
-        # Always returns unclosed tag in content, no reasoning_content extracted
+        # Always returns unclosed tag in raw output
         return TextResult(content="<think>Always unclosed")
 
     probe = SimpleProbe()
@@ -254,10 +257,6 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_fails():
     mock_loaded.tokenizer = MagicMock()
 
     mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "null"
-    mock_thinking_parser.extract = MagicMock(return_value=None)
-    mock_adapter.thinking_parser = mock_thinking_parser
 
     mock_parser_cls = MagicMock()
     mock_parser_instance = MagicMock()
@@ -274,10 +273,12 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_fails():
             template_params={"enable_thinking": {"default": True}},
         )
 
-    # Should fall through to Path B and also fail → no thinking
     assert supports is False
     assert parser_id == "null"
-    assert len(calls) >= 2  # At least initial + retry (Path A); may also run Path B
+    assert len(calls) == 2  # Initial + retry
+    # Should have diagnostic about enable_thinking but no tags found
+    assert len(diags) == 1
+    assert "enable_thinking" in diags[0].message
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +291,9 @@ async def test_verify_thinking_path_a_unclosed_tag_retry_fails():
 async def test_verify_tool_template_delivery_exception_handled():
     """Template delivery exception is caught and falls through to adapter delivery."""
 
-    async def raise_on_generate(loaded, messages, tools=None, template_options=None, max_tokens=800):
+    async def raise_on_generate(
+        loaded, messages, tools=None, template_options=None, max_tokens=800
+    ):
         raise RuntimeError("Template generation failed")
 
     probe = SimpleProbe()
@@ -305,12 +308,15 @@ async def test_verify_tool_template_delivery_exception_handled():
     mock_adapter.tool_parser.parser_id = "null"
     mock_adapter.format_tools_for_prompt.return_value = None  # No adapter delivery either
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=True,
-    ), patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock, "xml_tag": MagicMock},
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock, "xml_tag": MagicMock},
+        ),
     ):
         tool_format, parser_id, diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
 
@@ -346,15 +352,19 @@ async def test_verify_tool_adapter_delivery_exception_handled():
     mock_adapter.tool_parser.parser_id = "null"
     mock_adapter.format_tools_for_prompt.return_value = "Tools: get_weather"
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=True,
-    ), patch(
-        "mlx_manager.services.probe.base._validate_tool_output",
-        return_value=None,
-    ), patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock, "xml_tag": MagicMock},
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._validate_tool_output",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock, "xml_tag": MagicMock},
+        ),
     ):
         tool_format, parser_id, diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
 
@@ -395,7 +405,9 @@ async def test_verify_tool_tokenization_artifacts_diagnostic():
     sp_marker = "\u2581"  # ▁
 
     async def generate_garbled(loaded, messages, tools=None, template_options=None, max_tokens=800):
-        return TextResult(content=f"<tool_call>{sp_marker}get{sp_marker}_weather{sp_marker}</tool_call>")
+        return TextResult(
+            content=f"<tool_call>{sp_marker}get{sp_marker}_weather{sp_marker}</tool_call>"
+        )
 
     probe = SimpleProbe()
     probe._generate = generate_garbled
@@ -409,12 +421,15 @@ async def test_verify_tool_tokenization_artifacts_diagnostic():
     mock_adapter.tool_parser.parser_id = "null"
     mock_adapter.format_tools_for_prompt.return_value = None
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
-    ), patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
     ):
         tool_format, parser_id, diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
 
@@ -455,12 +470,15 @@ async def test_verify_tool_diagnostic_scan_exception_handled():
     mock_adapter.tool_parser.parser_id = "null"
     mock_adapter.format_tools_for_prompt.return_value = None
 
-    with patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
-    ), patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
+    with (
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
     ):
         # Should not raise - exception is caught
         tool_format, parser_id, diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
@@ -615,8 +633,15 @@ async def test_probe_generative_capabilities_discovers_template_params():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value=mock_params,
         ),
-        patch.object(probe, "_verify_thinking_support", new_callable=AsyncMock, return_value=(False, "null", [])),
-        patch.object(probe, "_verify_tool_support", new_callable=AsyncMock, return_value=(None, None, [])),
+        patch.object(
+            probe,
+            "_verify_thinking_support",
+            new_callable=AsyncMock,
+            return_value=(False, "null", []),
+        ),
+        patch.object(
+            probe, "_verify_tool_support", new_callable=AsyncMock, return_value=(None, None, [])
+        ),
     ):
         steps = []
         async for step in probe._probe_generative_capabilities("test/model", mock_loaded, result):
@@ -634,7 +659,11 @@ async def test_probe_generative_capabilities_discovers_template_params():
 @pytest.mark.asyncio
 async def test_probe_generative_capabilities_tool_success_with_diagnostics():
     """Tool results with diagnostics are accumulated in result (lines 562-566)."""
-    from mlx_manager.services.probe.steps import ProbeDiagnostic, DiagnosticLevel, DiagnosticCategory
+    from mlx_manager.services.probe.steps import (
+        DiagnosticCategory,
+        DiagnosticLevel,
+        ProbeDiagnostic,
+    )
 
     probe = SimpleProbe()
 
@@ -663,8 +692,18 @@ async def test_probe_generative_capabilities_tool_success_with_diagnostics():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value={},
         ),
-        patch.object(probe, "_verify_thinking_support", new_callable=AsyncMock, return_value=(False, "null", [])),
-        patch.object(probe, "_verify_tool_support", new_callable=AsyncMock, return_value=("template", "xml_tag", [mock_diag])),
+        patch.object(
+            probe,
+            "_verify_thinking_support",
+            new_callable=AsyncMock,
+            return_value=(False, "null", []),
+        ),
+        patch.object(
+            probe,
+            "_verify_tool_support",
+            new_callable=AsyncMock,
+            return_value=("template", "xml_tag", [mock_diag]),
+        ),
     ):
         steps = []
         async for step in probe._probe_generative_capabilities("test/model", mock_loaded, result):
@@ -745,9 +784,10 @@ async def test_vision_probe_generate_raises_when_no_adapter():
 @pytest.mark.asyncio
 async def test_vision_probe_generate_with_template_options():
     """VisionProbe._generate returns full TextResult and configures template_options."""
+    from PIL import Image
+
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.vision import VisionProbe
-    from PIL import Image
 
     probe = VisionProbe()
 
@@ -878,12 +918,11 @@ async def test_embeddings_probe_encoding_returns_none():
 @pytest.mark.asyncio
 async def test_embeddings_probe_normalization_exception():
     """EmbeddingsProbe handles normalization check exception (lines 72-74)."""
-    from mlx_manager.services.probe.embeddings import EmbeddingsProbe, _encode_text
+    from mlx_manager.services.probe.embeddings import EmbeddingsProbe
 
     probe = EmbeddingsProbe()
 
     # First call returns a valid embedding, second call raises for similarity test
-    mock_adapter = MagicMock()
     mock_embedding_result = MagicMock()
     mock_embedding_result.embeddings = [[0.6, 0.8]]  # Normalized embedding
     mock_similarity_result = MagicMock()
@@ -965,12 +1004,15 @@ async def test_text_gen_probe_context_check_exception():
     mock_loaded = MagicMock()
     mock_loaded.size_gb = 4.0
 
-    with patch(
-        "mlx_manager.services.probe.text_gen._estimate_practical_max_tokens",
-        side_effect=RuntimeError("Context estimation failed"),
-    ), patch(
-        "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
-        return_value="qwen",
+    with (
+        patch(
+            "mlx_manager.services.probe.text_gen._estimate_practical_max_tokens",
+            side_effect=RuntimeError("Context estimation failed"),
+        ),
+        patch(
+            "mlx_manager.mlx_server.models.adapters.registry.detect_model_family",
+            return_value="qwen",
+        ),
     ):
         result = ProbeResult()
         steps = []
@@ -1032,7 +1074,7 @@ async def test_coordinator_sweep_no_adapter():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_default_family_with_architecture():
-    """_sweep_generative_capabilities default family creates diagnostic with architecture (lines 256-259)."""
+    """Default family creates diagnostic with architecture."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
@@ -1077,7 +1119,7 @@ async def test_coordinator_sweep_default_family_with_architecture():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_detects_family_when_none():
-    """_sweep_generative_capabilities detects model family when result.model_family is None (line 246)."""
+    """Detects model family when result.model_family is None."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
@@ -1117,7 +1159,7 @@ async def test_coordinator_sweep_detects_family_when_none():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_discovers_template_params():
-    """_sweep_generative_capabilities discovers template params when tokenizer is present (lines 305-306)."""
+    """Discovers template params when tokenizer is present."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
@@ -1155,21 +1197,17 @@ async def test_coordinator_sweep_discovers_template_params():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value=mock_params,
         ),
-        patch(
-            "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-            {"null": MagicMock},
+        patch.object(
+            coordinator,
+            "_sweep_thinking",
+            new_callable=AsyncMock,
+            return_value=(False, "null", []),
         ),
-        patch(
-            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-            {"null": MagicMock},
-        ),
-        patch(
-            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-            return_value=False,
-        ),
-        patch(
-            "mlx_manager.services.probe.base._find_unclosed_thinking_tag",
-            return_value=None,
+        patch.object(
+            coordinator,
+            "_sweep_tools",
+            new_callable=AsyncMock,
+            return_value=(None, None, []),
         ),
     ):
         steps = []
@@ -1188,37 +1226,35 @@ async def test_coordinator_sweep_discovers_template_params():
 
 
 @pytest.mark.asyncio
-async def test_coordinator_sweep_thinking_path_a_success():
-    """_sweep_thinking Path A: thinking detected with enable_thinking param."""
+async def test_coordinator_sweep_thinking_success_with_parser_match():
+    """_sweep_thinking: thinking detected when parser matches raw output."""
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
     mock_pool._models = {}
     mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
 
     coordinator = ProbingCoordinator(mock_pool)
 
-    mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
-
     mock_loaded = MagicMock()
-    mock_loaded.adapter = mock_adapter
 
     mock_strategy = MagicMock()
-    # reasoning_content is set by process_complete when thinking is successfully extracted
     mock_strategy._generate = AsyncMock(
-        return_value=TextResult(content="Answer", reasoning_content="Some thinking content")
+        return_value=TextResult(content="<think>Some thinking content</think>Answer")
     )
 
     template_params = {"enable_thinking": {"default": True}}
 
+    # Mock parser that matches
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = "Some thinking content"
+    mock_parser_cls.return_value = mock_parser_instance
+
     with patch(
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-        {"null": MagicMock, "think_tag": MagicMock},
+        {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
         supports, parser_id, diags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
@@ -1230,15 +1266,14 @@ async def test_coordinator_sweep_thinking_path_a_success():
 
 
 @pytest.mark.asyncio
-async def test_coordinator_sweep_thinking_path_a_unclosed_retry():
-    """_sweep_thinking Path A: retry on unclosed tag."""
+async def test_coordinator_sweep_thinking_unclosed_retry():
+    """_sweep_thinking: retry on unclosed tag succeeds."""
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
     mock_pool._models = {}
     mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
 
     coordinator = ProbingCoordinator(mock_pool)
 
@@ -1247,27 +1282,33 @@ async def test_coordinator_sweep_thinking_path_a_unclosed_retry():
     async def generate_with_retry(*args, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
-            # Unclosed: content has the unclosed tag, no reasoning_content extracted
+            # Unclosed tag in raw output
             return TextResult(content="<think>Unclosed thinking")
-        # Retry: fully extracted
-        return TextResult(content="Answer", reasoning_content="Complete thinking")
-
-    mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
+        # Retry: complete tags in raw output
+        return TextResult(content="<think>Complete thinking</think>Answer")
 
     mock_loaded = MagicMock()
-    mock_loaded.adapter = mock_adapter
 
     mock_strategy = MagicMock()
     mock_strategy._generate = generate_with_retry
 
     template_params = {"enable_thinking": {"default": True}}
 
+    # Mock parser: fails on unclosed, succeeds on complete
+    mock_parser_cls = MagicMock()
+
+    def extract_side_effect(text):
+        if "</think>" in text:
+            return "Complete thinking"
+        return None
+
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract = MagicMock(side_effect=extract_side_effect)
+    mock_parser_cls.return_value = mock_parser_instance
+
     with patch(
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-        {"null": MagicMock, "think_tag": MagicMock},
+        {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
         supports, parser_id, diags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
@@ -1278,38 +1319,37 @@ async def test_coordinator_sweep_thinking_path_a_unclosed_retry():
 
 
 @pytest.mark.asyncio
-async def test_coordinator_sweep_thinking_path_b_always_thinks():
-    """_sweep_thinking Path B: always-thinks detection."""
+async def test_coordinator_sweep_thinking_always_thinks():
+    """_sweep_thinking: always-thinks detection (no enable_thinking param)."""
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
     mock_pool._models = {}
     mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
 
     coordinator = ProbingCoordinator(mock_pool)
 
-    mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
-
     mock_loaded = MagicMock()
-    mock_loaded.adapter = mock_adapter
 
     mock_strategy = MagicMock()
-    # reasoning_content set → thinking detected even without enable_thinking
+    # Raw output has thinking tags
     mock_strategy._generate = AsyncMock(
-        return_value=TextResult(content="Answer", reasoning_content="Always thinking")
+        return_value=TextResult(content="<think>Always thinking</think>Answer")
     )
 
-    # No enable_thinking in template_params → goes directly to Path B
+    # No enable_thinking in template_params
     template_params = None
+
+    # Mock parser that matches
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = "Always thinking"
+    mock_parser_cls.return_value = mock_parser_instance
 
     with patch(
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-        {"null": MagicMock, "think_tag": MagicMock},
+        {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
         supports, parser_id, diags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
@@ -1328,27 +1368,26 @@ async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagno
     mock_pool = MagicMock()
     mock_pool._models = {}
     mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
 
     coordinator = ProbingCoordinator(mock_pool)
 
-    mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
-
     mock_loaded = MagicMock()
-    mock_loaded.adapter = mock_adapter
 
     mock_strategy = MagicMock()
-    # No reasoning_content extracted → model didn't think despite enable_thinking
+    # Plain output without thinking tags
     mock_strategy._generate = AsyncMock(return_value=TextResult(content="The answer is 4."))
 
     template_params = {"enable_thinking": {"default": True}}
 
+    # Mock parser that doesn't match
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.extract.return_value = None
+    mock_parser_cls.return_value = mock_parser_instance
+
     with patch(
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
-        {"null": MagicMock, "think_tag": MagicMock},
+        {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
         supports, parser_id, diags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
@@ -1361,29 +1400,21 @@ async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagno
 
 
 @pytest.mark.asyncio
-async def test_coordinator_sweep_thinking_exception_in_path_b():
-    """_sweep_thinking: Path B exception produces diagnostic."""
+async def test_coordinator_sweep_thinking_generation_exception():
+    """_sweep_thinking: generation exception produces diagnostic."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
     mock_pool._models = {}
     mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
 
     coordinator = ProbingCoordinator(mock_pool)
 
-    mock_adapter = MagicMock()
-    mock_thinking_parser = MagicMock()
-    mock_thinking_parser.parser_id = "think_tag"
-    mock_adapter.thinking_parser = mock_thinking_parser
-
     mock_loaded = MagicMock()
-    mock_loaded.adapter = mock_adapter
 
     mock_strategy = MagicMock()
     mock_strategy._generate = AsyncMock(side_effect=RuntimeError("Generation failed"))
 
-    # No enable_thinking so goes directly to Path B
     template_params = None
 
     with patch(
@@ -1396,8 +1427,9 @@ async def test_coordinator_sweep_thinking_exception_in_path_b():
 
     assert supports is False
     assert parser_id == "null"
-    assert len(diags) > 0
+    assert len(diags) == 1
     assert diags[0].level.value == "warning"
+    assert "generation error" in diags[0].message.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1439,12 +1471,15 @@ async def test_coordinator_sweep_tools_template_delivery_success():
     mock_parser_instance.validates = MagicMock(return_value=True)
     mock_parser_cls.return_value = mock_parser_instance
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock, "json_schema": mock_parser_cls},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=True,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock, "json_schema": mock_parser_cls},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1498,12 +1533,15 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
     mock_parser_instance.validates = MagicMock(return_value=True)
     mock_parser_cls.return_value = mock_parser_instance
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock, "xml_tag": mock_parser_cls},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock, "xml_tag": mock_parser_cls},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1543,12 +1581,15 @@ async def test_coordinator_sweep_tools_no_tool_support_detected():
         return_value=TextResult(content="The weather is sunny in Tokyo today.")
     )
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1589,12 +1630,15 @@ async def test_coordinator_sweep_tools_tool_markers_found():
         return_value=TextResult(content='<tool_call>{"name":"get_weather"}</tool_call> get_weather')
     )
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1641,12 +1685,15 @@ async def test_coordinator_sweep_tools_tokenization_artifacts():
         )
     )
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1689,12 +1736,15 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
         return_value=TextResult(content="<custom_response>Tokyo weather</custom_response>")
     )
 
-    with patch(
-        "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-        {"null": MagicMock},
-    ), patch(
-        "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
-        return_value=False,
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
     ):
         tool_format, parser_id, diags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
@@ -1866,6 +1916,7 @@ async def test_save_capabilities_template_params_with_model_dump():
 
     call_kwargs = mock_update.call_args[1]
     import json
+
     template_params_str = call_kwargs.get("template_params")
     assert template_params_str is not None
     parsed = json.loads(template_params_str)
@@ -1890,6 +1941,7 @@ async def test_save_capabilities_template_params_plain_value():
 
     call_kwargs = mock_update.call_args[1]
     import json
+
     template_params_str = call_kwargs.get("template_params")
     assert template_params_str is not None
     parsed = json.loads(template_params_str)

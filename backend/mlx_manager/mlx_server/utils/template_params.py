@@ -4,8 +4,8 @@ Scans a tokenizer's Jinja chat template to discover configurable
 parameters (e.g. ``enable_thinking``, ``keep_past_thinking``) and
 returns structured metadata about each.
 
-Detection uses regex-based scanning because Jinja2 silently ignores
-unknown kwargs, making trial calls unreliable for discovery.
+Detection uses Jinja2's AST analysis (``jinja2.meta.find_undeclared_variables``)
+to reliably discover all template parameters regardless of syntax pattern.
 """
 
 from __future__ import annotations
@@ -48,16 +48,6 @@ KNOWN_TEMPLATE_PARAMS: dict[str, TemplateParamInfo] = {
     ),
 }
 
-# Pattern 1: Explicit Jinja set declarations with defaults
-# Matches: {%- set enable_thinking = enable_thinking | default(true) -%}
-# Also:    {% set X = X | default(Y) %}
-_SET_DEFAULT_RE = re.compile(
-    r"\{%-?\s*set\s+(\w+)\s*=\s*\1\s*\|\s*default\(\s*(.*?)\s*\)\s*-?%\}",
-)
-
-# Pattern 2: Simple usage of known params (if X, {{ X }})
-_USAGE_RE = re.compile(r"\{[%{]-?\s*(?:if\s+)?(\w+)\s*[%}]-?\}")
-
 
 def _parse_jinja_default(raw: str) -> Any:
     """Parse a Jinja default() argument into a Python value."""
@@ -83,6 +73,10 @@ def _parse_jinja_default(raw: str) -> Any:
 def discover_template_params(tokenizer: Any) -> dict[str, TemplateParamInfo]:
     """Discover configurable template parameters from a tokenizer's chat template.
 
+    Uses Jinja2 AST analysis to find all undeclared variables in the template,
+    then filters to only known parameters. This handles all Jinja syntax
+    patterns including ``is defined``, ``| default()``, and direct usage.
+
     Returns a dict mapping parameter name to its metadata. Only parameters
     that appear in both the template AND the ``KNOWN_TEMPLATE_PARAMS``
     registry are returned.
@@ -98,21 +92,26 @@ def discover_template_params(tokenizer: Any) -> dict[str, TemplateParamInfo]:
     if not template or not isinstance(template, str):
         return {}
 
+    from jinja2 import Environment
+    from jinja2 import meta as jinja_meta
+
+    try:
+        ast = Environment().parse(template)
+        variables = jinja_meta.find_undeclared_variables(ast)
+    except Exception:
+        variables = set()
+
     found: dict[str, TemplateParamInfo] = {}
-
-    # Pattern 1: Explicit set-with-default declarations
-    for match in _SET_DEFAULT_RE.finditer(template):
-        param_name = match.group(1)
-        if param_name in KNOWN_TEMPLATE_PARAMS and param_name not in found:
-            default_val = _parse_jinja_default(match.group(2))
-            info = KNOWN_TEMPLATE_PARAMS[param_name].model_copy()
-            info.default = default_val
-            found[param_name] = info
-
-    # Pattern 2: Usage references for known params not found by Pattern 1
-    for match in _USAGE_RE.finditer(template):
-        param_name = match.group(1)
-        if param_name in KNOWN_TEMPLATE_PARAMS and param_name not in found:
-            found[param_name] = KNOWN_TEMPLATE_PARAMS[param_name].model_copy()
+    for var_name in sorted(variables):
+        if var_name in KNOWN_TEMPLATE_PARAMS:
+            info = KNOWN_TEMPLATE_PARAMS[var_name].model_copy()
+            # Try to extract default from set...default() pattern
+            match = re.search(
+                rf"\bset\s+{re.escape(var_name)}\s*=\s*{re.escape(var_name)}\s*\|\s*default\(\s*(.*?)\s*\)",
+                template,
+            )
+            if match:
+                info.default = _parse_jinja_default(match.group(1))
+            found[var_name] = info
 
     return found
