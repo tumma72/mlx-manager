@@ -20,23 +20,14 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
-from .base import (
-    GenerativeProbe,
-    _detect_unknown_xml_tags,
-    _find_matching_parser,
-    _validate_tool_output,
-)
+from .base import GenerativeProbe
 from .steps import ProbeResult, ProbeStep
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
 
-# Re-export helpers so existing test patches continue to work
 __all__ = [
     "TextGenProbe",
-    "_detect_unknown_xml_tags",
-    "_find_matching_parser",
-    "_validate_tool_output",
 ]
 
 

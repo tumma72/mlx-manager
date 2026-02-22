@@ -598,6 +598,7 @@ class ModelPoolManager:
                 loaded.adapter = create_adapter(
                     family=family,
                     tokenizer=tokenizer,
+                    model_type=model_type.value,
                     tool_parser=tool_parser,
                     thinking_parser=thinking_parser,
                     model_id=model_id,
@@ -1011,6 +1012,7 @@ class ModelPoolManager:
                 loaded.adapter = create_adapter(
                     family=family,
                     tokenizer=tokenizer,
+                    model_type=model_type.value,
                     model_id=model_id,
                 )
                 logger.info(

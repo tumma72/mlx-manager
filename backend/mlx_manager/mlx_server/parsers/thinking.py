@@ -37,21 +37,34 @@ class ThinkTagParser(ThinkingParser):
         return True
 
     def extract(self, text: str) -> str | None:
-        parts: list[str] = []
-        for pattern in self._PATTERNS:
-            for match in pattern.finditer(text):
-                content = match.group(1).strip()
-                if content:
-                    parts.append(content)
-        return "\n\n".join(parts) if parts else None
+        return self._collect_matches(text, self._PATTERNS)
 
     def remove(self, text: str) -> str:
-        result = text
-        for pattern in self._PATTERNS:
-            result = pattern.sub("", result)
-        # Normalize whitespace
-        result = re.sub(r"\n{3,}", "\n\n", result)
-        return result.strip()
+        return self._remove_patterns(text, self._PATTERNS)
+
+
+class MistralThinkingParser(ThinkingParser):
+    """Extracts thinking blocks wrapped in [THINK]...[/THINK] bracket tokens.
+
+    Used by Mistral v3, Devstral, and other Mistral-family models that use
+    bracket-style control tokens for reasoning.
+    """
+
+    _PATTERN = re.compile(r"\[THINK\]\s*(.*?)\s*\[/THINK\]", re.DOTALL | re.IGNORECASE)
+
+    @property
+    def parser_id(self) -> str:
+        return "mistral_think"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("[THINK]", "[/THINK]")]
+
+    def extract(self, text: str) -> str | None:
+        return self._collect_matches(text, [self._PATTERN])
+
+    def remove(self, text: str) -> str:
+        return self._remove_patterns(text, [self._PATTERN])
 
 
 class NullThinkingParser(ThinkingParser):

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from mlx_manager.mlx_server.parsers.base import ThinkingParser, ToolCallParser
-from mlx_manager.mlx_server.parsers.thinking import NullThinkingParser, ThinkTagParser
+from mlx_manager.mlx_server.parsers.thinking import (
+    MistralThinkingParser,
+    NullThinkingParser,
+    ThinkTagParser,
+)
 from mlx_manager.mlx_server.parsers.tool_call import (
     Glm4NativeParser,
     Glm4XmlParser,
@@ -11,6 +15,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
+    MistralNativeParser,
     NullToolParser,
 )
 
@@ -22,11 +27,13 @@ TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "llama_xml": LlamaXmlParser,
     "llama_python": LlamaPythonParser,
     "liquid_python": LiquidPythonParser,
+    "mistral_native": MistralNativeParser,
     "null": NullToolParser,
 }
 
 THINKING_PARSERS: dict[str, type[ThinkingParser]] = {
     "think_tag": ThinkTagParser,
+    "mistral_think": MistralThinkingParser,
     "null": NullThinkingParser,
 }
 

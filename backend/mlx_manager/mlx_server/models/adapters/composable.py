@@ -50,6 +50,8 @@ class ModelAdapter:
 
     def __init__(
         self,
+        *,
+        model_type: str,
         config: FamilyConfig | None = None,
         tokenizer: Any | None = None,
         tool_parser: ToolCallParser | None = None,
@@ -60,6 +62,7 @@ class ModelAdapter:
         enable_tool_injection: bool = False,
         template_options: dict[str, Any] | None = None,
     ) -> None:
+        self._model_type = model_type
         self._config = config or FAMILY_CONFIGS["default"]
         self._tokenizer = tokenizer
         # Get actual tokenizer (Processor wraps tokenizer, regular is itself)
@@ -95,6 +98,10 @@ class ModelAdapter:
     def family(self) -> str:
         """Model family identifier."""
         return self._config.family
+
+    @property
+    def model_type(self) -> str:
+        return self._model_type
 
     @property
     def tool_parser(self) -> ToolCallParser:
@@ -423,16 +430,17 @@ class ModelAdapter:
         All configuration (system_prompt, enable_tool_injection, template_options)
         is read from the adapter's stored Profile settings, not from parameters.
 
-        When images are provided (vision models), uses mlx-vlm chat template
-        instead of the regular tokenizer template.
+        Vision models with images use mlx-vlm chat template for image token
+        handling. All other cases (text models, vision models without images)
+        use the standard tokenizer template.
         """
         from mlx_manager.mlx_server.models.ir import PreparedInput
 
         # Inject default system prompt if not already present in messages
         messages = self._ensure_system_prompt(messages)
 
-        # Vision path: use mlx-vlm chat template
-        if images:
+        # Vision path with images: use mlx-vlm chat template for image tokens
+        if self._model_type == "vision" and images:
             from mlx_vlm.prompt_utils import apply_chat_template as vlm_apply_chat_template
             from mlx_vlm.utils import load_config
 
@@ -473,7 +481,8 @@ class ModelAdapter:
                 pixel_values=images,
             )
 
-        # Text path: regular chat template
+        # Standard text path: regular chat template
+        # Works for text models, vision models without images, embeddings
         converted = self.convert_messages(messages)
 
         # Tool handling uses adapter config, not runtime flags
@@ -543,6 +552,10 @@ class ModelAdapter:
         instead of orchestrating prepare_input/generate/process_complete
         themselves.
 
+        The inference engine is determined by self._model_type (set at load time):
+        - "vision" → always mlx-vlm (supports image=None for text-only)
+        - all others → mlx-lm
+
         All configuration (system_prompt, tool_injection, template_options)
         is read from the adapter's stored Profile settings.
         """
@@ -554,8 +567,8 @@ class ModelAdapter:
             images=images,
         )
 
-        if images:
-            # Vision generation via mlx-vlm
+        if self._model_type == "vision":
+            # Vision models always use mlx-vlm (handles both image and text-only)
             def run_vision_gen() -> tuple[str, str]:
                 from mlx_vlm import generate as vlm_generate
 
@@ -616,6 +629,11 @@ class ModelAdapter:
         Yields StreamEvent for each token, then a final TextResult.
         Returns an async generator (use `async for event in adapter.generate_step(...)`).
 
+        The inference engine is determined by self._model_type (set at load time):
+        - "vision" + images → non-streaming mlx-vlm (simulated single event)
+        - "vision" + no images → streaming mlx-vlm
+        - all others → streaming mlx-lm
+
         All configuration (system_prompt, tool_injection, template_options)
         is read from the adapter's stored Profile settings.
         """
@@ -629,30 +647,68 @@ class ModelAdapter:
             images=images,
         )
 
-        if images:
-            # Vision: non-streaming, simulate single event
-            from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+        if self._model_type == "vision":
+            if prepared.pixel_values:
+                # Vision with images: non-streaming, simulate single event
+                from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
-            def run_vision_gen() -> str:
-                from mlx_vlm import generate as vlm_generate
+                def run_vision_gen() -> str:
+                    from mlx_vlm import generate as vlm_generate
 
-                response = vlm_generate(
+                    response = vlm_generate(
+                        model,
+                        self._tokenizer,
+                        prepared.prompt,
+                        prepared.pixel_values,
+                        max_tokens=max_tokens,
+                        temp=temperature,
+                        verbose=False,
+                    )
+                    return str(response.text)
+
+                response_text = await run_on_metal_thread(run_vision_gen, timeout=600.0)
+                yield StreamEvent(type="content", content=response_text)
+                yield self.process_complete(response_text, "stop")
+                return
+
+            # Vision without images: streaming via mlx-vlm
+            from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
+
+            stop_ids = set(prepared.stop_token_ids or [])
+            stream_processor = self.create_stream_processor(prompt=prepared.prompt)
+
+            def produce_vlm_tokens() -> Iterator[tuple[str, int | None, bool]]:
+                from mlx_vlm import stream_generate as vlm_stream_generate
+
+                for resp in vlm_stream_generate(
                     model,
                     self._tokenizer,
                     prepared.prompt,
-                    prepared.pixel_values,
                     max_tokens=max_tokens,
                     temp=temperature,
-                    verbose=False,
-                )
-                return str(response.text)
+                ):
+                    token_id = getattr(resp, "token", None)
+                    token_text = getattr(resp, "text", str(resp))
+                    is_stop = token_id is not None and token_id in stop_ids
+                    yield (token_text, token_id, is_stop)
+                    if is_stop:
+                        return
 
-            response_text = await run_on_metal_thread(run_vision_gen, timeout=600.0)
-            yield StreamEvent(type="content", content=response_text)
-            yield self.process_complete(response_text, "stop")
+            finish_reason = "length"
+            async for token_text, token_id, is_stop in stream_from_metal_thread(produce_vlm_tokens):
+                if is_stop:
+                    finish_reason = "stop"
+                    stream_processor.feed(token_text)
+                    break
+                event = stream_processor.feed(token_text)
+                if event.reasoning_content or event.content:
+                    yield event
+
+            raw_text = stream_processor.get_accumulated_text()
+            yield self.process_complete(raw_text, finish_reason)
             return
 
-        # Text: streaming generation
+        # Text: streaming generation via mlx-lm
         from mlx_manager.mlx_server.utils.metal import stream_from_metal_thread
 
         stop_ids = set(prepared.stop_token_ids or [])
@@ -919,6 +975,8 @@ DefaultAdapter = ModelAdapter
 def create_adapter(
     family: str,
     tokenizer: Any | None = None,
+    *,
+    model_type: str,
     tool_parser: ToolCallParser | None = None,
     thinking_parser: ThinkingParser | None = None,
     model_id: str | None = None,
@@ -932,6 +990,7 @@ def create_adapter(
     Args:
         family: Model family name (e.g., "qwen", "llama", "whisper")
         tokenizer: HuggingFace tokenizer or processor (None for audio)
+        model_type: Model type string ("text-gen", "vision", "embeddings", "audio")
         tool_parser: Override default tool parser
         thinking_parser: Override default thinking parser
         model_id: Model identifier (needed for vision models to load config)
@@ -944,6 +1003,7 @@ def create_adapter(
     """
     config = FAMILY_CONFIGS.get(family, FAMILY_CONFIGS["default"])
     return ModelAdapter(
+        model_type=model_type,
         config=config,
         tokenizer=tokenizer,
         tool_parser=tool_parser,

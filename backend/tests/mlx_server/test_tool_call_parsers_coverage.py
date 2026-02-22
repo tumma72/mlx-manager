@@ -25,7 +25,7 @@ class TestHermesJsonParserErrors:
     def test_invalid_json_returns_none(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.return_value = "not valid json {{"
-        assert HermesJsonParser._parse_match(match) is None
+        assert HermesJsonParser()._parse_match(match) is None
 
     def test_key_error_returns_none(self) -> None:
         """Force KeyError during json.loads to cover the except branch."""
@@ -35,7 +35,7 @@ class TestHermesJsonParserErrors:
             "mlx_manager.mlx_server.parsers.tool_call.json.loads",
             side_effect=KeyError("forced"),
         ):
-            assert HermesJsonParser._parse_match(match) is None
+            assert HermesJsonParser()._parse_match(match) is None
 
 
 class TestGlm4NativeParserErrors:
@@ -45,31 +45,31 @@ class TestGlm4NativeParserErrors:
         """Line 122: content with no word chars -> name_match is None."""
         match = MagicMock(spec=re.Match)
         match.group.return_value = "   "  # no word characters
-        assert Glm4NativeParser._parse_compact(match) is None
+        assert Glm4NativeParser()._parse_compact(match) is None
 
     def test_compact_exception_returns_none(self) -> None:
         """Lines 131-133: IndexError/AttributeError in _parse_compact."""
         match = MagicMock(spec=re.Match)
         match.group.side_effect = AttributeError("bad match")
-        assert Glm4NativeParser._parse_compact(match) is None
+        assert Glm4NativeParser()._parse_compact(match) is None
 
     def test_attr_no_name_match_returns_none(self) -> None:
         """Line 141: content with no word chars -> name_match is None."""
         match = MagicMock(spec=re.Match)
         match.group.return_value = "   "
-        assert Glm4NativeParser._parse_attr(match) is None
+        assert Glm4NativeParser()._parse_attr(match) is None
 
     def test_attr_no_params_returns_none(self) -> None:
         """Line 146: name found but no attr-style params."""
         match = MagicMock(spec=re.Match)
         match.group.return_value = "funcname_without_attrs"
-        assert Glm4NativeParser._parse_attr(match) is None
+        assert Glm4NativeParser()._parse_attr(match) is None
 
     def test_attr_exception_returns_none(self) -> None:
         """Lines 152-154: IndexError/AttributeError in _parse_attr."""
         match = MagicMock(spec=re.Match)
         match.group.side_effect = IndexError("no group")
-        assert Glm4NativeParser._parse_attr(match) is None
+        assert Glm4NativeParser()._parse_attr(match) is None
 
 
 class TestGlm4XmlParserErrors:
@@ -78,7 +78,7 @@ class TestGlm4XmlParserErrors:
     def test_exception_returns_none(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.side_effect = AttributeError("bad")
-        assert Glm4XmlParser._parse_match(match) is None
+        assert Glm4XmlParser()._parse_match(match) is None
 
 
 class TestLlamaXmlParserErrors:
@@ -87,7 +87,7 @@ class TestLlamaXmlParserErrors:
     def test_exception_returns_none(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.side_effect = IndexError("bad")
-        assert LlamaXmlParser._parse_match(match) is None
+        assert LlamaXmlParser()._parse_match(match) is None
 
 
 class TestLlamaPythonParserErrors:
@@ -96,7 +96,7 @@ class TestLlamaPythonParserErrors:
     def test_exception_returns_none(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.side_effect = AttributeError("bad")
-        assert LlamaPythonParser._parse_match(match) is None
+        assert LlamaPythonParser()._parse_match(match) is None
 
 
 class TestLiquidPythonParserErrors:
@@ -105,23 +105,23 @@ class TestLiquidPythonParserErrors:
     def test_empty_content_returns_empty(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.return_value = "   "
-        assert LiquidPythonParser._parse_match(match) == []
+        assert LiquidPythonParser()._parse_match(match) == []
 
     def test_invalid_syntax_returns_empty(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.return_value = "[get_weather(city=]"
-        assert LiquidPythonParser._parse_match(match) == []
+        assert LiquidPythonParser()._parse_match(match) == []
 
     def test_exception_returns_empty(self) -> None:
         match = MagicMock(spec=re.Match)
         match.group.side_effect = AttributeError("bad")
-        assert LiquidPythonParser._parse_match(match) == []
+        assert LiquidPythonParser()._parse_match(match) == []
 
     def test_unsupported_function_type(self) -> None:
         """Test call with non-Name function (e.g., attribute access)."""
         match = MagicMock(spec=re.Match)
         match.group.return_value = "[obj.method()]"
-        result = LiquidPythonParser._parse_match(match)
+        result = LiquidPythonParser()._parse_match(match)
         # Should skip unsupported function types
         assert len(result) == 0
 

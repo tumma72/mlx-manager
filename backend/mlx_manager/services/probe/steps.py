@@ -68,6 +68,15 @@ class ProbeStep(BaseModel):
         return f"data: {json.dumps(data)}\n\n"
 
 
+class TagDiscovery(BaseModel):
+    """A tag pattern discovered in model output with parser mappings."""
+
+    name: str  # e.g. "TOOL_CALLS", "tool_call", "think"
+    style: str  # "xml", "bracket", or "special"
+    paired: bool  # True if closing tag found
+    matched_parsers: list[str] = Field(default_factory=list)
+
+
 class ProbeResult(BaseModel):
     """Accumulated probe results across all capability checks.
 
@@ -101,6 +110,10 @@ class ProbeResult(BaseModel):
 
     # Template options
     template_params: dict[str, Any] | None = None
+
+    # Tag discovery
+    discovered_tool_tags: list[dict[str, Any]] | None = None
+    discovered_thinking_tags: list[dict[str, Any]] | None = None
 
     # Metadata
     model_type: str | None = None

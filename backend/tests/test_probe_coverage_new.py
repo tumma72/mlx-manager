@@ -327,7 +327,7 @@ async def test_verify_tool_template_delivery_exception_handled():
 
 @pytest.mark.asyncio
 async def test_verify_tool_adapter_delivery_exception_handled():
-    """Adapter delivery exception is caught and falls through to diagnostic scan."""
+    """Generic injection exception is caught and falls through to diagnostic scan."""
     from mlx_manager.mlx_server.models.ir import TextResult
 
     call_count = 0
@@ -338,7 +338,7 @@ async def test_verify_tool_adapter_delivery_exception_handled():
         if call_count == 1:
             # Template delivery attempt: no tools in response
             return TextResult(content="The weather is sunny today")
-        raise RuntimeError("Adapter delivery failed")
+        raise RuntimeError("Generic injection failed")
 
     probe = SimpleProbe()
     probe._generate = fail_on_second
@@ -348,9 +348,11 @@ async def test_verify_tool_adapter_delivery_exception_handled():
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools.return_value = True
-    mock_adapter.tool_parser = MagicMock()
-    mock_adapter.tool_parser.parser_id = "null"
-    mock_adapter.format_tools_for_prompt.return_value = "Tools: get_weather"
+
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.validates = MagicMock(return_value=False)
+    mock_parser_cls.return_value = mock_parser_instance
 
     with (
         patch(
@@ -358,17 +360,14 @@ async def test_verify_tool_adapter_delivery_exception_handled():
             return_value=True,
         ),
         patch(
-            "mlx_manager.services.probe.base._validate_tool_output",
-            return_value=None,
-        ),
-        patch(
             "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
-            {"null": MagicMock, "xml_tag": MagicMock},
+            {"null": MagicMock, "xml_tag": mock_parser_cls},
         ),
     ):
         tool_format, parser_id, diags = await probe._verify_tool_support(mock_loaded, mock_adapter)
 
-    # Both delivery paths failed - diagnostic scan was attempted but no markers found
+    # Template delivery: no parser matched. Generic injection: exception caught.
+    # Diagnostic scan: "The weather is sunny today" has no markers.
     assert tool_format is None
     assert parser_id is None
 
@@ -1201,13 +1200,13 @@ async def test_coordinator_sweep_discovers_template_params():
             coordinator,
             "_sweep_thinking",
             new_callable=AsyncMock,
-            return_value=(False, "null", []),
+            return_value=(False, "null", [], []),
         ),
         patch.object(
             coordinator,
             "_sweep_tools",
             new_callable=AsyncMock,
-            return_value=(None, None, []),
+            return_value=(None, None, [], []),
         ),
     ):
         steps = []
@@ -1256,7 +1255,7 @@ async def test_coordinator_sweep_thinking_success_with_parser_match():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -1310,7 +1309,7 @@ async def test_coordinator_sweep_thinking_unclosed_retry():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -1351,7 +1350,7 @@ async def test_coordinator_sweep_thinking_always_thinks():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -1389,7 +1388,7 @@ async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagno
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -1421,7 +1420,7 @@ async def test_coordinator_sweep_thinking_generation_exception():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": MagicMock},
     ):
-        supports, parser_id, diags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -1440,7 +1439,7 @@ async def test_coordinator_sweep_thinking_generation_exception():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_template_delivery_success():
-    """_sweep_tools: template delivery returns ('template', parser_id)."""
+    """_sweep_tools: template delivery ('template', parser_id) on fallback."""
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
@@ -1452,23 +1451,29 @@ async def test_coordinator_sweep_tools_template_delivery_success():
     coordinator = ProbingCoordinator(mock_pool)
 
     mock_adapter = MagicMock()
-    mock_tool_parser = MagicMock()
-    mock_tool_parser.validates = MagicMock(return_value=True)
-    mock_adapter.tool_parser = mock_tool_parser
     mock_adapter.supports_native_tools = MagicMock(return_value=True)
 
     mock_loaded = MagicMock()
     mock_loaded.adapter = mock_adapter
     mock_loaded.tokenizer = MagicMock()
 
+    call_count = [0]
+
+    async def generate_per_call(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # Phase 1 generic injection: no tool output
+            return TextResult(content="Tokyo weather is sunny today.")
+        # Phase 4 template delivery: tool output
+        return TextResult(content='{"name":"get_weather","arguments":{}}')
+
     mock_strategy = MagicMock()
-    mock_strategy._generate = AsyncMock(
-        return_value=TextResult(content='{"name":"get_weather","arguments":{}}')
-    )
+    mock_strategy._generate = generate_per_call
 
     mock_parser_cls = MagicMock()
     mock_parser_instance = MagicMock()
     mock_parser_instance.validates = MagicMock(return_value=True)
+    mock_parser_instance.stream_markers = []
     mock_parser_cls.return_value = mock_parser_instance
 
     with (
@@ -1481,7 +1486,7 @@ async def test_coordinator_sweep_tools_template_delivery_success():
             return_value=True,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1492,11 +1497,10 @@ async def test_coordinator_sweep_tools_template_delivery_success():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_adapter_delivery_success():
-    """_sweep_tools: adapter delivery returns ('adapter', parser_id) (lines 575-582).
+    """_sweep_tools: generic injection returns ('detected', parser_id) via tag discovery.
 
-    Template delivery is skipped (no native tool support).
-    Adapter delivery succeeds: format_tools_for_prompt returns prompt,
-    and the adapter's tool_parser.validates() returns True.
+    Generic injection is Phase 1. Output has <tool_call> tags which are discovered
+    and mapped to the xml_tag parser. Tag-first validation succeeds.
     """
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
@@ -1508,17 +1512,10 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
 
     coordinator = ProbingCoordinator(mock_pool)
 
-    # The adapter's tool_parser.validates returns True on the adapter delivery call
-    mock_tool_parser = MagicMock()
-    mock_tool_parser.validates = MagicMock(return_value=True)
-
     mock_adapter = MagicMock()
-    mock_adapter.tool_parser = mock_tool_parser
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
-    mock_adapter.format_tools_for_prompt = MagicMock(return_value="Available tools: get_weather")
 
     mock_loaded = MagicMock()
-    # loaded.adapter always returns the same mock_adapter
     mock_loaded.adapter = mock_adapter
     mock_loaded.tokenizer = MagicMock()
 
@@ -1527,10 +1524,11 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
         return_value=TextResult(content='<tool_call>{"name":"get_weather"}</tool_call>')
     )
 
-    # We need at least one non-null parser in TOOL_PARSERS for the loop to run
+    # Parser needs stream_markers so _build_marker_to_parsers can map <tool_call> to it
     mock_parser_cls = MagicMock()
     mock_parser_instance = MagicMock()
     mock_parser_instance.validates = MagicMock(return_value=True)
+    mock_parser_instance.stream_markers = [("<tool_call>", "</tool_call>")]
     mock_parser_cls.return_value = mock_parser_instance
 
     with (
@@ -1543,11 +1541,11 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
-    assert tool_format == "adapter"
+    assert tool_format == "detected"
     assert parser_id == "xml_tag"
     assert diags == []
 
@@ -1591,7 +1589,7 @@ async def test_coordinator_sweep_tools_no_tool_support_detected():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1640,7 +1638,7 @@ async def test_coordinator_sweep_tools_tool_markers_found():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1695,7 +1693,7 @@ async def test_coordinator_sweep_tools_tokenization_artifacts():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1746,7 +1744,7 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1755,7 +1753,10 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
     assert len(diags) == 1
     assert diags[0].level.value == "warning"
     assert diags[0].category.value == "tool_dialect"
-    assert "custom_response" in diags[0].details.get("unknown_tags", [])
+    # Generic tag detection reports unmatched tags as list of dicts
+    detected = diags[0].details.get("detected_tags", [])
+    tag_names = [t["name"] if isinstance(t, dict) else t[0] for t in detected]
+    assert "custom_response" in tag_names
 
 
 # ---------------------------------------------------------------------------
@@ -1813,7 +1814,7 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
             coordinator,
             "_sweep_tools",
             new_callable=AsyncMock,
-            return_value=(None, None, []),
+            return_value=(None, None, [], []),
         ),
     ):
         steps = []
@@ -1868,7 +1869,7 @@ async def test_coordinator_sweep_tools_exception_yields_failed():
             coordinator,
             "_sweep_thinking",
             new_callable=AsyncMock,
-            return_value=(False, "null", []),
+            return_value=(False, "null", [], []),
         ),
         patch.object(
             coordinator,
@@ -1947,3 +1948,112 @@ async def test_save_capabilities_template_params_plain_value():
     parsed = json.loads(template_params_str)
     assert parsed["temperature"] == 0.7
     assert parsed["enable_thinking"] is True
+
+
+# ---------------------------------------------------------------------------
+# Tests for coordinator._sweep_tools — new flow (generic injection first,
+# template delivery fallback)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_coordinator_sweep_tools_generic_first_then_template_fallback():
+    """_sweep_tools: generic injection fails, template delivery succeeds as fallback."""
+    from mlx_manager.mlx_server.models.ir import TextResult
+    from mlx_manager.services.probe.coordinator import ProbingCoordinator
+
+    mock_pool = MagicMock()
+    mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+
+    coordinator = ProbingCoordinator(mock_pool)
+
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools = MagicMock(return_value=True)
+
+    mock_loaded = MagicMock()
+    mock_loaded.adapter = mock_adapter
+    mock_loaded.tokenizer = MagicMock()
+
+    call_count = [0]
+
+    async def generate_per_call(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # Phase 1 generic injection: plain text, no tool tags
+            return TextResult(content="I can help you check the weather in Tokyo.")
+        # Phase 4 template delivery: proper tool call
+        return TextResult(content='{"name":"get_weather","arguments":{}}')
+
+    mock_strategy = MagicMock()
+    mock_strategy._generate = generate_per_call
+
+    mock_parser_cls = MagicMock()
+    mock_parser_instance = MagicMock()
+    mock_parser_instance.validates = MagicMock(return_value=True)
+    mock_parser_instance.stream_markers = []
+    mock_parser_cls.return_value = mock_parser_instance
+
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock, "json_schema": mock_parser_cls},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+            "test/model", mock_loaded, mock_strategy
+        )
+
+    assert tool_format == "template"
+    assert parser_id == "json_schema"
+    assert call_count[0] == 2  # generic injection + template delivery
+
+
+@pytest.mark.asyncio
+async def test_coordinator_sweep_tools_discovered_tags_in_result():
+    """_sweep_tools returns discovered tags even when no parser validates."""
+    from mlx_manager.mlx_server.models.ir import TextResult
+    from mlx_manager.services.probe.coordinator import ProbingCoordinator
+
+    mock_pool = MagicMock()
+    mock_pool._models = {}
+    mock_pool._profile_settings = {}
+    mock_pool.register_profile_settings = MagicMock()
+
+    coordinator = ProbingCoordinator(mock_pool)
+
+    mock_adapter = MagicMock()
+    mock_adapter.supports_native_tools = MagicMock(return_value=False)
+
+    mock_loaded = MagicMock()
+    mock_loaded.adapter = mock_adapter
+    mock_loaded.tokenizer = MagicMock()
+
+    mock_strategy = MagicMock()
+    mock_strategy._generate = AsyncMock(
+        return_value=TextResult(content="<custom_response>weather info</custom_response>")
+    )
+
+    with (
+        patch(
+            "mlx_manager.mlx_server.parsers.TOOL_PARSERS",
+            {"null": MagicMock},
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+    ):
+        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+            "test/model", mock_loaded, mock_strategy
+        )
+
+    assert tool_format is None
+    # Tags should contain the custom_response tag even though no parser matched
+    tag_names = [t.name for t in tags]
+    assert "custom_response" in tag_names

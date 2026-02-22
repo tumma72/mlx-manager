@@ -7,7 +7,11 @@ from mlx_manager.mlx_server.parsers.registry import (
     resolve_thinking_parser,
     resolve_tool_parser,
 )
-from mlx_manager.mlx_server.parsers.thinking import NullThinkingParser, ThinkTagParser
+from mlx_manager.mlx_server.parsers.thinking import (
+    MistralThinkingParser,
+    NullThinkingParser,
+    ThinkTagParser,
+)
 from mlx_manager.mlx_server.parsers.tool_call import (
     Glm4NativeParser,
     Glm4XmlParser,
@@ -15,6 +19,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
+    MistralNativeParser,
     NullToolParser,
 )
 
@@ -27,8 +32,10 @@ __all__ = [
     "LlamaXmlParser",
     "LlamaPythonParser",
     "LiquidPythonParser",
+    "MistralNativeParser",
     "NullToolParser",
     "ThinkTagParser",
+    "MistralThinkingParser",
     "NullThinkingParser",
     "TOOL_PARSERS",
     "THINKING_PARSERS",

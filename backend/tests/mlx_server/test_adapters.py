@@ -71,7 +71,7 @@ class TestAudioAdapterCreation:
         """Audio adapters should work with tokenizer=None."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="whisper", tokenizer=None)
+        adapter = create_adapter(family="whisper", tokenizer=None, model_type="audio")
         assert adapter.family == "whisper"
         assert adapter.stop_tokens == []
         assert adapter.tool_parser.parser_id == "null"
@@ -81,7 +81,7 @@ class TestAudioAdapterCreation:
         """Kokoro adapter works with tokenizer=None."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="kokoro", tokenizer=None)
+        adapter = create_adapter(family="kokoro", tokenizer=None, model_type="audio")
         assert adapter.family == "kokoro"
         assert adapter.stop_tokens == []
 
@@ -89,7 +89,7 @@ class TestAudioAdapterCreation:
         """Default audio adapter works with tokenizer=None."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="audio_default", tokenizer=None)
+        adapter = create_adapter(family="audio_default", tokenizer=None, model_type="audio")
         assert adapter.family == "audio_default"
         assert adapter.stop_tokens == []
 
@@ -98,7 +98,7 @@ class TestAudioAdapterCreation:
         """WhisperAdapter.post_load_configure loads processor when missing."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="whisper", tokenizer=None)
+        adapter = create_adapter(family="whisper", tokenizer=None, model_type="audio")
 
         mock_model = MagicMock()
         mock_model._processor = None  # Missing processor
@@ -118,7 +118,7 @@ class TestAudioAdapterCreation:
         """WhisperAdapter.post_load_configure is a no-op when processor works."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="whisper", tokenizer=None)
+        adapter = create_adapter(family="whisper", tokenizer=None, model_type="audio")
 
         mock_tokenizer = MagicMock()
         mock_tokenizer.vocab_size = 51865  # Normal Whisper vocab size
@@ -142,7 +142,7 @@ class TestAudioAdapterCreation:
         """WhisperAdapter.post_load_configure handles load failure gracefully."""
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter(family="whisper", tokenizer=None)
+        adapter = create_adapter(family="whisper", tokenizer=None, model_type="audio")
 
         mock_model = MagicMock()
         mock_model._processor = None
@@ -165,7 +165,7 @@ class TestAudioAdapterCreation:
 
         mock_tokenizer = MagicMock()
         mock_tokenizer.eos_token_id = 0
-        adapter = create_adapter(family="default", tokenizer=mock_tokenizer)
+        adapter = create_adapter(family="default", tokenizer=mock_tokenizer, model_type="text-gen")
 
         mock_model = MagicMock()
         # Should complete without error

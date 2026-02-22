@@ -5,13 +5,12 @@ from __future__ import annotations
 import ast
 import json
 import re
-import uuid
 from typing import Any
 
 from loguru import logger
 
 from mlx_manager.mlx_server.parsers.base import ToolCallParser
-from mlx_manager.mlx_server.schemas.openai import FunctionCall, ToolCall
+from mlx_manager.mlx_server.schemas.openai import ToolCall
 
 
 class HermesJsonParser(ToolCallParser):
@@ -35,33 +34,21 @@ class HermesJsonParser(ToolCallParser):
 
     def extract(self, text: str) -> list[ToolCall]:
         results: list[ToolCall] = []
-        seen: set[str] = set()
 
         for pattern in (self._PATTERN_CLOSED, self._PATTERN_UNCLOSED):
             for match in pattern.finditer(text):
                 tc = self._parse_match(match)
                 if tc:
-                    key = f"{tc.function.name}:{tc.function.arguments}"
-                    if key not in seen:
-                        seen.add(key)
-                        results.append(tc)
-        return results
+                    results.append(tc)
+        return self._deduplicate(results)
 
-    @staticmethod
-    def _parse_match(match: re.Match[str]) -> ToolCall | None:
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
         try:
             json_str = match.group(1).strip()
             data = json.loads(json_str)
             name = data.get("name", "")
-            arguments = data.get("arguments", {})
-            if isinstance(arguments, dict):
-                arguments_str = json.dumps(arguments)
-            else:
-                arguments_str = str(arguments)
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=arguments_str),
-            )
+            arguments_str = self._coerce_arguments(data.get("arguments", {}))
+            return self._make_tool_call(name, arguments_str)
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Invalid Hermes tool call: {}", e)
             return None
@@ -92,30 +79,22 @@ class Glm4NativeParser(ToolCallParser):
 
     def extract(self, text: str) -> list[ToolCall]:
         results: list[ToolCall] = []
-        seen: set[str] = set()
 
         # Try compact format first
         for match in self._PATTERN_COMPACT.finditer(text):
             tc = self._parse_compact(match)
             if tc:
-                key = f"{tc.function.name}:{tc.function.arguments}"
-                if key not in seen:
-                    seen.add(key)
-                    results.append(tc)
+                results.append(tc)
 
         # Then try attr format
         for match in self._PATTERN_ATTR.finditer(text):
             tc = self._parse_attr(match)
             if tc:
-                key = f"{tc.function.name}:{tc.function.arguments}"
-                if key not in seen:
-                    seen.add(key)
-                    results.append(tc)
+                results.append(tc)
 
-        return results
+        return self._deduplicate(results)
 
-    @staticmethod
-    def _parse_compact(match: re.Match[str]) -> ToolCall | None:
+    def _parse_compact(self, match: re.Match[str]) -> ToolCall | None:
         try:
             content = match.group(1).strip()
             name_match = re.match(r"(\w+)", content)
@@ -125,16 +104,12 @@ class Glm4NativeParser(ToolCallParser):
             param_pattern = r"<(\w+)>([^<]*)</\1>"
             params = dict(re.findall(param_pattern, content))
             args_str = json.dumps(params) if params else "{}"
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=args_str),
-            )
+            return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid GLM4.7 compact tool call: {}", e)
             return None
 
-    @staticmethod
-    def _parse_attr(match: re.Match[str]) -> ToolCall | None:
+    def _parse_attr(self, match: re.Match[str]) -> ToolCall | None:
         try:
             content = match.group(1).strip()
             name_match = re.match(r"(\w+)", content)
@@ -146,10 +121,7 @@ class Glm4NativeParser(ToolCallParser):
             if not params:
                 return None
             args_str = json.dumps(params)
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=args_str),
-            )
+            return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid GLM4.7 attr tool call: {}", e)
             return None
@@ -179,19 +151,19 @@ class Glm4XmlParser(ToolCallParser):
                 results.append(tc)
         return results
 
-    @staticmethod
-    def _parse_match(match: re.Match[str]) -> ToolCall | None:
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
         try:
             name = match.group(1).strip()
             args_str = match.group(2).strip()
+            if not args_str:
+                logger.debug("Empty arguments in GLM4 tool call {}", name)
+                return None
             try:
                 json.loads(args_str)
             except json.JSONDecodeError as e:
-                logger.warning("Invalid JSON in GLM4 tool call {}: {}", name, e)
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=args_str),
-            )
+                logger.debug("Invalid JSON in GLM4 tool call {}: {}", name, e)
+                return None
+            return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid GLM4 tool call: {}", e)
             return None
@@ -218,19 +190,19 @@ class LlamaXmlParser(ToolCallParser):
                 results.append(tc)
         return results
 
-    @staticmethod
-    def _parse_match(match: re.Match[str]) -> ToolCall | None:
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
         try:
             name = match.group(1)
             args_str = match.group(2).strip()
+            if not args_str:
+                logger.debug("Empty arguments in Llama tool call {}", name)
+                return None
             try:
                 json.loads(args_str)
             except json.JSONDecodeError as e:
-                logger.warning("Invalid JSON in Llama tool call {}: {}", name, e)
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=args_str),
-            )
+                logger.debug("Invalid JSON in Llama tool call {}: {}", name, e)
+                return None
+            return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid Llama tool call: {}", e)
             return None
@@ -257,18 +229,14 @@ class LlamaPythonParser(ToolCallParser):
                 results.append(tc)
         return results
 
-    @staticmethod
-    def _parse_match(match: re.Match[str]) -> ToolCall | None:
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
         try:
             module = match.group(1)
             method = match.group(2)
             args_str = match.group(3).strip()
             args_dict = _parse_python_args(args_str)
             name = f"{module}.{method}"
-            return ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                function=FunctionCall(name=name, arguments=json.dumps(args_dict)),
-            )
+            return self._make_tool_call(name, json.dumps(args_dict))
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid Llama Python tool call: {}", e)
             return None
@@ -292,35 +260,23 @@ class LiquidPythonParser(ToolCallParser):
 
     def extract(self, text: str) -> list[ToolCall]:
         results: list[ToolCall] = []
-        seen: set[str] = set()
 
         for match in self._PATTERN_CLOSED.finditer(text):
-            for tc in self._parse_match(match):
-                key = f"{tc.function.name}:{tc.function.arguments}"
-                if key not in seen:
-                    seen.add(key)
-                    results.append(tc)
+            results.extend(self._parse_match(match))
 
         if not results:
             for match in self._PATTERN_UNCLOSED.finditer(text):
-                for tc in self._parse_match(match):
-                    key = f"{tc.function.name}:{tc.function.arguments}"
-                    if key not in seen:
-                        seen.add(key)
-                        results.append(tc)
+                results.extend(self._parse_match(match))
 
-        return results
+        return self._deduplicate(results)
 
-    @staticmethod
-    def _parse_match(match: re.Match[str]) -> list[ToolCall]:
+    def _parse_match(self, match: re.Match[str]) -> list[ToolCall]:
         """Parse Pythonic function call syntax using ast.
 
         Format: [func_name(arg="val", arg2=123)]
         or: func_name(arg="val")
         """
         try:
-            import ast
-
             content = match.group(1).strip()
             if not content:
                 return []
@@ -366,17 +322,62 @@ class LiquidPythonParser(ToolCallParser):
                         value = ast.unparse(kw.value)
                     args_dict[arg_name] = value
 
-                results.append(
-                    ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:8]}",
-                        function=FunctionCall(name=name, arguments=json.dumps(args_dict)),
-                    )
-                )
+                results.append(self._make_tool_call(name, json.dumps(args_dict)))
 
             return results
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid Liquid tool call: {}", e)
             return []
+
+
+class MistralNativeParser(ToolCallParser):
+    """Mistral native tool calling: [TOOL_CALLS] [{...}].
+
+    Used by Mistral v3, Devstral, and other Mistral-family models.
+    The model emits a [TOOL_CALLS] marker followed by a JSON array
+    of tool calls with name, arguments (object), and optional id.
+    """
+
+    _PATTERN = re.compile(r"\[TOOL_CALLS\]\s*(\[.*\])", re.DOTALL)
+
+    @property
+    def parser_id(self) -> str:
+        return "mistral_native"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("[TOOL_CALLS]", "")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        match = self._PATTERN.search(text)
+        if not match:
+            return []
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON in Mistral tool calls: {}", e)
+            return []
+        if not isinstance(data, list):
+            return []
+        results: list[ToolCall] = []
+        for item in data:
+            tc = self._parse_item(item)
+            if tc:
+                results.append(tc)
+        return results
+
+    def _parse_item(self, item: dict[str, Any]) -> ToolCall | None:
+        try:
+            name = item.get("name", "")
+            if not name:
+                return None
+            arguments = item.get("arguments", {})
+            arguments_str = self._coerce_arguments(arguments)
+            # Preserve model-generated ID if present, otherwise generate one
+            return self._make_tool_call(name, arguments_str, call_id=item.get("id") or None)
+        except (KeyError, TypeError) as e:
+            logger.warning("Invalid Mistral tool call item: {}", e)
+            return None
 
 
 class NullToolParser(ToolCallParser):

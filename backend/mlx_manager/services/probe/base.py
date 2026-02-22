@@ -7,16 +7,25 @@ logic that both TextGenProbe and VisionProbe can reuse.
 
 from __future__ import annotations
 
+import json
 import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
-from .steps import DiagnosticCategory, DiagnosticLevel, ProbeDiagnostic, ProbeResult, ProbeStep
+from .steps import (
+    DiagnosticCategory,
+    DiagnosticLevel,
+    ProbeDiagnostic,
+    ProbeResult,
+    ProbeStep,
+    TagDiscovery,
+)
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.adapters.composable import ModelAdapter
@@ -74,23 +83,207 @@ _TOOL_PROBE_MESSAGES: list[dict[str, str]] = [
     {"role": "user", "content": "What is the weather in Tokyo?"},
 ]
 
-_KNOWN_XML_TAGS: frozenset[str] = frozenset(
+
+def _build_generic_tool_prompt(tools: list[dict[str, Any]]) -> str:
+    """Build a format-agnostic tool prompt — no format instructions.
+
+    The model responds in whatever tool-calling format it was trained on,
+    which we then discover by sweeping all registered parsers.
+    """
+    return (
+        "You have access to the following tools. Use them when relevant.\n\n"
+        f"Tools:\n{json.dumps(tools, indent=2)}"
+    )
+
+
+_KNOWN_BENIGN_TAGS: frozenset[str] = frozenset(
     {
         "think",
         "thinking",
         "reasoning",
         "reflection",
-        "tool_call",
-        "tool_response",
-        "function_call",
+        "code",
         "output",
         "result",
-        "code",
         "step",
         "answer",
         "solution",
     }
 )
+
+# Backward-compat alias used by old diagnostic code paths
+_KNOWN_XML_TAGS: frozenset[str] = _KNOWN_BENIGN_TAGS | frozenset(
+    {"tool_call", "tool_response", "function_call"}
+)
+
+
+@dataclass
+class DetectedTag:
+    """A tag pattern discovered in model output."""
+
+    name: str  # e.g. "TOOL_CALLS", "tool_call"
+    style: str  # "xml" (<tag>) or "bracket" ([TAG])
+    paired: bool  # True if closing tag found
+
+
+def _detect_all_tags(output: str) -> list[DetectedTag]:
+    """Scan output for ANY tag-like patterns — XML, bracket, and special token styles.
+
+    XML:     <tag>...</tag>          matched by  <([a-zA-Z_][\\w-]*)>
+    Bracket: [TAG]...[/TAG]         matched by  \\[([A-Z_][\\w_]*)\\]
+    Special: <|token|>...<|token|>   matched by  <\\|([a-zA-Z_][\\w_]*)\\|>
+    """
+    tags: list[DetectedTag] = []
+    seen: set[str] = set()
+
+    # XML-style: <tag>...</tag>
+    for match in re.finditer(r"<([a-zA-Z_][\w-]*)(?:\s[^>]*)?>", output):
+        tag_name = match.group(1)
+        key = f"xml:{tag_name.lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        has_close = bool(re.search(rf"</{re.escape(tag_name)}>", output, re.IGNORECASE))
+        tags.append(DetectedTag(name=tag_name.lower(), style="xml", paired=has_close))
+
+    # Bracket-style: [TAG] and optionally [/TAG]
+    for match in re.finditer(r"\[([A-Z][A-Z_\d]*)\]", output):
+        tag_name = match.group(1)
+        key = f"bracket:{tag_name}"
+        if key in seen:
+            continue
+        seen.add(key)
+        has_close = bool(re.search(rf"\[/{re.escape(tag_name)}\]", output, re.IGNORECASE))
+        tags.append(DetectedTag(name=tag_name, style="bracket", paired=has_close))
+
+    # Special token style: <|token_name|>
+    for match in re.finditer(r"<\|([a-zA-Z_][\w_]*)\|>", output):
+        token_name = match.group(1)
+        key = f"special:{token_name.lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        # Check for a second occurrence (special tokens often appear as open/close pairs)
+        all_occurrences = list(re.finditer(rf"<\|{re.escape(token_name)}\|>", output))
+        has_pair = len(all_occurrences) >= 2
+        tags.append(DetectedTag(name=token_name.lower(), style="special", paired=has_pair))
+
+    return tags
+
+
+def _build_marker_to_parsers(
+    parsers: dict[str, type],
+) -> dict[str, list[str]]:
+    """Build {start_marker: [parser_ids]} lookup from registered parsers' stream_markers.
+
+    Multiple parsers can share the same marker (e.g. hermes, glm4_native, glm4_xml
+    all use ``<tool_call>``).
+    """
+    marker_map: dict[str, list[str]] = {}
+    for pid, pcls in parsers.items():
+        if pid == "null":
+            continue
+        for start, _end in pcls().stream_markers:
+            if not start:
+                continue
+            marker_map.setdefault(start, []).append(pid)
+    return marker_map
+
+
+def _scan_for_known_markers(
+    output: str,
+    marker_map: dict[str, list[str]],
+) -> set[str]:
+    """Direct string search for ALL registered start markers in output.
+
+    Returns the set of parser_ids whose start markers appear in the output.
+    This catches markers that regex-based ``_detect_all_tags()`` might miss,
+    e.g. ``<function=`` (not a standard XML tag), ``<|python_tag|>``
+    (special token delimiters), ``[TOOL_CALLS]`` (safety net).
+    """
+    found_parsers: set[str] = set()
+    for marker, pids in marker_map.items():
+        if marker in output:
+            found_parsers.update(pids)
+    return found_parsers
+
+
+def _discover_and_map_tags(
+    output: str,
+    parsers: dict[str, type],
+) -> list[TagDiscovery]:
+    """Primary tag discovery pipeline: regex detection + direct marker scan + merge.
+
+    1. ``_detect_all_tags(output)`` — generic regex-based detection
+    2. ``_build_marker_to_parsers(parsers)`` — marker → parser lookup
+    3. ``_scan_for_known_markers(output, marker_map)`` — direct marker scan
+    4. Merge: enrich each detected tag with ``matched_parsers`` list
+    5. Add any parsers found by direct scan but not by regex detection
+    """
+    detected = _detect_all_tags(output)
+    marker_map = _build_marker_to_parsers(parsers)
+    direct_parsers = _scan_for_known_markers(output, marker_map)
+
+    # Build reverse lookup: parser_id → which markers matched
+    parsers_covered_by_tags: set[str] = set()
+    discoveries: list[TagDiscovery] = []
+
+    for tag in detected:
+        # Build possible marker strings for this tag
+        candidates: list[str] = []
+        if tag.style == "xml":
+            candidates = [f"<{tag.name}>", f"<|{tag.name}|>"]
+        elif tag.style == "bracket":
+            candidates = [f"[{tag.name}]"]
+        elif tag.style == "special":
+            candidates = [f"<|{tag.name}|>"]
+
+        matched: list[str] = []
+        for candidate in candidates:
+            if candidate in marker_map:
+                matched.extend(marker_map[candidate])
+                parsers_covered_by_tags.update(marker_map[candidate])
+
+        discoveries.append(
+            TagDiscovery(
+                name=tag.name,
+                style=tag.style,
+                paired=tag.paired,
+                matched_parsers=sorted(set(matched)),
+            )
+        )
+
+    # Add parsers found by direct scan but not covered by regex-detected tags
+    uncovered = direct_parsers - parsers_covered_by_tags
+    if uncovered:
+        # Map these back to their markers for reporting
+        for pid in sorted(uncovered):
+            for marker, pids in marker_map.items():
+                if pid in pids:
+                    # Determine style from marker format
+                    if marker.startswith("<|") and marker.endswith("|>"):
+                        style = "special"
+                        name = marker[2:-2].lower()
+                    elif marker.startswith("["):
+                        style = "bracket"
+                        name = marker.strip("[]")
+                    elif marker.startswith("<"):
+                        style = "xml"
+                        name = marker.strip("<>").lower()
+                    else:
+                        style = "unknown"
+                        name = marker
+                    discoveries.append(
+                        TagDiscovery(
+                            name=name,
+                            style=style,
+                            paired=False,  # Not detected by regex, just the marker
+                            matched_parsers=[pid],
+                        )
+                    )
+                    break  # One entry per parser
+
+    return discoveries
 
 
 class GenerativeProbe(BaseProbe):
@@ -231,7 +424,9 @@ class GenerativeProbe(BaseProbe):
                     continue
                 parser = parser_cls()
                 for open_tag, _close_tag in parser.stream_markers:
-                    if open_tag.strip("<>").lower() == unclosed.lower():
+                    # Normalize tag name: strip XML (<>) or bracket ([]) delimiters
+                    marker_name = open_tag.strip("<>").strip("[]").lower()
+                    if marker_name == unclosed.lower():
                         logger.info(
                             "Thinking probe: unclosed <{}> matches parser={}",
                             unclosed,
@@ -276,7 +471,12 @@ class GenerativeProbe(BaseProbe):
     async def _verify_tool_support(
         self, loaded: LoadedModel, adapter: ModelAdapter
     ) -> tuple[str | None, str | None, list[ProbeDiagnostic]]:
-        """2-attempt adapter-driven tool verification.
+        """2-step model-agnostic tool verification.
+
+        Step 1 — Template delivery: if tokenizer natively supports tools=,
+                 generate once then sweep ALL parsers on the output.
+        Step 2 — Generic injection: inject a format-agnostic tool prompt
+                 as system message, generate once, sweep ALL parsers.
 
         Returns (tool_format, tool_parser_id, diagnostics).
         """
@@ -287,20 +487,22 @@ class GenerativeProbe(BaseProbe):
         last_output: str | None = None
         diagnostics: list[ProbeDiagnostic] = []
 
-        # Attempt 1: Template delivery
+        # ── Step 1: Template delivery (native tools) ─────────────────
         if adapter.supports_native_tools() or has_native_tool_support(tokenizer):
             try:
-                last_result = await self._generate(
+                gen_result = await self._generate(
                     loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
                 )
-                last_output = last_result.content
-                parser_id = _validate_tool_output(last_output, "get_weather", adapter)
-                if parser_id:
-                    logger.info(
-                        "Tool probe: template delivery verified (parser={})",
-                        parser_id,
-                    )
-                    return ("template", parser_id, diagnostics)
+                last_output = gen_result.content
+                for parser_id, parser_cls in TOOL_PARSERS.items():
+                    if parser_id == "null":
+                        continue
+                    if parser_cls().validates(last_output, "get_weather"):
+                        logger.info(
+                            "Tool probe: template delivery verified (parser={})",
+                            parser_id,
+                        )
+                        return ("template", parser_id, diagnostics)
                 logger.debug(
                     "Template delivery produced output but no parser matched: {}",
                     last_output[:200],
@@ -308,110 +510,87 @@ class GenerativeProbe(BaseProbe):
             except Exception as e:
                 logger.debug("Template delivery generation failed: {}", e)
 
-        # Attempt 2: Adapter delivery
-        tool_prompt = adapter.format_tools_for_prompt(_TOOL_PROBE_TOOL)
-        if tool_prompt:
-            try:
-                messages_with_tools = [
-                    {"role": "system", "content": tool_prompt},
-                    *_TOOL_PROBE_MESSAGES,
-                ]
-                last_result = await self._generate(loaded, messages_with_tools)
-                last_output = last_result.content
-                parser_id = _validate_tool_output(last_output, "get_weather", adapter)
-                if parser_id:
+        # ── Step 2: Generic injection (format-agnostic) ──────────────
+        generic_prompt = _build_generic_tool_prompt(_TOOL_PROBE_TOOL)
+        try:
+            messages_with_tools = [
+                {"role": "system", "content": generic_prompt},
+                *_TOOL_PROBE_MESSAGES,
+            ]
+            gen_result = await self._generate(loaded, messages_with_tools)
+            last_output = gen_result.content
+            for parser_id, parser_cls in TOOL_PARSERS.items():
+                if parser_id == "null":
+                    continue
+                if parser_cls().validates(last_output, "get_weather"):
                     logger.info(
-                        "Tool probe: adapter delivery verified (parser={})",
+                        "Tool probe: generic injection verified (parser={})",
                         parser_id,
                     )
                     return ("adapter", parser_id, diagnostics)
-                logger.debug(
-                    "Adapter delivery produced output but no parser matched: {}",
-                    last_output[:200],
-                )
-            except Exception as e:
-                logger.debug("Adapter delivery generation failed: {}", e)
+            logger.debug(
+                "Generic injection produced output but no parser matched: {}",
+                last_output[:200],
+            )
+        except Exception as e:
+            logger.debug("Generic injection generation failed: {}", e)
 
-        # No match -- scan for partial tool markers as diagnostic
+        # ── No match: generic tag scan ────────────────────────────────
         registered_parsers = [pid for pid in TOOL_PARSERS if pid != "null"]
         try:
             if last_output is None:
                 last_gen = await self._generate(loaded, _TOOL_PROBE_MESSAGES)
                 last_output = last_gen.content
 
-            # Check for partial/corrupted tool call markers
-            tool_markers = [
-                "<tool_call>",
-                "</tool_call>",
-                "<function=",
-                "</function>",
-                "get_weather",
-                '"name"',
-            ]
-            found_markers = [m for m in tool_markers if m in last_output]
-            if found_markers:
-                # Check if output has tokenization artifacts (garbled detokenization)
-                if _has_tokenization_artifacts(last_output):
-                    logger.warning(
-                        "Tool probe: output has tokenization artifacts — "
-                        "model architecture likely not fully supported by "
-                        "installed mlx-lm. Raw output: {}",
-                        last_output[:300],
+            # Check for tokenization artifacts first
+            if _has_tokenization_artifacts(last_output):
+                diagnostics.append(
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.ACTION_NEEDED,
+                        category=DiagnosticCategory.UNSUPPORTED,
+                        message=(
+                            "Model architecture not fully supported by installed "
+                            "mlx-lm — output is garbled due to tokenizer "
+                            "incompatibility. Tool calling will not work until "
+                            "mlx-lm adds proper support for this architecture."
+                        ),
+                        details={"raw_output_sample": last_output[:300]},
                     )
-                    diagnostics.append(
-                        ProbeDiagnostic(
-                            level=DiagnosticLevel.ACTION_NEEDED,
-                            category=DiagnosticCategory.UNSUPPORTED,
-                            message=(
-                                "Model architecture not fully supported by installed "
-                                "mlx-lm — output is garbled due to tokenizer "
-                                "incompatibility. Tool calling will not work until "
-                                "mlx-lm adds proper support for this architecture."
-                            ),
-                            details={
-                                "found_markers": found_markers,
-                                "raw_output_sample": last_output[:300],
-                            },
-                        )
-                    )
-                else:
-                    logger.warning(
-                        "Tool probe: model attempted tool use (markers: {}) "
-                        "but no parser matched. Raw output: {}",
-                        found_markers,
-                        last_output[:300],
-                    )
+                )
+            else:
+                # Generic tag detection
+                detected_tags = _detect_all_tags(last_output)
+                unmatched = [t for t in detected_tags if t.name.lower() not in _KNOWN_BENIGN_TAGS]
+                tool_hints = ["get_weather", '"name"']
+                found_hints = [m for m in tool_hints if m in last_output]
+
+                if found_hints:
                     diagnostics.append(
                         ProbeDiagnostic(
                             level=DiagnosticLevel.ACTION_NEEDED,
                             category=DiagnosticCategory.TOOL_DIALECT,
                             message=(
-                                "Unknown tool dialect — model produced tool-like markers "
-                                "but no registered parser could parse the output"
+                                "Unknown tool dialect — model produced tool-like output "
+                                "but no registered parser could parse it"
                             ),
                             details={
-                                "found_markers": found_markers,
+                                "found_hints": found_hints,
                                 "raw_output_sample": last_output[:300],
                                 "registered_parsers": registered_parsers,
                             },
                         )
                     )
-            else:
-                unknown_tags = _detect_unknown_xml_tags(last_output)
-                if unknown_tags:
-                    logger.warning(
-                        "Tool probe: no parser matched but found unknown XML tags: {}",
-                        unknown_tags,
-                    )
+                elif unmatched:
                     diagnostics.append(
                         ProbeDiagnostic(
                             level=DiagnosticLevel.WARNING,
                             category=DiagnosticCategory.TOOL_DIALECT,
                             message=(
-                                f"Unknown XML tags in output: {', '.join(sorted(unknown_tags))}"
+                                "Unknown tag patterns in output — "
+                                "possible unrecognized tool dialect"
                             ),
                             details={
-                                "unknown_tags": sorted(unknown_tags),
+                                "detected_tags": [(t.name, t.style, t.paired) for t in unmatched],
                                 "raw_output_sample": last_output[:300],
                             },
                         )
@@ -565,18 +744,27 @@ class GenerativeProbe(BaseProbe):
 
 _THINKING_TAGS = ("think", "thinking", "reasoning", "reflection")
 
+# Bracket-style thinking tags (e.g., Mistral [THINK]...[/THINK])
+_BRACKET_THINKING_TAGS = ("THINK",)
+
 
 def _find_unclosed_thinking_tag(output: str) -> str | None:
     """Check for an opening thinking tag without a matching close tag.
 
-    Returns the tag name if found (e.g. "think"), or None.
+    Returns the tag name if found (e.g. "think" or "THINK"), or None.
     This indicates the model started thinking but its output was
     truncated before the closing tag.
+    Checks both XML-style <tag> and bracket-style [TAG] patterns.
     """
+    # XML-style
     for tag in _THINKING_TAGS:
         open_re = re.compile(rf"<{tag}>", re.IGNORECASE)
         close_re = re.compile(rf"</{tag}>", re.IGNORECASE)
         if open_re.search(output) and not close_re.search(output):
+            return tag
+    # Bracket-style
+    for tag in _BRACKET_THINKING_TAGS:
+        if f"[{tag}]" in output and f"[/{tag}]" not in output:
             return tag
     return None
 
@@ -586,48 +774,36 @@ _NON_THINKING_TAGS = {"tool_call", "function_call", "code", "output", "result"}
 
 
 def _detect_unknown_thinking_tags(output: str) -> str | None:
-    """Detect XML-like tags at start of output that look like thinking wrappers."""
+    """Detect tag patterns at start of output that look like thinking wrappers.
+
+    Checks both XML-style (<tag>...</tag>) and bracket-style ([TAG]...[/TAG]).
+    """
+    # XML-style
     match = _GENERIC_THINKING_RE.match(output)
     if match:
         tag = match.group(1).lower()
-        return None if tag in _NON_THINKING_TAGS else tag
-    return None
+        if tag not in _NON_THINKING_TAGS:
+            return tag
 
+    # Bracket-style at start of output
+    bracket_match = re.match(r"^\s*\[([A-Z][A-Z_\d]*)\]", output)
+    if bracket_match:
+        tag_name = bracket_match.group(1)
+        # Check if it has a closing tag (thinking-like pattern)
+        if re.search(rf"\[/{re.escape(tag_name)}\]", output, re.IGNORECASE):
+            # Only flag if not already a known thinking tag handled by parsers
+            if tag_name.lower() not in _KNOWN_BENIGN_TAGS:
+                return tag_name
 
-def _validate_tool_output(output: str, expected_fn: str, adapter: ModelAdapter) -> str | None:
-    """Validate tool output using adapter's parser first, then sweep all parsers."""
-    adapter_parser = adapter.tool_parser
-    adapter_parser_id: str | None = None
-    if adapter_parser.parser_id != "null":
-        adapter_parser_id = adapter_parser.parser_id
-        if adapter_parser.validates(output, expected_fn):
-            return adapter_parser_id
-
-    sweep_result = _find_matching_parser(output, expected_fn, exclude_parser_id=adapter_parser_id)
-    return sweep_result
-
-
-def _find_matching_parser(
-    output: str,
-    expected_function: str,
-    exclude_parser_id: str | None = None,
-) -> str | None:
-    """Try ALL registered parsers to find one that validates the output."""
-    from mlx_manager.mlx_server.parsers import TOOL_PARSERS
-
-    for parser_id, parser_cls in TOOL_PARSERS.items():
-        if parser_id == "null":
-            continue
-        if parser_id == exclude_parser_id:
-            continue
-        parser = parser_cls()
-        if parser.validates(output, expected_function):
-            return parser_id
     return None
 
 
 def _detect_unknown_xml_tags(output: str) -> set[str]:
-    """Scan output for XML-style tags not in the known set."""
+    """Scan output for XML-style tags not in the known set.
+
+    Kept for backward compatibility. For generic detection including
+    bracket-style tags, use _detect_all_tags() instead.
+    """
     tag_pattern = re.compile(r"<([a-zA-Z_][\w-]*)(?:\s[^>]*)?>")
     found_tags: set[str] = set()
     for match in tag_pattern.finditer(output):

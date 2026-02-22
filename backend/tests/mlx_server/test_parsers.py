@@ -25,6 +25,8 @@ from mlx_manager.mlx_server.parsers import (
     LiquidPythonParser,
     LlamaPythonParser,
     LlamaXmlParser,
+    MistralNativeParser,
+    MistralThinkingParser,
     NullThinkingParser,
     NullToolParser,
     ThinkingParser,
@@ -272,13 +274,11 @@ class TestGlm4XmlParser:
         assert len(calls) == 1
         assert calls[0].function.name == "calculate"
 
-    def test_extract_invalid_json_still_extracted(self) -> None:
-        """Invalid JSON is still extracted - validation is caller's responsibility."""
+    def test_extract_invalid_json_returns_nothing(self) -> None:
+        """Invalid JSON arguments cause the call to be silently dropped."""
         text = "<tool_call><name>test</name><arguments>{not valid}</arguments></tool_call>"
         calls = self.parser.extract(text)
-        assert len(calls) == 1
-        assert calls[0].function.name == "test"
-        assert calls[0].function.arguments == "{not valid}"
+        assert len(calls) == 0
 
     def test_extract_empty_text(self) -> None:
         assert self.parser.extract("") == []
@@ -338,12 +338,11 @@ class TestLlamaXmlParser:
         assert len(calls) == 1
         assert calls[0].function.name == "search"
 
-    def test_extract_invalid_json_still_extracted(self) -> None:
+    def test_extract_invalid_json_returns_nothing(self) -> None:
+        """Invalid JSON arguments cause the call to be silently dropped."""
         text = "<function=test>{not valid json}</function>"
         calls = self.parser.extract(text)
-        assert len(calls) == 1
-        assert calls[0].function.name == "test"
-        assert calls[0].function.arguments == "{not valid json}"
+        assert len(calls) == 0
 
     def test_extract_empty_text(self) -> None:
         assert self.parser.extract("") == []
@@ -549,6 +548,107 @@ class TestLiquidPythonParser:
         assert self.parser.validates("Hello world", "get_weather") is False
 
 
+# --- MistralNativeParser Tests ---
+
+
+class TestMistralNativeParser:
+    """Tests for Mistral native [TOOL_CALLS] format."""
+
+    def setup_method(self) -> None:
+        self.parser = MistralNativeParser()
+
+    def test_parser_id(self) -> None:
+        assert self.parser.parser_id == "mistral_native"
+
+    def test_stream_markers(self) -> None:
+        assert self.parser.stream_markers == [("[TOOL_CALLS]", "")]
+
+    def test_extract_single_call(self) -> None:
+        text = (
+            '[TOOL_CALLS] [{"name": "get_weather",'
+            ' "arguments": {"location": "Tokyo"}, "id": "abc123"}]'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args["location"] == "Tokyo"
+        assert calls[0].id == "abc123"
+
+    def test_extract_multiple_calls(self) -> None:
+        text = (
+            '[TOOL_CALLS] [{"name": "get_weather", "arguments": {"location": "NYC"}, "id": "a1"}, '
+            '{"name": "get_time", "arguments": {"timezone": "EST"}, "id": "a2"}]'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[0].id == "a1"
+        assert calls[1].function.name == "get_time"
+        assert calls[1].id == "a2"
+
+    def test_extract_preserves_model_generated_id(self) -> None:
+        text = '[TOOL_CALLS] [{"name": "test", "arguments": {}, "id": "model_id_xyz"}]'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].id == "model_id_xyz"
+
+    def test_extract_generates_id_when_missing(self) -> None:
+        text = '[TOOL_CALLS] [{"name": "test", "arguments": {}}]'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].id.startswith("call_")
+
+    def test_extract_arguments_as_object(self) -> None:
+        """Arguments should be serialized as JSON string."""
+        text = '[TOOL_CALLS] [{"name": "search", "arguments": {"query": "hello", "limit": 5}}]'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["query"] == "hello"
+        assert args["limit"] == 5
+
+    def test_extract_with_surrounding_text(self) -> None:
+        text = (
+            "I'll check the weather for you.\n"
+            '[TOOL_CALLS] [{"name": "get_weather", "arguments": {"location": "SF"}}]'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_malformed_json(self) -> None:
+        text = "[TOOL_CALLS] [not valid json"
+        calls = self.parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_not_array(self) -> None:
+        text = '[TOOL_CALLS] {"name": "test", "arguments": {}}'
+        calls = self.parser.extract(text)
+        # The regex captures [...], so a bare object won't match
+        assert len(calls) == 0
+
+    def test_extract_missing_name(self) -> None:
+        text = '[TOOL_CALLS] [{"arguments": {"x": 1}}]'
+        calls = self.parser.extract(text)
+        # Missing name returns None from _parse_item
+        assert len(calls) == 0
+
+    def test_extract_empty_text(self) -> None:
+        assert self.parser.extract("") == []
+
+    def test_validates_positive(self) -> None:
+        text = '[TOOL_CALLS] [{"name": "get_weather", "arguments": {"location": "Tokyo"}}]'
+        assert self.parser.validates(text, "get_weather") is True
+
+    def test_validates_negative_wrong_fn(self) -> None:
+        text = '[TOOL_CALLS] [{"name": "get_weather", "arguments": {}}]'
+        assert self.parser.validates(text, "get_time") is False
+
+    def test_validates_negative_no_call(self) -> None:
+        assert self.parser.validates("Hello world", "get_weather") is False
+
+
 # --- NullToolParser Tests ---
 
 
@@ -708,6 +808,87 @@ class TestThinkTagParser:
         assert "Second thought" in result
 
 
+# --- MistralThinkingParser Tests ---
+
+
+class TestMistralThinkingParser:
+    """Tests for Mistral [THINK]...[/THINK] bracket thinking parser."""
+
+    def setup_method(self) -> None:
+        self.parser = MistralThinkingParser()
+
+    def test_parser_id(self) -> None:
+        assert self.parser.parser_id == "mistral_think"
+
+    def test_stream_markers(self) -> None:
+        assert self.parser.stream_markers == [("[THINK]", "[/THINK]")]
+
+    def test_extract_single_block(self) -> None:
+        text = "[THINK]Let me reason about this.[/THINK]The answer is 42."
+        result = self.parser.extract(text)
+        assert result == "Let me reason about this."
+
+    def test_extract_multiple_blocks(self) -> None:
+        text = "[THINK]First thought.[/THINK]Middle.[THINK]Second thought.[/THINK]End."
+        result = self.parser.extract(text)
+        assert "First thought." in result
+        assert "Second thought." in result
+
+    def test_extract_no_thinking(self) -> None:
+        text = "Just a normal response."
+        result = self.parser.extract(text)
+        assert result is None
+
+    def test_extract_empty_thinking(self) -> None:
+        text = "[THINK][/THINK]The answer."
+        result = self.parser.extract(text)
+        assert result is None
+
+    def test_extract_whitespace_only(self) -> None:
+        text = "[THINK]   \n  [/THINK]The answer."
+        result = self.parser.extract(text)
+        assert result is None
+
+    def test_extract_case_insensitive(self) -> None:
+        text = "[think]Lower case thinking.[/think]Answer."
+        result = self.parser.extract(text)
+        assert result == "Lower case thinking."
+
+    def test_extract_preserves_formatting(self) -> None:
+        text = "[THINK]Line 1\nLine 2\n- bullet[/THINK]Answer"
+        result = self.parser.extract(text)
+        assert "Line 1\nLine 2\n- bullet" in result
+
+    def test_remove_single_block(self) -> None:
+        text = "[THINK]Internal reasoning.[/THINK]The answer is 42."
+        result = self.parser.remove(text)
+        assert "Internal reasoning" not in result
+        assert "The answer is 42." in result
+
+    def test_remove_multiple_blocks(self) -> None:
+        text = "[THINK]A[/THINK]Hello [THINK]B[/THINK]World"
+        result = self.parser.remove(text)
+        assert "Hello" in result
+        assert "World" in result
+        assert "[THINK]" not in result
+
+    def test_remove_preserves_content(self) -> None:
+        text = "Just content without thinking."
+        result = self.parser.remove(text)
+        assert result == "Just content without thinking."
+
+    def test_remove_normalizes_whitespace(self) -> None:
+        text = "Start[THINK]removed[/THINK]\n\n\n\nEnd"
+        result = self.parser.remove(text)
+        assert "\n\n\n" not in result
+        assert "Start" in result
+        assert "End" in result
+
+    def test_supports_toggle_false(self) -> None:
+        """Mistral thinking parser doesn't support enable_thinking toggle."""
+        assert self.parser.supports_toggle is False
+
+
 # --- NullThinkingParser Tests ---
 
 
@@ -785,6 +966,14 @@ class TestRegistry:
         with pytest.raises(KeyError, match="Unknown thinking parser"):
             resolve_thinking_parser("nonexistent")
 
+    def test_resolve_tool_parser_mistral_native(self) -> None:
+        parser = resolve_tool_parser("mistral_native")
+        assert isinstance(parser, MistralNativeParser)
+
+    def test_resolve_thinking_parser_mistral_think(self) -> None:
+        parser = resolve_thinking_parser("mistral_think")
+        assert isinstance(parser, MistralThinkingParser)
+
     def test_all_tool_parsers_registered(self) -> None:
         expected = {
             "hermes_json",
@@ -793,12 +982,13 @@ class TestRegistry:
             "llama_xml",
             "llama_python",
             "liquid_python",
+            "mistral_native",
             "null",
         }
         assert set(TOOL_PARSERS.keys()) == expected
 
     def test_all_thinking_parsers_registered(self) -> None:
-        expected = {"think_tag", "null"}
+        expected = {"think_tag", "mistral_think", "null"}
         assert set(THINKING_PARSERS.keys()) == expected
 
     def test_resolve_returns_new_instances(self) -> None:
@@ -816,12 +1006,13 @@ class TestRegistry:
             LlamaXmlParser,
             LlamaPythonParser,
             LiquidPythonParser,
+            MistralNativeParser,
             NullToolParser,
         }
         registered_tool_classes = set(TOOL_PARSERS.values())
         assert tool_classes == registered_tool_classes
 
-        thinking_classes = {ThinkTagParser, NullThinkingParser}
+        thinking_classes = {ThinkTagParser, MistralThinkingParser, NullThinkingParser}
         registered_thinking_classes = set(THINKING_PARSERS.values())
         assert thinking_classes == registered_thinking_classes
 
@@ -993,11 +1184,10 @@ class TestLlamaXmlParserErrorHandling:
         assert len(calls) == 0
 
     def test_empty_arguments(self) -> None:
-        """Handles empty arguments."""
+        """Empty arguments cause the call to be silently dropped."""
         text = "<function=test></function>"
         calls = self.parser.extract(text)
-        assert len(calls) == 1
-        assert calls[0].function.arguments == ""
+        assert len(calls) == 0
 
 
 class TestGlm4NativeParserRegexEdgeCases:

@@ -27,6 +27,8 @@ from mlx_manager.mlx_server.parsers import (
     Glm4NativeParser,
     HermesJsonParser,
     LlamaXmlParser,
+    MistralNativeParser,
+    MistralThinkingParser,
     NullThinkingParser,
     NullToolParser,
     ThinkTagParser,
@@ -93,7 +95,7 @@ class TestModelAdapterAlias:
 
     def test_can_instantiate_model_adapter_directly(self) -> None:
         """ModelAdapter is concrete (no longer abstract) with FamilyConfig."""
-        adapter = ModelAdapter(tokenizer=FakeTokenizer())
+        adapter = ModelAdapter(model_type="text-gen", tokenizer=FakeTokenizer())
         assert adapter.family == "default"
 
 
@@ -104,45 +106,45 @@ class TestDefaultAdapter:
     """Test ModelAdapter with default FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "default"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert isinstance(adapter.tool_parser, NullToolParser)
         assert isinstance(adapter.thinking_parser, NullThinkingParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is False
 
     def test_supports_native_tools(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_native_tools() is False
 
     def test_stop_tokens(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.stop_tokens == [0]
 
     def test_get_stream_markers(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.get_stream_markers() == []
 
     def test_apply_chat_template(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         result = adapter.apply_chat_template([{"role": "user", "content": "hello"}])
         assert "hello" in result
 
     def test_format_tools_for_prompt(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.format_tools_for_prompt([]) == ""
 
     def test_get_tool_call_stop_tokens(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.get_tool_call_stop_tokens() == []
 
     def test_convert_messages_tool_role(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "tool",
@@ -157,7 +159,7 @@ class TestDefaultAdapter:
         assert "result" in converted[0]["content"]
 
     def test_convert_messages_assistant_with_tool_calls(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "assistant",
@@ -180,7 +182,7 @@ class TestDefaultAdapter:
         assert "[Tool Call: get_weather" in converted[0]["content"]
 
     def test_clean_response(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         text = "<|im_start|>hello<|im_end|>\n\n\n\nworld"
         cleaned = adapter.clean_response(text)
         assert "<|im_start|>" not in cleaned
@@ -195,35 +197,35 @@ class TestQwenAdapter:
     """Test ModelAdapter with qwen FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "qwen"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert isinstance(adapter.tool_parser, HermesJsonParser)
         assert isinstance(adapter.thinking_parser, ThinkTagParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_supports_native_tools(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_native_tools() is True
 
     def test_stop_tokens_includes_im_end(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert 0 in adapter.stop_tokens
         assert 100 in adapter.stop_tokens  # <|im_end|>
 
     def test_get_stream_markers(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         markers = adapter.get_stream_markers()
         assert ("<tool_call>", "</tool_call>") in markers
         assert ("<think>", "</think>") in markers
 
     def test_format_tools_for_prompt(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -239,7 +241,7 @@ class TestQwenAdapter:
         assert "<tool_call>" in result
 
     def test_convert_messages_tool_role(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "tool",
@@ -252,7 +254,7 @@ class TestQwenAdapter:
         assert "[End Tool Result]" in converted[0]["content"]
 
     def test_convert_messages_assistant_with_tool_calls(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "assistant",
@@ -279,31 +281,31 @@ class TestGLM4Adapter:
     """Test ModelAdapter with glm4 FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "glm4"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert isinstance(adapter.tool_parser, Glm4NativeParser)
         assert isinstance(adapter.thinking_parser, ThinkTagParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_supports_native_tools(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_native_tools() is True
 
     def test_stop_tokens_includes_special_tokens(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert 0 in adapter.stop_tokens
         assert 500 in adapter.stop_tokens  # <|user|>
         assert 600 in adapter.stop_tokens  # <|observation|>
         assert 700 in adapter.stop_tokens  # <|endoftext|>
 
     def test_format_tools_for_prompt(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -327,7 +329,7 @@ class TestGLM4Adapter:
                     return "template_with_tools"
                 return "template_without_tools"
 
-        adapter = create_adapter("glm4", GLM4FakeTokenizer())
+        adapter = create_adapter("glm4", GLM4FakeTokenizer(), model_type="text-gen")
         result = adapter.apply_chat_template(
             [{"role": "user", "content": "test"}],
             tools=[{"function": {"name": "test"}}],
@@ -335,7 +337,7 @@ class TestGLM4Adapter:
         assert result == "template_with_tools"
 
     def test_convert_messages_assistant_with_tool_calls(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "assistant",
@@ -361,38 +363,38 @@ class TestLlamaAdapter:
     """Test ModelAdapter with llama FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "llama"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert isinstance(adapter.tool_parser, LlamaXmlParser)
         assert isinstance(adapter.thinking_parser, ThinkTagParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_supports_native_tools(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_native_tools() is False
 
     def test_stop_tokens_includes_eot_id(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert 0 in adapter.stop_tokens
         assert 200 in adapter.stop_tokens  # <|eot_id|>
 
     def test_stop_tokens_includes_end_of_turn(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert 300 in adapter.stop_tokens  # <|end_of_turn|>
 
     def test_get_tool_call_stop_tokens(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         tool_stop_tokens = adapter.get_tool_call_stop_tokens()
         assert 400 in tool_stop_tokens  # <|eom_id|>
 
     def test_format_tools_for_prompt(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -408,7 +410,7 @@ class TestLlamaAdapter:
         assert "<function=" in result
 
     def test_convert_messages_assistant_with_tool_calls(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "assistant",
@@ -434,20 +436,20 @@ class TestGemmaAdapter:
     """Test ModelAdapter with gemma FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("gemma", FakeTokenizer())
+        adapter = create_adapter("gemma", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "gemma"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("gemma", FakeTokenizer())
+        adapter = create_adapter("gemma", FakeTokenizer(), model_type="text-gen")
         assert isinstance(adapter.tool_parser, NullToolParser)
         assert isinstance(adapter.thinking_parser, NullThinkingParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("gemma", FakeTokenizer())
+        adapter = create_adapter("gemma", FakeTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is False
 
     def test_stop_tokens_includes_end_of_turn(self) -> None:
-        adapter = create_adapter("gemma", FakeTokenizer())
+        adapter = create_adapter("gemma", FakeTokenizer(), model_type="text-gen")
         assert 0 in adapter.stop_tokens
         assert 800 in adapter.stop_tokens  # <end_of_turn>
 
@@ -459,21 +461,21 @@ class TestMistralAdapter:
     """Test ModelAdapter with mistral FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("mistral", FakeTokenizer())
+        adapter = create_adapter("mistral", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "mistral"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("mistral", FakeTokenizer())
-        assert isinstance(adapter.tool_parser, NullToolParser)
-        assert isinstance(adapter.thinking_parser, NullThinkingParser)
+        adapter = create_adapter("mistral", FakeTokenizer(), model_type="text-gen")
+        assert isinstance(adapter.tool_parser, MistralNativeParser)
+        assert isinstance(adapter.thinking_parser, MistralThinkingParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("mistral", FakeTokenizer())
-        assert adapter.supports_tool_calling() is False
+        adapter = create_adapter("mistral", FakeTokenizer(), model_type="text-gen")
+        assert adapter.supports_tool_calling() is True
 
     def test_apply_chat_template_system_message_prepend(self) -> None:
         """Mistral prepends system message to first user message."""
-        adapter = create_adapter("mistral", FakeTokenizer())
+        adapter = create_adapter("mistral", FakeTokenizer(), model_type="text-gen")
         messages = [
             {"role": "system", "content": "You are helpful"},
             {"role": "user", "content": "Hello"},
@@ -490,28 +492,28 @@ class TestEmbeddingsAdapter:
     """Test ModelAdapter with embeddings FamilyConfig."""
 
     def test_family(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.family == "embeddings"
 
     def test_default_parsers(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert isinstance(adapter.tool_parser, NullToolParser)
         assert isinstance(adapter.thinking_parser, NullThinkingParser)
 
     def test_supports_tool_calling(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.supports_tool_calling() is False
 
     def test_supports_native_tools(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.supports_native_tools() is False
 
     def test_get_stream_markers_empty(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.get_stream_markers() == []
 
     def test_format_tools_for_prompt_empty(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.format_tools_for_prompt([]) == ""
 
     def test_registry_includes_embeddings(self) -> None:
@@ -519,7 +521,7 @@ class TestEmbeddingsAdapter:
         assert isinstance(FAMILY_REGISTRY["embeddings"], FamilyConfig)
 
     def test_create_adapter_embeddings(self) -> None:
-        adapter = create_adapter("embeddings", FakeTokenizer())
+        adapter = create_adapter("embeddings", FakeTokenizer(), model_type="embeddings")
         assert adapter.family == "embeddings"
 
 
@@ -530,18 +532,23 @@ class TestParserDependencyInjection:
     """Test parser dependency injection."""
 
     def test_override_tool_parser(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer(), tool_parser=NullToolParser())
+        adapter = create_adapter(
+            "qwen", FakeTokenizer(), model_type="text-gen", tool_parser=NullToolParser()
+        )
         assert isinstance(adapter.tool_parser, NullToolParser)
         assert adapter.supports_tool_calling() is False
 
     def test_override_thinking_parser(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer(), thinking_parser=NullThinkingParser())
+        adapter = create_adapter(
+            "qwen", FakeTokenizer(), model_type="text-gen", thinking_parser=NullThinkingParser()
+        )
         assert isinstance(adapter.thinking_parser, NullThinkingParser)
 
     def test_override_both_parsers(self) -> None:
         adapter = create_adapter(
             "llama",
             FakeTokenizer(),
+            model_type="text-gen",
             tool_parser=HermesJsonParser(),
             thinking_parser=NullThinkingParser(),
         )
@@ -556,35 +563,39 @@ class TestModelAdapterFactory:
     """Test create_adapter factory."""
 
     def test_create_qwen_adapter(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "qwen"
 
     def test_create_glm4_adapter(self) -> None:
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "glm4"
 
     def test_create_llama_adapter(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "llama"
 
     def test_create_gemma_adapter(self) -> None:
-        adapter = create_adapter("gemma", FakeTokenizer())
+        adapter = create_adapter("gemma", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "gemma"
 
     def test_create_mistral_adapter(self) -> None:
-        adapter = create_adapter("mistral", FakeTokenizer())
+        adapter = create_adapter("mistral", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "mistral"
 
     def test_create_unknown_family_returns_default(self) -> None:
-        adapter = create_adapter("unknown", FakeTokenizer())
+        adapter = create_adapter("unknown", FakeTokenizer(), model_type="text-gen")
         assert adapter.family == "default"
 
     def test_create_with_parser_override(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer(), tool_parser=NullToolParser())
+        adapter = create_adapter(
+            "qwen", FakeTokenizer(), model_type="text-gen", tool_parser=NullToolParser()
+        )
         assert isinstance(adapter.tool_parser, NullToolParser)
 
     def test_create_with_model_id(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer(), model_id="mlx-community/Qwen-7B")
+        adapter = create_adapter(
+            "qwen", FakeTokenizer(), model_type="text-gen", model_id="mlx-community/Qwen-7B"
+        )
         assert adapter._model_id == "mlx-community/Qwen-7B"
 
 
@@ -623,7 +634,7 @@ class TestTokenizerAccess:
 
     def test_tokenizer_property(self) -> None:
         tokenizer = FakeTokenizer()
-        adapter = create_adapter("default", tokenizer)
+        adapter = create_adapter("default", tokenizer, model_type="text-gen")
         assert adapter.tokenizer is tokenizer
 
     def test_processor_wrapped_tokenizer(self) -> None:
@@ -634,12 +645,12 @@ class TestTokenizerAccess:
                 self.tokenizer = FakeTokenizer()
 
         processor = FakeProcessor()
-        adapter = create_adapter("default", processor)
+        adapter = create_adapter("default", processor, model_type="text-gen")
         assert adapter._actual_tokenizer is processor.tokenizer
 
     def test_none_tokenizer(self) -> None:
         """Audio adapters pass None tokenizer."""
-        adapter = create_adapter("kokoro", None)
+        adapter = create_adapter("kokoro", None, model_type="audio")
         assert adapter.tokenizer is None
         assert adapter._actual_tokenizer is None
         # Stop tokens should be empty with no tokenizer
@@ -653,7 +664,7 @@ class TestStopTokensPreComputation:
     """Test stop tokens are pre-computed at init."""
 
     def test_stop_tokens_cached(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         tokens1 = adapter.stop_tokens
         tokens2 = adapter.stop_tokens
         assert tokens1 is tokens2
@@ -661,7 +672,7 @@ class TestStopTokensPreComputation:
     def test_compute_stop_tokens_exception_path(self) -> None:
         """When convert_tokens_to_ids raises, the token is silently skipped."""
         tokenizer = FakeTokenizer(raise_on_convert=True)
-        adapter = create_adapter("qwen", tokenizer)
+        adapter = create_adapter("qwen", tokenizer, model_type="text-gen")
         # Should only have eos_token_id since convert failed for extra tokens
         assert adapter.stop_tokens == [0]
 
@@ -669,7 +680,7 @@ class TestStopTokensPreComputation:
         """Tokenizer without eos_token_id returns empty base list."""
         tokenizer = FakeTokenizer()
         del tokenizer.eos_token_id
-        adapter = create_adapter("default", tokenizer)
+        adapter = create_adapter("default", tokenizer, model_type="text-gen")
         assert adapter.stop_tokens == []
 
 
@@ -680,7 +691,7 @@ class TestCleanResponse:
     """Test clean_response method."""
 
     def test_removes_special_tokens(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         text = "<|im_start|>hello<|im_end|><|endoftext|>"
         cleaned = adapter.clean_response(text)
         assert "<|im_start|>" not in cleaned
@@ -689,14 +700,14 @@ class TestCleanResponse:
         assert "hello" in cleaned
 
     def test_normalizes_multiple_newlines(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         text = "hello\n\n\n\nworld"
         cleaned = adapter.clean_response(text)
         assert "\n\n\n" not in cleaned
         assert "hello\n\nworld" in cleaned
 
     def test_strips_whitespace(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         text = "  hello  "
         cleaned = adapter.clean_response(text)
         assert cleaned == "hello"
@@ -709,7 +720,7 @@ class TestGetStreamMarkers:
     """Test get_stream_markers combines tool and thinking markers."""
 
     def test_combines_markers(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         markers = adapter.get_stream_markers()
         tool_markers = list(adapter.tool_parser.stream_markers)
         thinking_markers = list(adapter.thinking_parser.stream_markers)
@@ -717,7 +728,7 @@ class TestGetStreamMarkers:
         assert markers == expected
 
     def test_empty_markers_for_null_parsers(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         markers = adapter.get_stream_markers()
         assert markers == []
 
@@ -729,11 +740,11 @@ class TestConvertMessagesEdgeCases:
     """Test convert_messages edge cases."""
 
     def test_empty_messages(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         assert adapter.convert_messages([]) == []
 
     def test_regular_messages_unchanged(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
@@ -742,7 +753,7 @@ class TestConvertMessagesEdgeCases:
         assert converted == messages
 
     def test_assistant_no_content_with_tool_calls(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         messages = [
             {
                 "role": "assistant",
@@ -760,7 +771,7 @@ class TestConvertMessagesEdgeCases:
         assert "<tool_call>" in converted[0]["content"]
 
     def test_tool_message_missing_content(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [{"role": "tool", "tool_call_id": "call_1"}]
         converted = adapter.convert_messages(messages)
         assert converted[0]["role"] == "user"
@@ -773,14 +784,14 @@ class TestPrepareTools:
     """Test _prepare_tools with various tool delivery scenarios."""
 
     def test_no_tools_returns_messages_unchanged(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         msgs = [{"role": "user", "content": "hi"}]
         effective, native = adapter._prepare_tools(msgs, None)
         assert effective is msgs
         assert native is None
 
     def test_empty_tools_returns_messages_unchanged(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         msgs = [{"role": "user", "content": "hi"}]
         effective, native = adapter._prepare_tools(msgs, [])
         assert effective is msgs
@@ -788,7 +799,7 @@ class TestPrepareTools:
 
     def test_native_tools_returns_tools_for_template(self) -> None:
         """GLM4 has native_tools=True, so tools pass through to template."""
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         msgs = [{"role": "user", "content": "hi"}]
         tools = [{"function": {"name": "test"}}]
         effective, native = adapter._prepare_tools(msgs, tools)
@@ -797,7 +808,7 @@ class TestPrepareTools:
 
     def test_qwen_native_tools_pass_through(self) -> None:
         """Qwen now has native_tools=True, so tools pass through to template."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         msgs = [
             {"role": "system", "content": "You are helpful"},
             {"role": "user", "content": "hi"},
@@ -817,7 +828,7 @@ class TestPrepareTools:
 
     def test_non_native_tools_injects_into_system_message(self) -> None:
         """Llama injects tools into system message (non-native delivery)."""
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         msgs = [
             {"role": "system", "content": "You are helpful"},
             {"role": "user", "content": "hi"},
@@ -839,7 +850,7 @@ class TestPrepareTools:
 
     def test_non_native_tools_creates_system_message_when_missing(self) -> None:
         """When no system message exists, one is created for tool injection."""
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         msgs = [{"role": "user", "content": "hi"}]
         tools = [
             {
@@ -857,7 +868,7 @@ class TestPrepareTools:
 
     def test_non_native_tools_with_no_formatter_returns_unchanged(self) -> None:
         """Default adapter has no tool formatter, so tools are not injected."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         msgs = [{"role": "user", "content": "hi"}]
         tools = [{"function": {"name": "test"}}]
         # Default has no tool_format_strategy so format_tools_for_prompt returns ""
@@ -873,7 +884,7 @@ class TestApplyChatTemplate:
     """Test apply_chat_template with various configurations."""
 
     def test_default_template_without_tools(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         result = adapter.apply_chat_template(
             [{"role": "user", "content": "hello"}],
             add_generation_prompt=True,
@@ -882,7 +893,7 @@ class TestApplyChatTemplate:
 
     def test_native_tools_passed_to_tokenizer(self) -> None:
         """When native_tools, tools= kwarg is passed to apply_chat_template."""
-        adapter = create_adapter("glm4", FakeTokenizer())
+        adapter = create_adapter("glm4", FakeTokenizer(), model_type="text-gen")
         result = adapter.apply_chat_template(
             [{"role": "user", "content": "hello"}],
             tools=[{"function": {"name": "test"}}],
@@ -892,7 +903,7 @@ class TestApplyChatTemplate:
 
     def test_template_strategy_takes_precedence(self) -> None:
         """When a template_strategy is set, it is used instead of direct tokenizer call."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         result = adapter.apply_chat_template(
             [{"role": "user", "content": "hello"}],
         )
@@ -907,25 +918,25 @@ class TestGetToolCallStopTokens:
     """Test get_tool_call_stop_tokens edge cases."""
 
     def test_returns_tokens_for_llama(self) -> None:
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         tokens = adapter.get_tool_call_stop_tokens()
         assert 400 in tokens  # <|eom_id|>
 
     def test_exception_in_convert_is_silently_skipped(self) -> None:
         """When convert_tokens_to_ids raises, that token is skipped."""
         tokenizer = FakeTokenizer(raise_on_convert=True)
-        adapter = create_adapter("llama", tokenizer)
+        adapter = create_adapter("llama", tokenizer, model_type="text-gen")
         tokens = adapter.get_tool_call_stop_tokens()
         assert tokens == []
 
     def test_no_tokenizer_returns_empty(self) -> None:
         """Audio adapters with no tokenizer return empty list."""
-        adapter = create_adapter("kokoro", None)
+        adapter = create_adapter("kokoro", None, model_type="audio")
         assert adapter.get_tool_call_stop_tokens() == []
 
     def test_no_tool_call_stop_tokens_config_returns_empty(self) -> None:
         """Families without tool_call_stop_tokens return empty."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         assert adapter.get_tool_call_stop_tokens() == []
 
 
@@ -936,24 +947,24 @@ class TestCreateStreamProcessor:
     """Test create_stream_processor factory method."""
 
     def test_creates_processor(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         processor = adapter.create_stream_processor()
         assert processor is not None
 
     def test_detects_thinking_mode_from_prompt(self) -> None:
         """Prompt ending with <think> starts processor in thinking mode."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         processor = adapter.create_stream_processor(prompt="some text\n<think>")
         assert processor._in_pattern is True
         assert processor._is_thinking_pattern is True
 
     def test_no_thinking_mode_for_empty_prompt(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         processor = adapter.create_stream_processor(prompt="")
         assert processor._in_pattern is False
 
     def test_no_thinking_mode_for_regular_prompt(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         processor = adapter.create_stream_processor(prompt="Hello world")
         assert processor._in_pattern is False
 
@@ -966,7 +977,7 @@ class TestPostLoadConfigure:
 
     @pytest.mark.anyio
     async def test_no_hook_does_nothing(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         # Should not raise
         await adapter.post_load_configure(model=object(), model_id="test/model")
 
@@ -979,7 +990,7 @@ class TestPostLoadConfigure:
             called_with.append((model, model_id))
 
         config = FamilyConfig(family="test_hook", post_load_hook=fake_hook)
-        adapter = ModelAdapter(config=config, tokenizer=FakeTokenizer())
+        adapter = ModelAdapter(model_type="text-gen", config=config, tokenizer=FakeTokenizer())
         model = object()
         await adapter.post_load_configure(model, "test/model")
         assert len(called_with) == 1
@@ -993,7 +1004,7 @@ class TestPrepareInput:
     """Test prepare_input for text models."""
 
     def test_basic_text_input(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "Hello"}],
         )
@@ -1004,7 +1015,7 @@ class TestPrepareInput:
 
     def test_text_input_with_tools(self) -> None:
         """Tools are delivered and tool_call_stop_tokens added."""
-        adapter = create_adapter("llama", FakeTokenizer())
+        adapter = create_adapter("llama", FakeTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -1024,7 +1035,7 @@ class TestPrepareInput:
 
     def test_text_input_tools_without_support_no_injection(self) -> None:
         """Default adapter doesn't support tools, so tools are ignored."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         tools = [{"function": {"name": "test"}}]
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "hi"}],
@@ -1036,7 +1047,9 @@ class TestPrepareInput:
 
     def test_text_input_tools_with_injection_config(self) -> None:
         """enable_tool_injection on adapter forces tool delivery even on default adapter."""
-        adapter = create_adapter("default", FakeTokenizer(), enable_tool_injection=True)
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="text-gen", enable_tool_injection=True
+        )
         tools = [{"function": {"name": "test"}}]
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "hi"}],
@@ -1046,7 +1059,10 @@ class TestPrepareInput:
 
     def test_text_input_with_thinking(self) -> None:
         adapter = create_adapter(
-            "qwen", FakeTokenizer(), template_options={"enable_thinking": True}
+            "qwen",
+            FakeTokenizer(),
+            model_type="text-gen",
+            template_options={"enable_thinking": True},
         )
         result = adapter.prepare_input(
             messages=[{"role": "user", "content": "Think about this"}],
@@ -1058,7 +1074,9 @@ class TestPrepareInput:
         import sys
         from unittest.mock import MagicMock
 
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         fake_images = ["fake_image_data"]
 
         # Create fake mlx_vlm modules for local imports inside prepare_input
@@ -1090,7 +1108,9 @@ class TestPrepareInput:
         import sys
         from unittest.mock import MagicMock
 
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         messages = [
             {
                 "role": "user",
@@ -1132,7 +1152,7 @@ class TestProcessComplete:
     """Test process_complete post-processing pipeline."""
 
     def test_clean_text_no_tools_no_thinking(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         result = adapter.process_complete("Hello world!")
         assert isinstance(result, TextResult)
         assert result.content == "Hello world!"
@@ -1141,7 +1161,7 @@ class TestProcessComplete:
         assert result.finish_reason == "stop"
 
     def test_extracts_thinking_content(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         raw = "<think>Let me think about this</think>The answer is 42."
         result = adapter.process_complete(raw)
         assert isinstance(result, TextResult)
@@ -1150,7 +1170,7 @@ class TestProcessComplete:
         assert "<think>" not in result.content
 
     def test_extracts_tool_calls(self) -> None:
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         raw = '<tool_call>{"name": "get_weather", "arguments": {"city": "SF"}}</tool_call>'
         result = adapter.process_complete(raw)
         assert isinstance(result, TextResult)
@@ -1159,7 +1179,7 @@ class TestProcessComplete:
         assert result.finish_reason == "tool_calls"
 
     def test_finish_reason_preserved_when_no_tools(self) -> None:
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         result = adapter.process_complete("Hello", finish_reason="length")
         assert result.finish_reason == "length"
 
@@ -1181,7 +1201,7 @@ class TestGenerate:
     @pytest.mark.anyio
     async def test_generate_text(self) -> None:
         """Text generation with mocked stream_generate."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
 
         responses = [
             _FakeStreamResponse("Hello", 1),
@@ -1214,7 +1234,7 @@ class TestGenerate:
     @pytest.mark.anyio
     async def test_generate_text_hits_stop_token(self) -> None:
         """Generation stops when a stop token is encountered."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
 
         responses = [
             _FakeStreamResponse("Hello", 1),
@@ -1243,7 +1263,9 @@ class TestGenerate:
     @pytest.mark.anyio
     async def test_generate_vision(self) -> None:
         """Vision generation uses mlx-vlm."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision"
+        )
 
         class FakeVLMResponse:
             text = "I see a cat"
@@ -1282,7 +1304,7 @@ class TestGenerateStep:
     @pytest.mark.anyio
     async def test_generate_step_text(self) -> None:
         """Streaming text generation yields events then final TextResult."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
 
         tokens = [
             ("Hello", 1, False),
@@ -1324,7 +1346,9 @@ class TestGenerateStep:
     @pytest.mark.anyio
     async def test_generate_step_vision(self) -> None:
         """Vision streaming yields single event + TextResult."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision"
+        )
 
         class FakeVLMResponse:
             text = "A beautiful sunset"
@@ -1419,7 +1443,7 @@ class TestGenerateEmbeddings:
                 return FakeEmbeddingOutput([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
 
         tokenizer = FakeEmbeddingTokenizer()
-        adapter = create_adapter("embeddings", tokenizer)
+        adapter = create_adapter("embeddings", tokenizer, model_type="embeddings")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1484,7 +1508,7 @@ class TestGenerateSpeech:
             def generate(self, **kwargs: Any) -> list[FakeGenResult]:
                 return [FakeGenResult()]
 
-        adapter = create_adapter("kokoro", None)
+        adapter = create_adapter("kokoro", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1564,7 +1588,7 @@ class TestGenerateSpeech:
                     FakeGenResult([0.3, 0.4]),
                 ]
 
-        adapter = create_adapter("kokoro", None)
+        adapter = create_adapter("kokoro", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1635,7 +1659,7 @@ class TestGenerateSpeech:
             def generate(self, **kwargs: Any) -> list[Any]:
                 return []  # No results
 
-        adapter = create_adapter("kokoro", None)
+        adapter = create_adapter("kokoro", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1685,7 +1709,7 @@ class TestTranscribe:
                 self.segments = [{"start": 0.0, "end": 2.0, "text": "Hello"}]
                 self.language = "en"
 
-        adapter = create_adapter("whisper", None)
+        adapter = create_adapter("whisper", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1733,7 +1757,7 @@ class TestTranscribe:
                 self.text = "Bonjour"
                 self.language = "fr"
 
-        adapter = create_adapter("whisper", None)
+        adapter = create_adapter("whisper", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
@@ -1779,7 +1803,7 @@ class TestTranscribe:
             def __init__(self) -> None:
                 self.text = "Simple output"
 
-        adapter = create_adapter("whisper", None)
+        adapter = create_adapter("whisper", None, model_type="audio")
 
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()

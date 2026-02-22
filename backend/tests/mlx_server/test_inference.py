@@ -152,7 +152,7 @@ class TestStopTokenDetection:
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)
 
-        adapter = create_adapter("llama", mock_tokenizer)
+        adapter = create_adapter("llama", mock_tokenizer, model_type="text-gen")
         stop_tokens = adapter.stop_tokens
 
         assert 128009 in stop_tokens, "Should include eos_token_id"
@@ -167,7 +167,7 @@ class TestStopTokenDetection:
         mock_tokenizer.unk_token_id = 0
         mock_tokenizer.convert_tokens_to_ids = Mock(return_value=128001)
 
-        adapter = create_adapter("llama", mock_tokenizer)
+        adapter = create_adapter("llama", mock_tokenizer, model_type="text-gen")
         stop_tokens = adapter.stop_tokens
 
         assert len(stop_tokens) >= 2, "Llama adapter must return at least 2 stop tokens"
@@ -682,7 +682,7 @@ class TestStreamChatGenerate:
 
         # Use real composable adapter for actual parsing
         _, model, tokenizer = _make_mock_loaded_model()
-        adapter = create_adapter(family, tokenizer)
+        adapter = create_adapter(family, tokenizer, model_type="text-gen")
 
         mock_stream = self._make_stream_mock(tokens)
 
@@ -868,7 +868,7 @@ class TestGenerateChatComplete:
 
         # Use real composable adapter for actual parsing
         _, model, tokenizer = _make_mock_loaded_model()
-        adapter = create_adapter(family, tokenizer)
+        adapter = create_adapter(family, tokenizer, model_type="text-gen")
 
         async def mock_run(fn, **kwargs):
             return (response_text, finish_reason)
@@ -1659,7 +1659,7 @@ class TestGoldenFixturesCrossFamily:
         mock_tokenizer.eos_token_id = 100
 
         # Create adapter and use its parsers
-        adapter = create_adapter(family=family, tokenizer=mock_tokenizer)
+        adapter = create_adapter(family=family, tokenizer=mock_tokenizer, model_type="text-gen")
         tool_calls = adapter.tool_parser.extract(response_text)
 
         # Simulate TextResult
@@ -1689,7 +1689,7 @@ class TestGoldenFixturesCrossFamily:
         mock_tokenizer.eos_token_id = 100
 
         # Create adapter and use factory to create stream processor
-        adapter = create_adapter(family=family, tokenizer=mock_tokenizer)
+        adapter = create_adapter(family=family, tokenizer=mock_tokenizer, model_type="text-gen")
         processor = adapter.create_stream_processor()
 
         all_reasoning = ""
@@ -1746,7 +1746,7 @@ class TestModelAdapterIntegration:
         mock_tokenizer.tokenizer = mock_tokenizer
 
         # Create adapter with mocked parsers
-        adapter = TestModelAdapter(tokenizer=mock_tokenizer)
+        adapter = TestModelAdapter(model_type="text-gen", tokenizer=mock_tokenizer)
 
         # Override parsers with mocks for testing
         adapter._tool_parser = MagicMock()

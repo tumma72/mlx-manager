@@ -1528,7 +1528,7 @@ class TestModelAdapterCreation:
             model=MagicMock(),
             tokenizer=mock_tok,
         )
-        adapter = DefaultAdapter(tokenizer=mock_tok)
+        adapter = DefaultAdapter(model_type="text-gen", tokenizer=mock_tok)
         loaded.adapter = adapter
         assert loaded.adapter is not None
         assert loaded.adapter.family == "default"

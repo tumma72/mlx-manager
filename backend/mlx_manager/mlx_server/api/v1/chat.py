@@ -515,7 +515,7 @@ async def _handle_batched_request(
         # Fallback for edge cases
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter("default", loaded.tokenizer)
+        adapter = create_adapter("default", loaded.tokenizer, model_type=loaded.model_type)
 
     # Get actual tokenizer (handle Processor wrapper for vision models)
     actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)

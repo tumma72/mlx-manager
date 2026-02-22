@@ -65,7 +65,7 @@ class TestApplyChatTemplateUncoveredLines:
     def test_native_tools_passed_to_tokenizer(self):
         """When native_tools is set, tools are passed to apply_chat_template (line 226)."""
         # Use qwen which has native_tools=True
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         tools = [{"function": {"name": "test_tool"}}]
         messages = [{"role": "user", "content": "hello"}]
 
@@ -76,7 +76,9 @@ class TestApplyChatTemplateUncoveredLines:
 
     def test_template_options_merged_into_kwargs(self):
         """When template_options is set, they are passed as kwargs to tokenizer (lines 229-230)."""
-        adapter = create_adapter("default", FakeTokenizer(), template_options={"key1": "val1"})
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="text-gen", template_options={"key1": "val1"}
+        )
 
         messages = [{"role": "user", "content": "hello"}]
 
@@ -90,6 +92,7 @@ class TestApplyChatTemplateUncoveredLines:
         adapter = create_adapter(
             "default",
             FakeTokenizer(),
+            model_type="text-gen",
             template_options={"opt1": True, "opt2": "value", "opt3": 42},
         )
         messages = [{"role": "user", "content": "test"}]
@@ -115,7 +118,9 @@ class TestApplyChatTemplateUncoveredLines:
                 return "fallback_result"
 
         tokenizer = SometimesRaises()
-        adapter = ModelAdapter(tokenizer=tokenizer, template_options={"extra_arg": True})
+        adapter = ModelAdapter(
+            model_type="text-gen", tokenizer=tokenizer, template_options={"extra_arg": True}
+        )
 
         messages = [{"role": "user", "content": "test"}]
         result = adapter.apply_chat_template(messages)
@@ -141,6 +146,7 @@ class TestApplyChatTemplateUncoveredLines:
 
         tokenizer = RaisesOnFirstCall()
         adapter = ModelAdapter(
+            model_type="text-gen",
             config=FAMILY_CONFIGS["default"],  # native_tools=False for default
             tokenizer=tokenizer,
             template_options={"some_option": True},
@@ -153,7 +159,7 @@ class TestApplyChatTemplateUncoveredLines:
 
     def test_apply_chat_template_without_template_strategy_uses_tokenizer(self):
         """Default path calls tokenizer.apply_chat_template directly."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [{"role": "user", "content": "hello world"}]
         result = adapter.apply_chat_template(messages, add_generation_prompt=True)
         assert "hello world" in result
@@ -171,7 +177,7 @@ class TestConfigureUncoveredLines:
     def test_configure_tool_parser_none_with_factory(self):
         """configure(tool_parser=None) resets to factory parser (lines 364-365)."""
         # Use qwen which has a tool_parser_factory
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
 
         # Set a custom parser first
         custom_parser = MagicMock(spec=HermesJsonParser)
@@ -186,7 +192,7 @@ class TestConfigureUncoveredLines:
     def test_configure_tool_parser_none_without_factory(self):
         """configure(tool_parser=None) uses NullToolParser when no factory (lines 366-367)."""
         # Use default which has no tool_parser_factory
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
 
         # Pass None to trigger the "no factory" path
         adapter.configure(tool_parser=None)
@@ -195,7 +201,7 @@ class TestConfigureUncoveredLines:
 
     def test_configure_thinking_parser_none_with_factory(self):
         """configure(thinking_parser=None) resets to factory parser (lines 371-372)."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
 
         # Reset thinking_parser to factory default
         adapter.configure(thinking_parser=None)
@@ -203,8 +209,8 @@ class TestConfigureUncoveredLines:
         assert isinstance(adapter._thinking_parser, ThinkTagParser)
 
     def test_configure_thinking_parser_none_without_factory(self):
-        """configure(thinking_parser=None) uses NullThinkingParser when no factory (lines 373-374)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        """configure(thinking_parser=None) uses NullThinkingParser when no factory."""
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
 
         # Pass None to trigger the "no factory" path
         adapter.configure(thinking_parser=None)
@@ -213,7 +219,7 @@ class TestConfigureUncoveredLines:
 
     def test_configure_enable_tool_injection_none_resets_to_false(self):
         """configure(enable_tool_injection=None) resets to False (lines 355-358)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         adapter._enable_tool_injection = True
 
         # Passing None should set to False (line 357)
@@ -223,26 +229,26 @@ class TestConfigureUncoveredLines:
 
     def test_configure_updates_system_prompt(self):
         """configure(system_prompt=...) updates the prompt (line 353-354)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         adapter.configure(system_prompt="New system prompt")
         assert adapter._system_prompt == "New system prompt"
 
     def test_configure_updates_template_options(self):
         """configure(template_options=...) updates template options (lines 359-360)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         adapter.configure(template_options={"thinking": True})
         assert adapter._template_options == {"thinking": True}
 
     def test_configure_with_actual_parser_instance(self):
         """configure with actual parser instance sets it (lines 362-363)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         new_parser = HermesJsonParser()
         adapter.configure(tool_parser=new_parser)
         assert adapter._tool_parser is new_parser
 
     def test_configure_with_actual_thinking_parser_instance(self):
         """configure with actual thinking parser instance sets it (lines 369-370)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         new_thinking = ThinkTagParser()
         adapter.configure(thinking_parser=new_thinking)
         assert adapter._thinking_parser is new_thinking
@@ -258,7 +264,7 @@ class TestResetToDefaultsUncoveredLines:
 
     def test_reset_restores_factory_tool_parser(self):
         """reset_to_defaults restores tool parser from factory (lines 385-386)."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
 
         # Override with a custom parser
         adapter._tool_parser = MagicMock()
@@ -270,7 +276,7 @@ class TestResetToDefaultsUncoveredLines:
 
     def test_reset_uses_null_tool_parser_when_no_factory(self):
         """reset_to_defaults uses NullToolParser when no factory (lines 387-388)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         adapter._tool_parser = MagicMock()  # Set custom
 
         adapter.reset_to_defaults()
@@ -279,7 +285,7 @@ class TestResetToDefaultsUncoveredLines:
 
     def test_reset_restores_factory_thinking_parser(self):
         """reset_to_defaults restores thinking parser from factory (lines 389-390)."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         adapter._thinking_parser = MagicMock()  # Override
 
         adapter.reset_to_defaults()
@@ -288,7 +294,7 @@ class TestResetToDefaultsUncoveredLines:
 
     def test_reset_uses_null_thinking_parser_when_no_factory(self):
         """reset_to_defaults uses NullThinkingParser when no factory (lines 391-392)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         adapter._thinking_parser = MagicMock()  # Override
 
         adapter.reset_to_defaults()
@@ -296,10 +302,11 @@ class TestResetToDefaultsUncoveredLines:
         assert isinstance(adapter._thinking_parser, NullThinkingParser)
 
     def test_reset_clears_all_settings(self):
-        """reset_to_defaults clears system_prompt, enable_tool_injection, template_options (lines 382-384)."""
+        """reset_to_defaults clears system_prompt, enable_tool_injection, template_options."""
         adapter = create_adapter(
             "default",
             FakeTokenizer(),
+            model_type="text-gen",
             system_prompt="Original prompt",
             enable_tool_injection=True,
             template_options={"thinking": True},
@@ -322,7 +329,7 @@ class TestEnsureSystemPrompt:
 
     def test_no_system_prompt_returns_messages_unchanged(self):
         """If no system_prompt configured, messages pass through (line 400-401)."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         messages = [{"role": "user", "content": "hello"}]
         result = adapter._ensure_system_prompt(messages)
         assert result is messages  # Same object
@@ -330,7 +337,7 @@ class TestEnsureSystemPrompt:
     def test_system_prompt_prepended_when_no_existing_system(self):
         """System prompt prepended when messages have no system message (lines 405-406)."""
         adapter = create_adapter(
-            "default", FakeTokenizer(), system_prompt="You are helpful."
+            "default", FakeTokenizer(), model_type="text-gen", system_prompt="You are helpful."
         )
         messages = [{"role": "user", "content": "hello"}]
         result = adapter._ensure_system_prompt(messages)
@@ -343,7 +350,7 @@ class TestEnsureSystemPrompt:
     def test_system_prompt_not_prepended_when_system_already_exists(self):
         """When messages already have a system message, no new prompt added (lines 403-404)."""
         adapter = create_adapter(
-            "default", FakeTokenizer(), system_prompt="Default prompt."
+            "default", FakeTokenizer(), model_type="text-gen", system_prompt="Default prompt."
         )
         messages = [
             {"role": "system", "content": "Custom system."},
@@ -359,7 +366,7 @@ class TestEnsureSystemPrompt:
     def test_system_prompt_with_empty_messages(self):
         """System prompt prepended even for empty message list."""
         adapter = create_adapter(
-            "default", FakeTokenizer(), system_prompt="My prompt."
+            "default", FakeTokenizer(), model_type="text-gen", system_prompt="My prompt."
         )
         result = adapter._ensure_system_prompt([])
 
@@ -378,7 +385,9 @@ class TestPrepareInputVisionPath:
 
     def test_vision_path_with_system_message(self):
         """Vision path handles system messages (line 455)."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         messages = [
             {"role": "system", "content": "You are a vision model."},
             {"role": "user", "content": "What is in this image?"},
@@ -400,7 +409,9 @@ class TestPrepareInputVisionPath:
 
     def test_vision_path_with_assistant_message(self):
         """Vision path handles assistant messages (line 458-459)."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         messages = [
             {"role": "user", "content": "Describe the image"},
             {"role": "assistant", "content": "I see a cat."},
@@ -412,7 +423,7 @@ class TestPrepareInputVisionPath:
             patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            result = adapter.prepare_input(messages, images=[fake_image])
+            adapter.prepare_input(messages, images=[fake_image])
 
         # Verify assistant content is in the prompt
         call_args = mock_tpl.call_args
@@ -421,7 +432,9 @@ class TestPrepareInputVisionPath:
 
     def test_vision_path_with_multipart_content(self):
         """Vision path handles multipart content in messages (line 445-452)."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         messages = [
             {
                 "role": "user",
@@ -437,7 +450,7 @@ class TestPrepareInputVisionPath:
             patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            result = adapter.prepare_input(messages, images=[fake_image])
+            adapter.prepare_input(messages, images=[fake_image])
 
         call_args = mock_tpl.call_args
         text_prompt = call_args[0][2]
@@ -445,7 +458,9 @@ class TestPrepareInputVisionPath:
 
     def test_vision_path_empty_content_message_ignored(self):
         """Vision path skips messages with empty content."""
-        adapter = create_adapter("default", FakeTokenizer(), model_id="test/vision-model")
+        adapter = create_adapter(
+            "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
+        )
         messages = [
             {"role": "user", "content": ""},  # Empty content
             {"role": "user", "content": "Hello"},
@@ -456,7 +471,7 @@ class TestPrepareInputVisionPath:
             patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            result = adapter.prepare_input(messages, images=[fake_image])
+            adapter.prepare_input(messages, images=[fake_image])
 
         call_args = mock_tpl.call_args
         text_prompt = call_args[0][2]
@@ -475,21 +490,21 @@ class TestConfigureWithUnsetSentinel:
     def test_configure_omit_system_prompt_leaves_unchanged(self):
         """Omitting system_prompt leaves it unchanged (sentinel behavior)."""
         adapter = create_adapter(
-            "default", FakeTokenizer(), system_prompt="Original"
+            "default", FakeTokenizer(), model_type="text-gen", system_prompt="Original"
         )
         adapter.configure(enable_tool_injection=True)  # Don't pass system_prompt
         assert adapter._system_prompt == "Original"
 
     def test_configure_omit_tool_parser_leaves_unchanged(self):
         """Omitting tool_parser leaves it unchanged."""
-        adapter = create_adapter("default", FakeTokenizer())
+        adapter = create_adapter("default", FakeTokenizer(), model_type="text-gen")
         original_parser = adapter._tool_parser
         adapter.configure(system_prompt="New")  # Don't pass tool_parser
         assert adapter._tool_parser is original_parser
 
     def test_configure_omit_thinking_parser_leaves_unchanged(self):
         """Omitting thinking_parser leaves it unchanged."""
-        adapter = create_adapter("qwen", FakeTokenizer())
+        adapter = create_adapter("qwen", FakeTokenizer(), model_type="text-gen")
         original_parser = adapter._thinking_parser
         adapter.configure(system_prompt="Changed")  # Don't pass thinking_parser
         assert adapter._thinking_parser is original_parser

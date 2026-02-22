@@ -10,7 +10,7 @@ from loguru import logger
 FAMILY_PATTERNS = {
     "llama": ["llama", "codellama"],
     "qwen": ["qwen", "iquest"],
-    "mistral": ["mistral", "mixtral"],
+    "mistral": ["mistral", "mixtral", "devstral"],
     "gemma": ["gemma"],
     "glm4": ["glm", "chatglm"],
     "phi": ["phi"],

@@ -25,7 +25,7 @@ def _make_mock_tokenizer(eos_token_id: int = 0) -> MagicMock:
 def _make_qwen_processor() -> StreamProcessor:
     """Build a StreamProcessor with QwenAdapter (has <think>/<tool_call> markers)."""
     tok = _make_mock_tokenizer()
-    adapter = create_adapter(family="qwen", tokenizer=tok)
+    adapter = create_adapter(family="qwen", tokenizer=tok, model_type="text-gen")
     return StreamProcessor(adapter=adapter)
 
 
@@ -256,7 +256,7 @@ class TestStartsInThinking:
     def test_starts_in_thinking_yields_reasoning(self) -> None:
         """When starting in thinking mode, content is reasoning."""
         tok = _make_mock_tokenizer()
-        adapter = create_adapter(family="qwen", tokenizer=tok)
+        adapter = create_adapter(family="qwen", tokenizer=tok, model_type="text-gen")
         proc = StreamProcessor(adapter=adapter, starts_in_thinking=True)
 
         # Feed enough to exceed REASONING_BUFFER_SIZE
@@ -266,7 +266,7 @@ class TestStartsInThinking:
     def test_starts_in_thinking_ends_on_close_tag(self) -> None:
         """Thinking mode exits on </think>."""
         tok = _make_mock_tokenizer()
-        adapter = create_adapter(family="qwen", tokenizer=tok)
+        adapter = create_adapter(family="qwen", tokenizer=tok, model_type="text-gen")
         proc = StreamProcessor(adapter=adapter, starts_in_thinking=True)
 
         # Feed content and close the thinking

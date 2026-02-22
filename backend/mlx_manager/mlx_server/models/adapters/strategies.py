@@ -88,10 +88,17 @@ def mistral_template(
     native_tools: list[dict[str, Any]] | None,
     template_options: dict[str, Any] | None,
 ) -> str:
-    """Apply Mistral template with system message handling for v1/v2."""
-    # Mistral v1/v2: merge system message into first user message
+    """Apply Mistral template with auto-detection for v1/v2 vs v3 system handling.
+
+    Mistral v3/Devstral templates include [SYSTEM_PROMPT] support natively.
+    Older v1/v2 templates don't, so we merge system into the first user message.
+    """
     processed = list(messages)
-    if processed and processed[0].get("role") == "system":
+    template = getattr(tokenizer, "chat_template", "") or ""
+    has_system_support = "SYSTEM_PROMPT" in template
+
+    # Only merge system→user for older Mistral v1/v2 without native system support
+    if not has_system_support and processed and processed[0].get("role") == "system":
         system_content = processed[0].get("content", "")
         processed = processed[1:]
         if processed and processed[0].get("role") == "user":
@@ -289,6 +296,40 @@ def llama_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, An
                 tool_text += f"\n<function={name}>{args}</function>"
             content = (msg.get("content", "") or "") + tool_text
             converted.append({"role": "assistant", "content": content})
+        else:
+            converted.append(msg)
+    return converted
+
+
+def mistral_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert messages for Mistral: arguments string→object, tool results pass through.
+
+    Mistral v3/Devstral Jinja templates handle role="tool" natively, so we
+    only need to convert assistant tool_calls arguments from JSON strings
+    to objects (Mistral expects dict, not stringified JSON).
+    """
+    converted: list[dict[str, Any]] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "assistant" and msg.get("tool_calls"):
+            tool_calls = msg.get("tool_calls", [])
+            fixed_calls = []
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                args = func.get("arguments", "{}")
+                # Convert stringified JSON args to dict for Mistral
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        pass
+                fixed_calls.append(
+                    {
+                        **tc,
+                        "function": {**func, "arguments": args},
+                    }
+                )
+            converted.append({**msg, "tool_calls": fixed_calls})
         else:
             converted.append(msg)
     return converted

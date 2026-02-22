@@ -21,6 +21,7 @@ from mlx_manager.mlx_server.models.adapters.strategies import (
     liquid_template,
     llama_message_converter,
     llama_tool_formatter,
+    mistral_message_converter,
     mistral_template,
     qwen_template,
     qwen_tool_formatter,
@@ -30,6 +31,8 @@ from mlx_manager.mlx_server.parsers import (
     Glm4NativeParser,
     HermesJsonParser,
     LlamaXmlParser,
+    MistralNativeParser,
+    MistralThinkingParser,
     ThinkTagParser,
 )
 
@@ -92,7 +95,11 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
     ),
     "mistral": FamilyConfig(
         family="mistral",
+        tool_parser_factory=lambda: MistralNativeParser(),
+        thinking_parser_factory=lambda: MistralThinkingParser(),
+        native_tools=True,
         template_strategy=mistral_template,
+        message_convert_strategy=mistral_message_converter,
     ),
     "liquid": FamilyConfig(
         family="liquid",

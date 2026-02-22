@@ -2236,7 +2236,7 @@ async def test_text_gen_probe_fallback_parser_sweep():
 
 def test_detect_unknown_xml_tags():
     """Test _detect_unknown_xml_tags finds unknown tags but skips known ones."""
-    from mlx_manager.services.probe.text_gen import _detect_unknown_xml_tags
+    from mlx_manager.services.probe.base import _detect_unknown_xml_tags
 
     # Known tags should be excluded
     output_known = "<think>some thinking</think><tool_call>call</tool_call>"
@@ -2478,41 +2478,6 @@ def test_probe_step_details_omitted_when_none():
     sse = step.to_sse()
     data = json.loads(sse[6:-2])
     assert "details" not in data
-
-
-# ============================================================================
-# Tool Output Validation Tests
-# ============================================================================
-
-
-def test_validate_tool_output_adapter_parser_first():
-    """Test _validate_tool_output tries adapter parser first."""
-    from mlx_manager.services.probe.text_gen import _validate_tool_output
-
-    mock_adapter = MagicMock()
-    mock_adapter.tool_parser.parser_id = "hermes_json"
-    mock_adapter.tool_parser.validates.return_value = True
-
-    result = _validate_tool_output("some output", "get_weather", mock_adapter)
-    assert result == "hermes_json"
-    mock_adapter.tool_parser.validates.assert_called_once_with("some output", "get_weather")
-
-
-def test_validate_tool_output_falls_through_to_sweep():
-    """Test _validate_tool_output sweeps all parsers when adapter parser fails."""
-    from mlx_manager.services.probe.text_gen import _validate_tool_output
-
-    mock_adapter = MagicMock()
-    mock_adapter.tool_parser.parser_id = "null"
-
-    # Should fall through to _find_matching_parser sweep
-    with patch(
-        "mlx_manager.services.probe.base._find_matching_parser",
-        return_value="hermes_json",
-    ) as mock_sweep:
-        result = _validate_tool_output("some output", "get_weather", mock_adapter)
-        assert result == "hermes_json"
-        mock_sweep.assert_called_once_with("some output", "get_weather", exclude_parser_id=None)
 
 
 # ============================================================================

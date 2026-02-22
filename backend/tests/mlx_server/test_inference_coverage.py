@@ -40,7 +40,7 @@ def _make_loaded_model_with_real_adapter(
 
     tokenizer = _make_fake_tokenizer()
     model = MagicMock()
-    adapter = create_adapter(family, tokenizer)
+    adapter = create_adapter(family, tokenizer, model_type="text-gen")
 
     loaded = MagicMock()
     loaded.model = model

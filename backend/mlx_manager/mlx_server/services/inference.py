@@ -86,7 +86,7 @@ async def _prepare_generation(
     if adapter is None:
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
 
-        adapter = create_adapter("default", tokenizer)
+        adapter = create_adapter("default", tokenizer, model_type=loaded.model_type)
 
     # Use adapter.prepare_input() for message conversion, template, and stop tokens
     # The adapter handles system prompt injection and tool delivery based on its config
@@ -731,7 +731,7 @@ async def generate_completion(
             create_adapter,
         )
 
-        adapter = create_adapter("default", tokenizer)
+        adapter = create_adapter("default", tokenizer, model_type=loaded.model_type)
         stop_tokens = set(adapter.stop_tokens)
 
     # Generate unique ID

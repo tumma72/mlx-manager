@@ -24,22 +24,22 @@ class TestAdapterToolCallingSupport:
 
     def test_llama_adapter_supports_tool_calling(self):
         """Llama adapter supports tool calling."""
-        adapter = create_adapter("llama", MockTokenizer())
+        adapter = create_adapter("llama", MockTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_qwen_adapter_supports_tool_calling(self):
         """Qwen adapter supports tool calling."""
-        adapter = create_adapter("qwen", MockTokenizer())
+        adapter = create_adapter("qwen", MockTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_glm4_adapter_supports_tool_calling(self):
         """GLM4 adapter supports tool calling."""
-        adapter = create_adapter("glm4", MockTokenizer())
+        adapter = create_adapter("glm4", MockTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is True
 
     def test_default_adapter_does_not_support_tool_calling(self):
         """Default adapter does not support tool calling."""
-        adapter = create_adapter("default", MockTokenizer())
+        adapter = create_adapter("default", MockTokenizer(), model_type="text-gen")
         assert adapter.supports_tool_calling() is False
 
 
@@ -52,7 +52,7 @@ class TestAdapterToolFormatting:
 
     def test_llama_adapter_format_tools(self):
         """Llama adapter formats tools for prompt injection."""
-        adapter = create_adapter("llama", MockTokenizer())
+        adapter = create_adapter("llama", MockTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -75,13 +75,13 @@ class TestAdapterToolFormatting:
 
     def test_llama_adapter_format_tools_empty(self):
         """Llama adapter returns empty string for no tools."""
-        adapter = create_adapter("llama", MockTokenizer())
+        adapter = create_adapter("llama", MockTokenizer(), model_type="text-gen")
         result = adapter.format_tools_for_prompt([])
         assert result == ""
 
     def test_qwen_adapter_format_tools(self):
         """Qwen adapter formats tools using Hermes style."""
-        adapter = create_adapter("qwen", MockTokenizer())
+        adapter = create_adapter("qwen", MockTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -104,13 +104,13 @@ class TestAdapterToolFormatting:
 
     def test_qwen_adapter_format_tools_empty(self):
         """Qwen adapter returns empty string for no tools."""
-        adapter = create_adapter("qwen", MockTokenizer())
+        adapter = create_adapter("qwen", MockTokenizer(), model_type="text-gen")
         result = adapter.format_tools_for_prompt([])
         assert result == ""
 
     def test_glm4_adapter_format_tools(self):
         """GLM4 adapter formats tools using XML style."""
-        adapter = create_adapter("glm4", MockTokenizer())
+        adapter = create_adapter("glm4", MockTokenizer(), model_type="text-gen")
         tools = [
             {
                 "function": {
@@ -137,13 +137,13 @@ class TestAdapterToolFormatting:
 
     def test_glm4_adapter_format_tools_empty(self):
         """GLM4 adapter returns empty string for no tools."""
-        adapter = create_adapter("glm4", MockTokenizer())
+        adapter = create_adapter("glm4", MockTokenizer(), model_type="text-gen")
         result = adapter.format_tools_for_prompt([])
         assert result == ""
 
     def test_default_adapter_format_tools(self):
         """Default adapter returns empty string for tools."""
-        adapter = create_adapter("default", MockTokenizer())
+        adapter = create_adapter("default", MockTokenizer(), model_type="text-gen")
         tools = [{"function": {"name": "test", "description": "Test"}}]
 
         result = adapter.format_tools_for_prompt(tools)

@@ -313,17 +313,24 @@ class ProbingCoordinator:
         if tokenizer is not None:
             yield ProbeStep(step="test_thinking", status="running")
             try:
-                supports, parser_id, diags = await self._sweep_thinking(
+                supports, parser_id, diags, thinking_tags = await self._sweep_thinking(
                     model_id, loaded, strategy, discovered_params
                 )
                 result.supports_thinking = supports
                 result.thinking_parser_id = parser_id
                 result.diagnostics.extend(diags)
+                result.discovered_thinking_tags = (
+                    [t.model_dump() for t in thinking_tags] if thinking_tags else None
+                )
+                step_details: dict[str, Any] = {}
+                if thinking_tags:
+                    step_details["discovered_tags"] = [t.model_dump() for t in thinking_tags]
                 yield ProbeStep(
                     step="test_thinking",
                     status="completed",
                     capability="supports_thinking",
                     value=supports,
+                    details=step_details or None,
                     diagnostics=diags or None,
                 )
             except Exception as e:
@@ -336,18 +343,25 @@ class ProbingCoordinator:
         if tokenizer is not None:
             yield ProbeStep(step="test_tools", status="running")
             try:
-                tool_format, tool_parser_id, diags = await self._sweep_tools(
+                tool_format, tool_parser_id, diags, tool_tags = await self._sweep_tools(
                     model_id, loaded, strategy
                 )
                 result.supports_native_tools = tool_format is not None
                 result.tool_format = tool_format
                 result.tool_parser_id = tool_parser_id
                 result.diagnostics.extend(diags)
+                result.discovered_tool_tags = (
+                    [t.model_dump() for t in tool_tags] if tool_tags else None
+                )
+                tool_details: dict[str, Any] = {}
+                if tool_tags:
+                    tool_details["discovered_tags"] = [t.model_dump() for t in tool_tags]
                 yield ProbeStep(
                     step="test_tools",
                     status="completed",
                     capability="tool_format",
                     value=tool_format,
+                    details=tool_details or None,
                     diagnostics=diags or None,
                 )
             except Exception as e:
@@ -366,11 +380,24 @@ class ProbingCoordinator:
         loaded: Any,
         strategy: Any,
         template_params: dict[str, Any] | None,
-    ) -> tuple[bool, str, list[ProbeDiagnostic]]:
-        """Detect thinking support: one generation, scan for known tag patterns."""
+    ) -> tuple[bool, str, list[ProbeDiagnostic], list[Any]]:
+        """Tag-first thinking detection.
+
+        Phase 1 — CHALLENGE: Generate with reasoning prompt
+        Phase 2 — DISCOVER: _discover_and_map_tags on raw output
+        Phase 3 — VALIDATE: For matched parsers, run extract(); also sweep ALL parsers
+        Phase 4 — UNCLOSED TAG FALLBACK: Retry with more tokens if unclosed tag found
+        Phase 5 — REPORT: Include discovered_tags
+
+        Returns (supports_thinking, parser_id, diagnostics, discovered_tags).
+        """
         from mlx_manager.mlx_server.parsers import THINKING_PARSERS
 
-        from .base import _detect_unknown_thinking_tags, _find_unclosed_thinking_tag
+        from .base import (
+            _detect_unknown_thinking_tags,
+            _discover_and_map_tags,
+            _find_unclosed_thinking_tag,
+        )
 
         diagnostics: list[ProbeDiagnostic] = []
         has_enable_thinking = template_params is not None and "enable_thinking" in template_params
@@ -388,6 +415,7 @@ class ProbingCoordinator:
         # Generate with enable_thinking if the template supports it
         template_options = {"enable_thinking": True} if has_enable_thinking else None
 
+        # ── Phase 1: CHALLENGE ────────────────────────────────────────
         try:
             gen_result = await strategy._generate(
                 loaded,
@@ -405,23 +433,38 @@ class ProbingCoordinator:
                     details={"error": str(e)},
                 )
             )
-            return (False, "null", diagnostics)
+            return (False, "null", diagnostics, [])
 
         raw_output = gen_result.content
 
-        # Scan raw output against each registered parser
+        # ── Phase 2: DISCOVER ─────────────────────────────────────────
+        discovered_tags = _discover_and_map_tags(raw_output, THINKING_PARSERS)
+
+        # ── Phase 3: VALIDATE ─────────────────────────────────────────
+        # First try parsers identified by tag discovery
+        validated_from_tags: set[str] = set()
+        for tag in discovered_tags:
+            validated_from_tags.update(tag.matched_parsers)
+
+        for pid in sorted(validated_from_tags):
+            if pid in THINKING_PARSERS:
+                parser = THINKING_PARSERS[pid]()
+                if parser.extract(raw_output) is not None:
+                    logger.info("Thinking probe: tag-first detected (parser=%s)", pid)
+                    return (True, pid, diagnostics, discovered_tags)
+
+        # Also sweep ALL parsers directly (some may match without tag detection)
         for parser_id, parser_cls in THINKING_PARSERS.items():
-            if parser_id == "null":
+            if parser_id == "null" or parser_id in validated_from_tags:
                 continue
             parser = parser_cls()
             if parser.extract(raw_output) is not None:
-                logger.info("Thinking probe: detected (parser=%s)", parser_id)
-                return (True, parser_id, diagnostics)
+                logger.info("Thinking probe: full sweep detected (parser=%s)", parser_id)
+                return (True, parser_id, diagnostics, discovered_tags)
 
-        # Check for unclosed tags (model started thinking but output truncated)
+        # ── Phase 4: UNCLOSED TAG FALLBACK ────────────────────────────
         unclosed = _find_unclosed_thinking_tag(raw_output)
         if unclosed:
-            # Retry with more tokens
             logger.info("Thinking probe: unclosed <%s> tag, retrying with more tokens", unclosed)
             try:
                 retry_result = await strategy._generate(
@@ -444,26 +487,26 @@ class ProbingCoordinator:
                     parser = parser_cls()
                     if parser.extract(retry_output) is not None:
                         logger.info("Thinking probe: detected on retry (parser=%s)", parser_id)
-                        return (True, parser_id, diagnostics)
+                        return (True, parser_id, diagnostics, discovered_tags)
             except Exception as e:
                 logger.debug("Thinking probe retry failed: %s", e)
 
-            # Retry didn't produce a closed tag either — match unclosed tag
-            # against registered parsers' stream markers to identify the parser
+            # Match unclosed tag against registered parsers' stream markers
             for parser_id, parser_cls in THINKING_PARSERS.items():
                 if parser_id == "null":
                     continue
                 parser = parser_cls()
                 for open_tag, _close_tag in parser.stream_markers:
-                    if open_tag.strip("<>").lower() == unclosed.lower():
+                    marker_name = open_tag.strip("<>").strip("[]").lower()
+                    if marker_name == unclosed.lower():
                         logger.info(
                             "Thinking probe: unclosed <%s> matches parser=%s",
                             unclosed,
                             parser_id,
                         )
-                        return (True, parser_id, diagnostics)
+                        return (True, parser_id, diagnostics, discovered_tags)
 
-        # Check for unknown tag patterns
+        # ── Phase 5: REPORT ───────────────────────────────────────────
         unknown_tag = _detect_unknown_thinking_tags(raw_output)
         if unknown_tag:
             diagnostics.append(
@@ -495,7 +538,7 @@ class ProbingCoordinator:
                 )
             )
 
-        return (False, "null", diagnostics)
+        return (False, "null", diagnostics, discovered_tags)
 
     # ------------------------------------------------------------------
     # Tool sweep
@@ -506,13 +549,16 @@ class ProbingCoordinator:
         model_id: str,
         loaded: Any,
         strategy: Any,
-    ) -> tuple[str | None, str | None, list[ProbeDiagnostic]]:
-        """Test tool support by iterating parser configurations.
+    ) -> tuple[str | None, str | None, list[ProbeDiagnostic], list[Any]]:
+        """Tag-first tool support detection.
 
-        Uses register_profile_settings() to swap tool parsers.
-        Tests both template delivery (native) and adapter injection delivery.
+        Phase 1 — CHALLENGE: Generic injection (format-agnostic prompt, NO tools= param)
+        Phase 2 — DISCOVER: _discover_and_map_tags on raw output
+        Phase 3 — VALIDATE: For matched parsers, run validates()
+        Phase 4 — FALLBACK: Template delivery only if Phase 2 found NO parser markers
+        Phase 5 — REPORT: Include discovered_tags regardless of outcome
 
-        Returns (tool_format, tool_parser_id, diagnostics).
+        Returns (tool_format, tool_parser_id, diagnostics, discovered_tags).
         """
         from mlx_manager.mlx_server.models.pool import ProfileSettings
         from mlx_manager.mlx_server.parsers import TOOL_PARSERS
@@ -521,9 +567,11 @@ class ProbingCoordinator:
         )
 
         from .base import (
+            _KNOWN_BENIGN_TAGS,
             _TOOL_PROBE_MESSAGES,
             _TOOL_PROBE_TOOL,
-            _detect_unknown_xml_tags,
+            _build_generic_tool_prompt,
+            _discover_and_map_tags,
             _has_tokenization_artifacts,
         )
 
@@ -531,162 +579,173 @@ class ProbingCoordinator:
         adapter = loaded.adapter
         tokenizer = loaded.tokenizer
         last_output: str | None = None
+        all_discovered_tags: list[Any] = []
 
-        # ── Attempt 1: Template delivery (native tools) ──────────────
-        can_try_template = adapter.supports_native_tools() or has_native_tool_support(tokenizer)
-        if can_try_template:
-            for parser_id in TOOL_PARSERS:
-                if parser_id == "null":
-                    continue
-                try:
-                    self._pool.register_profile_settings(
-                        model_id,
-                        ProfileSettings(tool_parser_id=parser_id),
+        # Reset to defaults before probing
+        self._pool.register_profile_settings(model_id, ProfileSettings())
+
+        # ── Phase 1: CHALLENGE (generic injection) ────────────────────
+        generic_prompt = _build_generic_tool_prompt(_TOOL_PROBE_TOOL)
+        try:
+            messages_with_tools = [
+                {"role": "system", "content": generic_prompt},
+                *_TOOL_PROBE_MESSAGES,
+            ]
+            gen_result = await strategy._generate(loaded, messages_with_tools)
+            last_output = gen_result.content
+        except Exception as e:
+            logger.debug("Generic injection generation failed: %s", e)
+
+        # ── Phase 2: DISCOVER ─────────────────────────────────────────
+        if last_output is not None:
+            # Check for tokenization artifacts first
+            if _has_tokenization_artifacts(last_output):
+                logger.warning(
+                    "Tool probe: output has tokenization artifacts — "
+                    "model architecture likely not fully supported by "
+                    "installed mlx-lm. Raw output: %s",
+                    last_output[:300],
+                )
+                diagnostics.append(
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.ACTION_NEEDED,
+                        category=DiagnosticCategory.UNSUPPORTED,
+                        message=(
+                            "Model architecture not fully supported by installed "
+                            "mlx-lm — output is garbled due to tokenizer "
+                            "incompatibility. Tool calling will not work until "
+                            "mlx-lm adds proper support for this architecture."
+                        ),
+                        details={
+                            "raw_output_sample": last_output[:300],
+                        },
                     )
+                )
+                return (None, None, diagnostics, [])
+
+            all_discovered_tags = _discover_and_map_tags(last_output, TOOL_PARSERS)
+
+            if all_discovered_tags:
+                logger.info(
+                    "Tool probe: discovered tags: %s",
+                    [(t.name, t.style, t.matched_parsers) for t in all_discovered_tags],
+                )
+
+        # ── Phase 3: VALIDATE ─────────────────────────────────────────
+        if last_output is not None and all_discovered_tags:
+            # Collect all parser_ids matched by tag discovery
+            matched_parser_ids: set[str] = set()
+            for tag in all_discovered_tags:
+                matched_parser_ids.update(tag.matched_parsers)
+
+            # Try matched parsers first
+            for pid in sorted(matched_parser_ids):
+                if pid in TOOL_PARSERS:
+                    parser = TOOL_PARSERS[pid]()
+                    if parser.validates(last_output, "get_weather"):
+                        logger.info("Tool probe: tag-first validated (parser=%s)", pid)
+                        return ("detected", pid, diagnostics, all_discovered_tags)
+
+            # Also sweep ALL parsers (some may match without tag detection)
+            for parser_id, parser_cls in TOOL_PARSERS.items():
+                if parser_id == "null" or parser_id in matched_parser_ids:
+                    continue
+                if parser_cls().validates(last_output, "get_weather"):
+                    logger.info(
+                        "Tool probe: generic injection full sweep verified (parser=%s)",
+                        parser_id,
+                    )
+                    return ("adapter", parser_id, diagnostics, all_discovered_tags)
+
+        # ── Phase 4: FALLBACK (template delivery) ─────────────────────
+        # Only try template delivery if Phase 2 found NO parser markers at all
+        has_parser_markers = any(t.matched_parsers for t in all_discovered_tags)
+        if not has_parser_markers:
+            can_try_template = adapter.supports_native_tools() or has_native_tool_support(tokenizer)
+            if can_try_template:
+                try:
                     gen_result = await strategy._generate(
                         loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
                     )
-                    last_output = gen_result.content
-                    current_adapter = loaded.adapter
-                    if current_adapter.tool_parser.validates(last_output, "get_weather"):
-                        logger.info(
-                            "Tool probe: template delivery verified (parser=%s)",
-                            parser_id,
-                        )
-                        return ("template", parser_id, diagnostics)
+                    template_output = gen_result.content
+
+                    # Run discovery + validation on template output too
+                    template_tags = _discover_and_map_tags(template_output, TOOL_PARSERS)
+                    if template_tags:
+                        # Merge into all_discovered_tags (dedup by name+style)
+                        existing_keys = {(t.name, t.style) for t in all_discovered_tags}
+                        for t in template_tags:
+                            if (t.name, t.style) not in existing_keys:
+                                all_discovered_tags.append(t)
+
+                    for parser_id, parser_cls in TOOL_PARSERS.items():
+                        if parser_id == "null":
+                            continue
+                        if parser_cls().validates(template_output, "get_weather"):
+                            logger.info(
+                                "Tool probe: template delivery verified (parser=%s)",
+                                parser_id,
+                            )
+                            return ("template", parser_id, diagnostics, all_discovered_tags)
                     logger.debug(
-                        "Template delivery with parser %s: no match on: %s",
-                        parser_id,
-                        last_output[:200] if last_output else "",
+                        "Template delivery produced output but no parser matched: %s",
+                        template_output[:200] if template_output else "",
                     )
                 except Exception as e:
-                    logger.debug("Template delivery with parser %s failed: %s", parser_id, e)
+                    logger.debug("Template delivery with native tools failed: %s", e)
 
-        # ── Attempt 2: Adapter injection delivery ─────────────────────
-        # Use default adapter config (no specific parser override needed yet)
-        self._pool.register_profile_settings(model_id, ProfileSettings())
-        tool_prompt = adapter.format_tools_for_prompt(_TOOL_PROBE_TOOL)
-        if tool_prompt:
-            for parser_id in TOOL_PARSERS:
-                if parser_id == "null":
-                    continue
-                try:
-                    self._pool.register_profile_settings(
-                        model_id,
-                        ProfileSettings(tool_parser_id=parser_id),
-                    )
-                    messages_with_tools = [
-                        {"role": "system", "content": tool_prompt},
-                        *_TOOL_PROBE_MESSAGES,
-                    ]
-                    gen_result = await strategy._generate(loaded, messages_with_tools)
-                    last_output = gen_result.content
-                    current_adapter = loaded.adapter
-                    if current_adapter.tool_parser.validates(last_output, "get_weather"):
-                        logger.info(
-                            "Tool probe: adapter delivery verified (parser=%s)",
-                            parser_id,
-                        )
-                        return ("adapter", parser_id, diagnostics)
-                    logger.debug(
-                        "Adapter delivery with parser %s: no match on: %s",
-                        parser_id,
-                        last_output[:200] if last_output else "",
-                    )
-                except Exception as e:
-                    logger.debug("Adapter delivery with parser %s failed: %s", parser_id, e)
-
-        # ── No match: diagnostic scan ─────────────────────────────────
+        # ── Phase 5: REPORT ───────────────────────────────────────────
         registered_parsers = [pid for pid in TOOL_PARSERS if pid != "null"]
-        try:
-            if last_output is None:
-                # Reset to defaults and generate without tools
-                self._pool.register_profile_settings(model_id, ProfileSettings())
-                gen_result = await strategy._generate(loaded, _TOOL_PROBE_MESSAGES)
-                last_output = gen_result.content
-
-            tool_markers = [
-                "<tool_call>",
-                "</tool_call>",
-                "<function=",
-                "</function>",
-                "get_weather",
-                '"name"',
+        scan_output = last_output
+        if scan_output is not None:
+            # Check for unmatched non-benign tags
+            unmatched_tags = [
+                {"name": t.name, "style": t.style, "paired": t.paired}
+                for t in all_discovered_tags
+                if not t.matched_parsers and t.name.lower() not in _KNOWN_BENIGN_TAGS
             ]
-            found_markers = [m for m in tool_markers if m in last_output]
-            if found_markers:
-                # Check if output has tokenization artifacts (garbled detokenization)
-                if _has_tokenization_artifacts(last_output):
-                    logger.warning(
-                        "Tool probe: output has tokenization artifacts — "
-                        "model architecture likely not fully supported by "
-                        "installed mlx-lm. Raw output: %s",
-                        last_output[:300],
-                    )
-                    diagnostics.append(
-                        ProbeDiagnostic(
-                            level=DiagnosticLevel.ACTION_NEEDED,
-                            category=DiagnosticCategory.UNSUPPORTED,
-                            message=(
-                                "Model architecture not fully supported by installed "
-                                "mlx-lm — output is garbled due to tokenizer "
-                                "incompatibility. Tool calling will not work until "
-                                "mlx-lm adds proper support for this architecture."
-                            ),
-                            details={
-                                "found_markers": found_markers,
-                                "raw_output_sample": last_output[:300],
-                            },
-                        )
-                    )
-                else:
-                    logger.warning(
-                        "Tool probe: model attempted tool use (markers: %s) but "
-                        "no parser matched. Raw output: %s",
-                        found_markers,
-                        last_output[:300],
-                    )
-                    diagnostics.append(
-                        ProbeDiagnostic(
-                            level=DiagnosticLevel.ACTION_NEEDED,
-                            category=DiagnosticCategory.TOOL_DIALECT,
-                            message=(
-                                "Unknown tool dialect — model produced tool-like markers "
-                                "but no registered parser could parse the output"
-                            ),
-                            details={
-                                "found_markers": found_markers,
-                                "raw_output_sample": last_output[:300],
-                                "registered_parsers": registered_parsers,
-                            },
-                        )
-                    )
-            else:
-                unknown_tags = _detect_unknown_xml_tags(last_output)
-                if unknown_tags:
-                    logger.warning(
-                        "Tool probe: unknown XML tags in output: %s",
-                        unknown_tags,
-                    )
-                    diagnostics.append(
-                        ProbeDiagnostic(
-                            level=DiagnosticLevel.WARNING,
-                            category=DiagnosticCategory.TOOL_DIALECT,
-                            message=(
-                                f"Unknown XML tags in output: {', '.join(sorted(unknown_tags))}"
-                            ),
-                            details={
-                                "unknown_tags": sorted(unknown_tags),
-                                "raw_output_sample": last_output[:300],
-                            },
-                        )
-                    )
-                else:
-                    logger.info("Tool probe: no tool support detected")
-        except Exception:
-            logger.info("Tool probe: no tool support detected")
 
-        return (None, None, diagnostics)
+            tool_hints = ["get_weather", '"name"']
+            found_hints = [m for m in tool_hints if m in scan_output]
+
+            if found_hints:
+                diagnostics.append(
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.ACTION_NEEDED,
+                        category=DiagnosticCategory.TOOL_DIALECT,
+                        message=(
+                            "Unknown tool dialect — model produced tool-like markers "
+                            "but no registered parser could parse the output"
+                        ),
+                        details={
+                            "found_hints": found_hints,
+                            "detected_tags": unmatched_tags,
+                            "raw_output_sample": scan_output[:300],
+                            "registered_parsers": registered_parsers,
+                        },
+                    )
+                )
+            elif unmatched_tags:
+                diagnostics.append(
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.WARNING,
+                        category=DiagnosticCategory.TOOL_DIALECT,
+                        message=(
+                            "Unknown tag patterns in output — possible unrecognized tool dialect"
+                        ),
+                        details={
+                            "detected_tags": unmatched_tags,
+                            "raw_output_sample": scan_output[:300],
+                            "registered_parsers": registered_parsers,
+                        },
+                    )
+                )
+            else:
+                logger.info("Tool probe: no tool support detected")
+        else:
+            logger.info("Tool probe: no tool support detected (no output)")
+
+        return (None, None, diagnostics, all_discovered_tags)
 
 
 # ---------------------------------------------------------------------------
