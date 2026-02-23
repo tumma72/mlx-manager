@@ -113,6 +113,15 @@ class TextBlock(BaseModel):
     text: str
 
 
+class ToolUseBlock(BaseModel):
+    """Tool use content block in response."""
+
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
 class Usage(BaseModel):
     """Token usage statistics."""
 
@@ -130,7 +139,7 @@ class AnthropicMessagesResponse(BaseModel):
     type: Literal["message"] = "message"
     role: Literal["assistant"] = "assistant"
     model: str
-    content: list[TextBlock]
+    content: list[TextBlock | ToolUseBlock]
     stop_reason: Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"] | None
     stop_sequence: str | None = None
     usage: Usage

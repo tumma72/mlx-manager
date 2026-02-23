@@ -17,6 +17,8 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     LlamaXmlParser,
     MistralNativeParser,
     NullToolParser,
+    OpenAIJsonParser,
+    ToolCodePythonParser,
 )
 
 # Registry mapping parser_id strings to parser classes
@@ -28,6 +30,8 @@ TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "llama_python": LlamaPythonParser,
     "liquid_python": LiquidPythonParser,
     "mistral_native": MistralNativeParser,
+    "openai_json": OpenAIJsonParser,
+    "tool_code_python": ToolCodePythonParser,
     "null": NullToolParser,
 }
 

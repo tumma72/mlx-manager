@@ -19,6 +19,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
     TextBlock,
+    ToolUseBlock,
     Usage,
 )
 from mlx_manager.mlx_server.services.formatters.base import ProtocolFormatter
@@ -329,7 +330,7 @@ class AnthropicFormatter(ProtocolFormatter):
                 except (json.JSONDecodeError, TypeError):
                     tool_input = {}
 
-                # content_block_start for tool_use
+                # content_block_start for tool_use (empty input per Anthropic spec)
                 events.append(
                     {
                         "event": "content_block_start",
@@ -341,7 +342,23 @@ class AnthropicFormatter(ProtocolFormatter):
                                     "type": "tool_use",
                                     "id": tool_id,
                                     "name": tool_name,
-                                    "input": tool_input,
+                                    "input": {},
+                                },
+                            }
+                        ),
+                    }
+                )
+                # content_block_delta with input_json_delta
+                events.append(
+                    {
+                        "event": "content_block_delta",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_delta",
+                                "index": block_index,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": json.dumps(tool_input),
                                 },
                             }
                         ),
@@ -396,10 +413,30 @@ class AnthropicFormatter(ProtocolFormatter):
         anthropic_stop: AnthropicStopReason = openai_stop_to_anthropic(  # type: ignore[assignment]
             result.finish_reason
         )
+
+        content: list[TextBlock | ToolUseBlock] = []
+        if result.content:
+            content.append(TextBlock(text=result.content))
+
+        if result.tool_calls:
+            anthropic_stop = "tool_use"  # type: ignore[assignment]
+            for tc in result.tool_calls:
+                func = tc.get("function", {})
+                tool_id = tc.get("id", "toolu_0")
+                tool_name = func.get("name", "")
+                try:
+                    tool_input = json.loads(func.get("arguments", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    tool_input = {}
+                content.append(ToolUseBlock(id=tool_id, name=tool_name, input=tool_input))
+
+        if not content:
+            content.append(TextBlock(text=""))
+
         return AnthropicMessagesResponse(
             id=self.request_id,
             model=self.model_id,
-            content=[TextBlock(text=result.content)],
+            content=content,
             stop_reason=anthropic_stop,
             usage=Usage(
                 input_tokens=prompt_tokens,

@@ -21,6 +21,8 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     LlamaXmlParser,
     MistralNativeParser,
     NullToolParser,
+    OpenAIJsonParser,
+    ToolCodePythonParser,
 )
 
 __all__ = [
@@ -33,6 +35,8 @@ __all__ = [
     "LlamaPythonParser",
     "LiquidPythonParser",
     "MistralNativeParser",
+    "OpenAIJsonParser",
+    "ToolCodePythonParser",
     "NullToolParser",
     "ThinkTagParser",
     "MistralThinkingParser",

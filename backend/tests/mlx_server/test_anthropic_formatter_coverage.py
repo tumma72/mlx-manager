@@ -236,8 +236,14 @@ class TestParseRequestDictBlocks:
         result = AnthropicFormatter.parse_request(req)
 
         # Text block should be collected in a separate message
-        text_msgs = [m for m in result.messages if m.get("role") == "assistant" and "content" in m and not m.get("tool_calls")]
-        tool_msgs = [m for m in result.messages if m.get("role") == "assistant" and "tool_calls" in m]
+        text_msgs = [
+            m
+            for m in result.messages
+            if m.get("role") == "assistant" and "content" in m and not m.get("tool_calls")
+        ]
+        tool_msgs = [
+            m for m in result.messages if m.get("role") == "assistant" and "tool_calls" in m
+        ]
 
         # Tool use is in its own message
         assert len(tool_msgs) == 1
@@ -272,7 +278,7 @@ class TestAnthropicFormatterStreamEndWithTools:
     """Test stream_end emits proper tool_use content blocks."""
 
     def test_stream_end_with_single_tool_call(self):
-        """stream_end with one tool call emits content_block_start and stop for it."""
+        """stream_end with one tool call emits content_block_start, input_json_delta, and stop."""
         fmt = AnthropicFormatter("model", "msg_1")
         tool_calls = [
             {
@@ -286,18 +292,20 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # Events: content_block_stop (text), content_block_start (tool), content_block_stop (tool),
+        # Events: content_block_stop (text), content_block_start (tool, empty input),
+        #         content_block_delta (input_json_delta), content_block_stop (tool),
         #         message_delta, message_stop
-        assert len(events) == 5
+        assert len(events) == 6
 
         event_names = [e["event"] for e in events]
         assert event_names[0] == "content_block_stop"  # Close text block
         assert event_names[1] == "content_block_start"  # Start tool_use block
-        assert event_names[2] == "content_block_stop"  # Stop tool_use block
-        assert event_names[3] == "message_delta"
-        assert event_names[4] == "message_stop"
+        assert event_names[2] == "content_block_delta"  # input_json_delta
+        assert event_names[3] == "content_block_stop"  # Stop tool_use block
+        assert event_names[4] == "message_delta"
+        assert event_names[5] == "message_stop"
 
-        # Verify the tool_use content_block_start
+        # Verify the tool_use content_block_start has empty input
         tool_block_start = json.loads(events[1]["data"])
         assert tool_block_start["type"] == "content_block_start"
         assert tool_block_start["index"] == 1  # Text is index 0
@@ -305,15 +313,23 @@ class TestAnthropicFormatterStreamEndWithTools:
         assert cb["type"] == "tool_use"
         assert cb["id"] == "toolu_abc"
         assert cb["name"] == "get_weather"
-        assert cb["input"] == {"location": "Tokyo"}
+        assert cb["input"] == {}  # Empty per Anthropic spec; input is sent via input_json_delta
+
+        # Verify the input_json_delta carries the actual tool arguments
+        input_delta_event = json.loads(events[2]["data"])
+        assert input_delta_event["type"] == "content_block_delta"
+        assert input_delta_event["index"] == 1
+        delta = input_delta_event["delta"]
+        assert delta["type"] == "input_json_delta"
+        assert json.loads(delta["partial_json"]) == {"location": "Tokyo"}
 
         # Verify the tool_use content_block_stop
-        tool_block_stop = json.loads(events[2]["data"])
+        tool_block_stop = json.loads(events[3]["data"])
         assert tool_block_stop["type"] == "content_block_stop"
         assert tool_block_stop["index"] == 1
 
     def test_stream_end_with_multiple_tool_calls(self):
-        """stream_end with multiple tool calls emits a block pair for each."""
+        """stream_end with multiple tool calls emits start/delta/stop for each."""
         fmt = AnthropicFormatter("model", "msg_2")
         tool_calls = [
             {
@@ -329,18 +345,32 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # content_block_stop(text) + 2*(content_block_start + content_block_stop) + message_delta + message_stop
-        assert len(events) == 7
+        # content_block_stop(text)
+        # + 2*(content_block_start + content_block_delta + content_block_stop)
+        # + message_delta + message_stop
+        assert len(events) == 9
 
-        # First tool at index 1
+        # First tool: content_block_start at events[1], delta at events[2], stop at events[3]
         first_start = json.loads(events[1]["data"])
         assert first_start["index"] == 1
         assert first_start["content_block"]["name"] == "get_weather"
+        assert first_start["content_block"]["input"] == {}
 
-        # Second tool at index 2
-        second_start = json.loads(events[3]["data"])
+        first_delta = json.loads(events[2]["data"])
+        assert first_delta["index"] == 1
+        assert first_delta["delta"]["type"] == "input_json_delta"
+        assert json.loads(first_delta["delta"]["partial_json"]) == {"location": "Tokyo"}
+
+        # Second tool: content_block_start at events[4], delta at events[5], stop at events[6]
+        second_start = json.loads(events[4]["data"])
         assert second_start["index"] == 2
         assert second_start["content_block"]["name"] == "get_time"
+        assert second_start["content_block"]["input"] == {}
+
+        second_delta = json.loads(events[5]["data"])
+        assert second_delta["index"] == 2
+        assert second_delta["delta"]["type"] == "input_json_delta"
+        assert json.loads(second_delta["delta"]["partial_json"]) == {"timezone": "JST"}
 
     def test_stream_end_with_tool_call_invalid_json_arguments(self):
         """stream_end handles invalid JSON in tool call arguments gracefully (lines 329-330)."""
@@ -357,13 +387,18 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # Should not raise, should produce events with empty input
-        assert len(events) == 5
+        # Should not raise; produces start + delta + stop for the tool block
+        assert len(events) == 6
 
         tool_start = json.loads(events[1]["data"])
         cb = tool_start["content_block"]
         assert cb["type"] == "tool_use"
-        assert cb["input"] == {}  # Invalid JSON → empty dict
+        assert cb["input"] == {}  # Always empty in content_block_start
+
+        # The input_json_delta should carry the serialised empty-dict fallback
+        input_delta = json.loads(events[2]["data"])
+        assert input_delta["delta"]["type"] == "input_json_delta"
+        assert json.loads(input_delta["delta"]["partial_json"]) == {}  # Invalid JSON → empty dict
 
     def test_stream_end_with_tool_call_missing_function_key(self):
         """stream_end handles tool call with missing function key gracefully."""
@@ -377,11 +412,16 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        assert len(events) == 5
+        assert len(events) == 6
         tool_start = json.loads(events[1]["data"])
         cb = tool_start["content_block"]
         assert cb["name"] == ""  # No function name
-        assert cb["input"] == {}  # No arguments
+        assert cb["input"] == {}  # content_block_start always has empty input
+
+        # input_json_delta carries the empty-dict fallback
+        input_delta = json.loads(events[2]["data"])
+        assert input_delta["delta"]["type"] == "input_json_delta"
+        assert json.loads(input_delta["delta"]["partial_json"]) == {}
 
     def test_stream_end_with_tool_call_no_id_generates_fallback(self):
         """stream_end uses fallback id 'toolu_{i}' when id is missing."""
@@ -395,7 +435,7 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        assert len(events) == 5
+        assert len(events) == 6
         tool_start = json.loads(events[1]["data"])
         cb = tool_start["content_block"]
         assert cb["id"] == "toolu_0"  # Fallback ID
@@ -466,13 +506,19 @@ class TestAnthropicFormatterStreamEndWithTools:
             "content_block_start",  # text block
             "content_block_delta",  # "Let me check"
             "content_block_stop",  # close text block
-            "content_block_start",  # tool_use block
+            "content_block_start",  # tool_use block (empty input)
+            "content_block_delta",  # input_json_delta with actual arguments
             "content_block_stop",  # close tool_use block
             "message_delta",
             "message_stop",
         ]
 
-        # Verify tool_use block content
+        # Verify tool_use block content_block_start has empty input
         tool_start_data = json.loads(all_events[4]["data"])
         assert tool_start_data["content_block"]["name"] == "get_weather"
-        assert tool_start_data["content_block"]["input"] == {"location": "NYC"}
+        assert tool_start_data["content_block"]["input"] == {}
+
+        # Verify input_json_delta carries the actual arguments
+        input_delta_data = json.loads(all_events[5]["data"])
+        assert input_delta_data["delta"]["type"] == "input_json_delta"
+        assert json.loads(input_delta_data["delta"]["partial_json"]) == {"location": "NYC"}

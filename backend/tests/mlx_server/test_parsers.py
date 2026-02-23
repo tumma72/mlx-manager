@@ -29,9 +29,11 @@ from mlx_manager.mlx_server.parsers import (
     MistralThinkingParser,
     NullThinkingParser,
     NullToolParser,
+    OpenAIJsonParser,
     ThinkingParser,
     ThinkTagParser,
     ToolCallParser,
+    ToolCodePythonParser,
     resolve_thinking_parser,
     resolve_tool_parser,
 )
@@ -649,6 +651,218 @@ class TestMistralNativeParser:
         assert self.parser.validates("Hello world", "get_weather") is False
 
 
+# --- OpenAIJsonParser Tests ---
+
+
+class TestOpenAIJsonParser:
+    """Tests for OpenAIJsonParser."""
+
+    def test_parser_id(self) -> None:
+        parser = OpenAIJsonParser()
+        assert parser.parser_id == "openai_json"
+
+    def test_stream_markers_empty(self) -> None:
+        parser = OpenAIJsonParser()
+        assert parser.stream_markers == []
+
+    def test_extract_function_wrapper_variant(self) -> None:
+        """Variant 1: {"type": "function", "function": {...}}"""
+        parser = OpenAIJsonParser()
+        text = '{"type": "function", "function": {"name": "get_weather", "arguments": {"location": "Paris"}}}'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        assert json.loads(calls[0].function.arguments) == {"location": "Paris"}
+
+    def test_extract_simple_variant(self) -> None:
+        """Variant 2: {"name": ..., "arguments": ...}"""
+        parser = OpenAIJsonParser()
+        text = '{"name": "get_weather", "arguments": {"location": "Paris"}}'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        assert json.loads(calls[0].function.arguments) == {"location": "Paris"}
+
+    def test_extract_multiple_calls(self) -> None:
+        parser = OpenAIJsonParser()
+        text = (
+            "I will call two functions. "
+            '{"name": "get_weather", "arguments": {"location": "Paris"}} '
+            '{"name": "get_time", "arguments": {"timezone": "UTC"}}'
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[1].function.name == "get_time"
+
+    def test_extract_mixed_with_text(self) -> None:
+        parser = OpenAIJsonParser()
+        text = 'Let me check the weather. {"name": "get_weather", "arguments": {"location": "Paris"}} The weather is nice.'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_ignores_non_tool_json(self) -> None:
+        """JSON objects without tool call structure should be ignored."""
+        parser = OpenAIJsonParser()
+        text = '{"key": "value", "number": 42}'
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_ignores_invalid_json(self) -> None:
+        parser = OpenAIJsonParser()
+        text = "{invalid json here}"
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_deduplicates(self) -> None:
+        parser = OpenAIJsonParser()
+        text = (
+            '{"name": "get_weather", "arguments": {"location": "Paris"}} '
+            '{"name": "get_weather", "arguments": {"location": "Paris"}}'
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 1
+
+    def test_validates_correct_function(self) -> None:
+        parser = OpenAIJsonParser()
+        text = '{"name": "get_weather", "arguments": {"location": "Paris"}}'
+        assert parser.validates(text, "get_weather") is True
+
+    def test_validates_wrong_function(self) -> None:
+        parser = OpenAIJsonParser()
+        text = '{"name": "get_weather", "arguments": {"location": "Paris"}}'
+        assert parser.validates(text, "get_time") is False
+
+    def test_extract_with_string_arguments(self) -> None:
+        """Arguments as JSON string (not dict) should be coerced."""
+        parser = OpenAIJsonParser()
+        text = '{"name": "get_weather", "arguments": "{\\"location\\": \\"Paris\\"}"}'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_empty_text(self) -> None:
+        parser = OpenAIJsonParser()
+        assert parser.extract("") == []
+
+    def test_extract_function_wrapper_missing_function_name(self) -> None:
+        """Wrapper variant with no name in nested function dict is skipped."""
+        parser = OpenAIJsonParser()
+        text = '{"type": "function", "function": {"arguments": {"location": "Paris"}}}'
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+
+# --- ToolCodePythonParser Tests ---
+
+
+class TestToolCodePythonParser:
+    """Tests for ToolCodePythonParser."""
+
+    def test_parser_id(self) -> None:
+        parser = ToolCodePythonParser()
+        assert parser.parser_id == "tool_code_python"
+
+    def test_stream_markers(self) -> None:
+        parser = ToolCodePythonParser()
+        assert parser.stream_markers == [("```tool_code", "```")]
+
+    def test_extract_single_call(self) -> None:
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nget_weather(location="Paris")\n```'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        assert json.loads(calls[0].function.arguments) == {"location": "Paris"}
+
+    def test_extract_multiple_args(self) -> None:
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nget_weather(location="Paris", units="celsius")\n```'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args == {"location": "Paris", "units": "celsius"}
+
+    def test_extract_numeric_args(self) -> None:
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nset_temperature(value=72, unit="fahrenheit")\n```'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["value"] == 72
+
+    def test_extract_mixed_with_text(self) -> None:
+        parser = ToolCodePythonParser()
+        text = 'Let me check the weather.\n```tool_code\nget_weather(location="Paris")\n```\nThe weather looks good.'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_unclosed_block(self) -> None:
+        """Unclosed tool_code block should still be parsed."""
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nget_weather(location="Paris")'
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_invalid_python(self) -> None:
+        parser = ToolCodePythonParser()
+        text = "```tool_code\nnot valid python !!!\n```"
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_empty_block(self) -> None:
+        parser = ToolCodePythonParser()
+        text = "```tool_code\n\n```"
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_deduplicates(self) -> None:
+        parser = ToolCodePythonParser()
+        text = (
+            '```tool_code\nget_weather(location="Paris")\n```\n'
+            '```tool_code\nget_weather(location="Paris")\n```'
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 1
+
+    def test_validates_correct_function(self) -> None:
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nget_weather(location="Paris")\n```'
+        assert parser.validates(text, "get_weather") is True
+
+    def test_validates_wrong_function(self) -> None:
+        parser = ToolCodePythonParser()
+        text = '```tool_code\nget_weather(location="Paris")\n```'
+        assert parser.validates(text, "get_time") is False
+
+    def test_extract_empty_text(self) -> None:
+        parser = ToolCodePythonParser()
+        assert parser.extract("") == []
+
+    def test_extract_no_args(self) -> None:
+        """Function call with no arguments."""
+        parser = ToolCodePythonParser()
+        text = "```tool_code\nlist_tools()\n```"
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "list_tools"
+        assert calls[0].function.arguments == "{}"
+
+    def test_extract_boolean_args(self) -> None:
+        """Boolean keyword arguments are preserved correctly."""
+        parser = ToolCodePythonParser()
+        text = "```tool_code\nset_flag(enabled=True, verbose=False)\n```"
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["enabled"] is True
+        assert args["verbose"] is False
+
+
 # --- NullToolParser Tests ---
 
 
@@ -970,6 +1184,14 @@ class TestRegistry:
         parser = resolve_tool_parser("mistral_native")
         assert isinstance(parser, MistralNativeParser)
 
+    def test_resolve_tool_parser_openai_json(self) -> None:
+        parser = resolve_tool_parser("openai_json")
+        assert isinstance(parser, OpenAIJsonParser)
+
+    def test_resolve_tool_parser_tool_code_python(self) -> None:
+        parser = resolve_tool_parser("tool_code_python")
+        assert isinstance(parser, ToolCodePythonParser)
+
     def test_resolve_thinking_parser_mistral_think(self) -> None:
         parser = resolve_thinking_parser("mistral_think")
         assert isinstance(parser, MistralThinkingParser)
@@ -983,6 +1205,8 @@ class TestRegistry:
             "llama_python",
             "liquid_python",
             "mistral_native",
+            "openai_json",
+            "tool_code_python",
             "null",
         }
         assert set(TOOL_PARSERS.keys()) == expected
@@ -1007,6 +1231,8 @@ class TestRegistry:
             LlamaPythonParser,
             LiquidPythonParser,
             MistralNativeParser,
+            OpenAIJsonParser,
+            ToolCodePythonParser,
             NullToolParser,
         }
         registered_tool_classes = set(TOOL_PARSERS.values())

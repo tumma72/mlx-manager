@@ -552,3 +552,94 @@ class TestAnthropicFormatterComplete:
             "message_delta",
             "message_stop",
         ]
+
+
+class TestAnthropicFormatterCompleteWithToolCalls:
+    """Tests for AnthropicFormatter.format_complete with tool calls."""
+
+    def test_format_complete_with_tool_calls(self) -> None:
+        """format_complete should include ToolUseBlock entries for tool calls."""
+        formatter = AnthropicFormatter("test-model", "msg_tc_1")
+        result = TextResult(
+            content="Let me check",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_123",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"location": "Paris"}',
+                    },
+                }
+            ],
+        )
+        response = formatter.format_complete(result)
+        assert len(response.content) == 2
+        assert response.content[0].type == "text"
+        assert response.content[0].text == "Let me check"
+        assert response.content[1].type == "tool_use"
+        assert response.content[1].name == "get_weather"
+        assert response.content[1].input == {"location": "Paris"}
+        assert response.stop_reason == "tool_use"
+
+    def test_format_complete_tool_calls_only(self) -> None:
+        """format_complete with empty text and tool calls has ToolUseBlock but no TextBlock."""
+        formatter = AnthropicFormatter("test-model", "msg_tc_2")
+        result = TextResult(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_456",
+                    "function": {
+                        "name": "get_time",
+                        "arguments": '{"timezone": "UTC"}',
+                    },
+                }
+            ],
+        )
+        response = formatter.format_complete(result)
+        # Empty content string means no TextBlock, just ToolUseBlock
+        assert any(b.type == "tool_use" for b in response.content)
+        assert response.stop_reason == "tool_use"
+
+    def test_format_complete_no_tool_calls(self) -> None:
+        """format_complete without tool_calls should behave as before."""
+        formatter = AnthropicFormatter("test-model", "msg_tc_3")
+        result = TextResult(content="Hello world", finish_reason="stop")
+        response = formatter.format_complete(result)
+        assert len(response.content) == 1
+        assert response.content[0].type == "text"
+        assert response.content[0].text == "Hello world"
+        assert response.stop_reason == "end_turn"
+
+    def test_format_complete_multiple_tool_calls(self) -> None:
+        """format_complete with multiple tool calls produces one block per call."""
+        formatter = AnthropicFormatter("test-model", "msg_tc_4")
+        result = TextResult(
+            content="Checking both",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "function": {"name": "get_weather", "arguments": '{"location": "Paris"}'},
+                },
+                {
+                    "id": "call_2",
+                    "function": {"name": "get_time", "arguments": '{"timezone": "UTC"}'},
+                },
+            ],
+        )
+        response = formatter.format_complete(result)
+        assert len(response.content) == 3  # 1 text + 2 tool_use
+        assert response.content[0].type == "text"
+        assert response.content[0].text == "Checking both"
+        assert response.content[1].type == "tool_use"
+        assert response.content[1].name == "get_weather"
+        assert response.content[1].id == "call_1"
+        assert response.content[1].input == {"location": "Paris"}
+        assert response.content[2].type == "tool_use"
+        assert response.content[2].name == "get_time"
+        assert response.content[2].id == "call_2"
+        assert response.content[2].input == {"timezone": "UTC"}
+        assert response.stop_reason == "tool_use"

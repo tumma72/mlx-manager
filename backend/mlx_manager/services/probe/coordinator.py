@@ -132,6 +132,20 @@ class ProbingCoordinator:
             yield ProbeStep(step="load_model", status="failed", error=str(e))
             return
 
+        # ── Step 3b: Force null parsers so raw output reaches sweep code ──
+        from mlx_manager.mlx_server.parsers.thinking import NullThinkingParser
+        from mlx_manager.mlx_server.parsers.tool_call import NullToolParser
+
+        original_tool_parser = None
+        original_thinking_parser = None
+        if loaded.adapter is not None:
+            original_tool_parser = loaded.adapter.tool_parser
+            original_thinking_parser = loaded.adapter.thinking_parser
+            loaded.adapter.configure(
+                tool_parser=NullToolParser(),
+                thinking_parser=NullThinkingParser(),
+            )
+
         # ── Step 4: Look up strategy for type-specific static checks ──
         from .strategy import get_probe_strategy
 
@@ -184,6 +198,13 @@ class ProbingCoordinator:
                 logger.warning(f"Cleanup failed for {model_id}: {e}")
                 yield ProbeStep(step="cleanup", status="failed", error=str(e))
         else:
+            # Restore original parsers for preloaded models
+            if loaded.adapter is not None and original_tool_parser is not None:
+                loaded.adapter.configure(
+                    tool_parser=original_tool_parser,
+                    thinking_parser=original_thinking_parser,
+                )
+
             # Update capabilities on the already-loaded model
             try:
                 from mlx_manager.database import get_session
@@ -560,7 +581,6 @@ class ProbingCoordinator:
 
         Returns (tool_format, tool_parser_id, diagnostics, discovered_tags).
         """
-        from mlx_manager.mlx_server.models.pool import ProfileSettings
         from mlx_manager.mlx_server.parsers import TOOL_PARSERS
         from mlx_manager.mlx_server.utils.template_tools import (
             has_native_tool_support,
@@ -580,9 +600,6 @@ class ProbingCoordinator:
         tokenizer = loaded.tokenizer
         last_output: str | None = None
         all_discovered_tags: list[Any] = []
-
-        # Reset to defaults before probing
-        self._pool.register_profile_settings(model_id, ProfileSettings())
 
         # ── Phase 1: CHALLENGE (generic injection) ────────────────────
         generic_prompt = _build_generic_tool_prompt(_TOOL_PROBE_TOOL)

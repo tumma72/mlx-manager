@@ -395,6 +395,145 @@ class NullToolParser(ToolCallParser):
         return []
 
 
+class OpenAIJsonParser(ToolCallParser):
+    """Raw JSON tool call format (no wrapper tags).
+
+    Handles two variants produced by models like Qwen3-VL:
+    - {"type": "function", "function": {"name": ..., "arguments": ...}}
+    - {"name": ..., "arguments": ...}
+    """
+
+    @property
+    def parser_id(self) -> str:
+        return "openai_json"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return []
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+        decoder = json.JSONDecoder()
+        idx = 0
+        while idx < len(text):
+            # Find next '{' to attempt JSON decode
+            brace_pos = text.find("{", idx)
+            if brace_pos == -1:
+                break
+            try:
+                obj, end_idx = decoder.raw_decode(text, brace_pos)
+                idx = end_idx
+            except json.JSONDecodeError:
+                idx = brace_pos + 1
+                continue
+
+            if not isinstance(obj, dict):
+                continue
+
+            tc = self._parse_obj(obj)
+            if tc:
+                results.append(tc)
+
+        return self._deduplicate(results)
+
+    def _parse_obj(self, obj: dict[str, Any]) -> ToolCall | None:
+        """Try to extract a tool call from a JSON object."""
+        # Variant 1: {"type": "function", "function": {"name": ..., "arguments": ...}}
+        if obj.get("type") == "function" and isinstance(obj.get("function"), dict):
+            func = obj["function"]
+            name = func.get("name")
+            if name:
+                arguments = self._coerce_arguments(func.get("arguments", {}))
+                return self._make_tool_call(name, arguments)
+
+        # Variant 2: {"name": ..., "arguments": ...}
+        if "name" in obj and "arguments" in obj:
+            name = obj["name"]
+            if isinstance(name, str) and name:
+                arguments = self._coerce_arguments(obj["arguments"])
+                return self._make_tool_call(name, arguments)
+
+        return None
+
+
+class ToolCodePythonParser(ToolCallParser):
+    """Qwen3-Coder format: ```tool_code\\nfunc(arg="val")\\n```"""
+
+    _PATTERN_CLOSED = re.compile(r"```tool_code\s*\n(.*?)\n\s*```", re.DOTALL)
+    _PATTERN_UNCLOSED = re.compile(r"```tool_code\s*\n(.*?)\s*$", re.DOTALL)
+
+    @property
+    def parser_id(self) -> str:
+        return "tool_code_python"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("```tool_code", "```")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+
+        for pattern in (self._PATTERN_CLOSED, self._PATTERN_UNCLOSED):
+            for match in pattern.finditer(text):
+                results.extend(self._parse_match(match))
+
+        return self._deduplicate(results)
+
+    def _parse_match(self, match: re.Match[str]) -> list[ToolCall]:
+        """Parse Python function call(s) from tool_code block using ast.
+
+        Uses ast.parse + ast.literal_eval for safe, sandboxed parsing
+        (same approach as LiquidPythonParser). No code execution occurs.
+        """
+        try:
+            content = match.group(1).strip()
+            if not content:
+                return []
+
+            try:
+                tree = ast.parse(content, mode="eval")
+            except SyntaxError:
+                logger.warning("Invalid Python syntax in tool_code block: {}", content[:200])
+                return []
+
+            results: list[ToolCall] = []
+            body = tree.body
+
+            calls: list[ast.Call] = []
+            if isinstance(body, ast.List):
+                for elt in body.elts:
+                    if isinstance(elt, ast.Call):
+                        calls.append(elt)
+            elif isinstance(body, ast.Call):
+                calls.append(body)
+
+            for call in calls:
+                if isinstance(call.func, ast.Name):
+                    name = call.func.id
+                else:
+                    continue
+
+                args_dict: dict[str, Any] = {}
+                for kw in call.keywords:
+                    arg_name = kw.arg
+                    if arg_name is None:
+                        continue
+                    try:
+                        # ast.literal_eval safely evaluates literals only
+                        value = ast.literal_eval(kw.value)
+                    except (ValueError, SyntaxError):
+                        # Fallback: unparse the AST node to string
+                        value = ast.unparse(kw.value)
+                    args_dict[arg_name] = value
+
+                results.append(self._make_tool_call(name, json.dumps(args_dict)))
+
+            return results
+        except (IndexError, AttributeError) as e:
+            logger.warning("Invalid tool_code block: {}", e)
+            return []
+
+
 def _parse_python_args(args_str: str) -> dict[str, Any]:
     """Parse Python-style function arguments.
 
