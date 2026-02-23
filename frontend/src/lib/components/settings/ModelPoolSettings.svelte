@@ -1,18 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { models, settings } from '$lib/api/client';
+	import { settings } from '$lib/api/client';
 	import { systemStore } from '$stores';
-	import type { LocalModel } from '$lib/api/types';
+	import type { PreloadedProfileInfo } from '$lib/api/types';
 	import { Card, Button, Select } from '$components/ui';
-	import { Loader2, Save, X, ChevronDown } from 'lucide-svelte';
+	import { Loader2, Save, ChevronDown, ExternalLink } from 'lucide-svelte';
 
 	// Types for pool configuration
 	type MemoryLimitMode = 'percent' | 'gb';
 	type EvictionPolicy = 'lru' | 'lfu' | 'ttl';
 
 	// Component state
-	let localModels = $state<LocalModel[]>([]);
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -23,11 +22,7 @@
 	let memoryMode = $state<MemoryLimitMode>('percent');
 	let memoryValue = $state(80);
 	let evictionPolicy = $state<EvictionPolicy>('lru');
-	let preloadModels = $state<string[]>([]);
-
-	// Preload selector state
-	let preloadSearchQuery = $state('');
-	let preloadDropdownOpen = $state(false);
+	let preloadedProfiles = $state<PreloadedProfileInfo[]>([]);
 
 	// Derived values
 	const maxMemoryGb = $derived(systemStore.memory?.total_gb ?? 64);
@@ -36,27 +31,22 @@
 	const sliderStep = $derived(memoryMode === 'percent' ? 5 : 1);
 	const displayValue = $derived(memoryMode === 'percent' ? `${memoryValue}%` : `${memoryValue} GB`);
 
-	// Filter local models for preload selector
-	const filteredModels = $derived(
-		localModels.filter(
-			(m) =>
-				!preloadModels.includes(m.model_id) &&
-				m.model_id.toLowerCase().includes(preloadSearchQuery.toLowerCase())
-		)
-	);
-
 	const evictionOptions: { value: EvictionPolicy; label: string; description: string }[] = [
 		{
 			value: 'lru',
 			label: 'LRU (Least Recently Used)',
-			description: 'Evict models not used for longest'
+			description: 'Evict profiles not used for longest'
 		},
 		{
 			value: 'lfu',
 			label: 'LFU (Least Frequently Used)',
-			description: 'Evict models with fewest requests'
+			description: 'Evict profiles with fewest requests'
 		},
-		{ value: 'ttl', label: 'TTL (Time To Live)', description: 'Evict models after idle timeout' }
+		{
+			value: 'ttl',
+			label: 'TTL (Time To Live)',
+			description: 'Evict profiles after idle timeout'
+		}
 	];
 
 	onMount(async () => {
@@ -64,15 +54,14 @@
 			// Ensure system memory is loaded
 			await systemStore.refreshMemory();
 
-			// Load pool config and local models in parallel
-			const [config, modelsResult] = await Promise.all([settings.getPoolConfig(), models.listLocal()]);
+			// Load pool config
+			const config = await settings.getPoolConfig();
 
 			// Initialize form from config
 			memoryMode = config.memory_limit_mode;
 			memoryValue = config.memory_limit_value;
 			evictionPolicy = config.eviction_policy;
-			preloadModels = config.preload_models;
-			localModels = modelsResult;
+			preloadedProfiles = config.preloaded_profiles;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load settings';
 		} finally {
@@ -85,12 +74,12 @@
 		error = null;
 		successMessage = null;
 		try {
-			await settings.updatePoolConfig({
+			const result = await settings.updatePoolConfig({
 				memory_limit_mode: memoryMode,
 				memory_limit_value: memoryValue,
-				eviction_policy: evictionPolicy,
-				preload_models: preloadModels
+				eviction_policy: evictionPolicy
 			});
+			preloadedProfiles = result.preloaded_profiles;
 			successMessage = 'Settings saved successfully';
 			setTimeout(() => {
 				successMessage = null;
@@ -118,18 +107,6 @@
 			// Clamp to valid range and round to nearest 5
 			memoryValue = Math.max(10, Math.min(100, Math.round(memoryValue / 5) * 5));
 		}
-	}
-
-	function addPreloadModel(modelId: string) {
-		if (!preloadModels.includes(modelId)) {
-			preloadModels = [...preloadModels, modelId];
-		}
-		preloadSearchQuery = '';
-		preloadDropdownOpen = false;
-	}
-
-	function removePreloadModel(modelId: string) {
-		preloadModels = preloadModels.filter((m) => m !== modelId);
 	}
 
 	// Handle slider input
@@ -228,92 +205,53 @@
 
 		<hr class="border-border" />
 
-		<!-- Preload Models Section -->
+		<!-- Pre-loaded Profiles Section (read-only) -->
 		<div class="space-y-4">
 			<div>
-				<h3 class="text-sm font-medium">Preload Models</h3>
+				<h3 class="text-sm font-medium">Pre-loaded Profiles</h3>
 				<p class="text-xs text-muted-foreground mt-1">
-					Models to load on server startup. These will never be evicted.
+					Profiles loaded at startup and protected from eviction. Enable "Auto-load on startup"
+					in each profile's settings to add it here.
 				</p>
 			</div>
 
-			<!-- Selected preload models as tags -->
-			{#if preloadModels.length > 0}
-				<div class="flex flex-wrap gap-2">
-					{#each preloadModels as modelId (modelId)}
-						<span
-							class="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-sm"
+			{#if preloadedProfiles.length > 0}
+				<div class="space-y-2">
+					{#each preloadedProfiles as profile (profile.id)}
+						<a
+							href="/profiles?edit={profile.id}"
+							class="flex items-center justify-between px-3 py-2 rounded-md bg-primary/5 border border-primary/10 hover:bg-primary/10 transition-colors group"
 						>
-							{modelId.split('/').pop()}
-							<button
-								type="button"
-								onclick={() => removePreloadModel(modelId)}
-								class="hover:bg-primary/20 rounded p-0.5"
-								title="Remove"
-							>
-								<X class="w-3 h-3" />
-							</button>
-						</span>
+							<div class="flex items-center gap-2 min-w-0">
+								<span class="text-sm font-medium truncate">{profile.name}</span>
+								<span
+									class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0"
+								>
+									{profile.profile_type}
+								</span>
+							</div>
+							<div class="flex items-center gap-2 shrink-0">
+								{#if profile.model_name}
+									<span class="text-xs text-muted-foreground">{profile.model_name}</span>
+								{/if}
+								<ExternalLink
+									class="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+								/>
+							</div>
+						</a>
 					{/each}
 				</div>
-			{/if}
-
-			<!-- Preload model selector -->
-			<div class="relative">
-				<div class="relative">
-					<input
-						type="text"
-						placeholder="Search downloaded models..."
-						bind:value={preloadSearchQuery}
-						onfocus={() => (preloadDropdownOpen = true)}
-						class="w-full h-10 px-3 py-2 text-sm rounded-md border border-input bg-background ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-					<ChevronDown
-						class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
-					/>
+			{:else}
+				<div
+					class="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md"
+				>
+					No profiles configured for auto-loading.
+					<br />
+					<span class="text-xs">
+						Enable "Auto-load on startup" in a profile's settings to preload it.
+					</span>
 				</div>
-
-				{#if preloadDropdownOpen && filteredModels.length > 0}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						class="absolute z-10 w-full mt-1 max-h-60 overflow-auto rounded-md border bg-popover shadow-md"
-						onmouseleave={() => (preloadDropdownOpen = false)}
-					>
-						{#each filteredModels as model (model.model_id)}
-							<button
-								type="button"
-								onclick={() => addPreloadModel(model.model_id)}
-								class="w-full px-3 py-2 text-sm text-left hover:bg-accent flex items-center justify-between"
-							>
-								<span class="truncate">{model.model_id}</span>
-								<span class="text-xs text-muted-foreground ml-2">
-									{model.size_gb.toFixed(1)} GB
-								</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
-
-				{#if preloadDropdownOpen && filteredModels.length === 0 && localModels.length > 0}
-					<div
-						class="absolute z-10 w-full mt-1 p-3 rounded-md border bg-popover shadow-md text-sm text-muted-foreground text-center"
-					>
-						{#if preloadSearchQuery}
-							No models match "{preloadSearchQuery}"
-						{:else}
-							All downloaded models are already selected
-						{/if}
-					</div>
-				{/if}
-
-				{#if preloadDropdownOpen && localModels.length === 0}
-					<div
-						class="absolute z-10 w-full mt-1 p-3 rounded-md border bg-popover shadow-md text-sm text-muted-foreground text-center"
-					>
-						No downloaded models available
-					</div>
-				{/if}
-			</div>
+			{/if}
 		</div>
 
 		<hr class="border-border" />

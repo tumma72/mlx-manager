@@ -32,7 +32,7 @@
 				value="pool"
 				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
 			>
-				Model Pool
+				Profiles Pool
 			</Tabs.Trigger>
 			<Tabs.Trigger
 				value="routing"
@@ -65,12 +65,12 @@
 			<ProviderSection />
 		</Tabs.Content>
 
-		<!-- Model Pool Tab -->
+		<!-- Profiles Pool Tab -->
 		<Tabs.Content value="pool" class="mt-6 space-y-4">
 			<div>
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Model Pool</h2>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Profiles Pool</h2>
 				<p class="text-sm text-muted-foreground mb-4">
-					Configure memory limits and caching behavior for the local model pool.
+					Configure memory limits and caching behavior for the execution profiles pool.
 				</p>
 			</div>
 			<ModelPoolSettings />

@@ -112,13 +112,20 @@ async def resume_pending_downloads(pending: list[tuple[int, str]]) -> None:
 async def _run_download_task(task_id: str, download_id: int, model_id: str) -> None:
     """Background task to run a download and update progress."""
     from mlx_manager.routers.models import _update_download_record
+    from mlx_manager.services.hf_client import (
+        cleanup_cancel_event,
+        register_cancel_event,
+    )
+
+    # Register cancel event so pause/cancel endpoints can signal this download
+    cancel_event = register_cancel_event(str(download_id))
 
     try:
-        async for progress in hf_client.download_model(model_id):
+        async for progress in hf_client.download_model(model_id, cancel_event=cancel_event):
             download_tasks[task_id].update(progress.model_dump(exclude_none=True))
 
             status = progress.status
-            is_final = status in ("completed", "failed")
+            is_final = status in ("completed", "failed", "cancelled")
 
             # Update DB on status changes and completion
             if is_final:
@@ -138,6 +145,8 @@ async def _run_download_task(task_id: str, download_id: int, model_id: str) -> N
     except Exception as e:
         logger.exception(f"Download failed for {model_id}: {e}")
         await _update_download_record(download_id, status="failed", error=str(e))
+    finally:
+        cleanup_cancel_event(str(download_id))
 
 
 @asynccontextmanager
@@ -177,6 +186,67 @@ async def lifespan(app: FastAPI):
     pending_downloads = await recover_incomplete_downloads()
     if pending_downloads:
         await resume_pending_downloads(pending_downloads)
+
+    # Auto-load profiles marked with auto_start
+    from mlx_manager.database import get_session
+    from mlx_manager.mlx_server.models.pool import ProfileSettings
+
+    async with get_session() as session:
+        from sqlalchemy.orm import selectinload
+        from sqlmodel import select
+
+        from mlx_manager.models import ExecutionProfile
+
+        result = await session.execute(
+            select(ExecutionProfile)
+            .where(ExecutionProfile.auto_start == True)  # noqa: E712
+            .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
+        )
+        auto_start_profiles = result.scalars().all()
+
+        if auto_start_profiles and pool.model_pool:
+            for profile in auto_start_profiles:
+                if not profile.model:
+                    continue
+                model_id = profile.model.repo_id
+                try:
+                    # Parse model_options to template_options
+                    template_options = None
+                    if profile.model_options:
+                        import json
+
+                        try:
+                            template_options = json.loads(profile.model_options)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+                    # Register profile settings
+                    pool.model_pool.register_profile_settings(
+                        model_id,
+                        ProfileSettings(
+                            system_prompt=profile.default_system_prompt,
+                            enable_tool_injection=profile.default_enable_tool_injection,
+                            template_options=template_options,
+                        ),
+                    )
+
+                    # Preload model (protected from eviction)
+                    await pool.model_pool.preload_model(model_id)
+                    logger.info(f"Auto-loaded profile '{profile.name}' (model: {model_id})")
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to auto-load profile '{profile.name}': {e}"
+                    )
+
+            if auto_start_profiles:
+                loaded = sum(
+                    1
+                    for p in auto_start_profiles
+                    if p.model and pool.model_pool.is_loaded(p.model.repo_id)
+                )
+                logger.info(
+                    f"Auto-start: {loaded}/{len(auto_start_profiles)} profiles loaded"
+                )
 
     await health_checker.start()
     logger.info("MLX Manager ready")

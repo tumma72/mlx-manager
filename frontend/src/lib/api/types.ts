@@ -390,19 +390,27 @@ export interface BackendMappingUpdate {
   enabled?: boolean;
 }
 
+// Preloaded profile info (from auto_start profiles)
+export interface PreloadedProfileInfo {
+  id: number;
+  name: string;
+  profile_type: string;
+  model_repo_id: string | null;
+  model_name: string | null;
+}
+
 // Server pool configuration
 export interface ServerPoolConfig {
   memory_limit_mode: MemoryLimitMode;
   memory_limit_value: number;
   eviction_policy: EvictionPolicy;
-  preload_models: string[];
+  preloaded_profiles: PreloadedProfileInfo[];
 }
 
 export interface ServerPoolConfigUpdate {
   memory_limit_mode?: MemoryLimitMode;
   memory_limit_value?: number;
   eviction_policy?: EvictionPolicy;
-  preload_models?: string[];
 }
 
 // Rule test result

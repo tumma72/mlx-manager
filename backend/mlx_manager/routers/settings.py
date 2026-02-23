@@ -1,6 +1,5 @@
 """Settings API router for providers, routing rules, model pool, and timeout configuration."""
 
-import json
 import re
 from datetime import UTC, datetime
 from typing import Annotated
@@ -27,6 +26,8 @@ from mlx_manager.models import (
     CloudCredential,
     CloudCredentialCreate,
     CloudCredentialResponse,
+    ExecutionProfile,
+    PreloadedProfileInfo,
     RuleMatchResult,
     RulePriorityUpdate,
     ServerConfig,
@@ -478,10 +479,13 @@ async def get_pool_config(
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """Get current model pool configuration.
+    """Get current pool configuration.
 
     Creates default config if it doesn't exist (singleton pattern).
+    Returns profiles marked with auto_start as the preloaded profiles list.
     """
+    from sqlalchemy.orm import selectinload
+
     result = await session.execute(select(ServerConfig).where(ServerConfig.id == 1))
     config = result.scalar_one_or_none()
 
@@ -492,17 +496,30 @@ async def get_pool_config(
         await session.commit()
         await session.refresh(config)
 
-    # Parse preload_models from JSON
-    try:
-        preload_models = json.loads(config.preload_models)
-    except json.JSONDecodeError:
-        preload_models = []
+    # Get profiles marked for auto-start preloading
+    profiles_result = await session.execute(
+        select(ExecutionProfile)
+        .where(ExecutionProfile.auto_start == True)  # noqa: E712
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
+    )
+    auto_start_profiles = profiles_result.scalars().all()
+
+    preloaded_profiles = [
+        PreloadedProfileInfo(
+            id=p.id,  # type: ignore[arg-type]
+            name=p.name,
+            profile_type=p.profile_type or "inference",
+            model_repo_id=p.model.repo_id if p.model else None,
+            model_name=p.model.repo_id.split("/")[-1] if p.model else None,
+        )
+        for p in auto_start_profiles
+    ]
 
     return ServerConfigResponse(
         memory_limit_mode=config.memory_limit_mode,
         memory_limit_value=config.memory_limit_value,
         eviction_policy=config.eviction_policy,
-        preload_models=preload_models,
+        preloaded_profiles=preloaded_profiles,
     )
 
 
@@ -512,10 +529,13 @@ async def update_pool_config(
     data: ServerConfigUpdate,
     session: AsyncSession = Depends(get_db),
 ):
-    """Update model pool configuration.
+    """Update pool configuration.
 
     Changes are applied immediately to the running embedded server.
+    Preloading is driven by profile auto_start flags, not by this endpoint.
     """
+    from sqlalchemy.orm import selectinload
+
     result = await session.execute(select(ServerConfig).where(ServerConfig.id == 1))
     config = result.scalar_one_or_none()
 
@@ -545,8 +565,6 @@ async def update_pool_config(
         config.memory_limit_value = data.memory_limit_value
     if data.eviction_policy is not None:
         config.eviction_policy = data.eviction_policy
-    if data.preload_models is not None:
-        config.preload_models = json.dumps(data.preload_models)
 
     config.updated_at = datetime.now(tz=UTC)
     session.add(config)
@@ -565,26 +583,34 @@ async def update_pool_config(
             else:  # "gb"
                 pool.update_memory_limit(memory_gb=data.memory_limit_value)
 
-        # Apply preload list if provided
-        if data.preload_models is not None:
-            preload_result = await pool.apply_preload_list(data.preload_models)
-            logger.info(f"Preload result: {preload_result}")
-
     except RuntimeError:
         # Pool not initialized (shouldn't happen in embedded mode)
         logger.warning("Model pool not initialized, settings saved but not applied")
 
-    # Parse preload_models for response
-    try:
-        preload_models = json.loads(config.preload_models)
-    except json.JSONDecodeError:
-        preload_models = []
+    # Get profiles marked for auto-start preloading
+    profiles_result = await session.execute(
+        select(ExecutionProfile)
+        .where(ExecutionProfile.auto_start == True)  # noqa: E712
+        .options(selectinload(ExecutionProfile.model))  # type: ignore[arg-type]
+    )
+    auto_start_profiles = profiles_result.scalars().all()
+
+    preloaded_profiles = [
+        PreloadedProfileInfo(
+            id=p.id,  # type: ignore[arg-type]
+            name=p.name,
+            profile_type=p.profile_type or "inference",
+            model_repo_id=p.model.repo_id if p.model else None,
+            model_name=p.model.repo_id.split("/")[-1] if p.model else None,
+        )
+        for p in auto_start_profiles
+    ]
 
     return ServerConfigResponse(
         memory_limit_mode=config.memory_limit_mode,
         memory_limit_value=config.memory_limit_value,
         eviction_policy=config.eviction_policy,
-        preload_models=preload_models,
+        preloaded_profiles=preloaded_profiles,
     )
 
 

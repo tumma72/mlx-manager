@@ -960,7 +960,7 @@ class TestGetPoolConfig:
         assert data["memory_limit_mode"] == "percent"
         assert data["memory_limit_value"] == 80
         assert data["eviction_policy"] == "lru"
-        assert data["preload_models"] == []
+        assert data["preloaded_profiles"] == []
 
     async def test_get_existing_config(self, auth_client):
         """Returns existing config after update."""
@@ -971,7 +971,6 @@ class TestGetPoolConfig:
                 "memory_limit_mode": "gb",
                 "memory_limit_value": 16,
                 "eviction_policy": "lfu",
-                "preload_models": ["model1", "model2"],
             },
         )
 
@@ -981,7 +980,7 @@ class TestGetPoolConfig:
         assert data["memory_limit_mode"] == "gb"
         assert data["memory_limit_value"] == 16
         assert data["eviction_policy"] == "lfu"
-        assert data["preload_models"] == ["model1", "model2"]
+        assert data["preloaded_profiles"] == []
 
 
 class TestUpdatePoolConfig:
@@ -1018,23 +1017,6 @@ class TestUpdatePoolConfig:
             )
             assert response.status_code == 200
             assert response.json()["eviction_policy"] == policy
-
-    async def test_update_preload_models(self, auth_client):
-        """Updates preload models list."""
-        response = await auth_client.put(
-            "/api/settings/pool",
-            json={
-                "preload_models": [
-                    "mlx-community/model-1",
-                    "mlx-community/model-2",
-                ],
-            },
-        )
-        assert response.status_code == 200
-        assert response.json()["preload_models"] == [
-            "mlx-community/model-1",
-            "mlx-community/model-2",
-        ]
 
     async def test_update_invalid_memory_mode(self, auth_client):
         """Rejects invalid memory mode."""
@@ -1548,26 +1530,6 @@ class TestPoolConfigWithModelPool:
         assert "memory_gb" in call_kwargs
         assert call_kwargs["memory_gb"] == 16
 
-    async def test_update_pool_with_preload_models(self, auth_client):
-        """Updates pool and applies preload list to running pool."""
-        mock_pool = MagicMock()
-        mock_pool.update_memory_limit = MagicMock()
-        mock_pool.apply_preload_list = AsyncMock(return_value={"loaded": 2, "failed": 0})
-
-        with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
-            mock_get_pool.return_value = mock_pool
-
-            response = await auth_client.put(
-                "/api/settings/pool",
-                json={
-                    "preload_models": ["model1", "model2"],
-                },
-            )
-
-        assert response.status_code == 200
-        # Verify preload was applied
-        mock_pool.apply_preload_list.assert_called_once_with(["model1", "model2"])
-
     async def test_update_pool_when_pool_not_initialized(self, auth_client):
         """Updates pool config even when pool is not initialized."""
         with patch("mlx_manager.routers.settings.get_model_pool") as mock_get_pool:
@@ -1794,87 +1756,6 @@ class TestMatchesPatternFunction:
 
 
 # ============================================================================
-# Pool Config JSON Decode Error Tests (lines 498-499, 580-581)
-# ============================================================================
-
-
-class TestPoolConfigJsonDecodeErrors:
-    """Tests for JSON decode error handling in pool config endpoints."""
-
-    async def test_get_pool_config_with_invalid_preload_models_json(self):
-        """get_pool_config returns empty preload_models when JSON is invalid (lines 498-499).
-
-        Calls the router function directly to test the json.JSONDecodeError path.
-        """
-        from mlx_manager.models import ServerConfig
-        from mlx_manager.routers.settings import get_pool_config
-
-        mock_user = MagicMock()
-        mock_user.status = "approved"
-
-        # Create a mock config with invalid JSON preload_models
-        mock_config = MagicMock(spec=ServerConfig)
-        mock_config.preload_models = "INVALID_JSON_[[["
-        mock_config.memory_limit_mode = "percent"
-        mock_config.memory_limit_value = 80
-        mock_config.eviction_policy = "lru"
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_config
-
-        mock_session = MagicMock()
-        mock_session.execute = AsyncMock(return_value=mock_result)
-
-        # This should trigger the JSONDecodeError branch in get_pool_config
-        result = await get_pool_config(current_user=mock_user, session=mock_session)
-        assert result.preload_models == []
-
-    async def test_update_pool_config_with_invalid_preload_models_json_in_response(self):
-        """update_pool_config returns empty preload_models when JSON is invalid (lines 580-581).
-
-        Calls the router function directly to test the json.JSONDecodeError path.
-        """
-        from mlx_manager.models import ServerConfig
-        from mlx_manager.routers.settings import update_pool_config
-
-        mock_user = MagicMock()
-        mock_user.status = "approved"
-
-        # Create a mock config with invalid JSON preload_models
-        mock_config = MagicMock(spec=ServerConfig)
-        mock_config.preload_models = "INVALID_JSON_{{{"
-        mock_config.memory_limit_mode = "percent"
-        mock_config.memory_limit_value = 80
-        mock_config.eviction_policy = "lru"
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_config
-
-        mock_session = MagicMock()
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session.add = MagicMock()
-        mock_session.commit = AsyncMock()
-        mock_session.refresh = AsyncMock()
-
-        mock_data = MagicMock()
-        mock_data.memory_limit_mode = None
-        mock_data.memory_limit_value = None
-        mock_data.eviction_policy = None
-        mock_data.preload_models = None
-
-        with patch(
-            "mlx_manager.routers.settings.get_model_pool",
-            side_effect=RuntimeError("not initialized"),
-        ):
-            result = await update_pool_config(
-                current_user=mock_user,
-                data=mock_data,
-                session=mock_session,
-            )
-        assert result.preload_models == []
-
-
-# ============================================================================
 # Dead Code Coverage - Line 77 (api_type None fallback in create_or_update_provider)
 # ============================================================================
 
@@ -2004,7 +1885,6 @@ class TestValidationGuardDeadCode:
         mock_data.memory_limit_mode = "invalid_mode"  # Not percent or gb
         mock_data.memory_limit_value = None
         mock_data.eviction_policy = None
-        mock_data.preload_models = None
 
         mock_user = MagicMock()
         mock_config = MagicMock()
@@ -2034,7 +1914,6 @@ class TestValidationGuardDeadCode:
         mock_data.memory_limit_mode = None
         mock_data.memory_limit_value = None
         mock_data.eviction_policy = "invalid_policy"  # Not lru, lfu, or ttl
-        mock_data.preload_models = None
 
         mock_user = MagicMock()
         mock_config = MagicMock()

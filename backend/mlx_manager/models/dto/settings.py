@@ -20,6 +20,7 @@ __all__ = [
     "CloudCredentialResponse",
     "ServerConfigUpdate",
     "ServerConfigResponse",
+    "PreloadedProfileInfo",
     "RulePriorityUpdate",
     "RuleMatchResult",
     "TimeoutSettings",
@@ -90,7 +91,16 @@ class ServerConfigUpdate(BaseModel):
     memory_limit_mode: MemoryLimitMode | None = None
     memory_limit_value: int | None = None
     eviction_policy: EvictionPolicy | None = None
-    preload_models: list[str] | None = None
+
+
+class PreloadedProfileInfo(BaseModel):
+    """Summary of a profile marked for auto-start preloading."""
+
+    id: int
+    name: str
+    profile_type: str
+    model_repo_id: str | None = None
+    model_name: str | None = None
 
 
 class ServerConfigResponse(BaseModel):
@@ -99,7 +109,7 @@ class ServerConfigResponse(BaseModel):
     memory_limit_mode: MemoryLimitMode
     memory_limit_value: int
     eviction_policy: EvictionPolicy
-    preload_models: list[str]  # Parsed from JSON
+    preloaded_profiles: list[PreloadedProfileInfo] = []
 
 
 class RulePriorityUpdate(BaseModel):

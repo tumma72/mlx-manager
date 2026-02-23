@@ -1,6 +1,7 @@
 """Tests for the main FastAPI application module."""
 
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,6 +30,18 @@ class TestLifespan:
         mock_pool = MagicMock()
         mock_pool.cleanup = AsyncMock()
 
+        # Mock get_session for auto_start profile loading
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []  # No auto_start profiles
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
         with (
             patch("mlx_manager.main.init_db") as mock_init_db,
             patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
@@ -36,6 +49,7 @@ class TestLifespan:
             patch("mlx_manager.main.set_memory_limit"),
             patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
             patch("mlx_manager.main.pool"),
+            patch("mlx_manager.database.get_session", mock_get_session),
         ):
             mock_init_db.return_value = None
             mock_recover.return_value = []  # No pending downloads
@@ -468,7 +482,7 @@ class TestRunDownloadTask:
         }
 
         # Mock hf_client.download_model to yield progress events
-        async def mock_download_model(model_id):
+        async def mock_download_model(model_id, cancel_event=None):
             yield DownloadStatus(
                 status="downloading",
                 progress=50,
@@ -491,6 +505,8 @@ class TestRunDownloadTask:
         with (
             patch.object(main.hf_client, "download_model", mock_download_model),
             patch("mlx_manager.routers.models._update_download_record", mock_update_record),
+            patch("mlx_manager.services.hf_client.register_cancel_event", return_value=MagicMock()),
+            patch("mlx_manager.services.hf_client.cleanup_cancel_event"),
         ):
             await main._run_download_task(task_id, download_id, model_id)
 
@@ -533,11 +549,15 @@ class TestRunDownloadTask:
         }
 
         # Mock hf_client.download_model to raise CancelledError
-        async def mock_download_model(model_id):
+        async def mock_download_model(model_id, cancel_event=None):
             yield DownloadStatus(status="downloading", progress=50)
             raise asyncio.CancelledError()
 
-        with patch.object(main.hf_client, "download_model", mock_download_model):
+        with (
+            patch.object(main.hf_client, "download_model", mock_download_model),
+            patch("mlx_manager.services.hf_client.register_cancel_event", return_value=MagicMock()),
+            patch("mlx_manager.services.hf_client.cleanup_cancel_event"),
+        ):
             # CancelledError should be re-raised
             with pytest.raises(asyncio.CancelledError):
                 await main._run_download_task(task_id, download_id, model_id)
@@ -568,7 +588,7 @@ class TestRunDownloadTask:
         }
 
         # Mock hf_client.download_model to raise an exception
-        async def mock_download_model(model_id):
+        async def mock_download_model(model_id, cancel_event=None):
             yield DownloadStatus(status="downloading", progress=25)
             raise RuntimeError("Network error")
 
@@ -581,6 +601,8 @@ class TestRunDownloadTask:
         with (
             patch.object(main.hf_client, "download_model", mock_download_model),
             patch("mlx_manager.routers.models._update_download_record", mock_update_record),
+            patch("mlx_manager.services.hf_client.register_cancel_event", return_value=MagicMock()),
+            patch("mlx_manager.services.hf_client.cleanup_cancel_event"),
         ):
             # Should not raise - exception is caught and logged
             await main._run_download_task(task_id, download_id, model_id)
@@ -605,6 +627,18 @@ class TestLifespanWithPendingDownloads:
         mock_pool = MagicMock()
         mock_pool.cleanup = AsyncMock()
 
+        # Mock get_session for auto_start profile loading
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
         with (
             patch("mlx_manager.main.init_db"),
             patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
@@ -614,6 +648,7 @@ class TestLifespanWithPendingDownloads:
             patch("mlx_manager.main.set_memory_limit"),
             patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
             patch("mlx_manager.main.pool"),
+            patch("mlx_manager.database.get_session", mock_get_session),
         ):
             mock_recover.return_value = [
                 (1, "mlx-community/model1"),
@@ -646,6 +681,18 @@ class TestLifespanWithPendingDownloads:
         mock_pool = MagicMock()
         mock_pool.cleanup = AsyncMock()
 
+        # Mock get_session for auto_start profile loading
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
         with (
             patch("mlx_manager.main.init_db"),
             patch("mlx_manager.main.recover_incomplete_downloads") as mock_recover,
@@ -655,6 +702,7 @@ class TestLifespanWithPendingDownloads:
             patch("mlx_manager.main.set_memory_limit"),
             patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
             patch("mlx_manager.main.pool"),
+            patch("mlx_manager.database.get_session", mock_get_session),
         ):
             mock_recover.return_value = []  # No pending downloads
             mock_resume.return_value = None
