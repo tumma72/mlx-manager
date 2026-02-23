@@ -76,15 +76,15 @@ def create_app(embedded: bool = False) -> FastAPI:
 
     Args:
         embedded: If True, creates app for embedding in MLX Manager.
-                  Skips LogFire configuration and lifespan handler
-                  (parent app handles these).
+                  Skips LogFire configuration (parent app handles it)
+                  but still instruments FastAPI for request tracing.
                   If False (default), creates standalone app with
                   full lifespan and LogFire.
 
     Returns:
         FastAPI application instance
     """
-    # Configure LogFire only for standalone mode
+    # Configure LogFire only for standalone mode (parent configures in embedded mode)
     if not embedded and mlx_server_settings.logfire_enabled:
         from mlx_manager.mlx_server.observability.logfire_config import (
             configure_logfire,
@@ -110,8 +110,11 @@ def create_app(embedded: bool = False) -> FastAPI:
     # Include API routers
     app_instance.include_router(v1_router)
 
-    # Instrument FastAPI with LogFire only for standalone mode
-    if not embedded and mlx_server_settings.logfire_enabled:
+    # Instrument FastAPI with LogFire for request tracing.
+    # In embedded mode, the parent has already called configure_logfire(),
+    # so instrument_fastapi() will use the existing configuration.
+    # In standalone mode, we only instrument if logfire is enabled.
+    if embedded or mlx_server_settings.logfire_enabled:
         from mlx_manager.mlx_server.observability.logfire_config import (
             instrument_fastapi,
         )

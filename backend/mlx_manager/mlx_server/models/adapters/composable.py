@@ -924,6 +924,11 @@ class ModelAdapter:
                 tmp.write(audio_data)
                 tmp_path = tmp.name
 
+            # Use a temp directory for output_path since generate_transcription
+            # always writes transcript files (e.g. transcript.txt) to disk
+            tmp_dir = tempfile.mkdtemp()
+            output_path = os.path.join(tmp_dir, "transcript")
+
             try:
                 # Build kwargs
                 kwargs: dict[str, Any] = {}
@@ -934,6 +939,7 @@ class ModelAdapter:
                 segments = generate_transcription(
                     model=model,
                     audio=tmp_path,
+                    output_path=output_path,
                     verbose=False,
                     **kwargs,
                 )
@@ -953,6 +959,9 @@ class ModelAdapter:
 
             finally:
                 os.unlink(tmp_path)
+                import shutil
+
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
         result = await run_on_metal_thread(run_stt, error_context="STT transcription failed")
 

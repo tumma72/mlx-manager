@@ -6,6 +6,10 @@ __pycache__/
 
 # Probe output
 probe_output/
+transcript.txt
+transcript.srt
+transcript.vtt
+transcript.json
 .Python
 build/
 develop-eggs/
