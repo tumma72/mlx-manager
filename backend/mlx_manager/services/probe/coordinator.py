@@ -144,6 +144,11 @@ class ProbingCoordinator:
             loaded.adapter.configure(
                 tool_parser=NullToolParser(),
                 thinking_parser=NullThinkingParser(),
+                # Enable tool injection so prepare_input() still passes tools=
+                # to the template even though the null parser is active.
+                # Without this, supports_tool_calling() returns False and
+                # Phase 4 template delivery silently drops tools.
+                enable_tool_injection=True,
             )
 
         # ── Step 4: Look up strategy for type-specific static checks ──
@@ -198,11 +203,12 @@ class ProbingCoordinator:
                 logger.warning(f"Cleanup failed for {model_id}: {e}")
                 yield ProbeStep(step="cleanup", status="failed", error=str(e))
         else:
-            # Restore original parsers for preloaded models
+            # Restore original parsers and disable tool injection for preloaded models
             if loaded.adapter is not None and original_tool_parser is not None:
                 loaded.adapter.configure(
                     tool_parser=original_tool_parser,
                     thinking_parser=original_thinking_parser,
+                    enable_tool_injection=False,
                 )
 
             # Update capabilities on the already-loaded model
@@ -676,41 +682,40 @@ class ProbingCoordinator:
                     return ("adapter", parser_id, diagnostics, all_discovered_tags)
 
         # ── Phase 4: FALLBACK (template delivery) ─────────────────────
-        # Only try template delivery if Phase 2 found NO parser markers at all
-        has_parser_markers = any(t.matched_parsers for t in all_discovered_tags)
-        if not has_parser_markers:
-            can_try_template = adapter.supports_native_tools() or has_native_tool_support(tokenizer)
-            if can_try_template:
-                try:
-                    gen_result = await strategy._generate(
-                        loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
-                    )
-                    template_output = gen_result.content
+        # Try template delivery if Phases 1-3 didn't find a valid parser.
+        # This covers both "no tags found" AND "tags found but validation failed".
+        can_try_template = adapter.supports_native_tools() or has_native_tool_support(tokenizer)
+        if can_try_template:
+            try:
+                gen_result = await strategy._generate(
+                    loaded, _TOOL_PROBE_MESSAGES, tools=_TOOL_PROBE_TOOL
+                )
+                template_output = gen_result.content
 
-                    # Run discovery + validation on template output too
-                    template_tags = _discover_and_map_tags(template_output, TOOL_PARSERS)
-                    if template_tags:
-                        # Merge into all_discovered_tags (dedup by name+style)
-                        existing_keys = {(t.name, t.style) for t in all_discovered_tags}
-                        for t in template_tags:
-                            if (t.name, t.style) not in existing_keys:
-                                all_discovered_tags.append(t)
+                # Run discovery + validation on template output too
+                template_tags = _discover_and_map_tags(template_output, TOOL_PARSERS)
+                if template_tags:
+                    # Merge into all_discovered_tags (dedup by name+style)
+                    existing_keys = {(t.name, t.style) for t in all_discovered_tags}
+                    for t in template_tags:
+                        if (t.name, t.style) not in existing_keys:
+                            all_discovered_tags.append(t)
 
-                    for parser_id, parser_cls in TOOL_PARSERS.items():
-                        if parser_id == "null":
-                            continue
-                        if parser_cls().validates(template_output, "get_weather"):
-                            logger.info(
-                                "Tool probe: template delivery verified (parser=%s)",
-                                parser_id,
-                            )
-                            return ("template", parser_id, diagnostics, all_discovered_tags)
-                    logger.debug(
-                        "Template delivery produced output but no parser matched: %s",
-                        template_output[:200] if template_output else "",
-                    )
-                except Exception as e:
-                    logger.debug("Template delivery with native tools failed: %s", e)
+                for parser_id, parser_cls in TOOL_PARSERS.items():
+                    if parser_id == "null":
+                        continue
+                    if parser_cls().validates(template_output, "get_weather"):
+                        logger.info(
+                            "Tool probe: template delivery verified (parser=%s)",
+                            parser_id,
+                        )
+                        return ("template", parser_id, diagnostics, all_discovered_tags)
+                logger.debug(
+                    "Template delivery produced output but no parser matched: %s",
+                    template_output[:200] if template_output else "",
+                )
+            except Exception as e:
+                logger.debug("Template delivery with native tools failed: %s", e)
 
         # ── Phase 5: REPORT ───────────────────────────────────────────
         registered_parsers = [pid for pid in TOOL_PARSERS if pid != "null"]
