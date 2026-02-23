@@ -269,7 +269,9 @@ export const models = {
     return handleResponse(res);
   },
 
-  startDownload: async (modelId: string): Promise<{ task_id: string }> => {
+  startDownload: async (
+    modelId: string,
+  ): Promise<{ task_id: string; download_id: number }> => {
     const res = await fetch(`${API_BASE}/models/download`, {
       method: "POST",
       headers: getAuthHeaders(),

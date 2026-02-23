@@ -430,11 +430,24 @@ class HuggingFaceClient:
             return snapshot_download(repo_id=model_id, tqdm_class=progress_class)
 
     def _get_directory_size(self, path: Path) -> int:
-        """Get total size of files in directory."""
-        if not path.exists():
-            return 0
+        """Get total size of downloaded data in HF cache directory.
+
+        Only counts files in blobs/ to avoid double-counting symlinks
+        in snapshots/ that point back to blobs/.
+        """
+        blobs_dir = path / "blobs"
+        if not blobs_dir.exists():
+            # Fallback for non-standard cache layouts
+            if not path.exists():
+                return 0
+            try:
+                return sum(
+                    f.stat().st_size for f in path.rglob("*") if f.is_file() and not f.is_symlink()
+                )
+            except Exception:
+                return 0
         try:
-            return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+            return sum(f.stat().st_size for f in blobs_dir.rglob("*") if f.is_file())
         except Exception as e:
             logger.debug(f"Failed to calculate directory size for {path}: {e}")
             return 0

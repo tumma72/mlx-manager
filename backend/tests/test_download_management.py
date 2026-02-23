@@ -456,8 +456,8 @@ class TestDownloadRecovery:
         assert pending[0] == (download_id, "mlx-community/test-model")
 
     @pytest.mark.anyio
-    async def test_paused_stays_paused_on_restart(self, test_session) -> None:
-        """Downloads in 'paused' state remain paused after restart."""
+    async def test_paused_auto_resumes_on_restart(self, test_session) -> None:
+        """Paused downloads are auto-resumed on restart."""
         download = Download(
             model_id="mlx-community/paused-model",
             status="paused",
@@ -481,14 +481,15 @@ class TestDownloadRecovery:
 
             pending = await recover_incomplete_downloads()
 
-        # Paused downloads should NOT be in the auto-resume list
-        assert len(pending) == 0
+        # Paused downloads should be auto-resumed on restart
+        assert len(pending) == 1
+        assert pending[0][1] == "mlx-community/paused-model"
 
-        # Verify the download is still "paused" in the database
+        # Verify the download is now "pending" in the database
         result = await test_session.execute(select(Download).where(Download.id == download.id))
         db_download = result.scalars().first()
         assert db_download is not None
-        assert db_download.status == "paused"
+        assert db_download.status == "pending"
 
     @pytest.mark.anyio
     async def test_cancelled_stays_cancelled_on_restart(self, test_session) -> None:

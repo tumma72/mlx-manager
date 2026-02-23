@@ -82,8 +82,19 @@ async def search_models(
 async def list_local_models(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    """List locally downloaded MLX models."""
-    return hf_client.list_local_models()
+    """List locally downloaded MLX models, excluding those currently downloading."""
+    # Use in-memory download_tasks (always accurate) instead of DB (can be stale)
+    downloading_ids = {
+        task["model_id"]
+        for task in download_tasks.values()
+        if task.get("status") in ("starting", "pending", "downloading")
+    }
+
+    all_local = hf_client.list_local_models()
+
+    if not downloading_ids:
+        return all_local
+    return [m for m in all_local if m.model_id not in downloading_ids]
 
 
 @router.get("/downloaded", response_model=list[ModelResponse])
@@ -130,7 +141,11 @@ async def start_download(
                 existing_task_id = tid
                 break
         if existing_task_id:
-            return {"task_id": existing_task_id, "model_id": request.model_id}
+            return {
+                "task_id": existing_task_id,
+                "model_id": request.model_id,
+                "download_id": existing.id,
+            }
 
     # Create DB record for the download
     download_record = Download(
@@ -149,7 +164,11 @@ async def start_download(
         "progress": 0,
     }
 
-    return {"task_id": task_id, "model_id": request.model_id}
+    return {
+        "task_id": task_id,
+        "model_id": request.model_id,
+        "download_id": download_record.id,
+    }
 
 
 @router.get("/download/{task_id}/progress")
@@ -189,6 +208,7 @@ async def get_download_progress(
                     "downloaded_bytes": progress.downloaded_bytes or 0,
                     "total_bytes": progress.total_bytes or 0,
                     "error": progress.error,
+                    "download_id": download_id,
                 }
                 yield f"data: {json.dumps(progress_dict)}\n\n"
 
@@ -381,6 +401,11 @@ async def pause_download(
     # Signal the download thread to stop
     request_cancel(str(download_id))
 
+    # Mark in-memory tasks as paused so SSE reconnect won't restart
+    for task in download_tasks.values():
+        if task.get("download_id") == download_id or task.get("model_id") == download.model_id:
+            task["status"] = "paused"
+
     # Update status to paused
     download.status = DownloadStatusEnum.PAUSED
     db.add(download)
@@ -469,9 +494,13 @@ async def cancel_download(
             detail=f"Cannot cancel download in '{download.status}' state",
         )
 
-    # Signal active download to stop
-    if download.status == "downloading":
-        request_cancel(str(download_id))
+    # Signal active download to stop (works for both SSE and background tasks)
+    request_cancel(str(download_id))
+
+    # Mark all in-memory tasks for this model as cancelled so SSE reconnect won't fire
+    for task in download_tasks.values():
+        if task.get("download_id") == download_id or task.get("model_id") == download.model_id:
+            task["status"] = "cancelled"
 
     # Update status to cancelled
     download.status = DownloadStatusEnum.CANCELLED

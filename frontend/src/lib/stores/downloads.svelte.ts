@@ -60,10 +60,10 @@ class DownloadsStore {
 
     try {
       // Start download on backend
-      const { task_id } = await modelsApi.startDownload(modelId);
+      const { task_id, download_id } = await modelsApi.startDownload(modelId);
 
-      // Update with task_id
-      this.updateDownload(modelId, { task_id });
+      // Update with task_id and download_id
+      this.updateDownload(modelId, { task_id, download_id });
 
       // Connect to SSE stream for progress
       this.connectSSE(modelId, task_id);
@@ -152,12 +152,14 @@ class DownloadsStore {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        const current = this.downloads.get(modelId);
         this.updateDownload(modelId, {
           status: data.status,
           progress: data.progress || 0,
           downloaded_bytes: data.downloaded_bytes || 0,
           total_bytes: data.total_bytes || 0,
           error: data.error,
+          download_id: data.download_id ?? current?.download_id,
         });
 
         // Close connection when download completes or fails
@@ -170,9 +172,30 @@ class DownloadsStore {
     };
 
     eventSource.onerror = () => {
-      // Don't update status on error - the connection might recover
-      // Just close and let the active downloads refresh handle it
       this.closeSSE(modelId);
+      const state = this.downloads.get(modelId);
+      // Only reconnect if download is still active (not paused/completed/failed)
+      if (
+        state &&
+        (state.status === "downloading" ||
+          state.status === "starting" ||
+          state.status === "pending")
+      ) {
+        setTimeout(() => {
+          const current = this.downloads.get(modelId);
+          // Re-check status: download may have been cancelled/paused/removed during delay
+          if (
+            current &&
+            current.task_id &&
+            !this.eventSources.has(modelId) &&
+            (current.status === "downloading" ||
+              current.status === "starting" ||
+              current.status === "pending")
+          ) {
+            this.connectSSE(modelId, current.task_id);
+          }
+        }, 3000);
+      }
     };
   }
 

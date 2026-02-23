@@ -198,7 +198,11 @@
 		return downloadsStore
 			.getAllDownloads()
 			.filter(
-				(d) => d.status === 'pending' || d.status === 'starting' || d.status === 'downloading'
+				(d) =>
+					d.status === 'pending' ||
+					d.status === 'starting' ||
+					d.status === 'downloading' ||
+					d.status === 'paused'
 			);
 	});
 
@@ -314,7 +318,7 @@
 	{#if activeDownloads().length > 0}
 		<div class="pb-4 border-b mb-2">
 			<h2 class="text-sm font-medium text-muted-foreground mb-2">
-				Downloading ({activeDownloads().length})
+				Downloads ({activeDownloads().length})
 			</h2>
 			<div class="space-y-2">
 				{#each activeDownloads() as download (download.model_id)}

@@ -110,8 +110,8 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
     HuggingFace Hub's snapshot_download automatically resumes partial downloads,
     so we mark actively-downloading ones as pending for retry.
 
-    Paused downloads stay paused - they were intentionally paused by the user
-    and should only resume when the user clicks Resume.
+    On restart, all incomplete downloads (including paused) are auto-resumed
+    since the user expects downloads to complete when the application is running.
 
     Returns:
         List of (download_id, model_id) tuples for downloads that need auto-resuming.
@@ -124,7 +124,7 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
         from mlx_manager.models import Download
 
         result = await session.execute(
-            select(Download).where(col(Download.status).in_(["pending", "downloading"]))
+            select(Download).where(col(Download.status).in_(["pending", "downloading", "paused"]))
         )
         incomplete = result.scalars().all()
 
