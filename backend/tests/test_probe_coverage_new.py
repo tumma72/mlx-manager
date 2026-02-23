@@ -917,7 +917,10 @@ async def test_coordinator_sweep_tools_template_delivery_success():
 
     mock_parser_cls = MagicMock()
     mock_parser_instance = MagicMock()
-    mock_parser_instance.validates = MagicMock(return_value=True)
+    # Only validate on tool-like output (not plain text)
+    mock_parser_instance.validates = MagicMock(
+        side_effect=lambda text, fn: "get_weather" in text and "{" in text
+    )
     mock_parser_instance.stream_markers = []
     mock_parser_cls.return_value = mock_parser_instance
 
@@ -1436,7 +1439,10 @@ async def test_coordinator_sweep_tools_generic_first_then_template_fallback():
 
     mock_parser_cls = MagicMock()
     mock_parser_instance = MagicMock()
-    mock_parser_instance.validates = MagicMock(return_value=True)
+    # Only validate on tool-like output (not plain text)
+    mock_parser_instance.validates = MagicMock(
+        side_effect=lambda text, fn: "get_weather" in text and "{" in text
+    )
     mock_parser_instance.stream_markers = []
     mock_parser_cls.return_value = mock_parser_instance
 

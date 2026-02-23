@@ -649,21 +649,22 @@ class ProbingCoordinator:
                 )
 
         # ── Phase 3: VALIDATE ─────────────────────────────────────────
-        if last_output is not None and all_discovered_tags:
-            # Collect all parser_ids matched by tag discovery
+        if last_output is not None:
+            # Collect parser_ids matched by tag discovery
             matched_parser_ids: set[str] = set()
             for tag in all_discovered_tags:
                 matched_parser_ids.update(tag.matched_parsers)
 
-            # Try matched parsers first
-            for pid in sorted(matched_parser_ids):
-                if pid in TOOL_PARSERS:
-                    parser = TOOL_PARSERS[pid]()
-                    if parser.validates(last_output, "get_weather"):
-                        logger.info("Tool probe: tag-first validated (parser=%s)", pid)
-                        return ("detected", pid, diagnostics, all_discovered_tags)
+            # Try tag-matched parsers first (highest confidence)
+            if matched_parser_ids:
+                for pid in sorted(matched_parser_ids):
+                    if pid in TOOL_PARSERS:
+                        parser = TOOL_PARSERS[pid]()
+                        if parser.validates(last_output, "get_weather"):
+                            logger.info("Tool probe: tag-first validated (parser=%s)", pid)
+                            return ("detected", pid, diagnostics, all_discovered_tags)
 
-            # Also sweep ALL parsers (some may match without tag detection)
+            # Sweep ALL remaining parsers (covers tagless parsers like openai_json)
             for parser_id, parser_cls in TOOL_PARSERS.items():
                 if parser_id == "null" or parser_id in matched_parser_ids:
                     continue
