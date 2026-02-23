@@ -30,6 +30,7 @@ from mlx_manager.mlx_server.parsers import (
     NullThinkingParser,
     NullToolParser,
     OpenAIJsonParser,
+    Qwen3CoderXmlParser,
     ThinkingParser,
     ThinkTagParser,
     ToolCallParser,
@@ -863,6 +864,138 @@ class TestToolCodePythonParser:
         assert args["verbose"] is False
 
 
+# --- Qwen3CoderXmlParser Tests ---
+
+
+class TestQwen3CoderXmlParser:
+    """Tests for Qwen3CoderXmlParser (Qwen3-Coder / Nemotron XML format)."""
+
+    def test_parser_id(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        assert parser.parser_id == "qwen3_coder_xml"
+
+    def test_stream_markers(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        assert parser.stream_markers == [("<tool_call>", "</tool_call>")]
+
+    def test_extract_single_call(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        assert json.loads(calls[0].function.arguments) == {"location": "Tokyo"}
+
+    def test_extract_multiple_params(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather>"
+            "<parameter=location>Tokyo</parameter>"
+            "<parameter=units>celsius</parameter>"
+            "</function>\n"
+            "</tool_call>"
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args == {"location": "Tokyo", "units": "celsius"}
+
+    def test_extract_multiple_calls(self) -> None:
+        """Two functions in one <tool_call> block."""
+        parser = Qwen3CoderXmlParser()
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "<function=get_time><parameter=timezone>JST</parameter></function>\n"
+            "</tool_call>"
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[1].function.name == "get_time"
+
+    def test_extract_separate_blocks(self) -> None:
+        """Two functions in separate <tool_call> blocks."""
+        parser = Qwen3CoderXmlParser()
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>\n"
+            "<tool_call>\n"
+            "<function=get_time><parameter=timezone>JST</parameter></function>\n"
+            "</tool_call>"
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[1].function.name == "get_time"
+
+    def test_extract_mixed_with_text(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = (
+            "Let me check the weather for you.\n"
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>\n"
+            "The weather looks good."
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_no_params(self) -> None:
+        """Function with no <parameter> tags should produce empty arguments."""
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\n<function=list_tools></function>\n</tool_call>"
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "list_tools"
+        assert calls[0].function.arguments == "{}"
+
+    def test_extract_unclosed_block(self) -> None:
+        """Unclosed <tool_call> block (truncated output) should still parse."""
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>"
+        calls = parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_invalid_format(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\nsome random text without proper tags\n</tool_call>"
+        calls = parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_empty_text(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        assert parser.extract("") == []
+
+    def test_extract_deduplicates(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>\n"
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>"
+        )
+        calls = parser.extract(text)
+        assert len(calls) == 1
+
+    def test_validates_correct_function(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        assert parser.validates(text, "get_weather") is True
+
+    def test_validates_wrong_function(self) -> None:
+        parser = Qwen3CoderXmlParser()
+        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        assert parser.validates(text, "other_func") is False
+
+
 # --- NullToolParser Tests ---
 
 
@@ -1207,6 +1340,7 @@ class TestRegistry:
             "mistral_native",
             "openai_json",
             "tool_code_python",
+            "qwen3_coder_xml",
             "null",
         }
         assert set(TOOL_PARSERS.keys()) == expected
@@ -1233,6 +1367,7 @@ class TestRegistry:
             MistralNativeParser,
             OpenAIJsonParser,
             ToolCodePythonParser,
+            Qwen3CoderXmlParser,
             NullToolParser,
         }
         registered_tool_classes = set(TOOL_PARSERS.values())

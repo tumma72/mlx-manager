@@ -613,6 +613,7 @@ class TestComposableFamilyRegistry:
             "gemma",
             "mistral",
             "liquid",
+            "nemotron",
             "whisper",
             "kokoro",
             "audio_default",

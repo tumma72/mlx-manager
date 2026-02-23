@@ -18,6 +18,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
     MistralNativeParser,
     NullToolParser,
     OpenAIJsonParser,
+    Qwen3CoderXmlParser,
     ToolCodePythonParser,
 )
 
@@ -32,6 +33,7 @@ TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "mistral_native": MistralNativeParser,
     "openai_json": OpenAIJsonParser,
     "tool_code_python": ToolCodePythonParser,
+    "qwen3_coder_xml": Qwen3CoderXmlParser,
     "null": NullToolParser,
 }
 

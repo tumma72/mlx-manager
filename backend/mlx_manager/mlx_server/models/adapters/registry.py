@@ -17,6 +17,7 @@ FAMILY_PATTERNS = {
     "liquid": ["liquid", "lfm"],
     "whisper": ["whisper"],
     "kokoro": ["kokoro"],
+    "nemotron": ["nemotron"],
 }
 
 

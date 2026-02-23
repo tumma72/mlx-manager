@@ -567,3 +567,62 @@ def _parse_python_args(args_str: str) -> dict[str, Any]:
         result[key] = value
 
     return result
+
+
+class Qwen3CoderXmlParser(ToolCallParser):
+    """Qwen3-Coder / Nemotron XML format.
+
+    Format:
+        <tool_call>
+        <function=name><parameter=key>value</parameter></function>
+        </tool_call>
+
+    Multiple functions can appear in a single <tool_call> block or in separate blocks.
+    """
+
+    _BLOCK_CLOSED = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+    _BLOCK_UNCLOSED = re.compile(r"<tool_call>(.*?)$", re.DOTALL)
+    _FUNCTION = re.compile(r"<function=(\w+)>(.*?)</function>", re.DOTALL)
+    _PARAMETER = re.compile(r"<parameter=(\w+)>(.*?)</parameter>", re.DOTALL)
+
+    @property
+    def parser_id(self) -> str:
+        return "qwen3_coder_xml"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("<tool_call>", "</tool_call>")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+
+        # Collect all block contents (closed first, then unclosed fallback)
+        block_contents: list[str] = []
+        for match in self._BLOCK_CLOSED.finditer(text):
+            block_contents.append(match.group(1))
+        if not block_contents:
+            for match in self._BLOCK_UNCLOSED.finditer(text):
+                block_contents.append(match.group(1))
+
+        for content in block_contents:
+            for func_match in self._FUNCTION.finditer(content):
+                tc = self._parse_match(func_match)
+                if tc:
+                    results.append(tc)
+
+        return self._deduplicate(results)
+
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
+        try:
+            name = match.group(1)
+            inner = match.group(2)
+
+            # Extract parameters as key-value pairs
+            params: dict[str, str] = {}
+            for param_match in self._PARAMETER.finditer(inner):
+                params[param_match.group(1)] = param_match.group(2)
+
+            return self._make_tool_call(name, json.dumps(params))
+        except (IndexError, AttributeError) as e:
+            logger.warning("Invalid Qwen3-Coder XML tool call: {}", e)
+            return None

@@ -33,6 +33,7 @@ from mlx_manager.mlx_server.parsers import (
     LlamaXmlParser,
     MistralNativeParser,
     MistralThinkingParser,
+    Qwen3CoderXmlParser,
     ThinkTagParser,
 )
 
@@ -120,6 +121,14 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
     ),
     "audio_default": FamilyConfig(
         family="audio_default",
+    ),
+    "nemotron": FamilyConfig(
+        family="nemotron",
+        tool_parser_factory=lambda: Qwen3CoderXmlParser(),
+        thinking_parser_factory=lambda: ThinkTagParser(),
+        native_tools=True,
+        template_strategy=qwen_template,
+        message_convert_strategy=hermes_message_converter,
     ),
     "embeddings": FamilyConfig(
         family="embeddings",
