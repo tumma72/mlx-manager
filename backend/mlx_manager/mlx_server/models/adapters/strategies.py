@@ -67,7 +67,23 @@ def glm4_template(
             }
             if native_tools:
                 kwargs["tools"] = native_tools
+            # Pass template options (e.g. enable_thinking) to tokenizer
+            if template_options:
+                for key, value in template_options.items():
+                    kwargs[key] = value
             return cast(str, tokenizer.apply_chat_template(messages, **kwargs))
+        except TypeError:
+            # Fallback: strip template_options if tokenizer rejects them
+            fallback_kwargs: dict[str, Any] = {
+                "add_generation_prompt": add_generation_prompt,
+                "tokenize": False,
+            }
+            if native_tools:
+                fallback_kwargs["tools"] = native_tools
+            try:
+                return cast(str, tokenizer.apply_chat_template(messages, **fallback_kwargs))
+            except Exception as e:
+                logger.warning("GLM4 tokenizer.apply_chat_template failed: {}", e)
         except Exception as e:
             logger.warning("GLM4 tokenizer.apply_chat_template failed: {}", e)
     # Manual ChatML fallback
@@ -113,7 +129,21 @@ def mistral_template(
     }
     if native_tools:
         kwargs["tools"] = native_tools
-    return cast(str, tokenizer.apply_chat_template(processed, **kwargs))
+    # Pass template options (e.g. enable_thinking) to tokenizer
+    if template_options:
+        for key, value in template_options.items():
+            kwargs[key] = value
+    try:
+        return cast(str, tokenizer.apply_chat_template(processed, **kwargs))
+    except TypeError:
+        # Fallback: strip template_options if tokenizer rejects them
+        fallback_kwargs: dict[str, Any] = {
+            "add_generation_prompt": add_generation_prompt,
+            "tokenize": False,
+        }
+        if native_tools:
+            fallback_kwargs["tools"] = native_tools
+        return cast(str, tokenizer.apply_chat_template(processed, **fallback_kwargs))
 
 
 def liquid_template(

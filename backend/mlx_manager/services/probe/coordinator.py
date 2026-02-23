@@ -464,6 +464,14 @@ class ProbingCoordinator:
 
         raw_output = gen_result.content
 
+        # When enable_thinking=True, templates inject <think> into the prompt.
+        # The model generates "...reasoning...</think>answer" — the opening tag
+        # is in the prompt, not the generated text. Prepend <think> so parsers
+        # can find paired tags, or _find_unclosed_thinking_tag can detect
+        # truncated thinking (model reasoned but output hit max_tokens).
+        if has_enable_thinking and raw_output:
+            raw_output = "<think>\n" + raw_output
+
         # ── Phase 2: DISCOVER ─────────────────────────────────────────
         discovered_tags = _discover_and_map_tags(raw_output, THINKING_PARSERS)
 
