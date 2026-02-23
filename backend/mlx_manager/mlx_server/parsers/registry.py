@@ -9,6 +9,7 @@ from mlx_manager.mlx_server.parsers.thinking import (
     ThinkTagParser,
 )
 from mlx_manager.mlx_server.parsers.tool_call import (
+    FunctionGemmaParser,
     Glm4NativeParser,
     Glm4XmlParser,
     HermesJsonParser,
@@ -25,6 +26,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
 # Registry mapping parser_id strings to parser classes
 TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "hermes_json": HermesJsonParser,
+    "function_gemma": FunctionGemmaParser,
     "glm4_native": Glm4NativeParser,
     "glm4_xml": Glm4XmlParser,
     "llama_xml": LlamaXmlParser,

@@ -19,6 +19,7 @@ import pytest
 from mlx_manager.mlx_server.parsers import (
     THINKING_PARSERS,
     TOOL_PARSERS,
+    FunctionGemmaParser,
     Glm4NativeParser,
     Glm4XmlParser,
     HermesJsonParser,
@@ -1332,6 +1333,7 @@ class TestRegistry:
     def test_all_tool_parsers_registered(self) -> None:
         expected = {
             "hermes_json",
+            "function_gemma",
             "glm4_native",
             "glm4_xml",
             "llama_xml",
@@ -1358,6 +1360,7 @@ class TestRegistry:
     def test_registry_completeness(self) -> None:
         """All parser classes are registered."""
         tool_classes = {
+            FunctionGemmaParser,
             HermesJsonParser,
             Glm4NativeParser,
             Glm4XmlParser,

@@ -626,3 +626,56 @@ class Qwen3CoderXmlParser(ToolCallParser):
         except (IndexError, AttributeError) as e:
             logger.warning("Invalid Qwen3-Coder XML tool call: {}", e)
             return None
+
+
+class FunctionGemmaParser(ToolCallParser):
+    """FunctionGemma bespoke call format.
+
+    Format: <start_function_call>call:name{k:<escape>v<escape>}<end_function_call>
+
+    Google's FunctionGemma models use <escape>-delimited string values
+    instead of JSON quoting.
+    """
+
+    _PATTERN_CLOSED = re.compile(
+        r"<start_function_call>\s*call:(\w+)\{(.*?)\}\s*<end_function_call>", re.DOTALL
+    )
+    _PATTERN_UNCLOSED = re.compile(
+        r"<start_function_call>\s*call:(\w+)\{(.*?)\}\s*$", re.DOTALL | re.MULTILINE
+    )
+    _ARG_PATTERN = re.compile(r"(\w+):<escape>(.*?)<escape>")
+
+    @property
+    def parser_id(self) -> str:
+        return "function_gemma"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("<start_function_call>", "<end_function_call>")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+
+        for pattern in (self._PATTERN_CLOSED, self._PATTERN_UNCLOSED):
+            for match in pattern.finditer(text):
+                tc = self._parse_match(match)
+                if tc:
+                    results.append(tc)
+        return self._deduplicate(results)
+
+    def _parse_match(self, match: re.Match[str]) -> ToolCall | None:
+        try:
+            name = match.group(1)
+            args_block = match.group(2).strip()
+
+            if not args_block:
+                return self._make_tool_call(name, "{}")
+
+            params: dict[str, Any] = {}
+            for arg_match in self._ARG_PATTERN.finditer(args_block):
+                params[arg_match.group(1)] = arg_match.group(2)
+
+            return self._make_tool_call(name, json.dumps(params))
+        except (IndexError, AttributeError) as e:
+            logger.warning("Invalid FunctionGemma tool call: {}", e)
+            return None

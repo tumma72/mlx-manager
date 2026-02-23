@@ -610,6 +610,7 @@ class TestComposableFamilyRegistry:
             "qwen",
             "glm4",
             "llama",
+            "functiongemma",
             "gemma",
             "mistral",
             "liquid",

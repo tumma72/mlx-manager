@@ -11,6 +11,7 @@ FAMILY_PATTERNS = {
     "llama": ["llama", "codellama"],
     "qwen": ["qwen", "iquest"],
     "mistral": ["mistral", "mixtral", "devstral"],
+    "functiongemma": ["functiongemma"],
     "gemma": ["gemma"],
     "glm4": ["glm", "chatglm"],
     "phi": ["phi"],

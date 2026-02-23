@@ -28,6 +28,7 @@ from mlx_manager.mlx_server.models.adapters.strategies import (
     whisper_post_load_hook,
 )
 from mlx_manager.mlx_server.parsers import (
+    FunctionGemmaParser,
     Glm4NativeParser,
     HermesJsonParser,
     LlamaXmlParser,
@@ -89,6 +90,13 @@ FAMILY_CONFIGS: dict[str, FamilyConfig] = {
         tool_call_stop_tokens=["<|eom_id|>"],
         tool_format_strategy=llama_tool_formatter,
         message_convert_strategy=llama_message_converter,
+    ),
+    "functiongemma": FamilyConfig(
+        family="functiongemma",
+        tool_parser_factory=lambda: FunctionGemmaParser(),
+        extra_stop_tokens=["<end_of_turn>"],
+        tool_call_stop_tokens=["<end_function_call>"],
+        native_tools=True,
     ),
     "gemma": FamilyConfig(
         family="gemma",
