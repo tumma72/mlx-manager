@@ -11,7 +11,7 @@ from typing import Any
 
 from huggingface_hub import snapshot_download
 from loguru import logger
-from tqdm.auto import tqdm  # type: ignore[import-untyped]
+from tqdm.auto import tqdm
 
 from mlx_manager.config import settings
 from mlx_manager.models.dto.models import DownloadStatus, LocalModel, ModelSearchResult
@@ -76,12 +76,14 @@ def cleanup_partial_download(model_id: str) -> bool:
                     *(rev.commit_hash for rev in repo.revisions)
                 )
                 delete_strategy.execute()
-                logger.info(f"Cleaned up {delete_strategy.expected_freed_size_str} for {model_id}")
+                logger.info(
+                    "Cleaned up {} for {}", delete_strategy.expected_freed_size_str, model_id
+                )
                 return True
         # Model not found in cache via API - try manual cleanup
         return _manual_cleanup(model_id)
     except Exception as e:
-        logger.error(f"Cache API cleanup failed for {model_id}: {e}")
+        logger.error("Cache API cleanup failed for {}: {}", model_id, e)
         return _manual_cleanup(model_id)
 
 
@@ -92,12 +94,12 @@ def _manual_cleanup(model_id: str) -> bool:
     )
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
-        logger.info(f"Manually cleaned up {cache_dir}")
+        logger.info("Manually cleaned up {}", cache_dir)
         return True
     return False
 
 
-class SilentProgress(tqdm):
+class SilentProgress(tqdm):  # type: ignore[unsupported-base]
     """tqdm subclass that suppresses console output."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -118,7 +120,7 @@ def make_cancellable_progress(
     so concurrent downloads each get independent cancellation.
     """
 
-    class CancellableProgress(tqdm):
+    class CancellableProgress(tqdm):  # type: ignore[unsupported-base]
         """tqdm subclass that suppresses output and supports cancellation."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -210,14 +212,11 @@ class HuggingFaceClient:
             try:
                 return any(snapshots_dir.iterdir())
             except Exception as e:
-                logger.debug(f"Failed to check snapshots directory for {model_id}: {e}")
+                logger.error("Failed to check snapshots directory for {}: {}", model_id, e)
         return False
 
     def get_local_path(self, model_id: str) -> str | None:
         """Get the local path for a downloaded model."""
-        if settings.offline_mode:
-            return None
-
         cache_name = f"models--{model_id.replace('/', '--')}"
         model_path = self.cache_dir / cache_name / "snapshots"
 
@@ -230,7 +229,7 @@ class HuggingFaceClient:
                 if snapshots:
                     return str(snapshots[0])
             except Exception as e:
-                logger.debug(f"Failed to get local path for {model_id}: {e}")
+                logger.debug("Failed to get local path for {}: {}", model_id, e)
         return None
 
     async def download_model(
@@ -246,10 +245,10 @@ class HuggingFaceClient:
                           When set, the download thread is interrupted via
                           DownloadCancelledError raised inside the tqdm callback.
         """
-        logger.info(f"Starting download process for {model_id}")
+        logger.info("Starting download process for {}", model_id)
 
         if settings.offline_mode:
-            logger.warning(f"Download blocked for {model_id} - offline mode enabled")
+            logger.warning("Download blocked for {} - offline mode enabled", model_id)
             yield DownloadStatus(
                 status=DownloadStatusEnum.FAILED,
                 model_id=model_id,
@@ -275,7 +274,7 @@ class HuggingFaceClient:
             warnings.filterwarnings("ignore", category=FutureWarning)
 
             # Get total size via dry_run first
-            logger.info(f"Getting total size for {model_id} via dry_run")
+            logger.info("Getting total size for {} via dry_run", model_id)
             try:
                 dry_run_result = await asyncio.wait_for(
                     loop.run_in_executor(
@@ -287,7 +286,7 @@ class HuggingFaceClient:
                     timeout=30.0,  # 30 second timeout for size check
                 )
                 total_bytes = sum(f.file_size for f in dry_run_result if f.file_size)
-                logger.info(f"Dry run complete for {model_id}: {total_bytes} bytes")
+                logger.info("Dry run complete for {}: {} bytes", model_id, total_bytes)
             except TimeoutError:
                 logger.warning(
                     f"Dry run timed out for {model_id}, proceeding without size estimate"
@@ -295,16 +294,16 @@ class HuggingFaceClient:
                 total_bytes = 0
             except Exception as e:
                 # Fall back to estimation if dry_run fails
-                logger.warning(f"Dry run failed for {model_id}: {e}")
+                logger.warning("Dry run failed for {}: {}", model_id, e)
                 estimated_gb = estimate_size_from_name(model_id) or 0.0
                 total_bytes = int(estimated_gb * 1024**3)
-                logger.info(f"Using estimated size for {model_id}: {total_bytes} bytes")
+                logger.info("Using estimated size for {}: {} bytes", model_id, total_bytes)
 
         # Estimate size for backward compatibility
         total_size_gb = total_bytes / (1024**3) if total_bytes else 0.0
 
         # Yield status with size information (this is the second yield after dry_run)
-        logger.info(f"Size check complete for {model_id}: {total_size_gb:.2f} GB")
+        logger.info("Size check complete for {}: {} GB", model_id, "total_size_gb:.2f")
         yield DownloadStatus(
             status=DownloadStatusEnum.STARTING,
             model_id=model_id,
@@ -316,7 +315,7 @@ class HuggingFaceClient:
 
         # Check if already cancelled before starting download
         if cancel_event and cancel_event.is_set():
-            logger.info(f"Download already cancelled before start for {model_id}")
+            logger.info("Download already cancelled before start for {}", model_id)
             yield DownloadStatus(
                 status=DownloadStatusEnum.CANCELLED,
                 model_id=model_id,
@@ -328,7 +327,7 @@ class HuggingFaceClient:
 
         # Start download as a background task, passing cancel_event so the
         # tqdm progress callback can interrupt snapshot_download mid-chunk.
-        logger.info(f"Starting actual download for {model_id}")
+        logger.info("Starting actual download for {}", model_id)
         download_task = loop.run_in_executor(
             None,
             lambda: self._download_with_progress(model_id, cancel_event),
@@ -337,7 +336,7 @@ class HuggingFaceClient:
         # Calculate directory path for progress polling
         cache_name = f"models--{model_id.replace('/', '--')}"
         download_dir = self.cache_dir / cache_name
-        logger.debug(f"Polling download directory: {download_dir}")
+        logger.debug("Polling download directory: {}", download_dir)
 
         # Poll directory size while downloading
         poll_count = 0
@@ -350,7 +349,7 @@ class HuggingFaceClient:
                 # the thread, but we also check here so we can yield the
                 # cancelled status promptly once the task finishes.
                 if cancel_event and cancel_event.is_set():
-                    logger.info(f"Download cancelled for {model_id}")
+                    logger.info("Download cancelled for {}", model_id)
                     try:
                         await download_task
                     except (DownloadCancelledError, asyncio.CancelledError, Exception):
@@ -385,7 +384,7 @@ class HuggingFaceClient:
 
             # Get the result (may raise DownloadCancelledError or other exception)
             local_dir = await download_task
-            logger.info(f"Download completed for {model_id}: {local_dir}")
+            logger.info("Download completed for {}: {}", model_id, local_dir)
 
             yield DownloadStatus(
                 status=DownloadStatusEnum.COMPLETED,
@@ -399,7 +398,7 @@ class HuggingFaceClient:
         except DownloadCancelledError:
             # The tqdm callback interrupted snapshot_download before the
             # polling loop detected the cancel event.
-            logger.info(f"Download interrupted by cancellation for {model_id}")
+            logger.info("Download interrupted by cancellation for {}", model_id)
             yield DownloadStatus(
                 status=DownloadStatusEnum.CANCELLED,
                 model_id=model_id,
@@ -408,7 +407,7 @@ class HuggingFaceClient:
                 progress=0,
             )
         except Exception as e:
-            logger.exception(f"Download failed for {model_id}: {e}")
+            logger.exception("Download failed for {}: {}", model_id, e)
             yield DownloadStatus(status=DownloadStatusEnum.FAILED, model_id=model_id, error=str(e))
 
     def _download_with_progress(
@@ -449,7 +448,7 @@ class HuggingFaceClient:
         try:
             return sum(f.stat().st_size for f in blobs_dir.rglob("*") if f.is_file())
         except Exception as e:
-            logger.debug(f"Failed to calculate directory size for {path}: {e}")
+            logger.exception("Failed to calculate directory size for {}: {}", path, e)
             return 0
 
     def list_local_models(self) -> list[LocalModel]:
@@ -463,12 +462,10 @@ class HuggingFaceClient:
         """
         from mlx_manager.utils.model_detection import extract_characteristics_from_model
 
-        if settings.offline_mode:
-            return []
-
         models: list[LocalModel] = []
 
         if not self.cache_dir.exists():
+            logger.warning("No HuggingFace local cache found at: {}", self.cache_dir.absolute)
             return models
 
         try:
@@ -478,7 +475,8 @@ class HuggingFaceClient:
                     continue
 
                 # Extract model_id from directory name
-                model_id = item.name.replace("models--", "").replace("--", "/")
+                model_id: str = item.name.replace("models--", "").replace("--", "/")
+                logger.debug("Found cached model: {}", model_id)
 
                 # Filter by organization if specified
                 if settings.hf_organization:
@@ -487,16 +485,14 @@ class HuggingFaceClient:
                 else:
                     # When no organization filter, show models that appear to be MLX models
                     # Common patterns: mlx-community/, lmstudio-community/, or 'mlx' in name
-                    model_name_lower = model_id.lower()
-                    is_mlx_model = (
-                        "mlx-community/" in model_name_lower
-                        or "lmstudio-community/" in model_name_lower
-                        or "mlx" in model_name_lower
+                    model_name_lower: str = model_id.lower()
+                    is_mlx_model: bool = (
+                        "lmstudio-community/" in model_name_lower or "mlx" in model_name_lower
                     )
                     if not is_mlx_model:
                         continue
 
-                local_path = self.get_local_path(model_id)
+                local_path: str | None = self.get_local_path(model_id)
 
                 if local_path:
                     size_bytes = sum(
@@ -515,8 +511,11 @@ class HuggingFaceClient:
                             characteristics=characteristics,
                         )
                     )
+                else:
+                    logger.warning("Invalid model path {}", local_path)
+
         except Exception as e:
-            logger.debug(f"Failed to list local models: {e}")
+            logger.exception("Failed to list local models: {}", e)
 
         return models
 
