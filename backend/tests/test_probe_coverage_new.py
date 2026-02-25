@@ -450,7 +450,7 @@ async def test_text_gen_probe_context_check_exception():
 
     with (
         patch(
-            "mlx_manager.services.probe.text_gen._estimate_practical_max_tokens",
+            "mlx_manager.services.probe.text_gen.estimate_context_window",
             side_effect=RuntimeError("Context estimation failed"),
         ),
         patch(

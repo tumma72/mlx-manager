@@ -14,7 +14,7 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
-from .base import BaseProbe
+from .base import BaseProbe, get_model_config_value
 from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
@@ -89,16 +89,15 @@ async def _encode_text(loaded: LoadedModel, text: str) -> list[float] | None:
 
 def _get_max_sequence_length(model_id: str) -> int | None:
     """Read max sequence length from model config."""
-    from mlx_manager.utils.model_detection import read_model_config
+    from typing import cast
 
-    config = read_model_config(model_id)
-    if not config:
-        return None
-
-    return config.get(
+    result = get_model_config_value(
+        model_id,
         "max_position_embeddings",
-        config.get("max_seq_length", config.get("max_sequence_length")),
+        "max_seq_length",
+        "max_sequence_length",
     )
+    return cast(int | None, result)
 
 
 async def _test_similarity_ordering(loaded: LoadedModel) -> bool:

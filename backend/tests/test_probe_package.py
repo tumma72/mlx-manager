@@ -2592,7 +2592,7 @@ async def test_vision_probe_context_check_exception():
             return_value={},
         ),
         patch(
-            "mlx_manager.services.probe.vision._estimate_vision_max_tokens",
+            "mlx_manager.services.probe.vision.estimate_context_window",
             side_effect=ValueError("Config parsing failed"),
         ),
     ):

@@ -14,11 +14,11 @@ adapter's thinking_parser, then sweeps all registered parsers.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from mlx_manager.mlx_server.models.types import ModelType
 
-from .base import GenerativeProbe
+from .base import GenerativeProbe, estimate_context_window
 from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
@@ -57,17 +57,7 @@ class TextGenProbe(GenerativeProbe):
         # Step 1: Estimate practical context window
         async with probe_step("check_context", "practical_max_tokens") as ctx:
             yield ctx.running
-            practical_max = _estimate_practical_max_tokens(model_id, loaded)
+            practical_max = estimate_context_window(model_id, loaded.size_gb)
             result.practical_max_tokens = practical_max
             ctx.value = practical_max
         yield ctx.result
-
-
-def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
-    """Estimate practical max tokens based on model config and available memory.
-
-    Delegates to the shared KV cache estimation utility.
-    """
-    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
-
-    return estimate_practical_max_tokens(model_id, loaded.size_gb)

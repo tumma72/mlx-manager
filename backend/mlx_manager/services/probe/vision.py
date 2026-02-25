@@ -14,7 +14,7 @@ from loguru import logger
 
 from mlx_manager.mlx_server.models.types import ModelType
 
-from .base import GenerativeProbe
+from .base import GenerativeProbe, estimate_context_window
 from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
@@ -103,7 +103,7 @@ class VisionProbe(GenerativeProbe):
         # Step 4: Estimate practical context window
         async with probe_step("check_context", "practical_max_tokens") as ctx:
             yield ctx.running
-            practical_max = _estimate_vision_max_tokens(model_id, loaded)
+            practical_max = estimate_context_window(model_id, loaded.size_gb)
             result.practical_max_tokens = practical_max
             ctx.value = practical_max
         yield ctx.result
@@ -173,14 +173,3 @@ def _check_video_support(model_id: str) -> bool:
         return False
 
     return "video_token_id" in config
-
-
-def _estimate_vision_max_tokens(model_id: str, loaded: LoadedModel) -> int | None:
-    """Estimate practical max tokens for vision models.
-
-    Delegates to the shared KV cache estimation utility, which automatically
-    checks text_config for nested LLM backbone parameters.
-    """
-    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
-
-    return estimate_practical_max_tokens(model_id, loaded.size_gb)

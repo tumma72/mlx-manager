@@ -462,3 +462,43 @@ def get_family_thinking_parser_id(family: str | None) -> str | None:
     if config and config.thinking_parser_factory:
         return config.thinking_parser_factory().parser_id
     return None
+
+
+# ---------------------------------------------------------------------------
+# Shared utility helpers
+# ---------------------------------------------------------------------------
+
+
+def estimate_context_window(model_id: str, size_gb: float | None) -> int | None:
+    """Estimate practical max tokens via KV cache calculation.
+
+    Shared by TextGenProbe and VisionProbe to avoid duplication.
+    """
+    from mlx_manager.mlx_server.utils.kv_cache import estimate_practical_max_tokens
+
+    if size_gb is None:
+        return None
+    return estimate_practical_max_tokens(model_id, size_gb)
+
+
+def get_model_config_value(model_id: str, *keys: str, default: Any = None) -> Any:
+    """Read first matching key from model config.json with fallback chain.
+
+    Example::
+
+        max_len = get_model_config_value(
+            model_id,
+            "max_position_embeddings",
+            "max_seq_length",
+            "max_sequence_length",
+        )
+    """
+    from mlx_manager.utils.model_detection import read_model_config
+
+    config = read_model_config(model_id)
+    if config is None:
+        return default
+    for key in keys:
+        if key in config:
+            return config[key]
+    return default
