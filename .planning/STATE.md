@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
-Plan: 18 of 18 complete
-Status: In progress — Phase 15 plan 18 complete
-Last activity: 2026-02-25 - Completed 15-18 (GenerativeProbe.sweep_capabilities TDD)
+Plan: 19 of 19 complete
+Status: In progress — Phase 15 plan 19 complete
+Last activity: 2026-02-25 - Completed 15-19 (Generation Timeouts TDD)
 
-Progress: [████████████████] Phase 15-18 done
+Progress: [████████████████] Phase 15-19 done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -276,6 +276,7 @@ Recent decisions affecting current work:
 - **Family-aware parser prioritization**: _prioritize_parsers() ensures family-declared parser is validated first when multiple parsers share the same stream marker (e.g. `<tool_call>`)
 - **Stdlib logger %s format**: coordinator.py uses standard library logger with InterceptHandler; format strings must use %s not {} to avoid TypeError in getMessage()
 - **sweep_capabilities on GenerativeProbe**: Sweep logic moved from ProbingCoordinator to GenerativeProbe.sweep_capabilities(); coordinator uses isinstance check; self IS passed as strategy to sweep functions
+- **Generation timeout via asyncio.wait_for**: GenerativeProbe._generate() and VisionProbe._generate() wrap adapter.generate() with asyncio.wait_for(timeout=60.0); TimeoutError is re-raised as descriptive builtin TimeoutError; finally block always resets template_options
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -323,7 +324,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 15-18-PLAN (GenerativeProbe.sweep_capabilities TDD)
+Stopped at: Completed 15-19 (Generation Timeouts TDD — timeout protection in GenerativeProbe._generate() and VisionProbe._generate())
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
