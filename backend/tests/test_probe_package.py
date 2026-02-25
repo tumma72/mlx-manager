@@ -1081,7 +1081,7 @@ async def test_text_gen_probe_context_check_failure():
 async def test_text_gen_probe_thinking_failure():
     """Test coordinator handles thinking check failure (not the strategy).
 
-    Thinking verification moved to ProbingCoordinator._sweep_thinking().
+    Thinking verification moved to sweep_thinking() in services/probe/sweeps.py.
     The TextGenProbe strategy only does static checks (check_context).
     This test verifies the strategy still runs without error when
     thinking-related mocks fail (since strategy never calls them).
@@ -1114,7 +1114,7 @@ async def test_text_gen_probe_thinking_failure():
 async def test_text_gen_probe_tools_failure():
     """Test that tool verification is handled by coordinator, not strategy.
 
-    Tool verification moved to ProbingCoordinator._sweep_tools().
+    Tool verification moved to sweep_tools() in services/probe/sweeps.py.
     The TextGenProbe strategy only does static checks (check_context).
     This test verifies the probe runs correctly without tool-related patches.
     """

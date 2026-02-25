@@ -641,15 +641,13 @@ async def test_coordinator_sweep_discovers_template_params():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value=mock_params,
         ),
-        patch.object(
-            coordinator,
-            "_sweep_thinking",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_thinking",
             new_callable=AsyncMock,
             return_value=(False, "null", [], []),
         ),
-        patch.object(
-            coordinator,
-            "_sweep_tools",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_tools",
             new_callable=AsyncMock,
             return_value=(None, None, [], []),
         ),
@@ -671,15 +669,9 @@ async def test_coordinator_sweep_discovers_template_params():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_success_with_parser_match():
-    """_sweep_thinking: thinking detected when parser matches raw output."""
+    """sweep_thinking: thinking detected when parser matches raw output."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_thinking
 
     mock_loaded = MagicMock()
 
@@ -700,7 +692,7 @@ async def test_coordinator_sweep_thinking_success_with_parser_match():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -711,15 +703,9 @@ async def test_coordinator_sweep_thinking_success_with_parser_match():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_unclosed_retry():
-    """_sweep_thinking: retry on unclosed tag succeeds."""
+    """sweep_thinking: retry on unclosed tag succeeds."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_thinking
 
     call_count = [0]
 
@@ -754,7 +740,7 @@ async def test_coordinator_sweep_thinking_unclosed_retry():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -764,15 +750,9 @@ async def test_coordinator_sweep_thinking_unclosed_retry():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_always_thinks():
-    """_sweep_thinking: always-thinks detection (no enable_thinking param)."""
+    """sweep_thinking: always-thinks detection (no enable_thinking param)."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_thinking
 
     mock_loaded = MagicMock()
 
@@ -795,7 +775,7 @@ async def test_coordinator_sweep_thinking_always_thinks():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -805,15 +785,9 @@ async def test_coordinator_sweep_thinking_always_thinks():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagnostic():
-    """_sweep_thinking: has enable_thinking but no tags → diagnostic."""
+    """sweep_thinking: has enable_thinking but no tags → diagnostic."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_thinking
 
     mock_loaded = MagicMock()
 
@@ -833,7 +807,7 @@ async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagno
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": mock_parser_cls},
     ):
-        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -845,14 +819,8 @@ async def test_coordinator_sweep_thinking_has_enable_thinking_but_no_tags_diagno
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_generation_exception():
-    """_sweep_thinking: generation exception produces diagnostic."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-
-    coordinator = ProbingCoordinator(mock_pool)
+    """sweep_thinking: generation exception produces diagnostic."""
+    from mlx_manager.services.probe.sweeps import sweep_thinking
 
     mock_loaded = MagicMock()
 
@@ -865,7 +833,7 @@ async def test_coordinator_sweep_thinking_generation_exception():
         "mlx_manager.mlx_server.parsers.THINKING_PARSERS",
         {"null": MagicMock, "think_tag": MagicMock},
     ):
-        supports, parser_id, diags, tags = await coordinator._sweep_thinking(
+        supports, parser_id, diags, tags = await sweep_thinking(
             "test/model", mock_loaded, mock_strategy, template_params
         )
 
@@ -884,16 +852,9 @@ async def test_coordinator_sweep_thinking_generation_exception():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_template_delivery_success():
-    """_sweep_tools: template delivery ('template', parser_id) on fallback."""
+    """sweep_tools: template delivery ('template', parser_id) on fallback."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=True)
@@ -934,7 +895,7 @@ async def test_coordinator_sweep_tools_template_delivery_success():
             return_value=True,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -945,20 +906,13 @@ async def test_coordinator_sweep_tools_template_delivery_success():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_adapter_delivery_success():
-    """_sweep_tools: generic injection returns ('detected', parser_id) via tag discovery.
+    """sweep_tools: generic injection returns ('detected', parser_id) via tag discovery.
 
     Generic injection is Phase 1. Output has <tool_call> tags which are discovered
     and mapped to the xml_tag parser. Tag-first validation succeeds.
     """
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -989,7 +943,7 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1000,16 +954,9 @@ async def test_coordinator_sweep_tools_adapter_delivery_success():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_no_tool_support_detected():
-    """_sweep_tools: no tool support, no markers → 'no tool support'."""
+    """sweep_tools: no tool support, no markers → 'no tool support'."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -1037,7 +984,7 @@ async def test_coordinator_sweep_tools_no_tool_support_detected():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1048,16 +995,9 @@ async def test_coordinator_sweep_tools_no_tool_support_detected():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_tool_markers_found():
-    """_sweep_tools: tool markers found but no parser matches → ACTION_NEEDED diagnostic."""
+    """sweep_tools: tool markers found but no parser matches → ACTION_NEEDED diagnostic."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -1086,7 +1026,7 @@ async def test_coordinator_sweep_tools_tool_markers_found():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1099,18 +1039,11 @@ async def test_coordinator_sweep_tools_tool_markers_found():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_tokenization_artifacts():
-    """_sweep_tools: tokenization artifacts produce UNSUPPORTED diagnostic."""
+    """sweep_tools: tokenization artifacts produce UNSUPPORTED diagnostic."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     sp_marker = "\u2581"  # ▁
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -1141,7 +1074,7 @@ async def test_coordinator_sweep_tools_tokenization_artifacts():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1154,16 +1087,9 @@ async def test_coordinator_sweep_tools_tokenization_artifacts():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_unknown_xml_tags():
-    """_sweep_tools: unknown XML tags produce WARNING diagnostic."""
+    """sweep_tools: unknown XML tags produce WARNING diagnostic."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -1192,7 +1118,7 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1215,7 +1141,7 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_exception_yields_failed():
-    """_sweep_generative_capabilities handles thinking exception gracefully (lines 329-333)."""
+    """_sweep_generative_capabilities handles thinking exception gracefully."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
@@ -1253,14 +1179,12 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value={},
         ),
-        patch.object(
-            coordinator,
-            "_sweep_thinking",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_thinking",
             side_effect=RuntimeError("Thinking sweep crashed"),
         ),
-        patch.object(
-            coordinator,
-            "_sweep_tools",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_tools",
             new_callable=AsyncMock,
             return_value=(None, None, [], []),
         ),
@@ -1279,7 +1203,7 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_exception_yields_failed():
-    """_sweep_generative_capabilities handles tool sweep exception gracefully (lines 353-357)."""
+    """_sweep_generative_capabilities handles tool sweep exception gracefully."""
     from mlx_manager.services.probe.coordinator import ProbingCoordinator
 
     mock_pool = MagicMock()
@@ -1313,15 +1237,13 @@ async def test_coordinator_sweep_tools_exception_yields_failed():
             "mlx_manager.mlx_server.utils.template_params.discover_template_params",
             return_value={},
         ),
-        patch.object(
-            coordinator,
-            "_sweep_thinking",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_thinking",
             new_callable=AsyncMock,
             return_value=(False, "null", [], []),
         ),
-        patch.object(
-            coordinator,
-            "_sweep_tools",
+        patch(
+            "mlx_manager.services.probe.sweeps.sweep_tools",
             side_effect=RuntimeError("Tool sweep crashed"),
         ),
     ):
@@ -1406,16 +1328,9 @@ async def test_save_capabilities_template_params_plain_value():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_generic_first_then_template_fallback():
-    """_sweep_tools: generic injection fails, template delivery succeeds as fallback."""
+    """sweep_tools: generic injection fails, template delivery succeeds as fallback."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=True)
@@ -1456,7 +1371,7 @@ async def test_coordinator_sweep_tools_generic_first_then_template_fallback():
             return_value=True,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
@@ -1467,16 +1382,9 @@ async def test_coordinator_sweep_tools_generic_first_then_template_fallback():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_discovered_tags_in_result():
-    """_sweep_tools returns discovered tags even when no parser validates."""
+    """sweep_tools returns discovered tags even when no parser validates."""
     from mlx_manager.mlx_server.models.ir import TextResult
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
-
-    coordinator = ProbingCoordinator(mock_pool)
+    from mlx_manager.services.probe.sweeps import sweep_tools
 
     mock_adapter = MagicMock()
     mock_adapter.supports_native_tools = MagicMock(return_value=False)
@@ -1500,7 +1408,7 @@ async def test_coordinator_sweep_tools_discovered_tags_in_result():
             return_value=False,
         ),
     ):
-        tool_format, parser_id, diags, tags = await coordinator._sweep_tools(
+        tool_format, parser_id, diags, tags = await sweep_tools(
             "test/model", mock_loaded, mock_strategy
         )
 
