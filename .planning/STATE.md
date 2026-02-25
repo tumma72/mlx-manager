@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
-Plan: 19 of 19 complete
-Status: In progress — Phase 15 plan 19 complete
-Last activity: 2026-02-25 - Completed 15-19 (Generation Timeouts TDD)
+Plan: 20 of 20 complete
+Status: In progress — Phase 15 plan 20 complete
+Last activity: 2026-02-25 - Completed 15-20 (Verbose Flag Utilization TDD)
 
-Progress: [████████████████] Phase 15-19 done
+Progress: [████████████████] Phase 15-20 done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -242,6 +242,9 @@ Recent decisions affecting current work:
 - **DecryptionError backward compat**: Aliased as InvalidToken for existing consumers in settings router
 - **Separate log files by component**: mlx-server.log for inference, mlx-manager.log for app — easier debugging of distinct components
 - **InterceptHandler for third-party compatibility**: Redirect standard logging to Loguru to capture third-party library logs
+- **verbose in ProbeStep.details only**: verbose info (elapsed_ms, raw_output_sample, parser_trials) goes only to ProbeStep.details dict — never changes status/value/capability fields; no SSE protocol impact
+- **time.monotonic() for probe step timing**: elapsed_ms in StepContext uses time.monotonic() for accuracy; timing added on both successful and failed steps when verbose=True
+- **INFO-level verbose diagnostics in sweeps**: sweep_thinking and sweep_tools emit INFO ProbeDiagnostic entries when verbose=True — separate from WARNING/ACTION_NEEDED diagnostic channels
 
 - **E2E tiered test infrastructure**: pytest markers (e2e, e2e_vision_quick, e2e_vision_full) with addopts excluding E2E from default run
 - **Fallback model resolution for E2E**: Prefer qat variants over DWQ for Gemma models due to VisionConfig incompatibility in mlx-vlm 0.3.11
@@ -324,7 +327,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 15-19 (Generation Timeouts TDD — timeout protection in GenerativeProbe._generate() and VisionProbe._generate())
+Stopped at: Completed 15-20 (Verbose Flag Utilization TDD — verbose threaded through probe pipeline)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
