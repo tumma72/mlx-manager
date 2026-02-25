@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 ## Current Position
 
-Phase: 16 of 16 (MLX Manager Architecture Compliance)
-Plan: 2 of 2 complete
-Status: Phase 16 complete — verified ✓
-Last activity: 2026-02-07 - Phase 16 verified (10/10 must-haves passed)
+Phase: 15 of 16 (Code Cleanup & Integration Tests)
+Plan: 17 of 17 complete
+Status: In progress — Phase 15 plan 17 complete
+Last activity: 2026-02-25 - Completed 15-17 (family-aware parser selection, TDD)
 
-Progress: [████████████████] 100% (2 of 2 plans in Phase 16)
+Progress: [████████████████] Phase 15-17 done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -272,6 +272,10 @@ Recent decisions affecting current work:
 - **STT temp file for audio input**: generate_transcription expects file path not bytes; write to tempfile then unlink
 - **WAV default for TTS**: WAV requires no external dependencies (uses miniaudio); MP3 needs ffmpeg
 
+- **Nemotron-before-qwen in FAMILY_PATTERNS**: Dict ordering determines match priority; nemotron must precede qwen so Qwen3-Coder models route to Qwen3CoderXmlParser not HermesJsonParser
+- **Family-aware parser prioritization**: _prioritize_parsers() ensures family-declared parser is validated first when multiple parsers share the same stream marker (e.g. `<tool_call>`)
+- **Stdlib logger %s format**: coordinator.py uses standard library logger with InterceptHandler; format strings must use %s not {} to avoid TypeError in getMessage()
+
 See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
@@ -317,10 +321,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-07
-Stopped at: Phase 16 complete — verified ✓ (all 10 phases of v1.2 done)
+Last session: 2026-02-25
+Stopped at: Completed 15-17-PLAN (family-aware parser selection TDD)
 Resume file: None
-Next: Run /gsd:audit-milestone to verify milestone completion
+Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
 ### Roadmap Evolution
 
