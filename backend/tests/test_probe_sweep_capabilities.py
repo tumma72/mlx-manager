@@ -14,7 +14,6 @@ import pytest
 
 from mlx_manager.services.probe.steps import ProbeResult
 
-
 # ---------------------------------------------------------------------------
 # Concrete GenerativeProbe subclass for testing
 # ---------------------------------------------------------------------------
@@ -502,7 +501,7 @@ async def test_coordinator_delegates_to_generative_probe():
         MagicMock(step="test_tools", status="completed"),
     ]
 
-    async def fake_sweep(model_id, loaded, result):
+    async def fake_sweep(model_id, loaded, result, *, verbose=False):
         for s in sweep_steps:
             yield s
 
@@ -541,8 +540,6 @@ async def test_coordinator_delegates_to_generative_probe():
 @pytest.mark.asyncio
 async def test_coordinator_skips_sweep_for_non_generative_strategies():
     """Coordinator does NOT call sweep_capabilities for non-GenerativeProbe strategies."""
-    from mlx_manager.mlx_server.models.types import ModelType
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
     from mlx_manager.services.probe.embeddings import EmbeddingsProbe
 
     mock_pool = MagicMock()

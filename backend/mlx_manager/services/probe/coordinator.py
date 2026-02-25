@@ -164,7 +164,9 @@ class ProbingCoordinator:
         from .base import GenerativeProbe
 
         if isinstance(strategy, GenerativeProbe):
-            async for step in strategy.sweep_capabilities(model_id, loaded, result):
+            async for step in strategy.sweep_capabilities(
+                model_id, loaded, result, verbose=verbose
+            ):
                 yield step
 
         # ── Step 7: Save results to DB ────────────────────────────────

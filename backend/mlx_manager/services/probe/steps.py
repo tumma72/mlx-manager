@@ -8,6 +8,7 @@ ProbeResult accumulates capabilities discovered during probing.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from enum import StrEnum
@@ -137,11 +138,29 @@ class StepContext:
             result = do_work()
             ctx.value = result
         yield ctx.result  # Emit "completed" or "failed" step
+
+    When verbose=True, the result will include ``elapsed_ms`` in its details
+    dict indicating how long the step took.
     """
 
-    __slots__ = ("step", "capability", "value", "details", "diagnostics", "_failed", "_error")
+    __slots__ = (
+        "step",
+        "capability",
+        "value",
+        "details",
+        "diagnostics",
+        "_failed",
+        "_error",
+        "_verbose",
+        "_start_time",
+    )
 
-    def __init__(self, step: str, capability: str | None = None) -> None:
+    def __init__(
+        self,
+        step: str,
+        capability: str | None = None,
+        verbose: bool = False,
+    ) -> None:
         self.step = step
         self.capability = capability
         self.value: Any = None
@@ -149,6 +168,8 @@ class StepContext:
         self.diagnostics: list[ProbeDiagnostic] | None = None
         self._failed: bool = False
         self._error: str | None = None
+        self._verbose: bool = verbose
+        self._start_time: float = time.monotonic()
 
     @property
     def running(self) -> ProbeStep:
@@ -159,15 +180,23 @@ class StepContext:
     def result(self) -> ProbeStep:
         """The 'completed' or 'failed' step to yield after the context exits."""
         if self._failed:
-            return ProbeStep(step=self.step, status="failed", error=self._error)
-        return ProbeStep(
-            step=self.step,
-            status="completed",
-            capability=self.capability,
-            value=self.value,
-            details=self.details,
-            diagnostics=self.diagnostics,
-        )
+            step = ProbeStep(step=self.step, status="failed", error=self._error)
+        else:
+            step = ProbeStep(
+                step=self.step,
+                status="completed",
+                capability=self.capability,
+                value=self.value,
+                details=self.details,
+                diagnostics=self.diagnostics,
+            )
+        # Add timing when verbose
+        if self._verbose:
+            elapsed_ms = round((time.monotonic() - self._start_time) * 1000)
+            if step.details is None:
+                step.details = {}
+            step.details["elapsed_ms"] = elapsed_ms
+        return step
 
     def fail(self, error: str) -> None:
         """Explicitly mark this step as failed (e.g. for boolean checks)."""
@@ -176,14 +205,21 @@ class StepContext:
 
 
 @asynccontextmanager
-async def probe_step(step: str, capability: str | None = None) -> AsyncGenerator[StepContext, None]:
+async def probe_step(
+    step: str,
+    capability: str | None = None,
+    verbose: bool = False,
+) -> AsyncGenerator[StepContext, None]:
     """Async context manager for probe step lifecycle.
 
     Catches exceptions inside the block and records them as failures.
     The caller is responsible for yielding ``ctx.running`` (before work)
     and ``ctx.result`` (after the block exits).
+
+    When ``verbose=True``, the result step will include ``elapsed_ms`` in its
+    details dict indicating how many milliseconds the step took.
     """
-    ctx = StepContext(step=step, capability=capability)
+    ctx = StepContext(step=step, capability=capability, verbose=verbose)
     try:
         yield ctx
     except Exception as e:

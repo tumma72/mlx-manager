@@ -33,6 +33,7 @@ async def sweep_thinking(
     strategy: Any,
     template_params: dict[str, Any] | None,
     family: str | None = None,
+    verbose: bool = False,
 ) -> tuple[bool, str, list[ProbeDiagnostic], list[Any]]:
     """Tag-first thinking detection.
 
@@ -202,6 +203,22 @@ async def sweep_thinking(
             )
         )
 
+    # ── Verbose: raw output sample ────────────────────────────────
+    if verbose and raw_output is not None:
+        tried_parsers = [pid for pid in THINKING_PARSERS if pid != "null"]
+        diagnostics.append(
+            ProbeDiagnostic(
+                level=DiagnosticLevel.INFO,
+                category=DiagnosticCategory.THINKING_DIALECT,
+                message="Thinking sweep completed (verbose)",
+                details={
+                    "raw_output_sample": raw_output[:300],
+                    "parser_trials": tried_parsers,
+                    "discovered_tags": [t.model_dump() for t in discovered_tags],
+                },
+            )
+        )
+
     return (False, "null", diagnostics, discovered_tags)
 
 
@@ -215,6 +232,7 @@ async def sweep_tools(
     loaded: Any,
     strategy: Any,
     family: str | None = None,
+    verbose: bool = False,
 ) -> tuple[str | None, str | None, list[ProbeDiagnostic], list[Any]]:
     """Tag-first tool support detection.
 
@@ -407,5 +425,24 @@ async def sweep_tools(
             logger.info("Tool probe: no tool support detected")
     else:
         logger.info("Tool probe: no tool support detected (no output)")
+
+    # ── Verbose: parser trial details ─────────────────────────────
+    if verbose:
+        tried_parsers = [pid for pid in TOOL_PARSERS if pid != "null"]
+        diagnostics.append(
+            ProbeDiagnostic(
+                level=DiagnosticLevel.INFO,
+                category=DiagnosticCategory.TOOL_DIALECT,
+                message="Tool sweep completed (verbose)",
+                details={
+                    "parser_trials": tried_parsers,
+                    "raw_output_sample": scan_output[:300] if scan_output else None,
+                    "discovered_tags": [
+                        {"name": t.name, "style": t.style, "paired": t.paired}
+                        for t in all_discovered_tags
+                    ],
+                },
+            )
+        )
 
     return (None, None, diagnostics, all_discovered_tags)
