@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 ## Current Position
 
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
-Plan: 17 of 17 complete
-Status: In progress — Phase 15 plan 17 complete
-Last activity: 2026-02-25 - Completed 15-17 (family-aware parser selection, TDD)
+Plan: 18 of 18 complete
+Status: In progress — Phase 15 plan 18 complete
+Last activity: 2026-02-25 - Completed 15-18 (GenerativeProbe.sweep_capabilities TDD)
 
-Progress: [████████████████] Phase 15-17 done
+Progress: [████████████████] Phase 15-18 done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -275,6 +275,7 @@ Recent decisions affecting current work:
 - **Nemotron-before-qwen in FAMILY_PATTERNS**: Dict ordering determines match priority; nemotron must precede qwen so Qwen3-Coder models route to Qwen3CoderXmlParser not HermesJsonParser
 - **Family-aware parser prioritization**: _prioritize_parsers() ensures family-declared parser is validated first when multiple parsers share the same stream marker (e.g. `<tool_call>`)
 - **Stdlib logger %s format**: coordinator.py uses standard library logger with InterceptHandler; format strings must use %s not {} to avoid TypeError in getMessage()
+- **sweep_capabilities on GenerativeProbe**: Sweep logic moved from ProbingCoordinator to GenerativeProbe.sweep_capabilities(); coordinator uses isinstance check; self IS passed as strategy to sweep functions
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -322,7 +323,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 15-17-PLAN (family-aware parser selection TDD)
+Stopped at: Completed 15-18-PLAN (GenerativeProbe.sweep_capabilities TDD)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
