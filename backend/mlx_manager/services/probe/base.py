@@ -426,3 +426,39 @@ def _has_tokenization_artifacts(output: str) -> bool:
     if _SP_MARKER in output or _SPACED_JSON_KEY.search(output) is not None:
         return True
     return False
+
+
+def _prioritize_parsers(candidates: set[str], family_parser_id: str | None) -> list[str]:
+    """Order parser candidates: family-declared parser first, then alphabetical.
+
+    When multiple parsers share the same stream marker (e.g. ``<tool_call>``),
+    the family-declared parser should be validated first to avoid false positives
+    from parsers designed for other model families.
+    """
+    if family_parser_id and family_parser_id in candidates:
+        return [family_parser_id, *sorted(candidates - {family_parser_id})]
+    return sorted(candidates)
+
+
+def get_family_tool_parser_id(family: str | None) -> str | None:
+    """Look up the tool parser ID declared by a FamilyConfig."""
+    if not family:
+        return None
+    from mlx_manager.mlx_server.models.adapters.configs import FAMILY_CONFIGS
+
+    config = FAMILY_CONFIGS.get(family)
+    if config and config.tool_parser_factory:
+        return config.tool_parser_factory().parser_id
+    return None
+
+
+def get_family_thinking_parser_id(family: str | None) -> str | None:
+    """Look up the thinking parser ID declared by a FamilyConfig."""
+    if not family:
+        return None
+    from mlx_manager.mlx_server.models.adapters.configs import FAMILY_CONFIGS
+
+    config = FAMILY_CONFIGS.get(family)
+    if config and config.thinking_parser_factory:
+        return config.thinking_parser_factory().parser_id
+    return None

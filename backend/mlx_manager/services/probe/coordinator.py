@@ -321,7 +321,7 @@ class ProbingCoordinator:
             async with probe_step("test_thinking", "supports_thinking") as ctx:
                 yield ctx.running
                 supports, parser_id, diags, thinking_tags = await self._sweep_thinking(
-                    model_id, loaded, strategy, discovered_params
+                    model_id, loaded, strategy, discovered_params, result.model_family
                 )
                 result.supports_thinking = supports
                 result.thinking_parser_id = parser_id
@@ -344,7 +344,7 @@ class ProbingCoordinator:
             async with probe_step("test_tools", "tool_format") as ctx:
                 yield ctx.running
                 tool_format, tool_parser_id, diags, tool_tags = await self._sweep_tools(
-                    model_id, loaded, strategy
+                    model_id, loaded, strategy, result.model_family
                 )
                 result.supports_native_tools = tool_format is not None
                 result.tool_format = tool_format
@@ -373,6 +373,7 @@ class ProbingCoordinator:
         loaded: Any,
         strategy: Any,
         template_params: dict[str, Any] | None,
+        family: str | None = None,
     ) -> tuple[bool, str, list[ProbeDiagnostic], list[Any]]:
         """Tag-first thinking detection.
 
@@ -447,7 +448,10 @@ class ProbingCoordinator:
         for tag in discovered_tags:
             validated_from_tags.update(tag.matched_parsers)
 
-        for pid in sorted(validated_from_tags):
+        from .base import _prioritize_parsers, get_family_thinking_parser_id
+
+        family_thinking_id = get_family_thinking_parser_id(family)
+        for pid in _prioritize_parsers(validated_from_tags, family_thinking_id):
             if pid in THINKING_PARSERS:
                 parser = THINKING_PARSERS[pid]()
                 if parser.extract(raw_output) is not None:
@@ -550,6 +554,7 @@ class ProbingCoordinator:
         model_id: str,
         loaded: Any,
         strategy: Any,
+        family: str | None = None,
     ) -> tuple[str | None, str | None, list[ProbeDiagnostic], list[Any]]:
         """Tag-first tool support detection.
 
@@ -600,7 +605,7 @@ class ProbingCoordinator:
                 logger.warning(
                     "Tool probe: output has tokenization artifacts — "
                     "model architecture likely not fully supported by "
-                    "installed mlx-lm. Raw output: {}",
+                    "installed mlx-lm. Raw output: %s",
                     last_output[:300],
                 )
                 diagnostics.append(
@@ -636,8 +641,11 @@ class ProbingCoordinator:
                 matched_parser_ids.update(tag.matched_parsers)
 
             # Try tag-matched parsers first (highest confidence)
+            from .base import _prioritize_parsers, get_family_tool_parser_id
+
+            family_tool_id = get_family_tool_parser_id(family)
             if matched_parser_ids:
-                for pid in sorted(matched_parser_ids):
+                for pid in _prioritize_parsers(matched_parser_ids, family_tool_id):
                     if pid in TOOL_PARSERS:
                         parser = TOOL_PARSERS[pid]()
                         if parser.validates(last_output, "get_weather"):

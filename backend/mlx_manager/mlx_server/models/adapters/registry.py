@@ -7,8 +7,10 @@ The actual adapters are now in composable.py.
 from loguru import logger
 
 # Family pattern mappings (used by pool.py and probe utilities)
-FAMILY_PATTERNS = {
+FAMILY_PATTERNS: dict[str, list[str]] = {
     "llama": ["llama", "codellama"],
+    # nemotron before qwen: Qwen3-Coder models use Qwen3CoderXmlParser (nemotron family)
+    "nemotron": ["nemotron", "qwen3-coder", "qwen3_coder"],
     "qwen": ["qwen", "iquest"],
     "mistral": ["mistral", "mixtral", "devstral"],
     "functiongemma": ["functiongemma"],
@@ -18,7 +20,6 @@ FAMILY_PATTERNS = {
     "liquid": ["liquid", "lfm"],
     "whisper": ["whisper"],
     "kokoro": ["kokoro"],
-    "nemotron": ["nemotron"],
 }
 
 
