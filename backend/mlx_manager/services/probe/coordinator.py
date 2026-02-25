@@ -20,6 +20,7 @@ from mlx_manager.services.probe.steps import (
     ProbeResult,
     ProbeStep,
 )
+from mlx_manager.services.probe.strategy import ProbeStrategy
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import ModelPoolManager
@@ -128,7 +129,7 @@ class ProbingCoordinator:
             loaded = await self._pool.get_model(model_id)
             yield ProbeStep(step="load_model", status="completed")
         except Exception as e:
-            logger.error(f"Probe failed to load model {model_id}: {e}")
+            logger.error("Probe failed to load model {}: {}", model_id, e)
             yield ProbeStep(step="load_model", status="failed", error=str(e))
             return
 
@@ -154,7 +155,7 @@ class ProbingCoordinator:
         # ── Step 4: Look up strategy for type-specific static checks ──
         from .strategy import get_probe_strategy
 
-        strategy = get_probe_strategy(model_type)
+        strategy: ProbeStrategy | None = get_probe_strategy(model_type)
         if strategy is None:
             yield ProbeStep(
                 step="find_strategy",
@@ -625,7 +626,7 @@ class ProbingCoordinator:
             gen_result = await strategy._generate(loaded, messages_with_tools)
             last_output = gen_result.content
         except Exception as e:
-            logger.debug("Generic injection generation failed: %s", e)
+            logger.debug("Generic injection generation failed: {}", e)
 
         # ── Phase 2: DISCOVER ─────────────────────────────────────────
         if last_output is not None:
@@ -634,7 +635,7 @@ class ProbingCoordinator:
                 logger.warning(
                     "Tool probe: output has tokenization artifacts — "
                     "model architecture likely not fully supported by "
-                    "installed mlx-lm. Raw output: %s",
+                    "installed mlx-lm. Raw output: {}",
                     last_output[:300],
                 )
                 diagnostics.append(

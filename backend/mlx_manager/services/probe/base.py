@@ -11,12 +11,13 @@ import json
 import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+from pydantic import BaseModel
 
 from mlx_manager.mlx_server.models.types import ModelType
+from mlx_manager.mlx_server.parsers import ToolCallParser
 
 from .steps import (
     ProbeResult,
@@ -113,8 +114,7 @@ _KNOWN_XML_TAGS: frozenset[str] = _KNOWN_BENIGN_TAGS | frozenset(
 )
 
 
-@dataclass
-class DetectedTag:
+class DetectedTag(BaseModel):
     """A tag pattern discovered in model output."""
 
     name: str  # e.g. "TOOL_CALLS", "tool_call"
@@ -164,11 +164,12 @@ def _detect_all_tags(output: str) -> list[DetectedTag]:
         has_pair = len(all_occurrences) >= 2
         tags.append(DetectedTag(name=token_name.lower(), style="special", paired=has_pair))
 
+    logger.debug("Detected tags: {} in output: {}", tags, output)
     return tags
 
 
 def _build_marker_to_parsers(
-    parsers: dict[str, type],
+    parsers: dict[str, type[ToolCallParser]],
 ) -> dict[str, list[str]]:
     """Build {start_marker: [parser_ids]} lookup from registered parsers' stream_markers.
 
@@ -206,7 +207,7 @@ def _scan_for_known_markers(
 
 def _discover_and_map_tags(
     output: str,
-    parsers: dict[str, type],
+    parsers: dict[str, type[ToolCallParser]],
 ) -> list[TagDiscovery]:
     """Primary tag discovery pipeline: regex detection + direct marker scan + merge.
 
@@ -216,10 +217,11 @@ def _discover_and_map_tags(
     4. Merge: enrich each detected tag with ``matched_parsers`` list
     5. Add any parsers found by direct scan but not by regex detection
     """
-    detected = _detect_all_tags(output)
-    marker_map = _build_marker_to_parsers(parsers)
-    direct_parsers = _scan_for_known_markers(output, marker_map)
+    detected: list[DetectedTag] = _detect_all_tags(output)
+    marker_map: dict[str, list[str]] = _build_marker_to_parsers(parsers)
+    direct_parsers: set[str] = _scan_for_known_markers(output, marker_map)
 
+    logger.debug("Compiled Marker Map: {}", marker_map)
     # Build reverse lookup: parser_id → which markers matched
     parsers_covered_by_tags: set[str] = set()
     discoveries: list[TagDiscovery] = []
@@ -421,8 +423,6 @@ def _has_tokenization_artifacts(output: str) -> bool:
     or has spaces inside JSON string delimiters — strong signals that the
     model architecture is not properly supported by the installed mlx-lm.
     """
-    if _SP_MARKER in output:
-        return True
-    if _SPACED_JSON_KEY.search(output):
+    if _SP_MARKER in output or _SPACED_JSON_KEY.search(output) is not None:
         return True
     return False

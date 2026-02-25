@@ -50,7 +50,7 @@ class HermesJsonParser(ToolCallParser):
             arguments_str = self._coerce_arguments(data.get("arguments", {}))
             return self._make_tool_call(name, arguments_str)
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Invalid Hermes tool call: {}", e)
+            logger.warning("Invalid Hermes tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -106,7 +106,7 @@ class Glm4NativeParser(ToolCallParser):
             args_str = json.dumps(params) if params else "{}"
             return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4.7 compact tool call: {}", e)
+            logger.warning("Invalid GLM4.7 compact tool call: {} => {}", match.groups(), e)
             return None
 
     def _parse_attr(self, match: re.Match[str]) -> ToolCall | None:
@@ -123,7 +123,7 @@ class Glm4NativeParser(ToolCallParser):
             args_str = json.dumps(params)
             return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4.7 attr tool call: {}", e)
+            logger.warning("Invalid GLM4.7 attr tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -165,7 +165,7 @@ class Glm4XmlParser(ToolCallParser):
                 return None
             return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid GLM4 tool call: {}", e)
+            logger.warning("Invalid GLM4 tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -204,7 +204,7 @@ class LlamaXmlParser(ToolCallParser):
                 return None
             return self._make_tool_call(name, args_str)
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Llama tool call: {}", e)
+            logger.warning("Invalid Llama tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -238,7 +238,7 @@ class LlamaPythonParser(ToolCallParser):
             name = f"{module}.{method}"
             return self._make_tool_call(name, json.dumps(args_dict))
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Llama Python tool call: {}", e)
+            logger.warning("Invalid Llama Python tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -285,7 +285,9 @@ class LiquidPythonParser(ToolCallParser):
             try:
                 tree = ast.parse(content, mode="eval")
             except SyntaxError:
-                logger.warning("Invalid Python syntax in Liquid tool call: {}", content)
+                logger.warning(
+                    "Invalid Python syntax in Liquid tool call: {} => {}", match.groups(), content
+                )
                 return []
 
             results: list[ToolCall] = []
@@ -326,7 +328,7 @@ class LiquidPythonParser(ToolCallParser):
 
             return results
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Liquid tool call: {}", e)
+            logger.warning("Invalid Liquid tool call: {} => {}", match.groups(), e)
             return []
 
 
@@ -349,13 +351,13 @@ class MistralNativeParser(ToolCallParser):
         return [("[TOOL_CALLS]", "")]
 
     def extract(self, text: str) -> list[ToolCall]:
-        match = self._PATTERN.search(text)
+        match: re.Match[str] | None = self._PATTERN.search(text)
         if not match:
             return []
         try:
             data = json.loads(match.group(1))
         except json.JSONDecodeError as e:
-            logger.warning("Invalid JSON in Mistral tool calls: {}", e)
+            logger.warning("Invalid JSON in Mistral tool calls: {} => {}", match.groups(), e)
             return []
         if not isinstance(data, list):
             return []
@@ -376,7 +378,7 @@ class MistralNativeParser(ToolCallParser):
             # Preserve model-generated ID if present, otherwise generate one
             return self._make_tool_call(name, arguments_str, call_id=item.get("id") or None)
         except (KeyError, TypeError) as e:
-            logger.warning("Invalid Mistral tool call item: {}", e)
+            logger.warning("Invalid Mistral tool call item: {} => {}", item, e)
             return None
 
 
@@ -493,7 +495,11 @@ class ToolCodePythonParser(ToolCallParser):
             try:
                 tree = ast.parse(content, mode="eval")
             except SyntaxError:
-                logger.warning("Invalid Python syntax in tool_code block: {}", content[:200])
+                logger.warning(
+                    "Invalid Python syntax in tool_code block: {} => {}",
+                    match.groups(),
+                    content[:200],
+                )
                 return []
 
             results: list[ToolCall] = []
@@ -530,7 +536,7 @@ class ToolCodePythonParser(ToolCallParser):
 
             return results
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid tool_code block: {}", e)
+            logger.warning("Invalid tool_code block: {} => {}", match.groups(), e)
             return []
 
 
@@ -624,7 +630,7 @@ class Qwen3CoderXmlParser(ToolCallParser):
 
             return self._make_tool_call(name, json.dumps(params))
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid Qwen3-Coder XML tool call: {}", e)
+            logger.warning("Invalid Qwen3-Coder XML tool call: {} => {}", match.groups(), e)
             return None
 
 
@@ -677,5 +683,5 @@ class FunctionGemmaParser(ToolCallParser):
 
             return self._make_tool_call(name, json.dumps(params))
         except (IndexError, AttributeError) as e:
-            logger.warning("Invalid FunctionGemma tool call: {}", e)
+            logger.warning("Invalid FunctionGemma tool call: {} => {}", match.groups(), e)
             return None
