@@ -1,8 +1,8 @@
 # Probe System Refactoring Plan
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-02-25
-**Status:** PROPOSED
+**Status:** PHASES 1-4 COMPLETE, 5-6 PENDING
 **Scope:** `backend/mlx_manager/services/probe/` + related parser/family detection
 
 ---
