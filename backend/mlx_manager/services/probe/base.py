@@ -7,6 +7,7 @@ used by the ProbingCoordinator's sweep methods.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
@@ -298,6 +299,7 @@ class GenerativeProbe(BaseProbe):
         tools: list[dict] | None = None,
         template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
+        timeout: float = 60.0,
     ) -> TextResult:
         """Generate a response using the adapter's full pipeline.
 
@@ -305,6 +307,14 @@ class GenerativeProbe(BaseProbe):
         → process_complete for all model types (text and vision).
         Returns the full TextResult so callers can inspect reasoning_content
         directly instead of re-parsing already-cleaned content.
+
+        Args:
+            loaded: The loaded model with adapter.
+            messages: Chat messages to send to the model.
+            tools: Optional tool definitions for tool-calling probes.
+            template_options: Temporary adapter config overrides (reset after).
+            max_tokens: Maximum tokens to generate.
+            timeout: Seconds to wait before raising TimeoutError (default 60s).
         """
         adapter = loaded.adapter
         if adapter is None:
@@ -316,14 +326,21 @@ class GenerativeProbe(BaseProbe):
             adapter.configure(template_options=template_options)
 
         try:
-            result = await adapter.generate(
-                model=loaded.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=0.7,
-                tools=tools,
+            result = await asyncio.wait_for(
+                adapter.generate(
+                    model=loaded.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.7,
+                    tools=tools,
+                ),
+                timeout=timeout,
             )
             return result
+        except TimeoutError:
+            raise TimeoutError(
+                f"Generation timed out after {timeout}s (max_tokens={max_tokens})"
+            ) from None
         finally:
             # Reset template options after probe
             if template_options is not None:
@@ -334,6 +351,8 @@ class GenerativeProbe(BaseProbe):
         model_id: str,
         loaded: Any,
         result: ProbeResult,
+        *,
+        verbose: bool = False,
     ) -> Any:
         """Sweep parser/config combinations for thinking and tool support.
 
@@ -342,6 +361,10 @@ class GenerativeProbe(BaseProbe):
         used directly via the ``strategy`` parameter of the sweep functions.
 
         Yields ProbeStep objects for progressive SSE streaming.
+
+        When ``verbose=True``, each probe step will include ``elapsed_ms`` timing
+        and sweep functions will include raw output samples and parser trial details
+        in diagnostics.
         """
         import logging as _logging
 
@@ -358,7 +381,7 @@ class GenerativeProbe(BaseProbe):
         tokenizer = loaded.tokenizer
 
         # ── Family detection ──────────────────────────────────────────
-        async with probe_step("detect_family", "model_family") as ctx:
+        async with probe_step("detect_family", "model_family", verbose=verbose) as ctx:
             yield ctx.running
             if result.model_family is None:
                 result.model_family = detect_model_family(model_id)
@@ -425,12 +448,17 @@ class GenerativeProbe(BaseProbe):
 
         # ── Thinking sweep ────────────────────────────────────────────
         if tokenizer is not None:
-            async with probe_step("test_thinking", "supports_thinking") as ctx:
+            async with probe_step("test_thinking", "supports_thinking", verbose=verbose) as ctx:
                 yield ctx.running
                 from .sweeps import sweep_thinking
 
                 supports, parser_id, diags, thinking_tags = await sweep_thinking(
-                    model_id, loaded, self, discovered_params, result.model_family
+                    model_id,
+                    loaded,
+                    self,
+                    discovered_params,
+                    result.model_family,
+                    verbose=verbose,
                 )
                 result.supports_thinking = supports
                 result.thinking_parser_id = parser_id
@@ -450,12 +478,16 @@ class GenerativeProbe(BaseProbe):
 
         # ── Tool sweep ────────────────────────────────────────────────
         if tokenizer is not None:
-            async with probe_step("test_tools", "tool_format") as ctx:
+            async with probe_step("test_tools", "tool_format", verbose=verbose) as ctx:
                 yield ctx.running
                 from .sweeps import sweep_tools
 
                 tool_format, tool_parser_id, diags, tool_tags = await sweep_tools(
-                    model_id, loaded, self, result.model_family
+                    model_id,
+                    loaded,
+                    self,
+                    result.model_family,
+                    verbose=verbose,
                 )
                 result.supports_native_tools = tool_format is not None
                 result.tool_format = tool_format

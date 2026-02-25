@@ -7,6 +7,7 @@ tests thinking and tool calling capabilities.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
@@ -36,8 +37,18 @@ class VisionProbe(GenerativeProbe):
         tools: list[dict] | None = None,
         template_options: dict[str, Any] | None = None,
         max_tokens: int = 800,
+        timeout: float = 60.0,
     ) -> TextResult:
-        """Generate a response using adapter's vision pipeline with a synthetic test image."""
+        """Generate a response using adapter's vision pipeline with a synthetic test image.
+
+        Args:
+            loaded: The loaded model with adapter.
+            messages: Chat messages to send to the model.
+            tools: Optional tool definitions for tool-calling probes.
+            template_options: Temporary adapter config overrides (reset after).
+            max_tokens: Maximum tokens to generate.
+            timeout: Seconds to wait before raising TimeoutError (default 60s).
+        """
         from PIL import Image
 
         adapter = loaded.adapter
@@ -53,14 +64,21 @@ class VisionProbe(GenerativeProbe):
             adapter.configure(template_options=template_options)
 
         try:
-            return await adapter.generate(
-                model=loaded.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=0.7,
-                tools=tools,
-                images=[test_image],
+            return await asyncio.wait_for(
+                adapter.generate(
+                    model=loaded.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.7,
+                    tools=tools,
+                    images=[test_image],
+                ),
+                timeout=timeout,
             )
+        except TimeoutError:
+            raise TimeoutError(
+                f"Generation timed out after {timeout}s (max_tokens={max_tokens})"
+            ) from None
         finally:
             if template_options is not None:
                 adapter.configure(template_options=None)

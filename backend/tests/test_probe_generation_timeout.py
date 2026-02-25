@@ -242,8 +242,8 @@ async def test_vision_generate_timeout():
 
     messages = [{"role": "user", "content": "Describe this image"}]
 
-    # Patch PIL.Image.new to avoid importing PIL in tests
-    with patch("mlx_manager.services.probe.vision.Image") as mock_pil:
+    # Patch PIL.Image at the PIL module level since it's imported locally inside _generate
+    with patch("PIL.Image") as mock_pil:
         mock_pil.new.return_value = MagicMock()
 
         with pytest.raises(TimeoutError) as exc_info:
