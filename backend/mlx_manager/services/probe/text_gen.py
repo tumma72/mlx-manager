@@ -16,12 +16,10 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from loguru import logger
-
 from mlx_manager.mlx_server.models.types import ModelType
 
 from .base import GenerativeProbe
-from .steps import ProbeResult, ProbeStep
+from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
@@ -57,19 +55,12 @@ class TextGenProbe(GenerativeProbe):
         result.model_family = detect_model_family(model_id)
 
         # Step 1: Estimate practical context window
-        yield ProbeStep(step="check_context", status="running")
-        try:
+        async with probe_step("check_context", "practical_max_tokens") as ctx:
+            yield ctx.running
             practical_max = _estimate_practical_max_tokens(model_id, loaded)
             result.practical_max_tokens = practical_max
-            yield ProbeStep(
-                step="check_context",
-                status="completed",
-                capability="practical_max_tokens",
-                value=practical_max,
-            )
-        except Exception as e:
-            logger.warning("Context check failed for {}: {}", model_id, e)
-            yield ProbeStep(step="check_context", status="failed", error=str(e))
+            ctx.value = practical_max
+        yield ctx.result
 
 
 def _estimate_practical_max_tokens(model_id: str, loaded: Any) -> int | None:
