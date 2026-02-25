@@ -160,11 +160,11 @@ class ProbingCoordinator:
             logger.error(f"Probe strategy failed for {model_id}: {e}")
             yield ProbeStep(step="strategy_error", status="failed", error=str(e))
 
-        # ── Step 6: Parser sweep (TEXT_GEN / VISION only) ─────────────
-        if model_type in (ModelType.TEXT_GEN, ModelType.VISION):
-            async for step in self._sweep_generative_capabilities(
-                model_id, loaded, result, strategy
-            ):
+        # ── Step 6: Parser sweep (GenerativeProbe strategies only) ───
+        from .base import GenerativeProbe
+
+        if isinstance(strategy, GenerativeProbe):
+            async for step in strategy.sweep_capabilities(model_id, loaded, result):
                 yield step
 
         # ── Step 7: Save results to DB ────────────────────────────────
@@ -225,147 +225,6 @@ class ProbingCoordinator:
             details={"result": result.model_dump()},
         )
         logger.info(f"Probe complete for {model_id}: type={result.model_type}")
-
-    # ------------------------------------------------------------------
-    # Parser sweep: thinking + tools
-    # ------------------------------------------------------------------
-
-    async def _sweep_generative_capabilities(
-        self,
-        model_id: str,
-        loaded: Any,
-        result: ProbeResult,
-        strategy: Any,
-    ) -> AsyncGenerator[ProbeStep, None]:
-        """Sweep parser/config combinations for thinking and tool support.
-
-        Uses register_profile_settings() to reconfigure the adapter for each
-        test, keeping the model loaded throughout.
-        """
-        from mlx_manager.mlx_server.models.adapters import (
-            FAMILY_REGISTRY,
-            detect_model_family,
-        )
-
-        adapter = loaded.adapter
-        tokenizer = loaded.tokenizer
-
-        # ── Family detection ──────────────────────────────────────────
-        async with probe_step("detect_family", "model_family") as ctx:
-            yield ctx.running
-            if result.model_family is None:
-                result.model_family = detect_model_family(model_id)
-
-            family_diagnostics: list[ProbeDiagnostic] = []
-            if result.model_family == "default":
-                architecture = ""
-                try:
-                    from mlx_manager.utils.model_detection import read_model_config
-
-                    config = read_model_config(model_id)
-                    if config:
-                        arch_list = config.get("architectures", [])
-                        architecture = arch_list[0] if arch_list else ""
-                except Exception:
-                    pass
-
-                diag = ProbeDiagnostic(
-                    level=DiagnosticLevel.WARNING,
-                    category=DiagnosticCategory.FAMILY,
-                    message=(
-                        f"No dedicated adapter — using DefaultAdapter. "
-                        f"Architecture '{architecture or 'unknown'}' doesn't match "
-                        f"any registered family."
-                    ),
-                    details={
-                        "architecture": architecture,
-                        "registered_families": sorted(FAMILY_REGISTRY.keys()),
-                    },
-                )
-                family_diagnostics.append(diag)
-                result.diagnostics.append(diag)
-
-            ctx.value = result.model_family
-            ctx.details = {"family": result.model_family}
-            ctx.diagnostics = family_diagnostics or None
-        yield ctx.result
-
-        # Guard: adapter + tokenizer required for generation-based probing
-        if adapter is None:
-            logger.warning(
-                "No adapter available for %s; skipping thinking and tool probes",
-                model_id,
-            )
-            yield ProbeStep(step="test_thinking", status="skipped")
-            yield ProbeStep(step="test_tools", status="skipped")
-            return
-
-        # ── Discover template parameters ──────────────────────────────
-        discovered_params: dict[str, Any] | None = None
-        if tokenizer is not None:
-            from mlx_manager.mlx_server.utils.template_params import (
-                discover_template_params,
-            )
-
-            discovered_params = discover_template_params(tokenizer)
-            if discovered_params:
-                result.template_params = discovered_params
-                logger.info(
-                    "Discovered template params for %s: %s",
-                    model_id,
-                    list(discovered_params.keys()),
-                )
-
-        # ── Thinking sweep ────────────────────────────────────────────
-        if tokenizer is not None:
-            async with probe_step("test_thinking", "supports_thinking") as ctx:
-                yield ctx.running
-                from .sweeps import sweep_thinking
-
-                supports, parser_id, diags, thinking_tags = await sweep_thinking(
-                    model_id, loaded, strategy, discovered_params, result.model_family
-                )
-                result.supports_thinking = supports
-                result.thinking_parser_id = parser_id
-                result.diagnostics.extend(diags)
-                result.discovered_thinking_tags = (
-                    [t.model_dump() for t in thinking_tags] if thinking_tags else None
-                )
-                ctx.value = supports
-                step_details: dict[str, Any] = {}
-                if thinking_tags:
-                    step_details["discovered_tags"] = [t.model_dump() for t in thinking_tags]
-                ctx.details = step_details or None
-                ctx.diagnostics = diags or None
-            yield ctx.result
-        else:
-            yield ProbeStep(step="test_thinking", status="skipped")
-
-        # ── Tool sweep ────────────────────────────────────────────────
-        if tokenizer is not None:
-            async with probe_step("test_tools", "tool_format") as ctx:
-                yield ctx.running
-                from .sweeps import sweep_tools
-
-                tool_format, tool_parser_id, diags, tool_tags = await sweep_tools(
-                    model_id, loaded, strategy, result.model_family
-                )
-                result.supports_native_tools = tool_format is not None
-                result.tool_format = tool_format
-                result.tool_parser_id = tool_parser_id
-                result.diagnostics.extend(diags)
-                result.discovered_tool_tags = (
-                    [t.model_dump() for t in tool_tags] if tool_tags else None
-                )
-                ctx.value = tool_format
-                tool_details: dict[str, Any] = {}
-                if tool_tags:
-                    tool_details["discovered_tags"] = [t.model_dump() for t in tool_tags]
-                ctx.details = tool_details or None
-                ctx.diagnostics = diags or None
-            yield ctx.result
-        else:
-            yield ProbeStep(step="test_tools", status="skipped")
 
 
 # ---------------------------------------------------------------------------
