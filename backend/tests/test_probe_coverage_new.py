@@ -470,29 +470,22 @@ async def test_text_gen_probe_context_check_exception():
 
 
 # ---------------------------------------------------------------------------
-# Tests for coordinator._sweep_generative_capabilities
-# (coordinator.py lines 246, 256-259, 288-294, 305-306)
+# Tests for GenerativeProbe.sweep_capabilities
+# (moved from ProbingCoordinator._sweep_generative_capabilities)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_no_adapter():
-    """_sweep_generative_capabilities skips thinking/tools when adapter is None (lines 288-294)."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    """sweep_capabilities skips thinking/tools when adapter is None."""
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
     mock_loaded.adapter = None  # No adapter
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
-
-    mock_strategy = MagicMock()
 
     with (
         patch(
@@ -505,9 +498,7 @@ async def test_coordinator_sweep_no_adapter():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     skipped = [s for s in steps if s.status == "skipped"]
@@ -519,21 +510,14 @@ async def test_coordinator_sweep_no_adapter():
 @pytest.mark.asyncio
 async def test_coordinator_sweep_default_family_with_architecture():
     """Default family creates diagnostic with architecture."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
     mock_loaded.adapter = None  # Skip thinking/tool tests
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
-
-    mock_strategy = MagicMock()
 
     with (
         patch(
@@ -550,9 +534,7 @@ async def test_coordinator_sweep_default_family_with_architecture():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     assert len(result.diagnostics) == 1
@@ -564,22 +546,15 @@ async def test_coordinator_sweep_default_family_with_architecture():
 @pytest.mark.asyncio
 async def test_coordinator_sweep_detects_family_when_none():
     """Detects model family when result.model_family is None."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
     mock_loaded.adapter = None
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
     result.model_family = None  # Must be None to trigger detection
-
-    mock_strategy = MagicMock()
 
     with (
         patch(
@@ -592,9 +567,7 @@ async def test_coordinator_sweep_detects_family_when_none():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     assert result.model_family == "qwen"
@@ -604,12 +577,7 @@ async def test_coordinator_sweep_detects_family_when_none():
 @pytest.mark.asyncio
 async def test_coordinator_sweep_discovers_template_params():
     """Discovers template params when tokenizer is present."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_loaded = MagicMock()
     mock_adapter = MagicMock()
@@ -622,10 +590,9 @@ async def test_coordinator_sweep_discovers_template_params():
     mock_loaded.adapter = mock_adapter
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
 
-    mock_strategy = MagicMock()
     mock_params = {"enable_thinking": {"type": "bool", "default": False}}
 
     with (
@@ -653,9 +620,7 @@ async def test_coordinator_sweep_discovers_template_params():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     assert result.template_params == mock_params
@@ -1141,13 +1106,8 @@ async def test_coordinator_sweep_tools_unknown_xml_tags():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_thinking_exception_yields_failed():
-    """_sweep_generative_capabilities handles thinking exception gracefully."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    """sweep_capabilities handles thinking exception gracefully."""
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_adapter = MagicMock()
     mock_adapter.thinking_parser = MagicMock()
@@ -1161,10 +1121,8 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
     mock_loaded.adapter = mock_adapter
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
-
-    mock_strategy = MagicMock()
 
     with (
         patch(
@@ -1190,9 +1148,7 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     thinking_steps = [s for s in steps if s.step == "test_thinking"]
@@ -1203,13 +1159,8 @@ async def test_coordinator_sweep_thinking_exception_yields_failed():
 
 @pytest.mark.asyncio
 async def test_coordinator_sweep_tools_exception_yields_failed():
-    """_sweep_generative_capabilities handles tool sweep exception gracefully."""
-    from mlx_manager.services.probe.coordinator import ProbingCoordinator
-
-    mock_pool = MagicMock()
-    mock_pool._models = {}
-    mock_pool._profile_settings = {}
-    mock_pool.register_profile_settings = MagicMock()
+    """sweep_capabilities handles tool sweep exception gracefully."""
+    from mlx_manager.services.probe.text_gen import TextGenProbe
 
     mock_adapter = MagicMock()
     mock_adapter.thinking_parser = MagicMock()
@@ -1219,10 +1170,8 @@ async def test_coordinator_sweep_tools_exception_yields_failed():
     mock_loaded.adapter = mock_adapter
     mock_loaded.tokenizer = MagicMock()
 
-    coordinator = ProbingCoordinator(mock_pool)
+    strategy = TextGenProbe()
     result = ProbeResult()
-
-    mock_strategy = MagicMock()
 
     with (
         patch(
@@ -1248,9 +1197,7 @@ async def test_coordinator_sweep_tools_exception_yields_failed():
         ),
     ):
         steps = []
-        async for step in coordinator._sweep_generative_capabilities(
-            "test/model", mock_loaded, result, mock_strategy
-        ):
+        async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     tool_steps = [s for s in steps if s.step == "test_tools"]

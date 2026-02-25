@@ -2132,8 +2132,8 @@ def test_detect_unknown_xml_tags():
 async def test_text_gen_probe_no_adapter_skips():
     """Test TextGenProbe runs static checks regardless of adapter presence.
 
-    Thinking/tool skipping when adapter is None is now handled by
-    ProbingCoordinator._sweep_generative_capabilities(). The strategy
+    Thinking/tool skipping when adapter is None is handled by
+    GenerativeProbe.sweep_capabilities(). The strategy probe() method
     only does check_context — adapter presence is irrelevant there.
     """
     from mlx_manager.services.probe import ProbeResult
@@ -2278,8 +2278,8 @@ def test_audio_probe_is_not_generative():
 async def test_vision_probe_discovers_thinking():
     """VisionProbe should run static vision checks when adapter is present.
 
-    Generative capability discovery (thinking, tools) is now handled by
-    ProbingCoordinator._sweep_generative_capabilities(), not the strategy.
+    Generative capability discovery (thinking, tools) is handled by
+    GenerativeProbe.sweep_capabilities(), not the strategy probe() method.
     This test verifies the strategy's static checks work correctly.
     """
     from mlx_manager.services.probe import ProbeResult
@@ -2347,8 +2347,8 @@ async def test_vision_probe_discovers_thinking():
 async def test_vision_probe_no_adapter_skips_generative():
     """VisionProbe should complete static checks regardless of adapter presence.
 
-    Thinking/tool skipping when adapter is None is now handled by
-    ProbingCoordinator._sweep_generative_capabilities(). The strategy
+    Thinking/tool skipping when adapter is None is handled by
+    GenerativeProbe.sweep_capabilities(). The strategy probe() method
     only does vision static checks.
     """
     from mlx_manager.services.probe import ProbeResult
