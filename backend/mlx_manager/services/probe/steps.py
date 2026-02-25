@@ -8,6 +8,8 @@ ProbeResult accumulates capabilities discovered during probing.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from enum import StrEnum
 from typing import Any
 
@@ -119,3 +121,71 @@ class ProbeResult(BaseModel):
     model_type: str | None = None
     errors: list[str] = Field(default_factory=list)
     diagnostics: list[ProbeDiagnostic] = Field(default_factory=list)
+
+
+class StepContext:
+    """Mutable context for probe step lifecycle.
+
+    Used with the probe_step() async context manager to eliminate
+    the repetitive try/yield-running/yield-completed/except/yield-failed
+    boilerplate in probe strategies.
+
+    Usage in an async generator::
+
+        async with probe_step("check_X", "cap_name") as ctx:
+            yield ctx.running  # Emit "running" step to SSE
+            result = do_work()
+            ctx.value = result
+        yield ctx.result  # Emit "completed" or "failed" step
+    """
+
+    __slots__ = ("step", "capability", "value", "details", "diagnostics", "_failed", "_error")
+
+    def __init__(self, step: str, capability: str | None = None) -> None:
+        self.step = step
+        self.capability = capability
+        self.value: Any = None
+        self.details: dict[str, Any] | None = None
+        self.diagnostics: list[ProbeDiagnostic] | None = None
+        self._failed: bool = False
+        self._error: str | None = None
+
+    @property
+    def running(self) -> ProbeStep:
+        """The 'running' step to yield before starting work."""
+        return ProbeStep(step=self.step, status="running")
+
+    @property
+    def result(self) -> ProbeStep:
+        """The 'completed' or 'failed' step to yield after the context exits."""
+        if self._failed:
+            return ProbeStep(step=self.step, status="failed", error=self._error)
+        return ProbeStep(
+            step=self.step,
+            status="completed",
+            capability=self.capability,
+            value=self.value,
+            details=self.details,
+            diagnostics=self.diagnostics,
+        )
+
+    def fail(self, error: str) -> None:
+        """Explicitly mark this step as failed (e.g. for boolean checks)."""
+        self._failed = True
+        self._error = error
+
+
+@asynccontextmanager
+async def probe_step(step: str, capability: str | None = None) -> AsyncGenerator[StepContext, None]:
+    """Async context manager for probe step lifecycle.
+
+    Catches exceptions inside the block and records them as failures.
+    The caller is responsible for yielding ``ctx.running`` (before work)
+    and ``ctx.result`` (after the block exits).
+    """
+    ctx = StepContext(step=step, capability=capability)
+    try:
+        yield ctx
+    except Exception as e:
+        ctx._failed = True
+        ctx._error = str(e)

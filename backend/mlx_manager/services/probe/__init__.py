@@ -20,6 +20,8 @@ from .steps import (
     ProbeDiagnostic,
     ProbeResult,
     ProbeStep,
+    StepContext,
+    probe_step,
 )
 
 # Register all built-in strategies on import
@@ -38,9 +40,11 @@ __all__ = [
     "ProbeDiagnostic",
     "ProbeResult",
     "ProbeStep",
+    "StepContext",
     "generate_support_report",
     "get_probe_strategy",
     "has_probe_strategy",
     "probe_model",
+    "probe_step",
     "registered_model_types",
 ]
