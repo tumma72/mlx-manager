@@ -19,6 +19,7 @@ from mlx_manager.services.probe.steps import (
     ProbeDiagnostic,
     ProbeResult,
     ProbeStep,
+    probe_step,
 )
 from mlx_manager.services.probe.strategy import ProbeStrategy
 
@@ -52,17 +53,17 @@ class ProbingCoordinator:
         original_settings = self._pool._profile_settings.get(model_id)
 
         # ── Step 1: Detect model type ─────────────────────────────────
-        yield ProbeStep(step="detect_type", status="running")
-        try:
+        async with probe_step("detect_type", "model_type") as ctx:
+            yield ctx.running
             detection = detect_model_type_detailed(model_id)
             model_type = detection.model_type
             result.model_type = model_type.value
 
-            step_details: dict[str, object] = {
+            ctx.value = model_type.value
+            ctx.details = {
                 "detection_method": detection.detection_method,
                 "architecture": detection.architecture,
             }
-            step_diagnostics: list[ProbeDiagnostic] = []
 
             if detection.detection_method == "default":
                 diag = ProbeDiagnostic(
@@ -77,20 +78,10 @@ class ProbingCoordinator:
                         "detection_method": detection.detection_method,
                     },
                 )
-                step_diagnostics.append(diag)
+                ctx.diagnostics = [diag]
                 result.diagnostics.append(diag)
-
-            yield ProbeStep(
-                step="detect_type",
-                status="completed",
-                capability="model_type",
-                value=model_type.value,
-                details=step_details,
-                diagnostics=step_diagnostics or None,
-            )
-        except Exception as e:
-            logger.error(f"Type detection failed for {model_id}: {e}")
-            yield ProbeStep(step="detect_type", status="failed", error=str(e))
+        yield ctx.result
+        if ctx._failed:
             return
 
         # ── Step 2: Audio pre-validation ──────────────────────────────
@@ -122,15 +113,12 @@ class ProbingCoordinator:
                 return
 
         # ── Step 3: Load model through normal Profile path ────────────
-        yield ProbeStep(step="load_model", status="running")
-        try:
-            # Register empty probe settings (goes through normal Profile path)
+        async with probe_step("load_model") as ctx:
+            yield ctx.running
             self._pool.register_profile_settings(model_id, ProfileSettings())
             loaded = await self._pool.get_model(model_id)
-            yield ProbeStep(step="load_model", status="completed")
-        except Exception as e:
-            logger.error("Probe failed to load model {}: {}", model_id, e)
-            yield ProbeStep(step="load_model", status="failed", error=str(e))
+        yield ctx.result
+        if ctx._failed:
             return
 
         # ── Step 3b: Force null parsers so raw output reaches sweep code ──
@@ -180,13 +168,10 @@ class ProbingCoordinator:
                 yield step
 
         # ── Step 7: Save results to DB ────────────────────────────────
-        yield ProbeStep(step="save_results", status="running")
-        try:
+        async with probe_step("save_results") as ctx:
+            yield ctx.running
             await _save_capabilities(model_id, result)
-            yield ProbeStep(step="save_results", status="completed")
-        except Exception as e:
-            logger.error(f"Failed to save probe results for {model_id}: {e}")
-            yield ProbeStep(step="save_results", status="failed", error=str(e))
+        yield ctx.result
 
         # ── Step 8: Cleanup ───────────────────────────────────────────
         # Restore original settings or unregister probe settings
@@ -196,13 +181,10 @@ class ProbingCoordinator:
             self._pool.unregister_profile_settings(model_id)
 
         if not was_preloaded:
-            yield ProbeStep(step="cleanup", status="running")
-            try:
+            async with probe_step("cleanup") as ctx:
+                yield ctx.running
                 await self._pool.unload_model(model_id)
-                yield ProbeStep(step="cleanup", status="completed")
-            except Exception as e:
-                logger.warning(f"Cleanup failed for {model_id}: {e}")
-                yield ProbeStep(step="cleanup", status="failed", error=str(e))
+            yield ctx.result
         else:
             # Restore original parsers and disable tool injection for preloaded models
             if loaded.adapter is not None and original_tool_parser is not None:
@@ -269,47 +251,44 @@ class ProbingCoordinator:
         tokenizer = loaded.tokenizer
 
         # ── Family detection ──────────────────────────────────────────
-        yield ProbeStep(step="detect_family", status="running")
-        if result.model_family is None:
-            result.model_family = detect_model_family(model_id)
+        async with probe_step("detect_family", "model_family") as ctx:
+            yield ctx.running
+            if result.model_family is None:
+                result.model_family = detect_model_family(model_id)
 
-        family_diagnostics: list[ProbeDiagnostic] = []
-        if result.model_family == "default":
-            architecture = ""
-            try:
-                from mlx_manager.utils.model_detection import read_model_config
+            family_diagnostics: list[ProbeDiagnostic] = []
+            if result.model_family == "default":
+                architecture = ""
+                try:
+                    from mlx_manager.utils.model_detection import read_model_config
 
-                config = read_model_config(model_id)
-                if config:
-                    arch_list = config.get("architectures", [])
-                    architecture = arch_list[0] if arch_list else ""
-            except Exception:
-                pass
+                    config = read_model_config(model_id)
+                    if config:
+                        arch_list = config.get("architectures", [])
+                        architecture = arch_list[0] if arch_list else ""
+                except Exception:
+                    pass
 
-            diag = ProbeDiagnostic(
-                level=DiagnosticLevel.WARNING,
-                category=DiagnosticCategory.FAMILY,
-                message=(
-                    f"No dedicated adapter — using DefaultAdapter. "
-                    f"Architecture '{architecture or 'unknown'}' doesn't match "
-                    f"any registered family."
-                ),
-                details={
-                    "architecture": architecture,
-                    "registered_families": sorted(FAMILY_REGISTRY.keys()),
-                },
-            )
-            family_diagnostics.append(diag)
-            result.diagnostics.append(diag)
+                diag = ProbeDiagnostic(
+                    level=DiagnosticLevel.WARNING,
+                    category=DiagnosticCategory.FAMILY,
+                    message=(
+                        f"No dedicated adapter — using DefaultAdapter. "
+                        f"Architecture '{architecture or 'unknown'}' doesn't match "
+                        f"any registered family."
+                    ),
+                    details={
+                        "architecture": architecture,
+                        "registered_families": sorted(FAMILY_REGISTRY.keys()),
+                    },
+                )
+                family_diagnostics.append(diag)
+                result.diagnostics.append(diag)
 
-        yield ProbeStep(
-            step="detect_family",
-            status="completed",
-            capability="model_family",
-            value=result.model_family,
-            details={"family": result.model_family},
-            diagnostics=family_diagnostics or None,
-        )
+            ctx.value = result.model_family
+            ctx.details = {"family": result.model_family}
+            ctx.diagnostics = family_diagnostics or None
+        yield ctx.result
 
         # Guard: adapter + tokenizer required for generation-based probing
         if adapter is None:
@@ -339,8 +318,8 @@ class ProbingCoordinator:
 
         # ── Thinking sweep ────────────────────────────────────────────
         if tokenizer is not None:
-            yield ProbeStep(step="test_thinking", status="running")
-            try:
+            async with probe_step("test_thinking", "supports_thinking") as ctx:
+                yield ctx.running
                 supports, parser_id, diags, thinking_tags = await self._sweep_thinking(
                     model_id, loaded, strategy, discovered_params
                 )
@@ -350,27 +329,20 @@ class ProbingCoordinator:
                 result.discovered_thinking_tags = (
                     [t.model_dump() for t in thinking_tags] if thinking_tags else None
                 )
+                ctx.value = supports
                 step_details: dict[str, Any] = {}
                 if thinking_tags:
                     step_details["discovered_tags"] = [t.model_dump() for t in thinking_tags]
-                yield ProbeStep(
-                    step="test_thinking",
-                    status="completed",
-                    capability="supports_thinking",
-                    value=supports,
-                    details=step_details or None,
-                    diagnostics=diags or None,
-                )
-            except Exception as e:
-                logger.warning("Thinking test failed for %s: %s", model_id, e)
-                yield ProbeStep(step="test_thinking", status="failed", error=str(e))
+                ctx.details = step_details or None
+                ctx.diagnostics = diags or None
+            yield ctx.result
         else:
             yield ProbeStep(step="test_thinking", status="skipped")
 
         # ── Tool sweep ────────────────────────────────────────────────
         if tokenizer is not None:
-            yield ProbeStep(step="test_tools", status="running")
-            try:
+            async with probe_step("test_tools", "tool_format") as ctx:
+                yield ctx.running
                 tool_format, tool_parser_id, diags, tool_tags = await self._sweep_tools(
                     model_id, loaded, strategy
                 )
@@ -381,20 +353,13 @@ class ProbingCoordinator:
                 result.discovered_tool_tags = (
                     [t.model_dump() for t in tool_tags] if tool_tags else None
                 )
+                ctx.value = tool_format
                 tool_details: dict[str, Any] = {}
                 if tool_tags:
                     tool_details["discovered_tags"] = [t.model_dump() for t in tool_tags]
-                yield ProbeStep(
-                    step="test_tools",
-                    status="completed",
-                    capability="tool_format",
-                    value=tool_format,
-                    details=tool_details or None,
-                    diagnostics=diags or None,
-                )
-            except Exception as e:
-                logger.warning("Tool verification failed for %s: %s", model_id, e)
-                yield ProbeStep(step="test_tools", status="failed", error=str(e))
+                ctx.details = tool_details or None
+                ctx.diagnostics = diags or None
+            yield ctx.result
         else:
             yield ProbeStep(step="test_tools", status="skipped")
 

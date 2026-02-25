@@ -15,7 +15,7 @@ from loguru import logger
 from mlx_manager.mlx_server.models.types import ModelType
 
 from .base import BaseProbe
-from .steps import ProbeResult, ProbeStep
+from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
@@ -34,74 +34,44 @@ class EmbeddingsProbe(BaseProbe):
         result.model_type = ModelType.EMBEDDINGS
 
         # Step 1: Generate a test embedding and measure dimensions
-        yield ProbeStep(step="test_encode", status="running")
-        try:
+        async with probe_step("test_encode", "embedding_dimensions") as ctx:
+            yield ctx.running
             embedding = await _encode_text(loaded, "hello")
             if embedding is not None:
                 result.embedding_dimensions = len(embedding)
-                yield ProbeStep(
-                    step="test_encode",
-                    status="completed",
-                    capability="embedding_dimensions",
-                    value=len(embedding),
-                )
+                ctx.value = len(embedding)
             else:
-                yield ProbeStep(
-                    step="test_encode",
-                    status="failed",
-                    error="Encoding returned empty result",
-                )
-        except Exception as e:
-            logger.warning(f"Encode test failed for {model_id}: {e}")
-            yield ProbeStep(step="test_encode", status="failed", error=str(e))
+                ctx.fail("Encoding returned empty result")
+        yield ctx.result
+        if ctx._failed:
             return  # Can't continue if encoding fails
 
         # Step 2: Check L2 normalization
-        yield ProbeStep(step="check_normalization", status="running")
-        try:
+        async with probe_step("check_normalization", "is_normalized") as ctx:
+            yield ctx.running
             if embedding is not None:
                 norm = math.sqrt(sum(x * x for x in embedding))
                 is_normalized = abs(norm - 1.0) < 0.01
                 result.is_normalized = is_normalized
-                yield ProbeStep(
-                    step="check_normalization",
-                    status="completed",
-                    capability="is_normalized",
-                    value=is_normalized,
-                )
-        except Exception as e:
-            logger.warning(f"Normalization check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_normalization", status="failed", error=str(e))
+                ctx.value = is_normalized
+        yield ctx.result
 
         # Step 3: Read max sequence length from config
-        yield ProbeStep(step="check_max_length", status="running")
-        try:
+        async with probe_step("check_max_length", "max_sequence_length") as ctx:
+            yield ctx.running
             max_len = _get_max_sequence_length(model_id)
             result.max_sequence_length = max_len
-            yield ProbeStep(
-                step="check_max_length",
-                status="completed",
-                capability="max_sequence_length",
-                value=max_len,
-            )
-        except Exception as e:
-            logger.warning(f"Max length check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_max_length", status="failed", error=str(e))
+            ctx.value = max_len
+        yield ctx.result
 
         # Step 4: Validate similarity ordering
-        yield ProbeStep(step="test_similarity", status="running")
-        try:
+        async with probe_step("test_similarity", "similarity_valid") as ctx:
+            yield ctx.running
             similarity_ok = await _test_similarity_ordering(loaded)
-            yield ProbeStep(
-                step="test_similarity",
-                status="completed" if similarity_ok else "failed",
-                capability="similarity_valid",
-                value=similarity_ok,
-                error=None if similarity_ok else "Similarity ordering incorrect",
-            )
-        except Exception as e:
-            logger.warning(f"Similarity test failed for {model_id}: {e}")
-            yield ProbeStep(step="test_similarity", status="failed", error=str(e))
+            ctx.value = similarity_ok
+            if not similarity_ok:
+                ctx.fail("Similarity ordering incorrect")
+        yield ctx.result
 
 
 async def _encode_text(loaded: LoadedModel, text: str) -> list[float] | None:

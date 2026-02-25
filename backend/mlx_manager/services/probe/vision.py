@@ -15,7 +15,7 @@ from loguru import logger
 from mlx_manager.mlx_server.models.types import ModelType
 
 from .base import GenerativeProbe
-from .steps import ProbeResult, ProbeStep
+from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.ir import TextResult
@@ -77,65 +77,36 @@ class VisionProbe(GenerativeProbe):
         result.model_type = ModelType.VISION
 
         # Step 1: Validate image processor works with a synthetic image
-        yield ProbeStep(step="check_processor", status="running")
-        try:
+        async with probe_step("check_processor") as ctx:
+            yield ctx.running
             processor_ok = _check_processor(loaded)
-            if processor_ok:
-                yield ProbeStep(step="check_processor", status="completed")
-            else:
-                yield ProbeStep(
-                    step="check_processor",
-                    status="failed",
-                    error="Processor could not handle test image",
-                )
-        except Exception as e:
-            logger.warning(f"Processor check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_processor", status="failed", error=str(e))
+            if not processor_ok:
+                ctx.fail("Processor could not handle test image")
+        yield ctx.result
 
         # Step 2: Check multi-image support from config
-        yield ProbeStep(step="check_multi_image", status="running")
-        try:
+        async with probe_step("check_multi_image", "supports_multi_image") as ctx:
+            yield ctx.running
             multi_image = _check_multi_image(model_id)
             result.supports_multi_image = multi_image
-            yield ProbeStep(
-                step="check_multi_image",
-                status="completed",
-                capability="supports_multi_image",
-                value=multi_image,
-            )
-        except Exception as e:
-            logger.warning(f"Multi-image check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_multi_image", status="failed", error=str(e))
+            ctx.value = multi_image
+        yield ctx.result
 
         # Step 3: Check video support from config
-        yield ProbeStep(step="check_video", status="running")
-        try:
+        async with probe_step("check_video", "supports_video") as ctx:
+            yield ctx.running
             video = _check_video_support(model_id)
             result.supports_video = video
-            yield ProbeStep(
-                step="check_video",
-                status="completed",
-                capability="supports_video",
-                value=video,
-            )
-        except Exception as e:
-            logger.warning(f"Video check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_video", status="failed", error=str(e))
+            ctx.value = video
+        yield ctx.result
 
         # Step 4: Estimate practical context window
-        yield ProbeStep(step="check_context", status="running")
-        try:
+        async with probe_step("check_context", "practical_max_tokens") as ctx:
+            yield ctx.running
             practical_max = _estimate_vision_max_tokens(model_id, loaded)
             result.practical_max_tokens = practical_max
-            yield ProbeStep(
-                step="check_context",
-                status="completed",
-                capability="practical_max_tokens",
-                value=practical_max,
-            )
-        except Exception as e:
-            logger.warning(f"Context check failed for {model_id}: {e}")
-            yield ProbeStep(step="check_context", status="failed", error=str(e))
+            ctx.value = practical_max
+        yield ctx.result
 
 
 def _messages_to_text(messages: list[dict]) -> str:

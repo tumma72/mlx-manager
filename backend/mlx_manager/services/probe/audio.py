@@ -17,7 +17,7 @@ from loguru import logger
 from mlx_manager.mlx_server.models.types import ModelType
 
 from .base import BaseProbe
-from .steps import ProbeResult, ProbeStep
+from .steps import ProbeResult, ProbeStep, probe_step
 
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.pool import LoadedModel
@@ -46,49 +46,39 @@ class AudioProbe(BaseProbe):
         result.model_type = ModelType.AUDIO
 
         # Step 1: Detect audio capabilities (TTS, STT, or both)
-        yield ProbeStep(step="detect_audio_type", status="running")
-        try:
+        async with probe_step("detect_audio_type", "supports_tts") as ctx:
+            yield ctx.running
             is_tts, is_stt, audio_family = _detect_audio_capabilities(model_id)
             result.supports_tts = is_tts
             result.supports_stt = is_stt
             if audio_family is not None:
                 result.model_family = audio_family
-            yield ProbeStep(
-                step="detect_audio_type",
-                status="completed",
-                capability="supports_tts",
-                value=is_tts,
-            )
-            yield ProbeStep(
-                step="detect_audio_type",
-                status="completed",
-                capability="supports_stt",
-                value=is_stt,
-            )
-        except Exception as e:
-            logger.warning(f"Audio type detection failed for {model_id}: {e}")
-            yield ProbeStep(step="detect_audio_type", status="failed", error=str(e))
+            ctx.value = is_tts
+        yield ctx.result
+        if ctx._failed:
             return  # Can't continue without knowing the type
+        # Second capability from same detection
+        yield ProbeStep(
+            step="detect_audio_type",
+            status="completed",
+            capability="supports_stt",
+            value=is_stt,
+        )
 
         # Step 2: Test TTS if supported
         tts_audio_bytes: bytes | None = None
         if is_tts:
-            yield ProbeStep(step="test_tts", status="running")
-            try:
+            async with probe_step("test_tts") as ctx:
+                yield ctx.running
                 tts_ok, audio_bytes = await _test_tts(loaded)
                 audio_b64 = None
                 if tts_ok and audio_bytes:
                     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
                     tts_audio_bytes = audio_bytes
-                yield ProbeStep(
-                    step="test_tts",
-                    status="completed" if tts_ok else "failed",
-                    value=audio_b64,
-                    error=None if tts_ok else "TTS generation returned empty audio",
-                )
-            except Exception as e:
-                logger.warning(f"TTS test failed for {model_id}: {e}")
-                yield ProbeStep(step="test_tts", status="failed", error=str(e))
+                ctx.value = audio_b64
+                if not tts_ok:
+                    ctx.fail("TTS generation returned empty audio")
+            yield ctx.result
         else:
             yield ProbeStep(step="test_tts", status="skipped")
 
@@ -96,26 +86,18 @@ class AudioProbe(BaseProbe):
         if is_stt:
             # Use TTS output from step 2, or the pre-generated fixture
             stt_input = tts_audio_bytes or _load_stt_test_wav()
-
-            yield ProbeStep(step="test_stt", status="running")
-            try:
+            async with probe_step("test_stt") as ctx:
+                yield ctx.running
                 stt_ok, transcript, used_audio = await _test_stt(loaded, stt_input)
-
                 stt_value: dict[str, Any] | None = None
                 if stt_ok and transcript:
                     stt_value = {"transcript": transcript}
                     if used_audio is not None:
                         stt_value["audio_b64"] = base64.b64encode(used_audio).decode("ascii")
-
-                yield ProbeStep(
-                    step="test_stt",
-                    status="completed" if stt_ok else "failed",
-                    value=stt_value,
-                    error=None if stt_ok else "STT transcription returned empty text",
-                )
-            except Exception as e:
-                logger.warning(f"STT test failed for {model_id}: {e}")
-                yield ProbeStep(step="test_stt", status="failed", error=str(e))
+                ctx.value = stt_value
+                if not stt_ok:
+                    ctx.fail("STT transcription returned empty text")
+            yield ctx.result
         else:
             yield ProbeStep(step="test_stt", status="skipped")
 
