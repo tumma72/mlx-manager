@@ -258,7 +258,14 @@ class ProbingCoordinator:
             status="completed",
             details={"result": result.model_dump()},
         )
-        logger.info(f"Probe complete for {model_id}: type={result.model_type}")
+        logger.info(
+            "Probe complete for %s: type=%s, family=%s, tool=%s, think=%s",
+            model_id,
+            result.model_type,
+            result.model_family,
+            result.tool_parser_id,
+            result.thinking_parser_id,
+        )
 
 
 # ---------------------------------------------------------------------------

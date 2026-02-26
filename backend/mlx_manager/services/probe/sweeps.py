@@ -256,6 +256,8 @@ async def sweep_tools(
         _build_generic_tool_prompt,
         _discover_and_map_tags,
         _has_tokenization_artifacts,
+        _prioritize_parsers,
+        get_family_tool_parser_id,
     )
 
     diagnostics: list[ProbeDiagnostic] = []
@@ -263,6 +265,7 @@ async def sweep_tools(
     tokenizer = loaded.tokenizer
     last_output: str | None = None
     all_discovered_tags: list[Any] = []
+    family_tool_id = get_family_tool_parser_id(family)
 
     # ── Phase 1: CHALLENGE (generic injection) ────────────────────
     generic_prompt = _build_generic_tool_prompt(_TOOL_PROBE_TOOL)
@@ -319,9 +322,6 @@ async def sweep_tools(
             matched_parser_ids.update(tag.matched_parsers)
 
         # Try tag-matched parsers first (highest confidence)
-        from .base import _prioritize_parsers, get_family_tool_parser_id
-
-        family_tool_id = get_family_tool_parser_id(family)
         if matched_parser_ids:
             for pid in _prioritize_parsers(matched_parser_ids, family_tool_id):
                 if pid in TOOL_PARSERS:
@@ -361,8 +361,22 @@ async def sweep_tools(
                     if (t.name, t.style) not in existing_keys:
                         all_discovered_tags.append(t)
 
+            # Collect tag-matched parsers from template output for prioritization
+            template_matched: set[str] = set()
+            for t in template_tags:
+                template_matched.update(t.matched_parsers)
+
+            # Try tag-matched parsers first (family-aware order)
+            if template_matched:
+                for pid in _prioritize_parsers(template_matched, family_tool_id):
+                    if pid in TOOL_PARSERS:
+                        if TOOL_PARSERS[pid]().validates(template_output, "get_weather"):
+                            logger.info("Tool probe: template delivery verified (parser=%s)", pid)
+                            return ("template", pid, diagnostics, all_discovered_tags)
+
+            # Sweep remaining parsers not covered by tag discovery
             for parser_id, parser_cls in TOOL_PARSERS.items():
-                if parser_id == "null":
+                if parser_id == "null" or parser_id in template_matched:
                     continue
                 if parser_cls().validates(template_output, "get_weather"):
                     logger.info(
