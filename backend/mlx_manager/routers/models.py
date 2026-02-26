@@ -648,6 +648,10 @@ async def get_model_capabilities(
 async def probe_model_capabilities(
     model_id: str,
     current_user: Annotated[User, Depends(get_current_user_from_token)],
+    include_report: bool = Query(
+        False,
+        description="Include markdown diagnostic report as a probe_report SSE event before [DONE]",
+    ),
 ):
     """Probe a model's capabilities (SSE stream).
 
@@ -656,12 +660,42 @@ async def probe_model_capabilities(
     in the database for future use.
 
     Requires JWT token as query parameter (same pattern as download progress).
+
+    When ``include_report=true``, a final ``probe_report`` SSE event is emitted
+    before ``[DONE]`` containing a markdown diagnostic report suitable for
+    GitHub issue reports.
     """
-    from mlx_manager.services.probe import probe_model
+    from mlx_manager.services.probe import (
+        ProbeResult,
+        ProbeStep,
+        generate_support_report,
+        probe_model,
+    )
 
     async def generate():
+        steps_acc: list[ProbeStep] = []
+
         async for step in probe_model(model_id):
+            if include_report:
+                steps_acc.append(step)
             yield step.to_sse()
+
+        if include_report and steps_acc:
+            # Extract ProbeResult from the probe_complete step details
+            result = ProbeResult()
+            for s in steps_acc:
+                if s.step == "probe_complete" and s.details and "result" in s.details:
+                    result = ProbeResult(**s.details["result"])
+                    break
+
+            report_md = generate_support_report(model_id, result, steps_acc)
+            report_step = ProbeStep(
+                step="probe_report",
+                status="completed",
+                details={"report": report_md},
+            )
+            yield report_step.to_sse()
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
