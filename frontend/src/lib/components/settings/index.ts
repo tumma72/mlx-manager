@@ -6,4 +6,5 @@ export { default as RuleCard } from "./RuleCard.svelte";
 export { default as RuleForm } from "./RuleForm.svelte";
 export { default as RuleTestInput } from "./RuleTestInput.svelte";
 export { default as TimeoutSettings } from "./TimeoutSettings.svelte";
+export { default as HuggingFaceSettings } from "./HuggingFaceSettings.svelte";
 export { default as AuditLogPanel } from "./AuditLogPanel.svelte";

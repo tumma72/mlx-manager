@@ -117,6 +117,7 @@ async def search_models(
     sort: str = "downloads",
     limit: int = 20,
     timeout: float = DEFAULT_TIMEOUT,
+    token: str | None = None,
 ) -> list[ModelInfo]:
     """Search for MLX-optimized models on HuggingFace Hub.
 
@@ -133,6 +134,7 @@ async def search_models(
         sort: Sort field (downloads, likes, lastModified)
         limit: Maximum number of results
         timeout: Request timeout in seconds
+        token: Optional HuggingFace API token for authenticated requests
 
     Returns:
         List of ModelInfo objects with model metadata and accurate sizes.
@@ -151,7 +153,8 @@ async def search_models(
     if author:
         params["author"] = author
 
-    async with httpx.AsyncClient() as client:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(headers=headers) as client:
         # Step 1: Fetch search results
         try:
             response = await client.get(url, params=params, timeout=timeout)
@@ -226,6 +229,7 @@ def get_model_size_gb(model: ModelInfo) -> float:
 async def fetch_remote_config(
     model_id: str,
     timeout: float = 10.0,
+    token: str | None = None,
 ) -> dict[str, object] | None:
     """Fetch config.json from a HuggingFace model repository.
 
@@ -234,14 +238,16 @@ async def fetch_remote_config(
     Args:
         model_id: HuggingFace model ID (e.g., "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
         timeout: Request timeout in seconds
+        token: Optional HuggingFace API token for authenticated requests
 
     Returns:
         Parsed config.json as a dictionary, or None if not available.
     """
     url = f"https://huggingface.co/{model_id}/resolve/main/config.json"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(headers=headers) as client:
             response = await client.get(url, timeout=timeout)
             if response.status_code == 200:
                 data: dict[str, object] = response.json()

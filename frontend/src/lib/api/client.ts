@@ -636,6 +636,44 @@ export const settings = {
     return handleResponse(res);
   },
 
+  // HuggingFace token
+  getHuggingFaceStatus: async (): Promise<{ configured: boolean }> => {
+    const res = await fetch(`${API_BASE}/settings/huggingface`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  saveHuggingFaceToken: async (
+    token: string,
+  ): Promise<{ configured: boolean }> => {
+    const res = await fetch(`${API_BASE}/settings/huggingface`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ token }),
+    });
+    return handleResponse(res);
+  },
+
+  deleteHuggingFaceToken: async (): Promise<void> => {
+    const res = await fetch(`${API_BASE}/settings/huggingface`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
+  testHuggingFaceToken: async (): Promise<{
+    success: boolean;
+    username: string;
+  }> => {
+    const res = await fetch(`${API_BASE}/settings/huggingface/test`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    return handleResponse(res);
+  },
+
   // Timeouts
   getTimeoutSettings: async (): Promise<TimeoutSettings> => {
     const res = await fetch(`${API_BASE}/settings/timeouts`, {

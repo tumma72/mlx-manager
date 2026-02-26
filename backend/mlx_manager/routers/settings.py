@@ -7,6 +7,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
@@ -696,3 +697,119 @@ async def update_timeout_settings(
 
     # Return updated settings
     return await get_timeout_settings(current_user, session)
+
+
+# ============================================================================
+# HuggingFace Token Endpoints
+# ============================================================================
+
+
+class HuggingFaceTokenUpdate(BaseModel):
+    """Request body for saving a HuggingFace token."""
+
+    token: str
+
+
+@router.get("/huggingface")
+async def get_huggingface_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """Check if a HuggingFace token is configured (never returns the token itself)."""
+    result = await session.execute(select(Setting).where(Setting.key == "huggingface_token"))
+    setting = result.scalar_one_or_none()
+    return {"configured": setting is not None and bool(setting.value)}
+
+
+@router.put("/huggingface")
+async def save_huggingface_token(
+    current_user: Annotated[User, Depends(get_current_user)],
+    data: HuggingFaceTokenUpdate,
+    session: AsyncSession = Depends(get_db),
+):
+    """Save (encrypt) a HuggingFace token."""
+    token = data.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required")
+
+    encrypted = encrypt_api_key(token)
+
+    result = await session.execute(select(Setting).where(Setting.key == "huggingface_token"))
+    setting = result.scalar_one_or_none()
+
+    if setting:
+        setting.value = encrypted
+        setting.updated_at = datetime.now(tz=UTC)
+    else:
+        setting = Setting(key="huggingface_token", value=encrypted)
+        session.add(setting)
+
+    await session.commit()
+    return {"configured": True}
+
+
+@router.delete("/huggingface", status_code=204)
+async def delete_huggingface_token(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """Remove the stored HuggingFace token."""
+    result = await session.execute(select(Setting).where(Setting.key == "huggingface_token"))
+    setting = result.scalar_one_or_none()
+
+    if setting:
+        await session.delete(setting)
+        await session.commit()
+
+
+@router.post("/huggingface/test")
+async def test_huggingface_token(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: AsyncSession = Depends(get_db),
+):
+    """Test the stored HuggingFace token by calling the HF API."""
+    result = await session.execute(select(Setting).where(Setting.key == "huggingface_token"))
+    setting = result.scalar_one_or_none()
+
+    if not setting or not setting.value:
+        raise HTTPException(status_code=404, detail="No HuggingFace token configured")
+
+    try:
+        token = decrypt_api_key(setting.value)
+    except InvalidToken:
+        raise HTTPException(
+            status_code=400,
+            detail="Token cannot be decrypted. Please re-enter your token.",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://huggingface.co/api/whoami-v2",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            if response.status_code == 200:
+                user_info = response.json()
+                username = user_info.get("name", "unknown")
+                return {"success": True, "username": username}
+            elif response.status_code == 401:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid token - authentication failed",
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"HuggingFace API returned status {response.status_code}",
+                )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not connect to HuggingFace API",
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=400,
+            detail="Connection to HuggingFace API timed out",
+        )

@@ -5,6 +5,7 @@
 		ModelPoolSettings,
 		RoutingRulesSection,
 		TimeoutSettings,
+		HuggingFaceSettings,
 		AuditLogPanel
 	} from '$lib/components/settings';
 
@@ -27,6 +28,12 @@
 				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
 			>
 				Providers
+			</Tabs.Trigger>
+			<Tabs.Trigger
+				value="huggingface"
+				class="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+			>
+				HuggingFace
 			</Tabs.Trigger>
 			<Tabs.Trigger
 				value="pool"
@@ -63,6 +70,18 @@
 				</p>
 			</div>
 			<ProviderSection />
+		</Tabs.Content>
+
+		<!-- HuggingFace Tab -->
+		<Tabs.Content value="huggingface" class="mt-6 space-y-4">
+			<div>
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">HuggingFace</h2>
+				<p class="text-sm text-muted-foreground mb-4">
+					Configure your HuggingFace access token for authenticated model downloads. Without a
+					token, public rate limits apply.
+				</p>
+			</div>
+			<HuggingFaceSettings />
 		</Tabs.Content>
 
 		<!-- Profiles Pool Tab -->

@@ -22,6 +22,30 @@ from mlx_manager.services.hf_api import (
     search_models,
 )
 
+
+async def get_hf_token() -> str | None:
+    """Retrieve decrypted HuggingFace token from settings, if configured."""
+    from sqlmodel import select
+
+    from mlx_manager.database import async_session
+    from mlx_manager.models import Setting
+    from mlx_manager.services.encryption_service import DecryptionError, decrypt_api_key
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Setting).where(Setting.key == "huggingface_token")
+            )
+            setting = result.scalar_one_or_none()
+            if setting and setting.value:
+                return decrypt_api_key(setting.value)
+    except DecryptionError:
+        logger.warning("Failed to decrypt HuggingFace token - please re-enter in Settings")
+    except Exception as e:
+        logger.debug("No HuggingFace token configured: {}", e)
+    return None
+
+
 # Suppress huggingface_hub warnings at module level
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
@@ -159,11 +183,13 @@ class HuggingFaceClient:
         # Fetch extra for filtering, but cap at reasonable limit
         fetch_limit = min(limit * 2, 100) if max_size_gb else limit
 
+        token = await get_hf_token()
         models = await search_models(
             query=query,
             author=settings.hf_organization,
             sort="downloads",
             limit=fetch_limit,
+            token=token,
         )
 
         results: list[ModelSearchResult] = []
@@ -267,6 +293,7 @@ class HuggingFaceClient:
         )
 
         loop = asyncio.get_event_loop()
+        token = await get_hf_token()
 
         # Suppress deprecation warnings
         with warnings.catch_warnings():
@@ -280,7 +307,10 @@ class HuggingFaceClient:
                     loop.run_in_executor(
                         None,
                         lambda: snapshot_download(
-                            repo_id=model_id, dry_run=True, tqdm_class=SilentProgress
+                            repo_id=model_id,
+                            dry_run=True,
+                            tqdm_class=SilentProgress,
+                            token=token,
                         ),
                     ),
                     timeout=30.0,  # 30 second timeout for size check
@@ -330,7 +360,7 @@ class HuggingFaceClient:
         logger.info("Starting actual download for {}", model_id)
         download_task = loop.run_in_executor(
             None,
-            lambda: self._download_with_progress(model_id, cancel_event),
+            lambda: self._download_with_progress(model_id, cancel_event, token),
         )
 
         # Calculate directory path for progress polling
@@ -411,7 +441,10 @@ class HuggingFaceClient:
             yield DownloadStatus(status=DownloadStatusEnum.FAILED, model_id=model_id, error=str(e))
 
     def _download_with_progress(
-        self, model_id: str, cancel_event: threading.Event | None = None
+        self,
+        model_id: str,
+        cancel_event: threading.Event | None = None,
+        token: str | None = None,
     ) -> str:
         """Perform download (runs in executor).
 
@@ -420,13 +453,14 @@ class HuggingFaceClient:
             cancel_event: Optional threading.Event for cancellation.
                 When set, the tqdm progress callback will raise
                 DownloadCancelledError, interrupting snapshot_download.
+            token: Optional HuggingFace API token for authenticated downloads.
         """
         progress_class = make_cancellable_progress(cancel_event)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             warnings.filterwarnings("ignore", category=FutureWarning)
 
-            return snapshot_download(repo_id=model_id, tqdm_class=progress_class)
+            return snapshot_download(repo_id=model_id, tqdm_class=progress_class, token=token)
 
     def _get_directory_size(self, path: Path) -> int:
         """Get total size of downloaded data in HF cache directory.
