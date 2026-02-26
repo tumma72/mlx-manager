@@ -166,6 +166,11 @@ class HuggingFaceClient:
     def __init__(self) -> None:
         self.cache_dir = settings.hf_cache_path
 
+    def _model_cache_dir(self, model_id: str) -> Path:
+        """Return the HF cache directory for a model (models--author--name)."""
+        cache_name = f"models--{model_id.replace('/', '--')}"
+        return self.cache_dir / cache_name
+
     async def search_mlx_models(
         self,
         query: str,
@@ -224,27 +229,52 @@ class HuggingFaceClient:
 
         return results
 
+    def has_incomplete_blobs(self, model_id: str) -> bool:
+        """Check if a model has .incomplete blob files in the HF cache.
+
+        HuggingFace Hub creates .incomplete files for blobs that are still
+        being downloaded. Their presence means the model is not fully downloaded.
+        """
+        blobs_dir = self._model_cache_dir(model_id) / "blobs"
+        if not blobs_dir.exists():
+            return False
+        try:
+            return any(f.suffix == ".incomplete" for f in blobs_dir.iterdir())
+        except Exception:
+            return False
+
     def _is_downloaded(self, model_id: str) -> bool:
-        """Check if model is in local cache."""
+        """Check if model is fully downloaded in local cache.
+
+        A model is considered downloaded only if it has a snapshots directory
+        AND has no .incomplete blob files (which indicate a partial download).
+        """
         if settings.offline_mode:
             return False
 
-        cache_name = f"models--{model_id.replace('/', '--')}"
-        model_path = self.cache_dir / cache_name
-
-        # Check for snapshots directory which indicates complete download
-        snapshots_dir = model_path / "snapshots"
+        # Check for snapshots directory which indicates download was started
+        snapshots_dir = self._model_cache_dir(model_id) / "snapshots"
         if snapshots_dir.exists():
             try:
-                return any(snapshots_dir.iterdir())
+                has_snapshots = any(snapshots_dir.iterdir())
             except Exception as e:
                 logger.error("Failed to check snapshots directory for {}: {}", model_id, e)
+                return False
+
+            if not has_snapshots:
+                return False
+
+            # Reject models with incomplete blob files
+            if self.has_incomplete_blobs(model_id):
+                logger.debug("Model {} has incomplete blob files — not fully downloaded", model_id)
+                return False
+
+            return True
         return False
 
     def get_local_path(self, model_id: str) -> str | None:
         """Get the local path for a downloaded model."""
-        cache_name = f"models--{model_id.replace('/', '--')}"
-        model_path = self.cache_dir / cache_name / "snapshots"
+        model_path = self._model_cache_dir(model_id) / "snapshots"
 
         if model_path.exists():
             # Get the latest snapshot
@@ -364,8 +394,7 @@ class HuggingFaceClient:
         )
 
         # Calculate directory path for progress polling
-        cache_name = f"models--{model_id.replace('/', '--')}"
-        download_dir = self.cache_dir / cache_name
+        download_dir = self._model_cache_dir(model_id)
         logger.debug("Polling download directory: {}", download_dir)
 
         # Poll directory size while downloading
@@ -553,14 +582,61 @@ class HuggingFaceClient:
 
         return models
 
+    def list_incomplete_models(self) -> list[tuple[str, int]]:
+        """Scan HF cache for models with incomplete downloads.
+
+        Returns a list of (model_id, downloaded_bytes) for models that have
+        .incomplete blob files — indicating a partial download that was started
+        outside of MLX Manager or interrupted without cleanup.
+
+        downloaded_bytes is the sum of all complete blob sizes (the known-good
+        portion). The true total is unknown without querying the HF API, so
+        total_bytes is left for the download_model() dry-run to determine.
+        """
+        results: list[tuple[str, int]] = []
+
+        if not self.cache_dir.exists():
+            return results
+
+        for item in self.cache_dir.iterdir():
+            if not item.name.startswith("models--"):
+                continue
+
+            model_id = item.name.replace("models--", "").replace("--", "/")
+
+            # Filter by organization (same logic as list_local_models)
+            if settings.hf_organization:
+                if not model_id.startswith(f"{settings.hf_organization}/"):
+                    continue
+            else:
+                model_name_lower = model_id.lower()
+                if not ("lmstudio-community/" in model_name_lower or "mlx" in model_name_lower):
+                    continue
+
+            if not self.has_incomplete_blobs(model_id):
+                continue
+
+            # Sum only complete blob sizes (known-good data)
+            blobs_dir = item / "blobs"
+            downloaded_bytes = 0
+            try:
+                for blob in blobs_dir.iterdir():
+                    if blob.is_file() and blob.suffix != ".incomplete":
+                        downloaded_bytes += blob.stat().st_size
+            except Exception:
+                pass
+
+            results.append((model_id, downloaded_bytes))
+            logger.info("Detected incomplete download in HF cache: {}", model_id)
+
+        return results
+
     async def delete_model(self, model_id: str) -> bool:
         """Delete a model from local cache."""
         if settings.offline_mode:
             return False
 
-        cache_name = f"models--{model_id.replace('/', '--')}"
-        model_path = self.cache_dir / cache_name
-
+        model_path = self._model_cache_dir(model_id)
         if model_path.exists():
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: shutil.rmtree(model_path))

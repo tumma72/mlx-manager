@@ -11,14 +11,13 @@ import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, Mapping
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic import BaseModel
 
 from mlx_manager.mlx_server.models.types import ModelType
-from mlx_manager.mlx_server.parsers import ToolCallParser
 
 from .steps import (
     ProbeResult,
@@ -29,6 +28,22 @@ from .steps import (
 if TYPE_CHECKING:
     from mlx_manager.mlx_server.models.ir import TextResult
     from mlx_manager.mlx_server.models.pool import LoadedModel
+
+
+@runtime_checkable
+class StreamMarkerParser(Protocol):
+    """Protocol for parsers that expose stream_markers and parser_id.
+
+    Both ToolCallParser and ThinkingParser satisfy this protocol,
+    allowing _discover_and_map_tags() and _build_marker_to_parsers()
+    to work with either parser registry.
+    """
+
+    @property
+    def parser_id(self) -> str: ...
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]: ...
 
 
 class BaseProbe(ABC):
@@ -170,7 +185,7 @@ def _detect_all_tags(output: str) -> list[DetectedTag]:
 
 
 def _build_marker_to_parsers(
-    parsers: dict[str, type[ToolCallParser]],
+    parsers: Mapping[str, type[StreamMarkerParser]],
 ) -> dict[str, list[str]]:
     """Build {start_marker: [parser_ids]} lookup from registered parsers' stream_markers.
 
@@ -208,7 +223,7 @@ def _scan_for_known_markers(
 
 def _discover_and_map_tags(
     output: str,
-    parsers: dict[str, type[ToolCallParser]],
+    parsers: Mapping[str, type[StreamMarkerParser]],
 ) -> list[TagDiscovery]:
     """Primary tag discovery pipeline: regex detection + direct marker scan + merge.
 
@@ -625,7 +640,8 @@ def get_family_tool_parser_id(family: str | None) -> str | None:
 
     config = FAMILY_CONFIGS.get(family)
     if config and config.tool_parser_factory:
-        return config.tool_parser_factory().parser_id
+        parser_id: str = config.tool_parser_factory().parser_id
+        return parser_id
     return None
 
 
@@ -637,7 +653,8 @@ def get_family_thinking_parser_id(family: str | None) -> str | None:
 
     config = FAMILY_CONFIGS.get(family)
     if config and config.thinking_parser_factory:
-        return config.thinking_parser_factory().parser_id
+        parser_id: str = config.thinking_parser_factory().parser_id
+        return parser_id
     return None
 
 

@@ -39,7 +39,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from mlx_manager.config import settings as manager_settings
-from mlx_manager.database import engine, init_db, recover_incomplete_downloads
+from mlx_manager.database import (
+    detect_orphaned_downloads,
+    engine,
+    init_db,
+    recover_incomplete_downloads,
+)
 from mlx_manager.mlx_server.config import mlx_server_settings
 
 # MLX Server imports for embedded mode
@@ -184,6 +189,11 @@ async def lifespan(app: FastAPI):
 
     # Resume any incomplete downloads from previous sessions
     pending_downloads = await recover_incomplete_downloads()
+
+    # Detect orphaned downloads (started outside MLX Manager) and adopt them
+    orphaned_downloads = await detect_orphaned_downloads()
+    pending_downloads.extend(orphaned_downloads)
+
     if pending_downloads:
         await resume_pending_downloads(pending_downloads)
 
@@ -234,9 +244,7 @@ async def lifespan(app: FastAPI):
                     await pool.model_pool.preload_model(model_id)
                     logger.info(f"Auto-loaded profile '{profile.name}' (model: {model_id})")
                 except Exception as e:
-                    logger.exception(
-                        f"Failed to auto-load profile '{profile.name}': {e}"
-                    )
+                    logger.exception(f"Failed to auto-load profile '{profile.name}': {e}")
 
             if auto_start_profiles:
                 loaded = sum(
@@ -244,9 +252,7 @@ async def lifespan(app: FastAPI):
                     for p in auto_start_profiles
                     if p.model and pool.model_pool.is_loaded(p.model.repo_id)
                 )
-                logger.info(
-                    f"Auto-start: {loaded}/{len(auto_start_profiles)} profiles loaded"
-                )
+                logger.info(f"Auto-start: {loaded}/{len(auto_start_profiles)} profiles loaded")
 
     await health_checker.start()
     logger.info("MLX Manager ready")

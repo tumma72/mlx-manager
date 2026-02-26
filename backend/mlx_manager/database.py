@@ -143,6 +143,79 @@ async def recover_incomplete_downloads() -> list[tuple[int, str]]:
     return pending_downloads
 
 
+async def detect_orphaned_downloads() -> list[tuple[int, str]]:
+    """Detect partially downloaded models in the HF cache that have no Download record.
+
+    These are downloads started outside MLX Manager (e.g., via huggingface-cli,
+    another tool, or a previous MLX Manager session that crashed without cleanup).
+
+    Creates Download records for them so they appear in the UI and can be
+    resumed/cancelled through the normal download flow.
+
+    Returns:
+        List of (download_id, model_id) tuples for newly created Download records.
+    """
+    from datetime import UTC, datetime
+
+    from sqlmodel import select
+
+    from mlx_manager.models import Download
+    from mlx_manager.services.hf_client import hf_client
+
+    orphaned: list[tuple[int, str]] = []
+    incomplete_models = hf_client.list_incomplete_models()
+
+    if not incomplete_models:
+        return orphaned
+
+    async with get_session() as session:
+        for model_id, downloaded_bytes in incomplete_models:
+            # Check if there's already an active Download record for this model
+            result = await session.execute(
+                select(Download).where(
+                    Download.model_id == model_id,
+                    col(Download.status).in_(["pending", "downloading", "paused", "starting"]),
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                logger.debug(
+                    "Incomplete model {} already has Download record (id={})",
+                    model_id,
+                    existing.id,
+                )
+                continue
+
+            # Create a new Download record so the UI picks it up.
+            # total_bytes is unknown — download_model() dry-run will determine it.
+            download = Download(
+                model_id=model_id,
+                status=DownloadStatusEnum.PENDING,
+                downloaded_bytes=downloaded_bytes,
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add(download)
+            await session.flush()  # Get the ID
+
+            if download.id is not None:
+                orphaned.append((download.id, model_id))
+                logger.info(
+                    "Adopted orphaned download: {} (id={}, {} bytes downloaded)",
+                    model_id,
+                    download.id,
+                    downloaded_bytes,
+                )
+
+        if orphaned:
+            await session.commit()
+            logger.info(
+                "Adopted {} orphaned downloads from HF cache",
+                len(orphaned),
+            )
+
+    return orphaned
+
+
 async def _repair_orphaned_profiles() -> None:
     """Fix profiles with NULL model_id after migration from model_path.
 

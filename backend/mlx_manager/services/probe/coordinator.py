@@ -8,6 +8,7 @@ Replaces the ad-hoc probe_model() orchestration with a design that:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -112,11 +113,42 @@ class ProbingCoordinator:
                 )
                 return
 
+        # ── Step 2b: Verify model files are complete ─────────────────
+        from mlx_manager.services.hf_client import hf_client
+
+        if hf_client.has_incomplete_blobs(model_id):
+            yield ProbeStep(
+                step="load_model",
+                status="failed",
+                error=(
+                    f"Model {model_id} has incomplete download files. "
+                    "Please wait for the download to finish, or cancel and "
+                    "re-download the model before probing."
+                ),
+                diagnostics=[
+                    ProbeDiagnostic(
+                        level=DiagnosticLevel.ACTION_NEEDED,
+                        category=DiagnosticCategory.TYPE,
+                        message=(
+                            "Model files are incomplete — download still "
+                            "in progress or was interrupted."
+                        ),
+                    )
+                ],
+            )
+            return
+
         # ── Step 3: Load model through normal Profile path ────────────
         async with probe_step("load_model") as ctx:
             yield ctx.running
             self._pool.register_profile_settings(model_id, ProfileSettings())
-            loaded = await self._pool.get_model(model_id)
+            try:
+                loaded = await asyncio.wait_for(self._pool.get_model(model_id), timeout=120.0)
+            except TimeoutError:
+                raise RuntimeError(
+                    f"Loading model {model_id} timed out after 120s. "
+                    "The model may have incomplete files or a network download was triggered."
+                )
         yield ctx.result
         if ctx._failed:
             return
