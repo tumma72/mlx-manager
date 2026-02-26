@@ -4,11 +4,17 @@ import threading
 import webbrowser
 
 import typer
+from huggingface_hub import scan_cache_dir
 from rich.console import Console
 from rich.table import Table
 
 from mlx_manager import __version__
 from mlx_manager.config import DEFAULT_PORT
+from mlx_manager.database import get_session
+from mlx_manager.mlx_server.models.adapters.registry import detect_model_family
+from mlx_manager.mlx_server.models.detection import detect_model_type
+from mlx_manager.services.probe.base import get_family_thinking_parser_id, get_family_tool_parser_id
+from mlx_manager.utils.model_detection import read_model_config
 
 app = typer.Typer(
     name="mlx-manager",
@@ -130,6 +136,11 @@ def probe(
         help="HuggingFace model ID to probe (e.g. mlx-community/Qwen3-0.6B-4bit-DWQ)",
     ),
     all_models: bool = typer.Option(False, "--all", help="Probe all cached models"),
+    audit: bool = typer.Option(
+        False,
+        "--audit",
+        help="Audit parser selection for all cached models without loading them",
+    ),
     format: str = typer.Option("table", "--format", "-f", help="Output format: table or markdown"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diagnostic details"),
     force: bool = typer.Option(False, "--force", help="Clear cached capabilities before probing"),
@@ -139,6 +150,10 @@ def probe(
 ):
     """Probe model capabilities (tools, thinking, embeddings, audio, etc.)."""
     import asyncio
+
+    if audit:
+        asyncio.run(_audit_parsers())
+        return
 
     if not model_id and not all_models:
         console.print("[red]Provide a model_id or use --all to probe all cached models[/red]")
@@ -158,6 +173,109 @@ def probe(
                 report=report,
             )
         )
+
+
+async def _audit_parsers() -> None:
+    """Audit parser selection for all cached models.
+
+    Scans all HuggingFace cached models and for each:
+    1. Detects model type and family (from config.json + name patterns).
+    2. Looks up parser IDs declared in the model's FamilyConfig.
+    3. Loads any previously stored probe result from the database.
+    4. Reports mismatches between family config and stored probe result.
+
+    This command does NOT load models — it only reads config files and queries
+    the database, so it is fast and requires no GPU/memory.
+    """
+    await _init_probe_runtime()
+
+    cache_info = scan_cache_dir()
+    model_ids = sorted(repo.repo_id for repo in cache_info.repos)
+
+    if not model_ids:
+        console.print("[yellow]No cached models found[/yellow]")
+        return
+
+    table = Table(title="Parser Audit")
+    table.add_column("Model", style="cyan", no_wrap=True, max_width=45)
+    table.add_column("Type", style="magenta")
+    table.add_column("Family", style="blue")
+    table.add_column("Family Tool", style="green")
+    table.add_column("Family Think", style="green")
+    table.add_column("Stored Tool", style="yellow")
+    table.add_column("Stored Think", style="yellow")
+    table.add_column("Match", style="bold")
+
+    mismatches = 0
+    for model_id in model_ids:
+        config = read_model_config(model_id)
+        if config is None:
+            continue
+
+        model_type = detect_model_type(model_id, config)
+        family = detect_model_family(model_id)
+
+        family_tool = get_family_tool_parser_id(family) or "-"
+        family_think = get_family_thinking_parser_id(family) or "-"
+
+        # Load stored capabilities from DB
+        stored_tool, stored_think = await _get_stored_parsers(model_id)
+
+        # Check match (only if stored values exist)
+        match = "?"
+        if stored_tool is not None or stored_think is not None:
+            tool_ok = stored_tool is None or stored_tool == family_tool or family_tool == "-"
+            think_ok = stored_think is None or stored_think == family_think or family_think == "-"
+            if tool_ok and think_ok:
+                match = "[green]OK[/green]"
+            else:
+                match = "[red]MISMATCH[/red]"
+                mismatches += 1
+
+        table.add_row(
+            model_id,
+            model_type.value,
+            family,
+            family_tool,
+            family_think,
+            stored_tool or "-",
+            stored_think or "-",
+            match,
+        )
+
+    console.print(table)
+    if mismatches:
+        console.print(f"\n[red]{mismatches} mismatch{'es' if mismatches > 1 else ''} found[/red]")
+    else:
+        console.print("\n[green]All probed models match their family config[/green]")
+
+
+async def _get_stored_parsers(model_id: str) -> tuple[str | None, str | None]:
+    """Load stored parser IDs from DB for a model.
+
+    Args:
+        model_id: HuggingFace model ID (e.g., "mlx-community/Qwen3-0.6B-4bit-DWQ")
+
+    Returns:
+        Tuple of (tool_parser_id, thinking_parser_id), each None if not stored.
+    """
+    from sqlalchemy.orm import selectinload
+    from sqlmodel import select
+
+    from mlx_manager.models import Model
+
+    async with get_session() as session:
+        stmt = (
+            select(Model).where(Model.repo_id == model_id).options(selectinload(Model.capabilities))
+        )
+        result = await session.execute(stmt)
+        model = result.scalar_one_or_none()
+        if model and model.capabilities:
+            return (
+                model.capabilities.tool_parser_id,
+                model.capabilities.thinking_parser_id,
+            )
+    return (None, None)
 
 
 async def _init_probe_runtime() -> None:
