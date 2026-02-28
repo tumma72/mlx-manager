@@ -13,6 +13,7 @@ from mlx_manager.mlx_server.parsers.thinking import (
     ThinkTagParser,
 )
 from mlx_manager.mlx_server.parsers.tool_call import (
+    DevstralArgsParser,
     FunctionGemmaParser,
     Glm4NativeParser,
     Glm4XmlParser,
@@ -30,6 +31,7 @@ from mlx_manager.mlx_server.parsers.tool_call import (
 __all__ = [
     "ToolCallParser",
     "ThinkingParser",
+    "DevstralArgsParser",
     "FunctionGemmaParser",
     "HermesJsonParser",
     "Glm4NativeParser",

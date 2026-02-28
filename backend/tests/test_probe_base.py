@@ -151,6 +151,17 @@ def test_detect_model_family_devstral():
     assert detect_model_family("mlx-community/Mixtral-8x7B-Instruct-v0.1-4bit") == "mistral"
 
 
+def test_detect_model_family_magistral():
+    """Test that Magistral models are detected as mistral family."""
+    from mlx_manager.mlx_server.models.adapters.registry import detect_model_family
+
+    assert detect_model_family("lmstudio-community/Magistral-Small-2509-MLX-4bit") == "mistral"
+    assert detect_model_family("lmstudio-community/Magistral-Small-2506-MLX-8bit") == "mistral"
+    assert detect_model_family("some-org/magistral-medium") == "mistral"
+    # Confirm 'magistral' is NOT a substring of 'mistral' — needs explicit pattern
+    assert "mistral" not in "magistral"
+
+
 # ---------------------------------------------------------------------------
 # Tests for bracket-aware unclosed thinking tag detection
 # ---------------------------------------------------------------------------

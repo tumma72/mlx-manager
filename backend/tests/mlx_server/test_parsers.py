@@ -19,6 +19,7 @@ import pytest
 from mlx_manager.mlx_server.parsers import (
     THINKING_PARSERS,
     TOOL_PARSERS,
+    DevstralArgsParser,
     FunctionGemmaParser,
     Glm4NativeParser,
     Glm4XmlParser,
@@ -651,6 +652,159 @@ class TestMistralNativeParser:
 
     def test_validates_negative_no_call(self) -> None:
         assert self.parser.validates("Hello world", "get_weather") is False
+
+    def test_extract_single_quoted_python_dict(self) -> None:
+        """Smaller Mistral models emit Python-style single-quoted dicts."""
+        text = "[TOOL_CALLS] [{'name': 'get_weather', 'arguments': {'location': 'Tokyo'}}]"
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args["location"] == "Tokyo"
+
+    def test_extract_single_quoted_multiple_calls(self) -> None:
+        """Single-quoted Python syntax with multiple tool calls."""
+        text = (
+            "[TOOL_CALLS] [{'name': 'get_weather', 'arguments': "
+            "{'location': 'NYC'}}, {'name': 'get_time', 'arguments': "
+            "{'timezone': 'EST'}}]"
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        assert calls[1].function.name == "get_time"
+
+
+# --- DevstralArgsParser Tests ---
+
+
+class TestDevstralArgsParser:
+    """Tests for Devstral 2507+ [TOOL_CALLS]name[ARGS]{json} format."""
+
+    def setup_method(self) -> None:
+        self.parser = DevstralArgsParser()
+
+    def test_parser_id(self) -> None:
+        assert self.parser.parser_id == "devstral_args"
+
+    def test_stream_markers(self) -> None:
+        assert self.parser.stream_markers == [("[TOOL_CALLS]", "")]
+
+    def test_extract_single_call(self) -> None:
+        text = '[TOOL_CALLS]get_weather[ARGS]{"location": "Tokyo"}'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+        args = json.loads(calls[0].function.arguments)
+        assert args["location"] == "Tokyo"
+
+    def test_extract_multiple_calls(self) -> None:
+        """Multiple calls are concatenated without separators."""
+        text = (
+            '[TOOL_CALLS]get_weather[ARGS]{"location": "NYC"}'
+            '[TOOL_CALLS]get_time[ARGS]{"timezone": "EST"}'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "get_weather"
+        args0 = json.loads(calls[0].function.arguments)
+        assert args0["location"] == "NYC"
+        assert calls[1].function.name == "get_time"
+        args1 = json.loads(calls[1].function.arguments)
+        assert args1["timezone"] == "EST"
+
+    def test_extract_generates_ids(self) -> None:
+        """Devstral format has no IDs; parser should generate them."""
+        text = '[TOOL_CALLS]test_fn[ARGS]{"x": 1}'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].id.startswith("call_")
+
+    def test_extract_nested_json_arguments(self) -> None:
+        """Arguments with nested objects should be parsed correctly."""
+        text = (
+            "[TOOL_CALLS]search[ARGS]"
+            '{"query": "hello", "options": {"limit": 5, "filters": {"type": "a"}}}'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        args = json.loads(calls[0].function.arguments)
+        assert args["query"] == "hello"
+        assert args["options"]["limit"] == 5
+        assert args["options"]["filters"]["type"] == "a"
+
+    def test_extract_with_eos_token(self) -> None:
+        """Models emit </s> after the last tool call."""
+        text = '[TOOL_CALLS]get_weather[ARGS]{"location": "SF"}</s>'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_with_surrounding_text(self) -> None:
+        text = (
+            "I'll check the weather for you.\n"
+            '[TOOL_CALLS]get_weather[ARGS]{"location": "SF"}'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_with_whitespace_around_markers(self) -> None:
+        """Tolerate whitespace between markers."""
+        text = '[TOOL_CALLS] get_weather [ARGS] {"location": "Paris"}'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "get_weather"
+
+    def test_extract_empty_arguments(self) -> None:
+        text = "[TOOL_CALLS]no_args_fn[ARGS]{}"
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "no_args_fn"
+        assert json.loads(calls[0].function.arguments) == {}
+
+    def test_extract_malformed_json(self) -> None:
+        text = "[TOOL_CALLS]bad_fn[ARGS]{not valid json"
+        calls = self.parser.extract(text)
+        assert len(calls) == 0
+
+    def test_extract_empty_text(self) -> None:
+        assert self.parser.extract("") == []
+
+    def test_extract_v3_format_does_not_match(self) -> None:
+        """V3 JSON array format should NOT be parsed by this parser."""
+        text = '[TOOL_CALLS] [{"name": "get_weather", "arguments": {"location": "NYC"}}]'
+        calls = self.parser.extract(text)
+        assert len(calls) == 0
+
+    def test_validates_positive(self) -> None:
+        text = '[TOOL_CALLS]get_weather[ARGS]{"location": "Tokyo"}'
+        assert self.parser.validates(text, "get_weather") is True
+
+    def test_validates_negative_wrong_fn(self) -> None:
+        text = '[TOOL_CALLS]get_weather[ARGS]{"location": "Tokyo"}'
+        assert self.parser.validates(text, "get_time") is False
+
+    def test_validates_negative_no_call(self) -> None:
+        assert self.parser.validates("Hello world", "get_weather") is False
+
+    def test_multiple_calls_with_eos(self) -> None:
+        """Multiple calls followed by EOS token."""
+        text = (
+            '[TOOL_CALLS]add[ARGS]{"a": 1, "b": 2}'
+            '[TOOL_CALLS]multiply[ARGS]{"a": 3, "b": 4}</s>'
+        )
+        calls = self.parser.extract(text)
+        assert len(calls) == 2
+        assert calls[0].function.name == "add"
+        assert calls[1].function.name == "multiply"
+
+    def test_dotted_function_name(self) -> None:
+        """Function names with dots (namespace.function)."""
+        text = '[TOOL_CALLS]tools.get_weather[ARGS]{"city": "London"}'
+        calls = self.parser.extract(text)
+        assert len(calls) == 1
+        assert calls[0].function.name == "tools.get_weather"
 
 
 # --- OpenAIJsonParser Tests ---
@@ -1340,6 +1494,7 @@ class TestRegistry:
             "llama_python",
             "liquid_python",
             "mistral_native",
+            "devstral_args",
             "openai_json",
             "tool_code_python",
             "qwen3_coder_xml",
@@ -1360,6 +1515,7 @@ class TestRegistry:
     def test_registry_completeness(self) -> None:
         """All parser classes are registered."""
         tool_classes = {
+            DevstralArgsParser,
             FunctionGemmaParser,
             HermesJsonParser,
             Glm4NativeParser,

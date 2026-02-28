@@ -12,7 +12,7 @@ FAMILY_PATTERNS: dict[str, list[str]] = {
     # nemotron before qwen: Qwen3-Coder models use Qwen3CoderXmlParser (nemotron family)
     "nemotron": ["nemotron", "qwen3-coder", "qwen3_coder"],
     "qwen": ["qwen", "iquest"],
-    "mistral": ["mistral", "mixtral", "devstral"],
+    "mistral": ["mistral", "mixtral", "devstral", "magistral"],
     "functiongemma": ["functiongemma"],
     "gemma": ["gemma"],
     "glm4": ["glm", "chatglm"],

@@ -9,6 +9,7 @@ from mlx_manager.mlx_server.parsers.thinking import (
     ThinkTagParser,
 )
 from mlx_manager.mlx_server.parsers.tool_call import (
+    DevstralArgsParser,
     FunctionGemmaParser,
     Glm4NativeParser,
     Glm4XmlParser,
@@ -33,6 +34,7 @@ TOOL_PARSERS: dict[str, type[ToolCallParser]] = {
     "llama_python": LlamaPythonParser,
     "liquid_python": LiquidPythonParser,
     "mistral_native": MistralNativeParser,
+    "devstral_args": DevstralArgsParser,
     "openai_json": OpenAIJsonParser,
     "tool_code_python": ToolCodePythonParser,
     "qwen3_coder_xml": Qwen3CoderXmlParser,

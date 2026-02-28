@@ -354,11 +354,22 @@ class MistralNativeParser(ToolCallParser):
         match: re.Match[str] | None = self._PATTERN.search(text)
         if not match:
             return []
+        raw = match.group(1)
         try:
-            data = json.loads(match.group(1))
-        except json.JSONDecodeError as e:
-            logger.warning("Invalid JSON in Mistral tool calls: {} => {}", match.groups(), e)
-            return []
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # Smaller Mistral models (e.g. 7B) sometimes emit Python-style
+            # single-quoted dicts instead of valid JSON. Fall back to
+            # ast.literal_eval which safely handles both quote styles.
+            try:
+                data = ast.literal_eval(raw)  # noqa: S307
+            except (ValueError, SyntaxError) as e:
+                logger.warning(
+                    "Invalid JSON/Python in Mistral tool calls: {} => {}",
+                    raw[:200],
+                    e,
+                )
+                return []
         if not isinstance(data, list):
             return []
         results: list[ToolCall] = []
@@ -380,6 +391,63 @@ class MistralNativeParser(ToolCallParser):
         except (KeyError, TypeError) as e:
             logger.warning("Invalid Mistral tool call item: {} => {}", item, e)
             return None
+
+
+class DevstralArgsParser(ToolCallParser):
+    """Devstral 2507+ tool calling: [TOOL_CALLS]name[ARGS]{json}.
+
+    Used by Devstral-Small-2507 and later Devstral models.
+    Each tool call is formatted as [TOOL_CALLS]function_name[ARGS]{"arg": "val"}.
+    Multiple calls are concatenated without separators:
+    [TOOL_CALLS]fn1[ARGS]{...}[TOOL_CALLS]fn2[ARGS]{...}
+    No tool_call_id in this format; IDs are generated.
+    """
+
+    # Matches [TOOL_CALLS]<name>[ARGS] — captures the function name.
+    # The JSON arguments follow immediately after the match end.
+    _SEGMENT_RE = re.compile(
+        r"\[TOOL_CALLS\]\s*([^\[\s]+)\s*\[ARGS\]\s*",
+        re.DOTALL,
+    )
+
+    @property
+    def parser_id(self) -> str:
+        return "devstral_args"
+
+    @property
+    def stream_markers(self) -> list[tuple[str, str]]:
+        return [("[TOOL_CALLS]", "")]
+
+    def extract(self, text: str) -> list[ToolCall]:
+        results: list[ToolCall] = []
+        decoder = json.JSONDecoder()
+        for match in self._SEGMENT_RE.finditer(text):
+            name = match.group(1).strip()
+            if not name:
+                continue
+            # Use raw_decode to parse exactly one JSON value after [ARGS]
+            args_start = match.end()
+            try:
+                args_obj, _ = decoder.raw_decode(text, args_start)
+                args_str = json.dumps(args_obj)
+            except (json.JSONDecodeError, IndexError, ValueError):
+                # Fallback: grab text until next [TOOL_CALLS] or end-of-string
+                remaining = text[args_start:]
+                next_marker = remaining.find("[TOOL_CALLS]")
+                chunk = remaining[:next_marker] if next_marker >= 0 else remaining
+                chunk = chunk.strip().rstrip("</s>").strip()
+                try:
+                    args_obj = json.loads(chunk)
+                    args_str = json.dumps(args_obj)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Invalid JSON in Devstral tool call: name={} raw={}",
+                        name,
+                        chunk[:200],
+                    )
+                    continue
+            results.append(self._make_tool_call(name, args_str))
+        return results
 
 
 class NullToolParser(ToolCallParser):
