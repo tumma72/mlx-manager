@@ -565,13 +565,17 @@ async def test_coordinator_sweep_detects_family_when_none():
             "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
             {"qwen": MagicMock},
         ),
+        patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            return_value=None,
+        ),
     ):
         steps = []
         async for step in strategy.sweep_capabilities("test/model", mock_loaded, result):
             steps.append(step)
 
     assert result.model_family == "qwen"
-    mock_detect.assert_called_once_with("test/model")
+    mock_detect.assert_called_once_with("test/model", architecture=None)
 
 
 @pytest.mark.asyncio

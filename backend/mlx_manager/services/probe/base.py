@@ -398,22 +398,27 @@ class GenerativeProbe(BaseProbe):
         # ── Family detection ──────────────────────────────────────────
         async with probe_step("detect_family", "model_family", verbose=verbose) as ctx:
             yield ctx.running
+
+            # Read architecture from config.json before detection so we
+            # can pass it as a fallback signal to detect_model_family()
+            architecture = ""
+            try:
+                from mlx_manager.utils.model_detection import read_model_config
+
+                config = read_model_config(model_id)
+                if config:
+                    arch_list = config.get("architectures", [])
+                    architecture = arch_list[0] if arch_list else ""
+            except Exception:
+                pass
+
             if result.model_family is None:
-                result.model_family = detect_model_family(model_id)
+                result.model_family = detect_model_family(
+                    model_id, architecture=architecture or None
+                )
 
             family_diagnostics: list[ProbeDiagnostic] = []
             if result.model_family == "default":
-                architecture = ""
-                try:
-                    from mlx_manager.utils.model_detection import read_model_config
-
-                    config = read_model_config(model_id)
-                    if config:
-                        arch_list = config.get("architectures", [])
-                        architecture = arch_list[0] if arch_list else ""
-                except Exception:
-                    pass
-
                 diag = ProbeDiagnostic(
                     level=DiagnosticLevel.WARNING,
                     category=DiagnosticCategory.FAMILY,

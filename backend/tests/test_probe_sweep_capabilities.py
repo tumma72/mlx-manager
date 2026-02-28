@@ -97,12 +97,16 @@ async def test_sweep_capabilities_sets_family_on_result():
             "mlx_manager.mlx_server.models.adapters.FAMILY_REGISTRY",
             {"qwen": MagicMock},
         ),
+        patch(
+            "mlx_manager.utils.model_detection.read_model_config",
+            return_value=None,
+        ),
     ):
         async for _ in probe.sweep_capabilities("test/model", mock_loaded, result):
             pass
 
     assert result.model_family == "qwen"
-    mock_detect.assert_called_once_with("test/model")
+    mock_detect.assert_called_once_with("test/model", architecture=None)
 
 
 @pytest.mark.asyncio
@@ -576,9 +580,9 @@ def test_coordinator_no_longer_has_sweep_generative_capabilities():
     mock_pool = MagicMock()
     coordinator = ProbingCoordinator(mock_pool)
 
-    assert not hasattr(
-        coordinator, "_sweep_generative_capabilities"
-    ), "Coordinator should delegate to strategy.sweep_capabilities() — the method was moved"
+    assert not hasattr(coordinator, "_sweep_generative_capabilities"), (
+        "Coordinator should delegate to strategy.sweep_capabilities() — the method was moved"
+    )
 
 
 def test_generative_probe_has_sweep_capabilities():

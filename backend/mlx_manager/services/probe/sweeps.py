@@ -8,6 +8,7 @@ model via the strategy's _generate() call.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from mlx_manager.services.probe.steps import (
@@ -20,6 +21,31 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def _has_structural_tool_evidence(output: str) -> bool:
+    """Check for structural evidence of an actual tool call attempt.
+
+    Returns True if the output contains patterns indicating the model
+    attempted to emit a tool call in some structured format, not just
+    mentioned the tool name in natural language prose.
+    """
+    # JSON object with "name" key containing the tool name
+    if re.search(r'\{\s*"name"\s*:\s*"get_weather"', output):
+        return True
+    # Function call syntax: get_weather(...)
+    if re.search(r"get_weather\s*\(", output):
+        return True
+    # XML tool tags
+    if re.search(r"<(tool_call|function_call|tool_use)[^>]*>", output):
+        return True
+    # Bracket markers (e.g. [TOOL_CALLS], [TOOL_CALL])
+    if re.search(r"\[TOOL_CALL", output, re.IGNORECASE):
+        return True
+    # JSON array with tool-like structure
+    if re.search(r'\[\s*\{\s*"(name|function)"', output):
+        return True
+    return False
 
 
 # ------------------------------------------------------------------
@@ -402,10 +428,10 @@ async def sweep_tools(
             if not t.matched_parsers and t.name.lower() not in _KNOWN_BENIGN_TAGS
         ]
 
-        tool_hints = ["get_weather", '"name"']
-        found_hints = [m for m in tool_hints if m in scan_output]
+        has_structural = _has_structural_tool_evidence(scan_output)
 
-        if found_hints:
+        if has_structural:
+            # Structural evidence: model actually tried to emit a tool call
             diagnostics.append(
                 ProbeDiagnostic(
                     level=DiagnosticLevel.ACTION_NEEDED,
@@ -415,8 +441,24 @@ async def sweep_tools(
                         "but no registered parser could parse the output"
                     ),
                     details={
-                        "found_hints": found_hints,
                         "detected_tags": unmatched_tags,
+                        "raw_output_sample": scan_output[:300],
+                        "registered_parsers": registered_parsers,
+                    },
+                )
+            )
+        elif "get_weather" in scan_output:
+            # Prose mention only — model talked about the tool but didn't
+            # emit a structured call. Downgrade to INFO.
+            diagnostics.append(
+                ProbeDiagnostic(
+                    level=DiagnosticLevel.INFO,
+                    category=DiagnosticCategory.TOOL_DIALECT,
+                    message=(
+                        "Model mentioned tool name in prose but did not emit "
+                        "a structured tool call — no tool dialect detected"
+                    ),
+                    details={
                         "raw_output_sample": scan_output[:300],
                         "registered_parsers": registered_parsers,
                     },

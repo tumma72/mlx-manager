@@ -63,6 +63,61 @@ class TestModelFamilyDetection:
         assert detect_model_family("mlx-community/Kokoro-82M-bf16") == "kokoro"
         assert detect_model_family("mlx-community/Kokoro-82M-4bit") == "kokoro"
 
+    # --- Architecture fallback tests ---
+
+    def test_architecture_fallback_qwen(self):
+        """Architecture fallback detects Qwen family from architecture class."""
+        assert detect_model_family("unknown/model", architecture="Qwen2ForCausalLM") == "qwen"
+        assert detect_model_family("unknown/model", architecture="Qwen3ForCausalLM") == "qwen"
+
+    def test_architecture_fallback_gemma(self):
+        """Architecture fallback detects Gemma family."""
+        assert detect_model_family("unknown/model", architecture="GemmaForCausalLM") == "gemma"
+        assert (
+            detect_model_family("unknown/model", architecture="Gemma3ForConditionalGeneration")
+            == "gemma"
+        )
+
+    def test_architecture_fallback_mistral(self):
+        """Architecture fallback detects Mistral family."""
+        assert detect_model_family("unknown/model", architecture="MistralForCausalLM") == "mistral"
+
+    def test_architecture_fallback_phi(self):
+        """Architecture fallback detects Phi family."""
+        assert detect_model_family("unknown/model", architecture="PhiForCausalLM") == "phi"
+        assert detect_model_family("unknown/model", architecture="Phi3ForCausalLM") == "phi"
+
+    def test_architecture_fallback_glm4(self):
+        """Architecture fallback detects GLM4 family."""
+        assert detect_model_family("unknown/model", architecture="ChatGLMModel") == "glm4"
+
+    def test_architecture_fallback_whisper(self):
+        """Architecture fallback detects Whisper family."""
+        assert (
+            detect_model_family("unknown/model", architecture="WhisperForConditionalGeneration")
+            == "whisper"
+        )
+
+    def test_name_pattern_wins_over_architecture(self):
+        """Name pattern matching takes priority over architecture fallback."""
+        # "Llama" in model ID matches "llama" family, architecture ignored
+        assert (
+            detect_model_family("mlx-community/Llama-3.2-3B", architecture="LlamaForCausalLM")
+            == "llama"
+        )
+
+    def test_ambiguous_architecture_falls_to_default(self):
+        """LlamaForCausalLM is intentionally excluded — too many unrelated models."""
+        assert detect_model_family("unknown/model", architecture="LlamaForCausalLM") == "default"
+
+    def test_none_architecture_falls_to_default(self):
+        """None architecture still falls back to default for unknown model names."""
+        assert detect_model_family("unknown/model", architecture=None) == "default"
+
+    def test_unknown_architecture_falls_to_default(self):
+        """Unknown architecture class not in mapping returns default."""
+        assert detect_model_family("unknown/model", architecture="GPTNeoXForCausalLM") == "default"
+
 
 class TestAudioAdapterCreation:
     """Tests for audio adapter creation with tokenizer=None."""

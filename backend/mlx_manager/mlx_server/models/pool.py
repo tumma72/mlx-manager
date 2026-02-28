@@ -562,7 +562,18 @@ class ModelPoolManager:
 
                 # Fallback to detection
                 if family is None:
-                    family = detect_model_family(model_id)
+                    # Read architecture from config.json for fallback
+                    architecture = None
+                    try:
+                        from mlx_manager.utils.model_detection import read_model_config
+
+                        cfg = read_model_config(model_id)
+                        if cfg:
+                            arch_list = cfg.get("architectures", [])
+                            architecture = arch_list[0] if arch_list else None
+                    except Exception:
+                        pass
+                    family = detect_model_family(model_id, architecture=architecture)
                     # For audio models, map "default" to "audio_default"
                     if family == "default" and model_type == ModelType.AUDIO:
                         family = "audio_default"
@@ -1004,7 +1015,18 @@ class ModelPoolManager:
                     detect_model_family,
                 )
 
-                family = detect_model_family(model_id)
+                # Read architecture from config.json for fallback
+                architecture = None
+                try:
+                    from mlx_manager.utils.model_detection import read_model_config
+
+                    cfg = read_model_config(model_id)
+                    if cfg:
+                        arch_list = cfg.get("architectures", [])
+                        architecture = arch_list[0] if arch_list else None
+                except Exception:
+                    pass
+                family = detect_model_family(model_id, architecture=architecture)
                 # For audio models, map "default" to "audio_default"
                 if family == "default" and model_type == ModelType.AUDIO:
                     family = "audio_default"
