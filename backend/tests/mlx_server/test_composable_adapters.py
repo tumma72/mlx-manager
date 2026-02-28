@@ -1072,7 +1072,7 @@ class TestPrepareInput:
         assert isinstance(result, PreparedInput)
 
     def test_vision_input_delegates_to_vlm(self) -> None:
-        """Vision path uses mlx-vlm for template application."""
+        """Vision path uses mlx-vlm for image token enrichment, then unified template."""
         import sys
         from unittest.mock import MagicMock
 
@@ -1081,11 +1081,14 @@ class TestPrepareInput:
         )
         fake_images = ["fake_image_data"]
 
-        # Create fake mlx_vlm modules for local imports inside prepare_input
+        # vlm returns message dicts with image tokens (return_messages=True)
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe"}]}
+        ]
         fake_vlm_utils = MagicMock()
         fake_vlm_utils.load_config.return_value = {"model_type": "qwen2_vl"}
         fake_vlm_prompt = MagicMock()
-        fake_vlm_prompt.apply_chat_template.return_value = "vision_prompt"
+        fake_vlm_prompt.apply_chat_template.return_value = vlm_messages
 
         with patch.dict(
             sys.modules,
@@ -1101,12 +1104,16 @@ class TestPrepareInput:
             )
 
         assert isinstance(result, PreparedInput)
-        assert result.prompt == "vision_prompt"
         assert result.pixel_values == fake_images
+        # Prompt rendered by adapter's apply_chat_template (FakeTokenizer)
+        assert "<|user|>" in result.prompt
         fake_vlm_prompt.apply_chat_template.assert_called_once()
+        # Verify return_messages=True was passed
+        call_kwargs = fake_vlm_prompt.apply_chat_template.call_args
+        assert call_kwargs[1].get("return_messages") is True
 
     def test_vision_input_multipart_content(self) -> None:
-        """Vision path extracts text from multipart content."""
+        """Vision path passes multipart content messages to vlm for enrichment."""
         import sys
         from unittest.mock import MagicMock
 
@@ -1123,10 +1130,13 @@ class TestPrepareInput:
             }
         ]
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "What's?"}]}
+        ]
         fake_vlm_utils = MagicMock()
         fake_vlm_utils.load_config.return_value = {"model_type": "qwen2_vl"}
         fake_vlm_prompt = MagicMock()
-        fake_vlm_prompt.apply_chat_template.return_value = "vision_prompt"
+        fake_vlm_prompt.apply_chat_template.return_value = vlm_messages
 
         with patch.dict(
             sys.modules,
@@ -1142,9 +1152,11 @@ class TestPrepareInput:
             )
 
         assert isinstance(result, PreparedInput)
-        # The vlm template should have been called with text extracted from multipart
+        # Messages were passed as structured list to vlm (not flat text)
         call_args = fake_vlm_prompt.apply_chat_template.call_args
-        assert "What's in this image?" in call_args[0][2]  # text_prompt arg
+        passed_messages = call_args[0][2]  # third positional arg
+        assert isinstance(passed_messages, list)
+        assert passed_messages[0]["role"] == "user"
 
 
 # ── process_complete ─────────────────────────────────────────────
@@ -1275,6 +1287,10 @@ class TestGenerate:
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe"}]}
+        ]
+
         with (
             patch(
                 "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
@@ -1283,7 +1299,7 @@ class TestGenerate:
             patch("mlx_vlm.utils.load_config", return_value={"model_type": "qwen2_vl"}),
             patch(
                 "mlx_vlm.prompt_utils.apply_chat_template",
-                return_value="vision_prompt",
+                return_value=vlm_messages,
             ),
             patch("mlx_vlm.generate", return_value=FakeVLMResponse()),
         ):
@@ -1358,6 +1374,10 @@ class TestGenerateStep:
         async def run_sync(fn: Any, **kwargs: Any) -> Any:
             return fn()
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe"}]}
+        ]
+
         with (
             patch(
                 "mlx_manager.mlx_server.utils.metal.run_on_metal_thread",
@@ -1366,7 +1386,7 @@ class TestGenerateStep:
             patch("mlx_vlm.utils.load_config", return_value={"model_type": "qwen2_vl"}),
             patch(
                 "mlx_vlm.prompt_utils.apply_chat_template",
-                return_value="vision_prompt",
+                return_value=vlm_messages,
             ),
             patch("mlx_vlm.generate", return_value=FakeVLMResponse()),
         ):

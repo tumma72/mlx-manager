@@ -422,70 +422,43 @@ class ModelAdapter:
 
         Encapsulates the full input pipeline:
         1. Inject default system prompt if missing (from Profile config)
-        2. convert_messages() — format conversion
-        3. Tool handling (native or injected, based on adapter config)
-        4. apply_chat_template() — prompt generation
-        5. Stop token aggregation
+        2. Vision: enrich messages with image tokens (via mlx-vlm)
+        3. convert_messages() — format conversion
+        4. Tool handling (native or injected, based on adapter config)
+        5. apply_chat_template() — prompt generation
+        6. Stop token aggregation
 
         All configuration (system_prompt, enable_tool_injection, template_options)
         is read from the adapter's stored Profile settings, not from parameters.
 
-        Vision models with images use mlx-vlm chat template for image token
-        handling. All other cases (text models, vision models without images)
-        use the standard tokenizer template.
+        Vision models always use mlx-vlm for generation (set in generate()).
+        Image tokens are injected into message content here so that the
+        unified template path handles both tools and images correctly.
         """
         from mlx_manager.mlx_server.models.ir import PreparedInput
 
         # Inject default system prompt if not already present in messages
         messages = self._ensure_system_prompt(messages)
 
-        # Vision path with images: use mlx-vlm chat template for image tokens
+        # Vision: enrich messages with image tokens via mlx-vlm
+        pixel_values: list[Any] | None = None
         if self._model_type == "vision" and images:
             from mlx_vlm.prompt_utils import apply_chat_template as vlm_apply_chat_template
             from mlx_vlm.utils import load_config
 
-            # Build flat text prompt from messages
-            text_parts = []
-            for msg in messages:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    # Multipart content - extract text parts only
-                    text = " ".join(
-                        part.get("text", "")
-                        for part in content
-                        if isinstance(part, dict) and part.get("type") == "text"
-                    )
-                else:
-                    text = str(content) if content else ""
-                if text:
-                    if role == "system":
-                        text_parts.append(f"System: {text}")
-                    elif role == "user":
-                        text_parts.append(text)
-                    elif role == "assistant":
-                        text_parts.append(f"Assistant: {text}")
-            text_prompt = "\n".join(text_parts)
-
-            # Load model config and apply vision chat template
             config = load_config(self._model_id)
-            prompt = vlm_apply_chat_template(
-                self._tokenizer, config, text_prompt, num_images=len(images)
+            messages = vlm_apply_chat_template(
+                self._tokenizer,
+                config,
+                messages,
+                return_messages=True,
+                num_images=len(images),
             )
+            pixel_values = images
 
-            stop_ids: set[int] = set(self.stop_tokens)
-
-            return PreparedInput(
-                prompt=prompt,
-                stop_token_ids=list(stop_ids),
-                pixel_values=images,
-            )
-
-        # Standard text path: regular chat template
-        # Works for text models, vision models without images, embeddings
+        # Unified path: convert messages, handle tools, render template
         converted = self.convert_messages(messages)
 
-        # Tool handling uses adapter config, not runtime flags
         use_tools = tools and (self.supports_tool_calling() or self._enable_tool_injection)
         effective_tools = tools if use_tools else None
 
@@ -495,13 +468,14 @@ class ModelAdapter:
             tools=effective_tools,
         )
 
-        stop_ids_set = set(self.stop_tokens)
+        stop_ids = set(self.stop_tokens)
         if use_tools:
-            stop_ids_set.update(self.get_tool_call_stop_tokens())
+            stop_ids.update(self.get_tool_call_stop_tokens())
 
         return PreparedInput(
             prompt=prompt,
-            stop_token_ids=list(stop_ids_set),
+            stop_token_ids=list(stop_ids),
+            pixel_values=pixel_values,
         )
 
     def process_complete(self, raw_text: str, finish_reason: str = "stop") -> TextResult:

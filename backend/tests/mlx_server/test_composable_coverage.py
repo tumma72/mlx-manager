@@ -384,7 +384,7 @@ class TestPrepareInputVisionPath:
     """Tests for prepare_input vision path (lines 455, 458-459)."""
 
     def test_vision_path_with_system_message(self):
-        """Vision path handles system messages (line 455)."""
+        """Vision path passes system messages through to vlm for enrichment."""
         adapter = create_adapter(
             "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
         )
@@ -394,21 +394,30 @@ class TestPrepareInputVisionPath:
         ]
         fake_image = MagicMock()
 
+        # vlm returns enriched messages with image tokens
+        vlm_messages = [
+            {"role": "system", "content": "You are a vision model."},
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "What?"}]},
+        ]
         mock_config = {"model_type": "llava"}
         with (
-            patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
+            patch(
+                "mlx_vlm.prompt_utils.apply_chat_template", return_value=vlm_messages
+            ) as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value=mock_config),
         ):
             result = adapter.prepare_input(messages, images=[fake_image])
 
-        assert result.prompt == "<prompt>"
-        # Verify the text prompt includes system message content
+        # Prompt rendered by unified template path (FakeTokenizer)
+        assert "<|system|>" in result.prompt
+        assert result.pixel_values == [fake_image]
+        # Verify messages were passed as structured list
         call_args = mock_tpl.call_args
-        text_prompt = call_args[0][2]  # Third positional arg
-        assert "You are a vision model." in text_prompt
+        passed_messages = call_args[0][2]  # Third positional arg
+        assert any(m.get("role") == "system" for m in passed_messages)
 
     def test_vision_path_with_assistant_message(self):
-        """Vision path handles assistant messages (line 458-459)."""
+        """Vision path passes assistant messages through to vlm."""
         adapter = create_adapter(
             "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
         )
@@ -419,19 +428,28 @@ class TestPrepareInputVisionPath:
         ]
         fake_image = MagicMock()
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Describe"}]},
+            {"role": "assistant", "content": "I see a cat."},
+            {"role": "user", "content": "What else?"},
+        ]
         with (
-            patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
+            patch(
+                "mlx_vlm.prompt_utils.apply_chat_template", return_value=vlm_messages
+            ) as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            adapter.prepare_input(messages, images=[fake_image])
+            result = adapter.prepare_input(messages, images=[fake_image])
 
-        # Verify assistant content is in the prompt
+        # Verify assistant content makes it to the final prompt
+        assert "I see a cat." in result.prompt
+        # Verify messages were passed as structured list with assistant role
         call_args = mock_tpl.call_args
-        text_prompt = call_args[0][2]
-        assert "I see a cat." in text_prompt
+        passed_messages = call_args[0][2]
+        assert any(m.get("role") == "assistant" for m in passed_messages)
 
     def test_vision_path_with_multipart_content(self):
-        """Vision path handles multipart content in messages (line 445-452)."""
+        """Vision path passes multipart content to vlm for image token enrichment."""
         adapter = create_adapter(
             "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
         )
@@ -446,18 +464,25 @@ class TestPrepareInputVisionPath:
         ]
         fake_image = MagicMock()
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Look"}]},
+        ]
         with (
-            patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
+            patch(
+                "mlx_vlm.prompt_utils.apply_chat_template", return_value=vlm_messages
+            ) as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            adapter.prepare_input(messages, images=[fake_image])
+            result = adapter.prepare_input(messages, images=[fake_image])
 
+        assert isinstance(result.prompt, str)
+        # Verify multipart messages were passed to vlm
         call_args = mock_tpl.call_args
-        text_prompt = call_args[0][2]
-        assert "Look at this" in text_prompt
+        passed_messages = call_args[0][2]
+        assert isinstance(passed_messages[0]["content"], list)
 
-    def test_vision_path_empty_content_message_ignored(self):
-        """Vision path skips messages with empty content."""
+    def test_vision_path_empty_content_message_passed_through(self):
+        """Vision path passes all messages to vlm including empty content."""
         adapter = create_adapter(
             "default", FakeTokenizer(), model_type="vision", model_id="test/vision-model"
         )
@@ -467,16 +492,21 @@ class TestPrepareInputVisionPath:
         ]
         fake_image = MagicMock()
 
+        vlm_messages = [
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Hello"}]},
+        ]
         with (
-            patch("mlx_vlm.prompt_utils.apply_chat_template", return_value="<prompt>") as mock_tpl,
+            patch(
+                "mlx_vlm.prompt_utils.apply_chat_template", return_value=vlm_messages
+            ) as mock_tpl,
             patch("mlx_vlm.utils.load_config", return_value={}),
         ):
-            adapter.prepare_input(messages, images=[fake_image])
+            result = adapter.prepare_input(messages, images=[fake_image])
 
+        assert isinstance(result.prompt, str)
+        # All messages passed to vlm (filtering is vlm's responsibility)
         call_args = mock_tpl.call_args
-        text_prompt = call_args[0][2]
-        # Empty content message should be filtered out
-        assert "Hello" in text_prompt
+        assert call_args[1].get("return_messages") is True
 
 
 # ============================================================================
