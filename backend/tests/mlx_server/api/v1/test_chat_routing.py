@@ -7,16 +7,22 @@ from fastapi import HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.api.v1.chat import (
-    _convert_messages_to_dicts,
     _convert_tool_calls,
-    _handle_direct_request,
+    _format_ir_complete,
+    _handle_direct_inference,
     _handle_non_streaming,
-    _handle_routed_request,
     _handle_streaming,
     _handle_text_request,
+    _route_and_respond,
     create_chat_completion,
 )
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import (
+    InferenceResult,
+    InternalRequest,
+    RoutingOutcome,
+    StreamEvent,
+    TextResult,
+)
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionRequest,
@@ -28,7 +34,7 @@ from mlx_manager.mlx_server.schemas.openai import (
     Tool,
     ToolCall,
 )
-from mlx_manager.mlx_server.services.inference import InferenceResult
+from mlx_manager.mlx_server.services.formatters import OpenAIFormatter
 
 
 def _make_inference_result(
@@ -49,6 +55,11 @@ def _make_inference_result(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
     )
+
+
+def _make_ir(request: ChatCompletionRequest) -> InternalRequest:
+    """Build an InternalRequest from a ChatCompletionRequest."""
+    return OpenAIFormatter.parse_request(request)
 
 
 @pytest.fixture
@@ -97,7 +108,7 @@ class TestRoutingDisabled:
     """Tests when cloud routing is disabled (default behavior)."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_routing_disabled_goes_to_direct(self, mock_direct, mock_settings, basic_request):
         """When enable_cloud_routing=False, requests go to direct inference."""
         # Setup mock settings
@@ -113,7 +124,11 @@ class TestRoutingDisabled:
         await _handle_text_request(basic_request, None)
 
         # Should go directly to direct handler, not router
-        mock_direct.assert_called_once_with(basic_request, None)
+        mock_direct.assert_called_once()
+        # Verify it received an InternalRequest and the original request
+        call_args = mock_direct.call_args
+        assert isinstance(call_args[0][0], InternalRequest)
+        assert call_args[0][1] is basic_request
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_batched_request")
@@ -155,9 +170,12 @@ class TestRoutingEnabled:
         settings.timeout_chat_seconds = 900.0  # Required for timeout handling
         mock_settings.return_value = settings
 
-        # Setup router mock
+        # Setup router mock to return a RoutingOutcome
+        outcome = RoutingOutcome(
+            raw_response=mock_completion_response,
+        )
         router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(return_value=mock_completion_response)
+        router_mock.route_request = AsyncMock(return_value=outcome)
         mock_get_router.return_value = router_mock
 
         await _handle_text_request(basic_request, None)
@@ -165,24 +183,33 @@ class TestRoutingEnabled:
         # Should use router
         router_mock.route_request.assert_called_once()
 
-        # Verify router was called with correct params
-        call_kwargs = router_mock.route_request.call_args.kwargs
-        assert call_kwargs["model"] == "test-model"
-        assert call_kwargs["max_tokens"] == 4096  # default
-        assert call_kwargs["stream"] is False
+        # Verify router was called with InternalRequest
+        call_args = router_mock.route_request.call_args
+        ir = call_args[0][0]
+        assert isinstance(ir, InternalRequest)
+        assert ir.model == "test-model"
+        assert ir.stream is False
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_routed_request_non_streaming(
-        self, mock_get_router, basic_request, mock_completion_response
+        self, mock_settings, mock_get_router, basic_request, mock_completion_response
     ):
-        """Test _handle_routed_request returns ChatCompletionResponse."""
+        """Test _route_and_respond returns ChatCompletionResponse for passthrough."""
+        settings = MagicMock()
+        settings.timeout_chat_seconds = 900.0
+        mock_settings.return_value = settings
+
+        outcome = RoutingOutcome(raw_response=mock_completion_response)
         router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(return_value=mock_completion_response)
+        router_mock.route_request = AsyncMock(return_value=outcome)
         mock_get_router.return_value = router_mock
 
-        result = await _handle_routed_request(basic_request)
+        ir = _make_ir(basic_request)
+        result = await _route_and_respond(ir, basic_request)
 
         # Verify response type and content
+        assert isinstance(result, ChatCompletionResponse)
         assert result.id == "chatcmpl-test123"
         assert result.model == "test-model"
         assert len(result.choices) == 1
@@ -194,8 +221,14 @@ class TestStreamingThroughRouter:
     """Tests for streaming responses through router."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
-    async def test_routed_request_streaming(self, mock_get_router, streaming_request):
-        """Test _handle_routed_request returns EventSourceResponse for streaming."""
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    async def test_routed_request_streaming_passthrough(
+        self, mock_settings, mock_get_router, streaming_request
+    ):
+        """Test _route_and_respond returns EventSourceResponse for passthrough streaming."""
+        settings = MagicMock()
+        settings.timeout_chat_seconds = 900.0
+        mock_settings.return_value = settings
 
         # Create async generator for streaming
         async def mock_stream():
@@ -218,11 +251,13 @@ class TestStreamingThroughRouter:
             for chunk in chunks:
                 yield chunk
 
+        outcome = RoutingOutcome(raw_stream=mock_stream())
         router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(return_value=mock_stream())
+        router_mock.route_request = AsyncMock(return_value=outcome)
         mock_get_router.return_value = router_mock
 
-        result = await _handle_routed_request(streaming_request)
+        ir = _make_ir(streaming_request)
+        result = await _route_and_respond(ir, streaming_request)
 
         # Should return EventSourceResponse
         assert isinstance(result, EventSourceResponse)
@@ -232,8 +267,8 @@ class TestRoutingFallback:
     """Tests for fallback behavior when routing fails."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_routed_request")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._route_and_respond")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_routing_failure_falls_back_to_direct(
         self, mock_direct, mock_routed, mock_settings, basic_request
     ):
@@ -252,10 +287,10 @@ class TestRoutingFallback:
         await _handle_text_request(basic_request, None)
 
         # Direct handler should be called as fallback
-        mock_direct.assert_called_once_with(basic_request, None)
+        mock_direct.assert_called_once()
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_routed_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._route_and_respond")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_batched_request")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
     async def test_routing_failure_falls_back_to_batching(
@@ -284,112 +319,150 @@ class TestRoutingFallback:
 
 
 class TestMessageConversion:
-    """Tests for message format conversion."""
+    """Tests for message format conversion via OpenAIFormatter.parse_request."""
 
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
-    async def test_messages_converted_to_dict_format(
-        self, mock_get_router, mock_completion_response
-    ):
-        """Test that ChatMessage objects are converted to dict format for router."""
+    def test_simple_string_content(self):
+        """String content is preserved as-is in IR."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hello")],
+        )
+        ir = _make_ir(request)
+        assert ir.messages == [{"role": "user", "content": "Hello"}]
+
+    def test_content_blocks_extract_text(self):
+        """Content blocks are converted to text via parse_request."""
         request = ChatCompletionRequest(
             model="test-model",
             messages=[
-                ChatMessage(role="system", content="You are helpful."),
-                ChatMessage(role="user", content="Hello!"),
-                ChatMessage(role="assistant", content="Hi there!"),
-                ChatMessage(role="user", content="How are you?"),
+                ChatMessage(
+                    role="user",
+                    content=[
+                        {"type": "text", "text": "Describe this image"},
+                        {"type": "image_url", "image_url": {"url": "http://example.com/img.png"}},
+                    ],
+                )
             ],
         )
-
-        router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(return_value=mock_completion_response)
-        mock_get_router.return_value = router_mock
-
-        await _handle_routed_request(request)
-
-        # Check messages were converted correctly
-        call_kwargs = router_mock.route_request.call_args.kwargs
-        messages = call_kwargs["messages"]
-
-        assert len(messages) == 4
-        assert messages[0] == {"role": "system", "content": "You are helpful."}
-        assert messages[1] == {"role": "user", "content": "Hello!"}
-        assert messages[2] == {"role": "assistant", "content": "Hi there!"}
-        assert messages[3] == {"role": "user", "content": "How are you?"}
-
-
-# ============================================================================
-# Unit tests for _convert_messages_to_dicts
-# ============================================================================
-
-
-class TestConvertMessagesToDicts:
-    """Tests for the _convert_messages_to_dicts helper."""
-
-    def test_simple_string_content(self):
-        """String content is preserved as-is."""
-        messages = [ChatMessage(role="user", content="Hello")]
-        result = _convert_messages_to_dicts(messages)
-        assert result == [{"role": "user", "content": "Hello"}]
-
-    def test_content_blocks_extract_text(self):
-        """Content blocks are converted to text via extract_content_parts."""
-        messages = [
-            ChatMessage(
-                role="user",
-                content=[
-                    {"type": "text", "text": "Describe this image"},
-                    {"type": "image_url", "image_url": {"url": "http://example.com/img.png"}},
-                ],
-            )
-        ]
-        result = _convert_messages_to_dicts(messages)
-        assert result[0]["role"] == "user"
-        assert result[0]["content"] == "Describe this image"
+        ir = _make_ir(request)
+        assert ir.messages[0]["role"] == "user"
+        assert ir.messages[0]["content"] == "Describe this image"
 
     def test_none_content_preserved(self):
         """None content (for assistant messages with only tool_calls) is preserved."""
-        messages = [
-            ChatMessage(
-                role="assistant",
-                content=None,
-                tool_calls=[
-                    ToolCall(
-                        id="call_1",
-                        function=FunctionCall(name="get_weather", arguments='{"location":"Tokyo"}'),
-                    )
-                ],
-            )
-        ]
-        result = _convert_messages_to_dicts(messages)
-        assert result[0]["content"] is None
-        assert "tool_calls" in result[0]
-        assert result[0]["tool_calls"][0]["function"]["name"] == "get_weather"
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="call_1",
+                            function=FunctionCall(
+                                name="get_weather", arguments='{"location":"Tokyo"}'
+                            ),
+                        )
+                    ],
+                )
+            ],
+        )
+        ir = _make_ir(request)
+        assert ir.messages[0]["content"] is None
+        assert "tool_calls" in ir.messages[0]
+        assert ir.messages[0]["tool_calls"][0]["function"]["name"] == "get_weather"
 
     def test_tool_call_id_preserved(self):
         """tool_call_id field is preserved in conversion."""
-        messages = [
-            ChatMessage(
-                role="tool",
-                content='{"temperature": 22}',
-                tool_call_id="call_1",
-            )
-        ]
-        result = _convert_messages_to_dicts(messages)
-        assert result[0]["tool_call_id"] == "call_1"
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(
+                    role="tool",
+                    content='{"temperature": 22}',
+                    tool_call_id="call_1",
+                )
+            ],
+        )
+        ir = _make_ir(request)
+        assert ir.messages[0]["tool_call_id"] == "call_1"
 
     def test_multi_message_conversation(self):
         """Multi-turn conversation is correctly converted."""
-        messages = [
-            ChatMessage(role="system", content="You are a helpful assistant."),
-            ChatMessage(role="user", content="Hi"),
-            ChatMessage(role="assistant", content="Hello!"),
-        ]
-        result = _convert_messages_to_dicts(messages)
-        assert len(result) == 3
-        assert all(isinstance(m, dict) for m in result)
-        assert result[0]["role"] == "system"
-        assert result[2]["content"] == "Hello!"
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(role="system", content="You are a helpful assistant."),
+                ChatMessage(role="user", content="Hi"),
+                ChatMessage(role="assistant", content="Hello!"),
+            ],
+        )
+        ir = _make_ir(request)
+        assert len(ir.messages) == 3
+        assert all(isinstance(m, dict) for m in ir.messages)
+        assert ir.messages[0]["role"] == "system"
+        assert ir.messages[2]["content"] == "Hello!"
+
+    def test_stop_string_normalized_to_list(self):
+        """Single stop string is normalized to a list in IR."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+            stop="END",
+        )
+        ir = _make_ir(request)
+        assert ir.stop == ["END"]
+
+    def test_stop_list_preserved(self):
+        """Stop list is preserved in IR."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+            stop=["<end>", "<stop>"],
+        )
+        ir = _make_ir(request)
+        assert ir.stop == ["<end>", "<stop>"]
+
+    def test_tools_converted_when_tool_choice_not_none(self):
+        """Tools are converted to dicts in IR when tool_choice is not 'none'."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Weather?")],
+            tools=[
+                Tool(
+                    function=FunctionDefinition(
+                        name="get_weather",
+                        description="Get weather",
+                        parameters={
+                            "type": "object",
+                            "properties": {"location": {"type": "string"}},
+                        },
+                    )
+                )
+            ],
+            tool_choice="auto",
+        )
+        ir = _make_ir(request)
+        assert ir.tools is not None
+        assert len(ir.tools) == 1
+
+    def test_tools_excluded_when_tool_choice_is_none(self):
+        """Tools are NOT included in IR when tool_choice is 'none'."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+            tools=[
+                Tool(
+                    function=FunctionDefinition(
+                        name="get_weather",
+                        description="Get weather",
+                    )
+                )
+            ],
+            tool_choice="none",
+        )
+        ir = _make_ir(request)
+        assert ir.tools is None
 
 
 # ============================================================================
@@ -445,11 +518,11 @@ class TestConvertToolCalls:
 
 
 # ============================================================================
-# Tests for _handle_direct_request
+# Tests for _handle_direct_inference
 # ============================================================================
 
 
-class TestHandleDirectRequest:
+class TestHandleDirectInference:
     """Tests for the direct inference path."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
@@ -469,8 +542,9 @@ class TestHandleDirectRequest:
             messages=[ChatMessage(role="user", content="Hi")],
             stream=False,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_direct_request(request)
+        result = await _handle_direct_inference(ir, request)
         assert isinstance(result, ChatCompletionResponse)
         assert result.choices[0].message.content == "Hello there!"
         assert result.usage.total_tokens == 8
@@ -494,14 +568,15 @@ class TestHandleDirectRequest:
             messages=[ChatMessage(role="user", content="Hello")],
             stream=True,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_direct_request(request)
+        result = await _handle_direct_inference(ir, request)
         assert isinstance(result, EventSourceResponse)
 
     @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_stop_string_converted_to_list(self, mock_settings, mock_generate):
-        """Single stop string is converted to a list."""
+        """Single stop string is converted to a list via IR."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
@@ -513,15 +588,16 @@ class TestHandleDirectRequest:
             messages=[ChatMessage(role="user", content="Hi")],
             stop="END",
         )
+        ir = _make_ir(request)
 
-        await _handle_direct_request(request)
+        await _handle_direct_inference(ir, request)
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["stop"] == ["END"]
 
     @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     async def test_stop_list_passed_through(self, mock_settings, mock_generate):
-        """Stop list is passed through unchanged."""
+        """Stop list is passed through unchanged via IR."""
         settings = MagicMock()
         settings.timeout_chat_seconds = 900.0
         mock_settings.return_value = settings
@@ -533,8 +609,9 @@ class TestHandleDirectRequest:
             messages=[ChatMessage(role="user", content="Hi")],
             stop=["<end>", "<stop>"],
         )
+        ir = _make_ir(request)
 
-        await _handle_direct_request(request)
+        await _handle_direct_inference(ir, request)
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["stop"] == ["<end>", "<stop>"]
 
@@ -580,8 +657,9 @@ class TestHandleDirectRequest:
             ],
             tool_choice="auto",
         )
+        ir = _make_ir(request)
 
-        result = await _handle_direct_request(request)
+        result = await _handle_direct_inference(ir, request)
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["tools"] is not None
         assert len(call_kwargs["tools"]) == 1
@@ -613,8 +691,9 @@ class TestHandleDirectRequest:
             ],
             tool_choice="none",
         )
+        ir = _make_ir(request)
 
-        await _handle_direct_request(request)
+        await _handle_direct_inference(ir, request)
         call_kwargs = mock_generate.call_args.kwargs
         assert call_kwargs["tools"] is None
 
@@ -637,8 +716,9 @@ class TestHandleDirectRequest:
             model="test-model",
             messages=[ChatMessage(role="user", content="What is 6*7?")],
         )
+        ir = _make_ir(request)
 
-        result = await _handle_direct_request(request)
+        result = await _handle_direct_inference(ir, request)
         assert result.choices[0].message.reasoning_content == "Let me think step by step..."
 
 
@@ -676,10 +756,9 @@ class TestNonStreamingStructuredOutput:
             messages=[ChatMessage(role="user", content="Generate a person")],
             response_format=ResponseFormat(type="json_schema", json_schema=schema),
         )
+        ir = _make_ir(request)
 
-        result = await _handle_non_streaming(
-            request, [{"role": "user", "content": "Generate a person"}], None
-        )
+        result = await _handle_non_streaming(ir, request)
         assert result.choices[0].message.content == '{"name":"Alice","age":30}'
 
     @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_complete_response")
@@ -708,11 +787,10 @@ class TestNonStreamingStructuredOutput:
             messages=[ChatMessage(role="user", content="Generate a person")],
             response_format=ResponseFormat(type="json_schema", json_schema=schema),
         )
+        ir = _make_ir(request)
 
         with pytest.raises(HTTPException) as exc_info:
-            await _handle_non_streaming(
-                request, [{"role": "user", "content": "Generate a person"}], None
-            )
+            await _handle_non_streaming(ir, request)
         assert exc_info.value.status_code == 400
         assert "JSON schema validation" in exc_info.value.detail
 
@@ -730,9 +808,10 @@ class TestNonStreamingStructuredOutput:
             model="test-model",
             messages=[ChatMessage(role="user", content="Hi")],
         )
+        ir = _make_ir(request)
 
         with pytest.raises(HTTPException) as exc_info:
-            await _handle_non_streaming(request, [{"role": "user", "content": "Hi"}], None)
+            await _handle_non_streaming(ir, request)
         assert exc_info.value.status_code == 408
 
 
@@ -763,8 +842,9 @@ class TestHandleStreaming:
             messages=[ChatMessage(role="user", content="Hi")],
             stream=True,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_streaming(request, [{"role": "user", "content": "Hi"}], None)
+        result = await _handle_streaming(ir, request)
         assert isinstance(result, EventSourceResponse)
 
     @patch("mlx_manager.mlx_server.api.v1.chat.generate_chat_stream")
@@ -785,12 +865,18 @@ class TestHandleStreaming:
             model="test-model",
             messages=[ChatMessage(role="user", content="Weather?")],
             stream=True,
+            tools=[
+                Tool(
+                    function=FunctionDefinition(
+                        name="get_weather",
+                        description="Get weather",
+                    )
+                )
+            ],
         )
+        ir = _make_ir(request)
 
-        tools = [{"type": "function", "function": {"name": "get_weather"}}]
-        result = await _handle_streaming(
-            request, [{"role": "user", "content": "Weather?"}], None, tools
-        )
+        result = await _handle_streaming(ir, request)
         # The generator is lazy; it returns EventSourceResponse immediately
         assert isinstance(result, EventSourceResponse)
 
@@ -1049,7 +1135,7 @@ class TestCreateChatCompletion:
 
 
 # ============================================================================
-# Tests for _handle_routed_request timeout
+# Tests for _route_and_respond timeout
 # ============================================================================
 
 
@@ -1072,9 +1158,10 @@ class TestRoutedRequestTimeout:
             model="test-model",
             messages=[ChatMessage(role="user", content="Hi")],
         )
+        ir = _make_ir(request)
 
         with pytest.raises(HTTPException) as exc_info:
-            await _handle_routed_request(request)
+            await _route_and_respond(ir, request)
         assert exc_info.value.status_code == 408
 
 
@@ -1088,7 +1175,7 @@ class TestBatchingFallback:
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_scheduler_not_initialized_falls_back_to_direct(
         self, mock_direct, mock_scheduler_mgr, mock_settings
     ):
@@ -1111,7 +1198,7 @@ class TestBatchingFallback:
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_request")
+    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_scheduler_other_error_falls_back_to_direct(
         self, mock_direct, mock_scheduler_mgr, mock_settings
     ):
@@ -1163,8 +1250,9 @@ class TestStreamingGeneratorConsumption:
             messages=[ChatMessage(role="user", content="Hello")],
             stream=True,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_streaming(request, [{"role": "user", "content": "Hello"}], None)
+        result = await _handle_streaming(ir, request)
         # Consume the body iterator
         events = []
         async for event in result.body_iterator:
@@ -1188,8 +1276,9 @@ class TestStreamingGeneratorConsumption:
             messages=[ChatMessage(role="user", content="Hello")],
             stream=True,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_streaming(request, [{"role": "user", "content": "Hello"}], None)
+        result = await _handle_streaming(ir, request)
         events = []
         async for event in result.body_iterator:
             events.append(event)
@@ -1208,8 +1297,9 @@ class TestStreamingGeneratorConsumption:
         async def mock_stream():
             yield {"id": "r1", "choices": [{"delta": {"content": "Routed"}}]}
 
+        outcome = RoutingOutcome(raw_stream=mock_stream())
         router_mock = AsyncMock()
-        router_mock.route_request = AsyncMock(return_value=mock_stream())
+        router_mock.route_request = AsyncMock(return_value=outcome)
         mock_get_router.return_value = router_mock
 
         request = ChatCompletionRequest(
@@ -1217,14 +1307,160 @@ class TestStreamingGeneratorConsumption:
             messages=[ChatMessage(role="user", content="Hi")],
             stream=True,
         )
+        ir = _make_ir(request)
 
-        result = await _handle_routed_request(request)
+        result = await _route_and_respond(ir, request)
         events = []
         async for event in result.body_iterator:
             events.append(event)
 
         event_text = "".join(str(e) for e in events)
         assert "DONE" in event_text
+
+
+# ============================================================================
+# Tests for _route_and_respond with IR results
+# ============================================================================
+
+
+class TestRouteAndRespondIR:
+    """Tests for _route_and_respond handling IR results from router."""
+
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    async def test_ir_result_formatted_as_response(self, mock_settings, mock_get_router):
+        """IR non-streaming result is formatted via _format_ir_complete."""
+        settings = MagicMock()
+        settings.timeout_chat_seconds = 900.0
+        mock_settings.return_value = settings
+
+        inference_result = _make_inference_result(content="Hello from IR!")
+        outcome = RoutingOutcome(ir_result=inference_result)
+        router_mock = AsyncMock()
+        router_mock.route_request = AsyncMock(return_value=outcome)
+        mock_get_router.return_value = router_mock
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+        )
+        ir = _make_ir(request)
+
+        result = await _route_and_respond(ir, request)
+        assert isinstance(result, ChatCompletionResponse)
+        assert result.choices[0].message.content == "Hello from IR!"
+
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    async def test_ir_stream_formatted_as_sse(self, mock_settings, mock_get_router):
+        """IR streaming result is formatted as EventSourceResponse."""
+        settings = MagicMock()
+        settings.timeout_chat_seconds = 900.0
+        mock_settings.return_value = settings
+
+        async def mock_ir_gen():
+            yield StreamEvent(type="content", content="streamed")
+            yield TextResult(content="streamed", finish_reason="stop")
+
+        outcome = RoutingOutcome(ir_stream=mock_ir_gen())
+        router_mock = AsyncMock()
+        router_mock.route_request = AsyncMock(return_value=outcome)
+        mock_get_router.return_value = router_mock
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+            stream=True,
+        )
+        ir = _make_ir(request)
+
+        result = await _route_and_respond(ir, request)
+        assert isinstance(result, EventSourceResponse)
+
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_router")
+    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    async def test_empty_outcome_raises_runtime_error(self, mock_settings, mock_get_router):
+        """RoutingOutcome with no result raises RuntimeError."""
+        settings = MagicMock()
+        settings.timeout_chat_seconds = 900.0
+        mock_settings.return_value = settings
+
+        outcome = RoutingOutcome()  # All fields None
+        router_mock = AsyncMock()
+        router_mock.route_request = AsyncMock(return_value=outcome)
+        mock_get_router.return_value = router_mock
+
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+        )
+        ir = _make_ir(request)
+
+        with pytest.raises(RuntimeError, match="RoutingOutcome has no result"):
+            await _route_and_respond(ir, request)
+
+
+# ============================================================================
+# Tests for _format_ir_complete
+# ============================================================================
+
+
+class TestFormatIRComplete:
+    """Tests for the _format_ir_complete helper."""
+
+    def test_basic_formatting(self):
+        """Basic InferenceResult is formatted as ChatCompletionResponse."""
+        inference_result = _make_inference_result(
+            content="Hello!", prompt_tokens=5, completion_tokens=2
+        )
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Hi")],
+        )
+
+        result = _format_ir_complete(inference_result, request)
+        assert isinstance(result, ChatCompletionResponse)
+        assert result.choices[0].message.content == "Hello!"
+        assert result.usage.prompt_tokens == 5
+        assert result.usage.completion_tokens == 2
+        assert result.usage.total_tokens == 7
+
+    def test_tool_calls_formatting(self):
+        """InferenceResult with tool calls is formatted correctly."""
+        inference_result = _make_inference_result(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": '{"loc":"NYC"}'},
+                }
+            ],
+        )
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Weather?")],
+        )
+
+        result = _format_ir_complete(inference_result, request)
+        assert result.choices[0].finish_reason == "tool_calls"
+        assert result.choices[0].message.tool_calls is not None
+        assert result.choices[0].message.tool_calls[0].function.name == "get_weather"
+
+    def test_reasoning_content_formatting(self):
+        """InferenceResult with reasoning_content is formatted correctly."""
+        inference_result = _make_inference_result(
+            content="42",
+            reasoning_content="Let me think...",
+        )
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="6*7?")],
+        )
+
+        result = _format_ir_complete(inference_result, request)
+        assert result.choices[0].message.reasoning_content == "Let me think..."
 
 
 # ============================================================================
@@ -1271,8 +1507,9 @@ class TestHandleBatchedRequest:
                 messages=[ChatMessage(role="user", content="Hi")],
                 stream=False,
             )
+            ir = _make_ir(request)
 
-            await _handle_batched_request(request, Priority.NORMAL)
+            await _handle_batched_request(ir, request, Priority.NORMAL)
             mock_complete_batch.assert_called_once()
             mock_stream_batch.assert_not_called()
 
@@ -1312,8 +1549,9 @@ class TestHandleBatchedRequest:
                 messages=[ChatMessage(role="user", content="Hi")],
                 stream=True,
             )
+            ir = _make_ir(request)
 
-            await _handle_batched_request(request, Priority.NORMAL)
+            await _handle_batched_request(ir, request, Priority.NORMAL)
             mock_stream_batch.assert_called_once()
             mock_complete_batch.assert_not_called()
 

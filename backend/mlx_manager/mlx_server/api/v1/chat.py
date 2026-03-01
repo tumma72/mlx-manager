@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -13,7 +14,11 @@ from sse_starlette.sse import EventSourceResponse
 from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.models.detection import detect_model_type
-from mlx_manager.mlx_server.models.ir import TextResult
+from mlx_manager.mlx_server.models.ir import (
+    InferenceResult,
+    InternalRequest,
+    TextResult,
+)
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
     ChatCompletionChoice,
@@ -46,40 +51,6 @@ router = APIRouter(tags=["chat"])
 
 # Module-level validator instance
 _structured_output_validator = StructuredOutputValidator()
-
-
-def _convert_messages_to_dicts(messages: list[ChatMessage]) -> list[dict[str, Any]]:
-    """Convert ChatMessage objects to dicts preserving ALL fields.
-
-    This is the single conversion point for ChatMessage -> dict format.
-    Preserves tool_calls, tool_call_id, and name fields per P3 (no data loss).
-
-    Args:
-        messages: List of ChatMessage Pydantic objects
-
-    Returns:
-        List of dicts with role, content, and optional tool fields
-    """
-    result: list[dict[str, Any]] = []
-    for m in messages:
-        # Extract text from content blocks (for multimodal support)
-        if isinstance(m.content, str):
-            text: str | None = m.content
-        elif m.content is not None:
-            text, _ = extract_content_parts(m.content)
-        else:
-            text = m.content  # None for assistant messages with only tool_calls
-
-        msg: dict[str, Any] = {"role": m.role, "content": text}
-
-        # Preserve tool calling fields (P3: no data loss through layers)
-        if m.tool_calls:
-            msg["tool_calls"] = [tc.model_dump() for tc in m.tool_calls]
-        if m.tool_call_id is not None:
-            msg["tool_call_id"] = m.tool_call_id
-
-        result.append(msg)
-    return result
 
 
 @router.post("/chat/completions", response_model=None)
@@ -151,78 +122,68 @@ async def _handle_text_request(
 ) -> EventSourceResponse | ChatCompletionResponse:
     """Handle text and vision requests.
 
-    Routes through cloud router if enabled (text only), batching scheduler if enabled (text only),
-    otherwise uses direct inference. Vision models always go through the direct path.
-
-    Note: Cloud routing and batching only work with text models. Vision models require
-    direct inference regardless of settings.
+    Creates protocol-neutral IR early, then routes through cloud router
+    if enabled, batching scheduler if enabled, or direct inference.
     """
     settings = get_settings()
 
+    # Create protocol-neutral IR from request
+    ir = OpenAIFormatter.parse_request(request)
+
     # Preprocess images if present
-    images = None
     if image_urls:
         images = await preprocess_images(image_urls)
+        ir = ir.model_copy(update={"images": images})
 
     # Vision models always use direct path (cloud/batching don't support vision)
-    has_images = images is not None
+    has_images = ir.images is not None
     if has_images:
-        return await _handle_direct_request(request, images)
+        return await _handle_direct_inference(ir, request)
 
-    # Try cloud routing path if enabled (checks mappings and handles failover)
+    # Try cloud routing path if enabled
     if settings.enable_cloud_routing:
         try:
-            return await _handle_routed_request(request)
+            return await _route_and_respond(ir, request)
         except Exception as e:
             logger.warning(f"Cloud routing failed, falling back to local: {e}")
-            # Fall through to direct/batched path
 
     # Try batching path if enabled
     if settings.enable_batching:
         try:
             mgr = get_scheduler_manager()
             priority = mgr.get_priority_for_request(
-                api_key=None,  # TODO: Extract from request headers
+                api_key=None,
                 endpoint="/v1/chat/completions",
             )
-            return await _handle_batched_request(request, priority)
+            return await _handle_batched_request(ir, request, priority)
         except RuntimeError:
-            # Scheduler not initialized - fall through to direct
             logger.warning("Batching enabled but scheduler not initialized, using direct")
         except Exception as e:
-            # Other batching error - fall through to direct
             logger.warning(f"Batching unavailable, falling back to direct: {e}")
 
     # Direct inference path
-    return await _handle_direct_request(request, images)
+    return await _handle_direct_inference(ir, request)
 
 
-async def _handle_routed_request(
+async def _route_and_respond(
+    ir: InternalRequest,
     request: ChatCompletionRequest,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text request via backend router.
+    """Route via BackendRouter and format the RoutingOutcome.
 
-    Uses BackendRouter to lookup model-to-backend mapping and route
-    appropriately. Handles cloud failover when local inference fails.
+    Handles four outcome types:
+    - Passthrough streaming (raw_stream): wrap as EventSourceResponse
+    - Passthrough non-streaming (raw_response): convert to ChatCompletionResponse
+    - IR streaming (ir_stream): format with OpenAIFormatter
+    - IR non-streaming (ir_result): format with OpenAIFormatter
     """
-    # Convert messages preserving all fields (tool_calls, tool_call_id)
-    messages = _convert_messages_to_dicts(request.messages)
-
-    # Get router singleton and route request with timeout
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
     backend_router = get_router()
 
     try:
-        result = await asyncio.wait_for(
-            backend_router.route_request(
-                model=request.model,
-                messages=messages,
-                max_tokens=request.max_tokens or 4096,
-                temperature=request.temperature,
-                stream=request.stream,
-                top_p=request.top_p,
-            ),
+        outcome = await asyncio.wait_for(
+            backend_router.route_request(ir),
             timeout=timeout,
         )
     except TimeoutError:
@@ -233,79 +194,66 @@ async def _handle_routed_request(
             f"The backend may be overloaded or the request too large.",
         )
 
-    if request.stream:
-        # result is an async generator
-        async def event_generator() -> Any:
-            async for chunk in result:  # type: ignore[union-attr]
-                yield {"data": json.dumps(chunk)}
-            yield {"data": "[DONE]"}
+    # Passthrough: cloud backend returned protocol-native response
+    if outcome.is_passthrough:
+        if outcome.raw_stream is not None:
+            raw_stream = outcome.raw_stream
 
-        return EventSourceResponse(event_generator())
-    else:
-        # result is a dict - convert to Pydantic response model
-        result_dict = cast(dict[str, Any], result)
-        choice = result_dict["choices"][0]
-        return ChatCompletionResponse(
-            id=result_dict["id"],
-            created=result_dict["created"],
-            model=result_dict["model"],
-            choices=[
-                ChatCompletionChoice(
-                    index=choice["index"],
-                    message=ChatMessage(
-                        role=choice["message"]["role"],
-                        content=choice["message"]["content"],
-                    ),
-                    finish_reason=choice["finish_reason"],
-                )
-            ],
-            usage=Usage(
-                prompt_tokens=result_dict["usage"]["prompt_tokens"],
-                completion_tokens=result_dict["usage"]["completion_tokens"],
-                total_tokens=result_dict["usage"]["total_tokens"],
-            ),
-        )
+            async def event_generator() -> Any:
+                async for chunk in raw_stream:
+                    yield {"data": json.dumps(chunk)}
+                yield {"data": "[DONE]"}
+
+            return EventSourceResponse(event_generator())
+        else:
+            result_dict = cast(dict[str, Any], outcome.raw_response)
+            choice = result_dict["choices"][0]
+            return ChatCompletionResponse(
+                id=result_dict["id"],
+                created=result_dict["created"],
+                model=result_dict["model"],
+                choices=[
+                    ChatCompletionChoice(
+                        index=choice["index"],
+                        message=ChatMessage(
+                            role=choice["message"]["role"],
+                            content=choice["message"]["content"],
+                        ),
+                        finish_reason=choice["finish_reason"],
+                    )
+                ],
+                usage=Usage(
+                    prompt_tokens=result_dict["usage"]["prompt_tokens"],
+                    completion_tokens=result_dict["usage"]["completion_tokens"],
+                    total_tokens=result_dict["usage"]["total_tokens"],
+                ),
+            )
+
+    # IR streaming result from router
+    if outcome.ir_stream is not None:
+        return _format_ir_stream_as_sse(outcome.ir_stream, ir.model)
+
+    # IR non-streaming result from router
+    if outcome.ir_result is not None:
+        return _format_ir_complete(outcome.ir_result, request)
+
+    raise RuntimeError("RoutingOutcome has no result")
 
 
-async def _handle_direct_request(
+async def _handle_direct_inference(
+    ir: InternalRequest,
     request: ChatCompletionRequest,
-    images: list[Any] | None = None,
 ) -> EventSourceResponse | ChatCompletionResponse:
-    """Handle text and vision requests via direct inference (non-batched).
-
-    Supports:
-    - Vision: Images passed to inference service for multimodal models
-    - Tool calling: Passes tools to inference service
-    - Structured output: Validates response against JSON schema
-    """
-    # Convert messages preserving all fields (tool_calls, tool_call_id)
-    messages = _convert_messages_to_dicts(request.messages)
-
-    # Handle stop parameter (can be string or list)
-    stop: list[str] | None = (
-        request.stop
-        if isinstance(request.stop, list)
-        else ([request.stop] if request.stop else None)
-    )
-
-    # Convert tools to dict format if present (and tool_choice is not "none")
-    tools: list[dict[str, Any]] | None = None
-    if request.tools and request.tool_choice != "none":
-        tools = [tool.model_dump() for tool in request.tools]
-        logger.debug(f"Passing {len(tools)} tools to inference")
-
-    if request.stream:
-        return await _handle_streaming(request, messages, stop, tools, images)
+    """Handle request via direct local inference (non-batched)."""
+    if ir.stream:
+        return await _handle_streaming(ir, request)
     else:
-        return await _handle_non_streaming(request, messages, stop, tools, images)
+        return await _handle_non_streaming(ir, request)
 
 
 async def _handle_streaming(
+    ir: InternalRequest,
     request: ChatCompletionRequest,
-    messages: list[dict[str, Any]],
-    stop: list[str] | None,
-    tools: list[dict[str, Any]] | None = None,
-    images: list[Any] | None = None,
 ) -> EventSourceResponse:
     """Handle streaming response with timeout.
 
@@ -318,7 +266,7 @@ async def _handle_streaming(
     async def event_generator() -> Any:
         try:
             formatter = OpenAIFormatter(
-                model_id=request.model,
+                model_id=ir.model,
                 request_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
             )
 
@@ -329,14 +277,14 @@ async def _handle_streaming(
             # Apply timeout to preparation (model loading, template application)
             gen = await asyncio.wait_for(
                 generate_chat_stream(
-                    model_id=request.model,
-                    messages=messages,
-                    max_tokens=request.max_tokens or 4096,
-                    temperature=request.temperature,
-                    top_p=request.top_p,
-                    stop=stop,
-                    tools=tools,
-                    images=images,
+                    model_id=ir.model,
+                    messages=ir.messages,
+                    max_tokens=ir.params.max_tokens or 4096,
+                    temperature=ir.params.temperature or 1.0,
+                    top_p=ir.params.top_p or 1.0,
+                    stop=ir.stop,
+                    tools=ir.tools,
+                    images=ir.images,
                 ),
                 timeout=timeout,
             )
@@ -372,22 +320,13 @@ async def _handle_streaming(
 
 
 async def _handle_non_streaming(
+    ir: InternalRequest,
     request: ChatCompletionRequest,
-    messages: list[dict[str, Any]],
-    stop: list[str] | None,
-    tools: list[dict[str, Any]] | None = None,
-    images: list[Any] | None = None,
 ) -> ChatCompletionResponse:
     """Handle non-streaming response.
 
     Uses the 3-layer adapter pipeline: inference returns IR TextResult,
     OpenAIFormatter converts it to an OpenAI ChatCompletion response dict.
-
-    Supports:
-    - Vision: Images passed to inference service for multimodal models
-    - Tool calling: tool_calls included in response message
-    - Reasoning: reasoning_content included in response message
-    - Structured output: validates response against JSON schema
     """
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
@@ -395,14 +334,14 @@ async def _handle_non_streaming(
     try:
         inference_result = await asyncio.wait_for(
             generate_chat_complete_response(
-                model_id=request.model,
-                messages=messages,
-                max_tokens=request.max_tokens or 4096,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                stop=stop,
-                tools=tools,
-                images=images,
+                model_id=ir.model,
+                messages=ir.messages,
+                max_tokens=ir.params.max_tokens or 4096,
+                temperature=ir.params.temperature or 1.0,
+                top_p=ir.params.top_p or 1.0,
+                stop=ir.stop,
+                tools=ir.tools,
+                images=ir.images,
             ),
             timeout=timeout,
         )
@@ -434,13 +373,20 @@ async def _handle_non_streaming(
             )
         logger.debug("Structured output validation passed")
 
-    # Format response using OpenAIFormatter
+    return _format_ir_complete(inference_result, request)
+
+
+def _format_ir_complete(
+    inference_result: InferenceResult,
+    request: ChatCompletionRequest,
+) -> ChatCompletionResponse:
+    """Format an InferenceResult as a ChatCompletionResponse."""
     formatter = OpenAIFormatter(
         model_id=request.model,
         request_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
     )
     result_dict = formatter.format_complete(
-        text_result,
+        inference_result.result,
         prompt_tokens=inference_result.prompt_tokens,
         completion_tokens=inference_result.completion_tokens,
     )
@@ -475,6 +421,37 @@ async def _handle_non_streaming(
     )
 
 
+def _format_ir_stream_as_sse(
+    ir_stream: AsyncGenerator,
+    model: str,
+) -> EventSourceResponse:
+    """Format an IR stream as an EventSourceResponse with OpenAI SSE format."""
+
+    async def event_generator() -> Any:
+        formatter = OpenAIFormatter(
+            model_id=model,
+            request_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+        )
+        for sse in formatter.stream_start():
+            yield sse
+
+        output_tokens = 0
+        async for item in ir_stream:
+            if isinstance(item, TextResult):
+                for sse in formatter.stream_end(
+                    item.finish_reason,
+                    tool_calls=item.tool_calls,
+                    output_tokens=output_tokens,
+                ):
+                    yield sse
+            else:
+                output_tokens += 1
+                for sse in formatter.stream_event(item):
+                    yield sse
+
+    return EventSourceResponse(event_generator())
+
+
 def _convert_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[ToolCall] | None:
     """Convert tool calls dicts to canonical ToolCall Pydantic objects.
 
@@ -498,6 +475,7 @@ def _convert_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[ToolCal
 
 
 async def _handle_batched_request(
+    ir: InternalRequest,
     request: ChatCompletionRequest,
     priority: Priority,
 ) -> EventSourceResponse | ChatCompletionResponse:
@@ -509,7 +487,7 @@ async def _handle_batched_request(
     from mlx_manager.mlx_server.models.pool import get_model_pool
 
     pool = get_model_pool()
-    loaded = await pool.get_model(request.model)
+    loaded = await pool.get_model(ir.model)
     adapter = loaded.adapter
     if adapter is None:
         # Fallback for edge cases
@@ -520,11 +498,8 @@ async def _handle_batched_request(
     # Get actual tokenizer (handle Processor wrapper for vision models)
     actual_tokenizer = getattr(loaded.tokenizer, "tokenizer", loaded.tokenizer)
 
-    # Build messages for chat template (preserving all fields)
-    messages = _convert_messages_to_dicts(request.messages)
-
     # Apply chat template to get prompt string
-    prompt = adapter.apply_chat_template(messages, add_generation_prompt=True)
+    prompt = adapter.apply_chat_template(ir.messages, add_generation_prompt=True)
 
     # Tokenize prompt
     prompt_tokens = actual_tokenizer.encode(prompt)
@@ -533,22 +508,22 @@ async def _handle_batched_request(
     request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     batch_request = BatchRequest(
         request_id=request_id,
-        model_id=request.model,
+        model_id=ir.model,
         prompt_tokens=prompt_tokens,
-        max_tokens=request.max_tokens or 4096,
+        max_tokens=ir.params.max_tokens or 4096,
         priority=priority,
     )
 
     # Get scheduler and configure
     mgr = get_scheduler_manager()
-    scheduler = await mgr.get_scheduler(request.model)
-    await mgr.configure_scheduler(request.model, loaded.model, loaded.tokenizer, adapter)
+    scheduler = await mgr.get_scheduler(ir.model)
+    await mgr.configure_scheduler(ir.model, loaded.model, loaded.tokenizer, adapter)
 
     # Route based on streaming preference
-    if request.stream:
-        return await _stream_batched_response(batch_request, scheduler, request.model)
+    if ir.stream:
+        return await _stream_batched_response(batch_request, scheduler, ir.model)
     else:
-        return await _complete_batched_response(batch_request, scheduler, request.model)
+        return await _complete_batched_response(batch_request, scheduler, ir.model)
 
 
 async def _stream_batched_response(
