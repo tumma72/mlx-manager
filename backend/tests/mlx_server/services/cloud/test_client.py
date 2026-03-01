@@ -1,6 +1,5 @@
 """Tests for CloudBackendClient base class."""
 
-from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,19 +16,14 @@ from mlx_manager.mlx_server.services.cloud.client import (
 class ConcreteCloudClient(CloudBackendClient):
     """Concrete implementation for testing the abstract base class."""
 
+    @property
+    def protocol(self) -> Any:
+        return "openai"
+
     def _build_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}"}
 
-    async def chat_completion(
-        self,
-        messages: list[dict[str, Any]],
-        model: str,
-        max_tokens: int,
-        temperature: float = 1.0,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> AsyncGenerator[dict, None] | dict:
-        # Mock implementation for testing
+    async def forward_request(self, ir: Any) -> Any:
         return {"choices": [{"message": {"content": "test"}}]}
 
 
@@ -390,4 +384,4 @@ class TestAbstractMethods:
     def test_abstract_methods_defined(self) -> None:
         """Abstract methods are properly defined."""
         assert "_build_headers" in CloudBackendClient.__abstractmethods__
-        assert "chat_completion" in CloudBackendClient.__abstractmethods__
+        assert "forward_request" in CloudBackendClient.__abstractmethods__

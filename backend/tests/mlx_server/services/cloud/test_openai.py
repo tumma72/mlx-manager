@@ -1,16 +1,27 @@
 """Tests for OpenAI cloud backend client."""
 
 import json
+from collections.abc import AsyncGenerator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from mlx_manager.mlx_server.models.ir import (
+    InferenceResult,
+    InternalRequest,
+    RoutingOutcome,
+    StreamEvent,
+    TextResult,
+)
 from mlx_manager.mlx_server.services.cloud.openai import (
     OPENAI_API_URL,
     OpenAICloudBackend,
     create_openai_backend,
 )
+from mlx_manager.models.enums import ApiType
+from mlx_manager.models.value_objects import InferenceParams
 
 
 class TestOpenAICloudBackendInitialization:
@@ -68,16 +79,41 @@ class TestBuildHeaders:
         assert backend._client.headers["Content-Type"] == "application/json"
 
 
-class TestChatCompletionNonStreaming:
-    """Tests for non-streaming chat completion."""
+def _make_ir(
+    *,
+    model: str = "gpt-4",
+    messages: list[dict[str, Any]] | None = None,
+    stream: bool = False,
+    original_protocol: ApiType | None = ApiType.OPENAI,
+    original_request: Any = None,
+    stop: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    max_tokens: int = 100,
+    temperature: float = 1.0,
+) -> InternalRequest:
+    """Helper to create InternalRequest for tests."""
+    return InternalRequest(
+        model=model,
+        messages=messages or [{"role": "user", "content": "Hi"}],
+        params=InferenceParams(max_tokens=max_tokens, temperature=temperature),
+        stream=stream,
+        stop=stop,
+        tools=tools,
+        original_protocol=original_protocol,
+        original_request=original_request,
+    )
+
+
+class TestForwardRequestSameProtocol:
+    """Tests for forward_request with same-protocol (OpenAI->OpenAI) passthrough."""
 
     @pytest.fixture
     def backend(self) -> OpenAICloudBackend:
         """Create a test backend."""
         return OpenAICloudBackend(api_key="test-key")
 
-    async def test_non_streaming_returns_dict(self, backend: OpenAICloudBackend) -> None:
-        """Non-streaming chat_completion returns a dict."""
+    async def test_non_streaming_returns_raw_response(self, backend: OpenAICloudBackend) -> None:
+        """Same-protocol non-streaming returns RoutingOutcome with raw_response."""
         mock_response = MagicMock(spec=httpx.Response)
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
@@ -90,103 +126,18 @@ class TestChatCompletionNonStreaming:
         with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = mock_response
 
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-            )
+            ir = _make_ir(original_protocol=ApiType.OPENAI)
+            outcome = await backend.forward_request(ir)
 
-            assert isinstance(result, dict)
-            assert result["id"] == "chatcmpl-123"
-            assert result["choices"][0]["message"]["content"] == "Hello!"
+            assert isinstance(outcome, RoutingOutcome)
+            assert outcome.raw_response is not None
+            assert outcome.raw_response["id"] == "chatcmpl-123"
+            assert outcome.ir_result is None
 
-    async def test_non_streaming_passes_request_data(self, backend: OpenAICloudBackend) -> None:
-        """Non-streaming passes correct request data to API."""
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"choices": []}
+    async def test_streaming_returns_raw_stream(self, backend: OpenAICloudBackend) -> None:
+        """Same-protocol streaming returns RoutingOutcome with raw_stream."""
 
-        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value = mock_response
-
-            await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hello"}],
-                model="gpt-3.5-turbo",
-                max_tokens=200,
-                temperature=0.7,
-            )
-
-            # Verify endpoint
-            mock_post.assert_called_once()
-            call_args = mock_post.call_args
-            assert call_args[0][0] == "/v1/chat/completions"
-
-            # Verify request body
-            json_data = call_args[1]["json"]
-            assert json_data["model"] == "gpt-3.5-turbo"
-            assert json_data["messages"] == [{"role": "user", "content": "Hello"}]
-            assert json_data["max_tokens"] == 200
-            assert json_data["temperature"] == 0.7
-            assert json_data["stream"] is False
-
-    async def test_non_streaming_passes_additional_kwargs(
-        self, backend: OpenAICloudBackend
-    ) -> None:
-        """Non-streaming passes additional kwargs to request."""
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"choices": []}
-
-        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value = mock_response
-
-            await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hello"}],
-                model="gpt-4",
-                max_tokens=100,
-                top_p=0.9,
-                presence_penalty=0.5,
-            )
-
-            json_data = mock_post.call_args[1]["json"]
-            assert json_data["top_p"] == 0.9
-            assert json_data["presence_penalty"] == 0.5
-
-    async def test_non_streaming_propagates_http_error(self, backend: OpenAICloudBackend) -> None:
-        """Non-streaming propagates HTTP errors."""
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 401
-        http_error = httpx.HTTPStatusError(
-            "Unauthorized", request=MagicMock(), response=mock_response
-        )
-        mock_response.raise_for_status.side_effect = http_error
-
-        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value = mock_response
-
-            with pytest.raises(httpx.HTTPStatusError):
-                await backend.chat_completion(
-                    messages=[{"role": "user", "content": "Hi"}],
-                    model="gpt-4",
-                    max_tokens=100,
-                )
-
-
-class TestChatCompletionStreaming:
-    """Tests for streaming chat completion."""
-
-    @pytest.fixture
-    def backend(self) -> OpenAICloudBackend:
-        """Create a test backend."""
-        return OpenAICloudBackend(api_key="test-key")
-
-    async def test_streaming_returns_async_generator(self, backend: OpenAICloudBackend) -> None:
-        """Streaming chat_completion returns an async generator."""
-
-        # Mock the stream context manager
-        async def mock_aiter_lines():
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
             yield 'data: {"id": "chunk-1", "choices": [{"delta": {"content": "Hi"}}]}'
             yield "data: [DONE]"
 
@@ -200,25 +151,97 @@ class TestChatCompletionStreaming:
         mock_stream_cm.__aexit__.return_value = None
 
         with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
+            ir = _make_ir(stream=True, original_protocol=ApiType.OPENAI)
+            outcome = await backend.forward_request(ir)
 
-            # Should be an async generator
-            chunks = []
-            async for chunk in result:
-                chunks.append(chunk)
+            assert outcome.raw_stream is not None
+            assert outcome.ir_stream is None
 
+            # Consume stream
+            chunks = [chunk async for chunk in outcome.raw_stream]
             assert len(chunks) == 1
             assert chunks[0]["id"] == "chunk-1"
 
-    async def test_streaming_passes_stream_true(self, backend: OpenAICloudBackend) -> None:
-        """Streaming sets stream=True in request data."""
+    async def test_passthrough_uses_original_request_when_available(
+        self, backend: OpenAICloudBackend
+    ) -> None:
+        """Same-protocol passthrough uses original_request.model_dump() when set."""
+        original = MagicMock()
+        original.model_dump.return_value = {
+            "model": "gpt-4-original",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 200,
+            "temperature": 0.5,
+            "top_p": 0.9,
+        }
 
-        async def mock_aiter_lines():
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"choices": [{"message": {"content": "Hi"}}]}
+
+        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(
+                model="gpt-4-routed",
+                original_protocol=ApiType.OPENAI,
+                original_request=original,
+            )
+            await backend.forward_request(ir)
+
+            # Verify model is overridden
+            json_data = mock_post.call_args[1]["json"]
+            assert json_data["model"] == "gpt-4-routed"
+            # Verify original request fields preserved
+            assert json_data["top_p"] == 0.9
+            assert json_data["stream"] is False
+
+
+class TestForwardRequestCrossProtocol:
+    """Tests for forward_request with cross-protocol (Anthropic->OpenAI) conversion."""
+
+    @pytest.fixture
+    def backend(self) -> OpenAICloudBackend:
+        """Create a test backend."""
+        return OpenAICloudBackend(api_key="test-key")
+
+    async def test_non_streaming_returns_ir_result(self, backend: OpenAICloudBackend) -> None:
+        """Cross-protocol non-streaming returns RoutingOutcome with ir_result."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "id": "chatcmpl-123",
+            "choices": [
+                {
+                    "message": {"content": "Hello!", "role": "assistant"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+
+        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(original_protocol=ApiType.ANTHROPIC)
+            outcome = await backend.forward_request(ir)
+
+            assert outcome.ir_result is not None
+            assert outcome.raw_response is None
+            assert isinstance(outcome.ir_result, InferenceResult)
+            assert outcome.ir_result.result.content == "Hello!"
+            assert outcome.ir_result.result.finish_reason == "stop"
+            assert outcome.ir_result.prompt_tokens == 10
+            assert outcome.ir_result.completion_tokens == 5
+
+    async def test_streaming_returns_ir_stream(self, backend: OpenAICloudBackend) -> None:
+        """Cross-protocol streaming returns RoutingOutcome with ir_stream."""
+
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
+            yield 'data: {"choices": [{"delta": {"content": "Hi"}, "finish_reason": null}]}'
+            yield 'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}'
             yield "data: [DONE]"
 
         mock_response = AsyncMock()
@@ -230,21 +253,204 @@ class TestChatCompletionStreaming:
         mock_stream_cm.__aenter__.return_value = mock_response
         mock_stream_cm.__aexit__.return_value = None
 
-        with patch.object(backend._client, "stream", return_value=mock_stream_cm) as mock_stream:
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
+        with patch.object(backend._client, "stream", return_value=mock_stream_cm):
+            ir = _make_ir(stream=True, original_protocol=ApiType.ANTHROPIC)
+            outcome = await backend.forward_request(ir)
+
+            assert outcome.ir_stream is not None
+            assert outcome.raw_stream is None
+
+            events = [event async for event in outcome.ir_stream]
+            assert len(events) == 2
+            # First event: content
+            assert isinstance(events[0], StreamEvent)
+            assert events[0].content == "Hi"
+            # Second event: finish
+            assert isinstance(events[1], TextResult)
+            assert events[1].finish_reason == "stop"
+
+    async def test_cross_protocol_builds_from_ir_fields(self, backend: OpenAICloudBackend) -> None:
+        """Cross-protocol builds request from IR fields, not original_request."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {"content": "OK"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {},
+        }
+
+        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(
                 model="gpt-4",
-                max_tokens=100,
-                stream=True,
+                messages=[{"role": "user", "content": "Hello"}],
+                original_protocol=ApiType.ANTHROPIC,
+                max_tokens=200,
+                temperature=0.7,
+                stop=["END"],
+                tools=[{"type": "function", "function": {"name": "test"}}],
             )
+            await backend.forward_request(ir)
 
-            # Consume the generator
-            async for _ in result:
-                pass
+            json_data = mock_post.call_args[1]["json"]
+            assert json_data["model"] == "gpt-4"
+            assert json_data["messages"] == [{"role": "user", "content": "Hello"}]
+            assert json_data["max_tokens"] == 200
+            assert json_data["temperature"] == 0.7
+            assert json_data["stop"] == ["END"]
+            assert json_data["tools"] == [{"type": "function", "function": {"name": "test"}}]
+            assert json_data["stream"] is False
 
-            # Verify stream=True in request
-            json_data = mock_stream.call_args[1]["json"]
-            assert json_data["stream"] is True
+    async def test_none_protocol_treated_as_cross_protocol(
+        self, backend: OpenAICloudBackend
+    ) -> None:
+        """None original_protocol treated as cross-protocol."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+            "usage": {},
+        }
+
+        with patch.object(backend._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(original_protocol=None)
+            outcome = await backend.forward_request(ir)
+
+            assert outcome.ir_result is not None
+            assert outcome.raw_response is None
+
+
+class TestParseResponseToIR:
+    """Tests for _parse_response_to_ir static method."""
+
+    def test_parses_basic_response(self) -> None:
+        """Parses basic OpenAI response to InferenceResult."""
+        response = {
+            "choices": [
+                {
+                    "message": {"content": "Hello world", "role": "assistant"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+        result = OpenAICloudBackend._parse_response_to_ir(response)
+
+        assert isinstance(result, InferenceResult)
+        assert result.result.content == "Hello world"
+        assert result.result.finish_reason == "stop"
+        assert result.prompt_tokens == 10
+        assert result.completion_tokens == 5
+
+    def test_parses_tool_calls(self) -> None:
+        """Parses response with tool_calls."""
+        tool_calls = [{"id": "call_1", "function": {"name": "test", "arguments": "{}"}}]
+        response = {
+            "choices": [
+                {
+                    "message": {"content": "", "tool_calls": tool_calls},
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+        result = OpenAICloudBackend._parse_response_to_ir(response)
+
+        assert result.result.tool_calls == tool_calls
+        assert result.result.finish_reason == "tool_calls"
+
+    def test_parses_reasoning_content(self) -> None:
+        """Parses response with reasoning_content."""
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "answer",
+                        "reasoning_content": "thinking...",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+        result = OpenAICloudBackend._parse_response_to_ir(response)
+
+        assert result.result.reasoning_content == "thinking..."
+
+    def test_handles_missing_usage(self) -> None:
+        """Handles response without usage field."""
+        response = {
+            "choices": [{"message": {"content": "Hi"}, "finish_reason": "stop"}],
+        }
+        result = OpenAICloudBackend._parse_response_to_ir(response)
+
+        assert result.prompt_tokens == 0
+        assert result.completion_tokens == 0
+
+
+class TestStreamToIR:
+    """Tests for _stream_to_ir static method."""
+
+    async def test_converts_content_chunks(self) -> None:
+        """Converts OpenAI content delta chunks to StreamEvent."""
+
+        async def mock_stream() -> AsyncGenerator[dict, None]:
+            yield {"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]}
+            yield {"choices": [{"delta": {"content": " world"}, "finish_reason": None}]}
+
+        events = [event async for event in OpenAICloudBackend._stream_to_ir(mock_stream())]
+
+        assert len(events) == 2
+        assert all(isinstance(e, StreamEvent) for e in events)
+        assert events[0].content == "Hello"
+        assert events[1].content == " world"
+
+    async def test_converts_finish_reason(self) -> None:
+        """Converts finish_reason chunk to TextResult."""
+
+        async def mock_stream() -> AsyncGenerator[dict, None]:
+            yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+
+        events = [event async for event in OpenAICloudBackend._stream_to_ir(mock_stream())]
+
+        assert len(events) == 1
+        assert isinstance(events[0], TextResult)
+        assert events[0].finish_reason == "stop"
+
+    async def test_converts_reasoning_content(self) -> None:
+        """Converts reasoning_content delta to StreamEvent."""
+
+        async def mock_stream() -> AsyncGenerator[dict, None]:
+            yield {
+                "choices": [{"delta": {"reasoning_content": "thinking..."}, "finish_reason": None}]
+            }
+
+        events = [event async for event in OpenAICloudBackend._stream_to_ir(mock_stream())]
+
+        assert len(events) == 1
+        assert isinstance(events[0], StreamEvent)
+        assert events[0].reasoning_content == "thinking..."
+
+    async def test_skips_empty_choices(self) -> None:
+        """Skips chunks with empty choices."""
+
+        async def mock_stream() -> AsyncGenerator[dict, None]:
+            yield {"choices": []}
+            yield {"choices": [{"delta": {"content": "Hi"}, "finish_reason": None}]}
+
+        events = [event async for event in OpenAICloudBackend._stream_to_ir(mock_stream())]
+
+        assert len(events) == 1
+        assert events[0].content == "Hi"
 
 
 class TestStreamChatCompletionSSEParsing:
@@ -260,7 +466,7 @@ class TestStreamChatCompletionSSEParsing:
         chunk1 = {"id": "1", "choices": [{"delta": {"content": "Hello"}}]}
         chunk2 = {"id": "2", "choices": [{"delta": {"content": " world"}}]}
 
-        async def mock_aiter_lines():
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
             yield f"data: {json.dumps(chunk1)}"
             yield f"data: {json.dumps(chunk2)}"
             yield "data: [DONE]"
@@ -275,14 +481,7 @@ class TestStreamChatCompletionSSEParsing:
         mock_stream_cm.__aexit__.return_value = None
 
         with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
-
-            chunks = [chunk async for chunk in result]
+            chunks = [chunk async for chunk in backend._stream_chat_completion({"stream": True})]
 
             assert len(chunks) == 2
             assert chunks[0] == chunk1
@@ -292,10 +491,10 @@ class TestStreamChatCompletionSSEParsing:
         """Skips empty lines in SSE stream."""
         chunk = {"id": "1", "choices": [{"delta": {"content": "Hi"}}]}
 
-        async def mock_aiter_lines():
-            yield ""  # Empty line
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
+            yield ""
             yield f"data: {json.dumps(chunk)}"
-            yield "   "  # Whitespace only
+            yield "   "
             yield "data: [DONE]"
 
         mock_response = AsyncMock()
@@ -308,27 +507,17 @@ class TestStreamChatCompletionSSEParsing:
         mock_stream_cm.__aexit__.return_value = None
 
         with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
-
-            chunks = [chunk async for chunk in result]
-
-            # Only 1 chunk, empty lines skipped
+            chunks = [c async for c in backend._stream_chat_completion({"stream": True})]
             assert len(chunks) == 1
-            assert chunks[0] == chunk
 
     async def test_handles_done_marker(self, backend: OpenAICloudBackend) -> None:
         """Stops iteration at [DONE] marker."""
         chunk = {"id": "1", "choices": [{"delta": {"content": "Hi"}}]}
 
-        async def mock_aiter_lines():
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
             yield f"data: {json.dumps(chunk)}"
             yield "data: [DONE]"
-            yield 'data: {"should": "not appear"}'  # After DONE
+            yield 'data: {"should": "not appear"}'
 
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -340,23 +529,14 @@ class TestStreamChatCompletionSSEParsing:
         mock_stream_cm.__aexit__.return_value = None
 
         with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
-
-            chunks = [chunk async for chunk in result]
-
-            # Only 1 chunk before [DONE]
+            chunks = [c async for c in backend._stream_chat_completion({"stream": True})]
             assert len(chunks) == 1
 
     async def test_handles_malformed_json_gracefully(self, backend: OpenAICloudBackend) -> None:
         """Skips malformed JSON without crashing."""
         valid_chunk = {"id": "1", "choices": [{"delta": {"content": "Hi"}}]}
 
-        async def mock_aiter_lines():
+        async def mock_aiter_lines() -> AsyncGenerator[str, None]:
             yield "data: {not valid json"
             yield f"data: {json.dumps(valid_chunk)}"
             yield "data: also invalid"
@@ -372,51 +552,9 @@ class TestStreamChatCompletionSSEParsing:
         mock_stream_cm.__aexit__.return_value = None
 
         with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
-
-            chunks = [chunk async for chunk in result]
-
-            # Only valid chunk captured
+            chunks = [c async for c in backend._stream_chat_completion({"stream": True})]
             assert len(chunks) == 1
             assert chunks[0] == valid_chunk
-
-    async def test_ignores_non_data_lines(self, backend: OpenAICloudBackend) -> None:
-        """Ignores lines that don't start with 'data:'."""
-        chunk = {"id": "1", "choices": [{"delta": {"content": "Hi"}}]}
-
-        async def mock_aiter_lines():
-            yield ": comment line"  # SSE comment
-            yield "event: message"  # SSE event type
-            yield f"data: {json.dumps(chunk)}"
-            yield "id: 123"  # SSE id
-            yield "data: [DONE]"
-
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.aiter_lines = mock_aiter_lines
-
-        mock_stream_cm = AsyncMock()
-        mock_stream_cm.__aenter__.return_value = mock_response
-        mock_stream_cm.__aexit__.return_value = None
-
-        with patch.object(backend._client, "stream", return_value=mock_stream_cm):
-            result = await backend.chat_completion(
-                messages=[{"role": "user", "content": "Hi"}],
-                model="gpt-4",
-                max_tokens=100,
-                stream=True,
-            )
-
-            chunks = [chunk async for chunk in result]
-
-            # Only 1 data chunk
-            assert len(chunks) == 1
 
 
 class TestCreateOpenaiBackend:

@@ -7,12 +7,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from mlx_manager.mlx_server.models.ir import (
+    InferenceResult,
+    InternalRequest,
+    StreamEvent,
+    TextResult,
+)
 from mlx_manager.mlx_server.services.cloud.anthropic import (
     ANTHROPIC_API_URL,
     ANTHROPIC_VERSION,
     AnthropicCloudBackend,
     create_anthropic_backend,
 )
+from mlx_manager.models.enums import ApiType
+from mlx_manager.models.value_objects import InferenceParams
 
 
 class TestAnthropicCloudBackendInitialization:
@@ -151,19 +159,38 @@ class TestTranslateRequest:
         assert "stop_sequences" not in result
 
 
-class TestTranslateResponse:
-    """Tests for _translate_response method."""
+def _make_ir(
+    *,
+    model: str = "claude-3-opus",
+    messages: list[dict[str, Any]] | None = None,
+    stream: bool = False,
+    original_protocol: ApiType | None = ApiType.ANTHROPIC,
+    original_request: Any = None,
+    max_tokens: int = 100,
+    temperature: float = 1.0,
+) -> InternalRequest:
+    """Helper to create InternalRequest for tests."""
+    return InternalRequest(
+        model=model,
+        messages=messages or [{"role": "user", "content": "Hi"}],
+        params=InferenceParams(max_tokens=max_tokens, temperature=temperature),
+        stream=stream,
+        original_protocol=original_protocol,
+        original_request=original_request,
+    )
+
+
+class TestParseResponseToIR:
+    """Tests for _parse_response_to_ir method."""
 
     @pytest.fixture
     def client(self) -> AnthropicCloudBackend:
         """Create a test client."""
         return AnthropicCloudBackend(api_key="test-key")
 
-    def test_concatenates_content_blocks_to_string(self, client: AnthropicCloudBackend) -> None:
-        """Content blocks concatenated to single string."""
+    def test_parses_text_content_blocks(self, client: AnthropicCloudBackend) -> None:
+        """Concatenates text content blocks."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [
                 {"type": "text", "text": "Hello"},
                 {"type": "text", "text": "World"},
@@ -171,108 +198,59 @@ class TestTranslateResponse:
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["choices"][0]["message"]["content"] == "Hello World"
+        assert isinstance(result, InferenceResult)
+        assert result.result.content == "Hello World"
 
     def test_translates_stop_reason_end_turn(self, client: AnthropicCloudBackend) -> None:
         """end_turn translated to stop."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [{"type": "text", "text": "Hello"}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["choices"][0]["finish_reason"] == "stop"
+        assert result.result.finish_reason == "stop"
 
     def test_translates_stop_reason_max_tokens(self, client: AnthropicCloudBackend) -> None:
         """max_tokens translated to length."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [{"type": "text", "text": "Hello"}],
             "stop_reason": "max_tokens",
             "usage": {"input_tokens": 10, "output_tokens": 100},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["choices"][0]["finish_reason"] == "length"
+        assert result.result.finish_reason == "length"
 
     def test_translates_stop_reason_stop_sequence(self, client: AnthropicCloudBackend) -> None:
         """stop_sequence translated to stop."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [{"type": "text", "text": "Hello"}],
             "stop_reason": "stop_sequence",
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["choices"][0]["finish_reason"] == "stop"
+        assert result.result.finish_reason == "stop"
 
     def test_maps_usage_correctly(self, client: AnthropicCloudBackend) -> None:
         """Usage mapped from input/output to prompt/completion tokens."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [{"type": "text", "text": "Hello"}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 100, "output_tokens": 50},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["usage"]["prompt_tokens"] == 100
-        assert result["usage"]["completion_tokens"] == 50
-        assert result["usage"]["total_tokens"] == 150
-
-    def test_changes_id_prefix(self, client: AnthropicCloudBackend) -> None:
-        """ID prefix changed from msg_ to chatcmpl-."""
-        anthropic_response = {
-            "id": "msg_abc123",
-            "model": "claude-3-opus",
-            "content": [{"type": "text", "text": "Hello"}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-        }
-        result = client._translate_response(anthropic_response)
-
-        assert result["id"] == "chatcmpl-abc123"
-
-    def test_sets_object_type(self, client: AnthropicCloudBackend) -> None:
-        """Object type set to chat.completion."""
-        anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
-            "content": [{"type": "text", "text": "Hello"}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-        }
-        result = client._translate_response(anthropic_response)
-
-        assert result["object"] == "chat.completion"
-
-    def test_preserves_model(self, client: AnthropicCloudBackend) -> None:
-        """Model name preserved."""
-        anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus-20240229",
-            "content": [{"type": "text", "text": "Hello"}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-        }
-        result = client._translate_response(anthropic_response)
-
-        assert result["model"] == "claude-3-opus-20240229"
+        assert result.prompt_tokens == 100
+        assert result.completion_tokens == 50
 
     def test_ignores_non_text_content_blocks(self, client: AnthropicCloudBackend) -> None:
         """Non-text content blocks ignored."""
         anthropic_response = {
-            "id": "msg_123",
-            "model": "claude-3-opus",
             "content": [
                 {"type": "text", "text": "Hello"},
                 {"type": "tool_use", "id": "tool_1"},
@@ -281,66 +259,135 @@ class TestTranslateResponse:
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
-        result = client._translate_response(anthropic_response)
+        result = client._parse_response_to_ir(anthropic_response)
 
-        assert result["choices"][0]["message"]["content"] == "Hello World"
+        assert result.result.content == "Hello World"
+
+    def test_handles_missing_usage(self, client: AnthropicCloudBackend) -> None:
+        """Handles response without usage field."""
+        anthropic_response = {
+            "content": [{"type": "text", "text": "Hello"}],
+            "stop_reason": "end_turn",
+        }
+        result = client._parse_response_to_ir(anthropic_response)
+
+        assert result.prompt_tokens == 0
+        assert result.completion_tokens == 0
 
 
-class TestStreamWithTranslation:
-    """Tests for _stream_with_translation method."""
-
-    # Common SSE test data strings (avoid line length issues)
-    DELTA_HELLO = (
-        'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}'
-    )
-    DELTA_NOT_SHOWN = (
-        'data: {"type": "content_block_delta", '
-        '"delta": {"type": "text_delta", "text": "Should not appear"}}'
-    )
+class TestStreamAnthropicNative:
+    """Tests for _stream_anthropic_native method."""
 
     @pytest.fixture
     def client(self) -> AnthropicCloudBackend:
         """Create a test client."""
         return AnthropicCloudBackend(api_key="test-key")
 
-    async def test_content_block_delta_yields_openai_chunk(
-        self, client: AnthropicCloudBackend
-    ) -> None:
-        """content_block_delta events yield OpenAI format chunks."""
-        delta_hello = self.DELTA_HELLO
+    async def test_yields_event_dicts_for_sse(self, client: AnthropicCloudBackend) -> None:
+        """Yields dicts with event and data keys for EventSourceResponse."""
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
-            yield delta_hello
+            yield "event: content_block_delta"
+            yield 'data: {"type": "content_block_delta", "delta": {"text": "Hello"}}'
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_anthropic_native({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert len(chunks) == 1
-            assert chunks[0]["object"] == "chat.completion.chunk"
-            assert chunks[0]["choices"][0]["delta"]["content"] == "Hello"
-            assert chunks[0]["choices"][0]["finish_reason"] is None
+            assert len(events) == 1
+            assert events[0]["event"] == "content_block_delta"
+            assert "data" in events[0]
 
-    async def test_message_delta_yields_finish_reason(self, client: AnthropicCloudBackend) -> None:
-        """message_delta with stop_reason yields finish chunk."""
+    async def test_pairs_event_type_with_data(self, client: AnthropicCloudBackend) -> None:
+        """Pairs event: type with subsequent data: line."""
+
+        async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+            yield "event: message_start"
+            yield 'data: {"type": "message_start", "message": {}}'
+            yield "event: content_block_delta"
+            yield 'data: {"type": "content_block_delta", "delta": {"text": "Hi"}}'
+
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
+            events = []
+            async for event in client._stream_anthropic_native({"model": "claude-3-opus"}):
+                events.append(event)
+
+            assert len(events) == 2
+            assert events[0]["event"] == "message_start"
+            assert events[1]["event"] == "content_block_delta"
+
+    async def test_skips_empty_lines(self, client: AnthropicCloudBackend) -> None:
+        """Skips empty lines."""
+
+        async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+            yield ""
+            yield "   "
+            yield "event: content_block_delta"
+            yield 'data: {"type": "content_block_delta", "delta": {"text": "Hi"}}'
+
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
+            events = []
+            async for event in client._stream_anthropic_native({"model": "claude-3-opus"}):
+                events.append(event)
+
+            assert len(events) == 1
+
+
+class TestStreamToIR:
+    """Tests for _stream_to_ir method."""
+
+    @pytest.fixture
+    def client(self) -> AnthropicCloudBackend:
+        """Create a test client."""
+        return AnthropicCloudBackend(api_key="test-key")
+
+    async def test_content_block_delta_yields_stream_event(
+        self, client: AnthropicCloudBackend
+    ) -> None:
+        """content_block_delta events yield StreamEvent."""
+        delta = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
+        )
+
+        async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+            yield delta
+
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
+
+            assert len(events) == 1
+            assert isinstance(events[0], StreamEvent)
+            assert events[0].content == "Hello"
+
+    async def test_message_delta_yields_text_result(self, client: AnthropicCloudBackend) -> None:
+        """message_delta with stop_reason yields TextResult."""
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield 'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}'
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert len(chunks) == 1
-            assert chunks[0]["choices"][0]["finish_reason"] == "stop"
-            assert chunks[0]["choices"][0]["delta"] == {}
+            assert len(events) == 1
+            assert isinstance(events[0], TextResult)
+            assert events[0].finish_reason == "stop"
 
     async def test_message_stop_ends_stream(self, client: AnthropicCloudBackend) -> None:
-        """message_stop ends stream."""
-        delta_hello = self.DELTA_HELLO
-        delta_not_shown = self.DELTA_NOT_SHOWN
+        """message_stop ends the stream."""
+        delta_hello = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
+        )
+        delta_not_shown = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Should not appear"}}'
+        )
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield delta_hello
@@ -348,17 +395,20 @@ class TestStreamWithTranslation:
             yield delta_not_shown
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            # Only one chunk before message_stop
-            assert len(chunks) == 1
-            assert chunks[0]["choices"][0]["delta"]["content"] == "Hello"
+            assert len(events) == 1
+            assert isinstance(events[0], StreamEvent)
+            assert events[0].content == "Hello"
 
     async def test_empty_lines_ignored(self, client: AnthropicCloudBackend) -> None:
         """Empty lines are ignored."""
-        delta_hello = self.DELTA_HELLO
+        delta_hello = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
+        )
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield ""
@@ -366,31 +416,38 @@ class TestStreamWithTranslation:
             yield delta_hello
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert len(chunks) == 1
+            assert len(events) == 1
 
     async def test_malformed_json_ignored(self, client: AnthropicCloudBackend) -> None:
         """Malformed JSON is ignored."""
-        delta_hello = self.DELTA_HELLO
+        delta_hello = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
+        )
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield "data: not valid json"
             yield delta_hello
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert len(chunks) == 1
-            assert chunks[0]["choices"][0]["delta"]["content"] == "Hello"
+            assert len(events) == 1
+            assert isinstance(events[0], StreamEvent)
+            assert events[0].content == "Hello"
 
     async def test_event_lines_ignored(self, client: AnthropicCloudBackend) -> None:
-        """Lines starting with 'event:' are ignored."""
-        delta_hello = self.DELTA_HELLO
+        """Lines starting with 'event:' are ignored (not data: prefix)."""
+        delta_hello = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
+        )
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
             yield "event: message_start"
@@ -398,74 +455,239 @@ class TestStreamWithTranslation:
             yield delta_hello
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert len(chunks) == 1
+            assert len(events) == 1
 
-    async def test_model_included_in_chunks(self, client: AnthropicCloudBackend) -> None:
-        """Model from request included in chunks."""
-        delta_hello = self.DELTA_HELLO
+    async def test_max_tokens_stop_reason_mapped(self, client: AnthropicCloudBackend) -> None:
+        """max_tokens stop_reason mapped to 'length' finish_reason."""
 
         async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
-            yield delta_hello
+            yield 'data: {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}}'
 
         with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
-            chunks = []
-            async for chunk in client._stream_with_translation({"model": "claude-3-opus-20240229"}):
-                chunks.append(chunk)
+            events = []
+            async for event in client._stream_to_ir({"model": "claude-3-opus"}):
+                events.append(event)
 
-            assert chunks[0]["model"] == "claude-3-opus-20240229"
+            assert len(events) == 1
+            assert isinstance(events[0], TextResult)
+            assert events[0].finish_reason == "length"
 
 
-class TestChatCompletionIntegration:
-    """Tests for chat_completion method integration."""
+class TestForwardRequestSameProtocol:
+    """Tests for forward_request with same-protocol (Anthropic->Anthropic) passthrough."""
 
     @pytest.fixture
     def client(self) -> AnthropicCloudBackend:
         """Create a test client."""
         return AnthropicCloudBackend(api_key="test-key")
 
-    async def test_non_streaming_returns_translated_dict(
-        self, client: AnthropicCloudBackend
-    ) -> None:
-        """Non-streaming chat_completion returns translated dict."""
+    async def test_non_streaming_returns_raw_response(self, client: AnthropicCloudBackend) -> None:
+        """Same-protocol non-streaming returns raw_response."""
+        original = MagicMock()
+        original.model_dump.return_value = {
+            "model": "claude-3-opus-original",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 200,
+        }
+
         mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "id": "msg_123",
-            "model": "claude-3-opus",
-            "content": [{"type": "text", "text": "Hello, how can I help?"}],
+            "content": [{"type": "text", "text": "Hello!"}],
             "stop_reason": "end_turn",
-            "usage": {"input_tokens": 10, "output_tokens": 8},
+            "usage": {"input_tokens": 10, "output_tokens": 5},
         }
-        mock_response.raise_for_status = MagicMock()
 
         with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = mock_response
 
-            result = await client.chat_completion(
-                messages=[{"role": "user", "content": "Hello"}],
-                model="claude-3-opus",
-                max_tokens=100,
-                stream=False,
+            ir = _make_ir(
+                model="claude-3-opus-routed",
+                original_protocol=ApiType.ANTHROPIC,
+                original_request=original,
             )
+            outcome = await client.forward_request(ir)
 
-            assert isinstance(result, dict)
-            assert result["object"] == "chat.completion"
-            assert result["choices"][0]["message"]["content"] == "Hello, how can I help?"
+            assert outcome.raw_response is not None
+            assert outcome.ir_result is None
+            assert outcome.raw_response["id"] == "msg_123"
 
-    async def test_streaming_returns_generator(self, client: AnthropicCloudBackend) -> None:
-        """Streaming chat_completion returns async generator."""
-        result = await client.chat_completion(
-            messages=[{"role": "user", "content": "Hello"}],
-            model="claude-3-opus",
-            max_tokens=100,
-            stream=True,
+    async def test_streaming_returns_raw_stream(self, client: AnthropicCloudBackend) -> None:
+        """Same-protocol streaming returns raw_stream."""
+        original = MagicMock()
+        original.model_dump.return_value = {
+            "model": "claude-3-opus",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 200,
+        }
+
+        async def mock_stream_lines() -> AsyncGenerator[str, None]:
+            yield "event: content_block_delta"
+            yield 'data: {"type": "content_block_delta", "delta": {"text": "Hi"}}'
+
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream_lines()):
+            ir = _make_ir(
+                stream=True,
+                original_protocol=ApiType.ANTHROPIC,
+                original_request=original,
+            )
+            outcome = await client.forward_request(ir)
+
+            assert outcome.raw_stream is not None
+            assert outcome.ir_stream is None
+
+    async def test_passthrough_overrides_model(self, client: AnthropicCloudBackend) -> None:
+        """Same-protocol passthrough overrides model from IR."""
+        original = MagicMock()
+        original.model_dump.return_value = {
+            "model": "claude-3-opus-original",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "max_tokens": 200,
+        }
+
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "Hi"}],
+            "stop_reason": "end_turn",
+            "usage": {},
+        }
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(
+                model="claude-3-opus-routed",
+                original_protocol=ApiType.ANTHROPIC,
+                original_request=original,
+            )
+            await client.forward_request(ir)
+
+            json_data = mock_post.call_args[1]["json"]
+            assert json_data["model"] == "claude-3-opus-routed"
+
+
+class TestForwardRequestCrossProtocol:
+    """Tests for forward_request with cross-protocol (OpenAI->Anthropic) conversion."""
+
+    @pytest.fixture
+    def client(self) -> AnthropicCloudBackend:
+        """Create a test client."""
+        return AnthropicCloudBackend(api_key="test-key")
+
+    async def test_non_streaming_returns_ir_result(self, client: AnthropicCloudBackend) -> None:
+        """Cross-protocol non-streaming returns ir_result."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "Hello, how can I help?"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 8},
+        }
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(original_protocol=ApiType.OPENAI)
+            outcome = await client.forward_request(ir)
+
+            assert outcome.ir_result is not None
+            assert outcome.raw_response is None
+            assert isinstance(outcome.ir_result, InferenceResult)
+            assert outcome.ir_result.result.content == "Hello, how can I help?"
+            assert outcome.ir_result.result.finish_reason == "stop"
+            assert outcome.ir_result.prompt_tokens == 10
+            assert outcome.ir_result.completion_tokens == 8
+
+    async def test_streaming_returns_ir_stream(self, client: AnthropicCloudBackend) -> None:
+        """Cross-protocol streaming returns ir_stream."""
+        delta_hello = (
+            'data: {"type": "content_block_delta", '
+            '"delta": {"type": "text_delta", "text": "Hello"}}'
         )
 
-        # Should return an async generator
-        assert hasattr(result, "__anext__")
+        async def mock_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[str, None]:
+            yield delta_hello
+            yield 'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}'
+
+        with patch.object(client, "_stream_with_circuit_breaker", return_value=mock_stream()):
+            ir = _make_ir(stream=True, original_protocol=ApiType.OPENAI)
+            outcome = await client.forward_request(ir)
+
+            assert outcome.ir_stream is not None
+            assert outcome.raw_stream is None
+
+            events = [event async for event in outcome.ir_stream]
+            assert len(events) == 2
+            assert isinstance(events[0], StreamEvent)
+            assert events[0].content == "Hello"
+            assert isinstance(events[1], TextResult)
+            assert events[1].finish_reason == "stop"
+
+    async def test_cross_protocol_translates_request(self, client: AnthropicCloudBackend) -> None:
+        """Cross-protocol translates IR to Anthropic format."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "OK"}],
+            "stop_reason": "end_turn",
+            "usage": {},
+        }
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(
+                model="claude-3-opus",
+                messages=[
+                    {"role": "system", "content": "Be helpful"},
+                    {"role": "user", "content": "Hello"},
+                ],
+                original_protocol=ApiType.OPENAI,
+                max_tokens=200,
+                temperature=0.7,
+            )
+            await client.forward_request(ir)
+
+            json_data = mock_post.call_args[1]["json"]
+            assert json_data["model"] == "claude-3-opus"
+            assert json_data["max_tokens"] == 200
+            assert json_data["temperature"] == 0.7
+            assert json_data["system"] == "Be helpful"
+            # System message extracted, only user message in messages
+            assert len(json_data["messages"]) == 1
+            assert json_data["messages"][0]["role"] == "user"
+
+    async def test_none_protocol_treated_as_cross_protocol(
+        self, client: AnthropicCloudBackend
+    ) -> None:
+        """None original_protocol treated as cross-protocol."""
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "OK"}],
+            "stop_reason": "end_turn",
+            "usage": {},
+        }
+
+        with patch.object(client._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
+            ir = _make_ir(original_protocol=None)
+            outcome = await client.forward_request(ir)
+
+            assert outcome.ir_result is not None
+            assert outcome.raw_response is None
 
 
 class TestFactoryFunction:

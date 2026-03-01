@@ -1,5 +1,7 @@
 """Base cloud backend client with retry and circuit breaker support."""
 
+from __future__ import annotations
+
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
@@ -8,6 +10,8 @@ from typing import Any
 import httpx
 from httpx_retries import Retry, RetryTransport
 from loguru import logger
+
+from mlx_manager.models.enums import ApiType
 
 
 class CircuitBreakerError(Exception):
@@ -149,18 +153,30 @@ class CloudBackendClient(ABC):
         """Build request headers. Subclasses implement auth-specific headers."""
         pass
 
+    @property
     @abstractmethod
-    async def chat_completion(
+    def protocol(self) -> ApiType:
+        """The API protocol this backend speaks."""
+        ...
+
+    @abstractmethod
+    async def forward_request(
         self,
-        messages: list[dict[str, Any]],
-        model: str,
-        max_tokens: int,
-        temperature: float = 1.0,
-        stream: bool = False,
-        **kwargs: Any,
-    ) -> AsyncGenerator[dict, None] | dict:
-        """Send chat completion request. Subclasses implement API-specific format."""
-        pass
+        ir: Any,  # InternalRequest — Any to avoid circular import
+    ) -> Any:  # RoutingOutcome — Any to avoid circular import
+        """Forward an IR request to the cloud backend.
+
+        Implementations should optimize for same-protocol passthrough
+        (forwarding the original request directly) and fall back to
+        cross-protocol conversion when needed.
+
+        Args:
+            ir: InternalRequest with original_request and original_protocol
+
+        Returns:
+            RoutingOutcome with appropriate response type
+        """
+        ...
 
     async def _post_with_circuit_breaker(
         self,
