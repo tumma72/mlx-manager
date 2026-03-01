@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from mlx_manager.mlx_server.api.v1.chat import (
     _convert_tool_calls,
     _format_ir_complete,
+    _format_ir_stream_as_sse,
     _handle_direct_inference,
     _handle_non_streaming,
     _handle_streaming,
@@ -33,6 +34,7 @@ from mlx_manager.mlx_server.schemas.openai import (
     ResponseFormat,
     Tool,
     ToolCall,
+    Usage,
 )
 from mlx_manager.mlx_server.services.formatters import OpenAIFormatter
 
@@ -1708,3 +1710,175 @@ class TestStreamBatchedResponse:
 
         event_text = "".join(str(e) for e in events)
         assert "error" in event_text.lower() or "timeout" in event_text.lower()
+
+
+class TestMessageContentNoneSkipped:
+    """Tests for message content=None handling in create_chat_completion."""
+
+    async def test_message_content_none_skipped(self) -> None:
+        """Messages with content=None are skipped during image extraction."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[
+                ChatMessage(role="system", content=None),
+                ChatMessage(role="user", content="Hello"),
+            ],
+        )
+
+        with (
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat._handle_text_request",
+                new_callable=AsyncMock,
+            ) as mock_handler,
+            patch("mlx_manager.mlx_server.api.v1.chat.audit_service") as mock_audit,
+        ):
+            mock_handler.return_value = ChatCompletionResponse(
+                id="test",
+                created=1,
+                model="test-model",
+                choices=[],
+                usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            )
+            mock_audit.track_request.return_value.__aenter__ = AsyncMock(
+                return_value=MagicMock()
+            )
+            mock_audit.track_request.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await create_chat_completion(request)
+            assert isinstance(result, ChatCompletionResponse)
+            mock_handler.assert_called_once()
+
+
+class TestImagePreprocessingPath:
+    """Tests for the image preprocessing path in _handle_text_request."""
+
+    async def test_image_urls_preprocessed_into_ir(self) -> None:
+        """Image URLs trigger preprocess_images and update IR."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Describe this")],
+        )
+        _usage = Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        mock_response = ChatCompletionResponse(
+            id="test", created=1, model="test-model", choices=[], usage=_usage
+        )
+
+        with (
+            patch("mlx_manager.mlx_server.api.v1.chat.get_settings") as mock_settings,
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat.preprocess_images",
+                new_callable=AsyncMock,
+            ) as mock_preprocess,
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat._handle_direct_inference",
+                new_callable=AsyncMock,
+            ) as mock_direct,
+        ):
+            settings = MagicMock()
+            settings.enable_cloud_routing = False
+            settings.enable_batching = False
+            mock_settings.return_value = settings
+
+            mock_preprocess.return_value = ["data:image/png;base64,abc"]
+            mock_direct.return_value = mock_response
+
+            result = await _handle_text_request(
+                request, image_urls=["http://example.com/img.png"]
+            )
+
+            assert result == mock_response
+            mock_preprocess.assert_called_once_with(["http://example.com/img.png"])
+            # Vision path goes directly to _handle_direct_inference
+            mock_direct.assert_called_once()
+            ir_arg = mock_direct.call_args[0][0]
+            assert ir_arg.images == ["data:image/png;base64,abc"]
+
+    async def test_vision_request_bypasses_routing(self) -> None:
+        """Vision requests go straight to direct inference, skipping cloud routing."""
+        request = ChatCompletionRequest(
+            model="test-model",
+            messages=[ChatMessage(role="user", content="Describe")],
+        )
+        _usage = Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        mock_response = ChatCompletionResponse(
+            id="test", created=1, model="test-model", choices=[], usage=_usage
+        )
+
+        with (
+            patch("mlx_manager.mlx_server.api.v1.chat.get_settings") as mock_settings,
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat.preprocess_images",
+                new_callable=AsyncMock,
+            ) as mock_preprocess,
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat._handle_direct_inference",
+                new_callable=AsyncMock,
+            ) as mock_direct,
+            patch(
+                "mlx_manager.mlx_server.api.v1.chat._route_and_respond",
+                new_callable=AsyncMock,
+            ) as mock_route,
+        ):
+            settings = MagicMock()
+            settings.enable_cloud_routing = True
+            settings.enable_batching = False
+            mock_settings.return_value = settings
+            mock_preprocess.return_value = ["data:image/png;base64,abc"]
+            mock_direct.return_value = mock_response
+
+            await _handle_text_request(request, image_urls=["http://example.com/img.png"])
+
+            # Direct inference called, routing NOT called
+            mock_direct.assert_called_once()
+            mock_route.assert_not_called()
+
+
+class TestFormatIRStreamAsSSE:
+    """Tests for _format_ir_stream_as_sse consuming IR stream events."""
+
+    async def test_format_ir_stream_produces_events(self) -> None:
+        """_format_ir_stream_as_sse consumes stream events and produces SSE."""
+
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Hello")
+            yield StreamEvent(type="content", content=" world")
+            yield TextResult(content="Hello world", finish_reason="stop")
+
+        response = _format_ir_stream_as_sse(mock_ir_stream(), "test-model")
+        assert isinstance(response, EventSourceResponse)
+
+        # Consume the body_iterator
+        events = []
+        async for event in response.body_iterator:
+            events.append(str(event))
+
+        combined = "".join(events)
+        # Should contain delta content events and a final stop event
+        assert "Hello" in combined
+        assert "world" in combined
+        assert "stop" in combined
+
+    async def test_format_ir_stream_with_tool_calls(self) -> None:
+        """_format_ir_stream_as_sse handles tool calls in TextResult."""
+
+        async def mock_ir_stream():
+            yield StreamEvent(type="content", content="Let me look that up")
+            yield TextResult(
+                content="Let me look that up",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": '{"q": "test"}'},
+                    }
+                ],
+            )
+
+        response = _format_ir_stream_as_sse(mock_ir_stream(), "test-model")
+        events = []
+        async for event in response.body_iterator:
+            events.append(str(event))
+
+        combined = "".join(events)
+        assert "tool_calls" in combined

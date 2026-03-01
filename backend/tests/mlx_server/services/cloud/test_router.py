@@ -782,3 +782,155 @@ class TestClose:
         await router.close()
 
         assert len(router._cloud_backends) == 0
+
+
+class TestRouteLocalAndCloud:
+    """Tests that exercise _route_local and _route_cloud directly (not mocked)."""
+
+    @pytest.fixture
+    def router(self) -> BackendRouter:
+        return BackendRouter()
+
+    async def test_route_local_non_streaming(self, router: BackendRouter) -> None:
+        """_route_local non-streaming calls generate_chat_complete_response."""
+        from mlx_manager.mlx_server.models.ir import InferenceResult, TextResult
+
+        ir = _make_ir("local-model", stream=False)
+        mock_result = InferenceResult(
+            result=TextResult(content="Hello", finish_reason="stop"),
+            prompt_tokens=5,
+            completion_tokens=3,
+        )
+
+        with patch(
+            "mlx_manager.mlx_server.services.inference.generate_chat_complete_response",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            outcome = await router._route_local(ir)
+
+        assert outcome.ir_result == mock_result
+        assert outcome.ir_stream is None
+        mock_gen.assert_called_once_with(
+            model_id="local-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=100,
+            temperature=1.0,
+            top_p=1.0,
+            stop=None,
+            tools=None,
+            images=None,
+        )
+
+    async def test_route_local_streaming(self, router: BackendRouter) -> None:
+        """_route_local streaming calls generate_chat_stream."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+
+        ir = _make_ir("local-model", stream=True)
+
+        async def fake_stream():
+            yield StreamEvent(type="content", content="Hi")
+            yield TextResult(content="Hi", finish_reason="stop")
+
+        with patch(
+            "mlx_manager.mlx_server.services.inference.generate_chat_stream",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = fake_stream()
+            outcome = await router._route_local(ir)
+
+        assert outcome.ir_stream is not None
+        assert outcome.ir_result is None
+        mock_gen.assert_called_once_with(
+            model_id="local-model",
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=100,
+            temperature=1.0,
+            top_p=1.0,
+            stop=None,
+            tools=None,
+            images=None,
+        )
+
+    async def test_route_cloud_delegates_to_backend(self, router: BackendRouter) -> None:
+        """_route_cloud gets backend and calls forward_request."""
+        mock_db = AsyncMock(spec=AsyncSession)
+        ir = _make_ir("cloud-model")
+        expected_outcome = MagicMock(spec=RoutingOutcome)
+
+        mock_backend = AsyncMock()
+        mock_backend.forward_request.return_value = expected_outcome
+
+        with patch.object(
+            router, "_get_cloud_backend", new_callable=AsyncMock
+        ) as mock_get_backend:
+            mock_get_backend.return_value = mock_backend
+            result = await router._route_cloud(mock_db, BackendType.OPENAI, ir)
+
+        assert result == expected_outcome
+        mock_get_backend.assert_called_once_with(mock_db, BackendType.OPENAI)
+        mock_backend.forward_request.assert_called_once_with(ir)
+
+    async def test_route_request_creates_session_when_db_none(
+        self, router: BackendRouter
+    ) -> None:
+        """route_request with db=None creates session via get_db."""
+        ir = _make_ir("some-model")
+        expected_outcome = MagicMock(spec=RoutingOutcome)
+
+        mock_session = AsyncMock(spec=AsyncSession)
+
+        async def mock_get_db():
+            yield mock_session
+
+        with (
+            patch(
+                "mlx_manager.mlx_server.services.cloud.router.get_db",
+                mock_get_db,
+            ),
+            patch.object(
+                router, "_route_with_session", new_callable=AsyncMock
+            ) as mock_route,
+        ):
+            mock_route.return_value = expected_outcome
+            result = await router.route_request(ir, db=None)
+
+        assert result == expected_outcome
+        mock_route.assert_called_once_with(mock_session, ir)
+
+    def test_pattern_matches_unknown_type_falls_back_to_exact(self) -> None:
+        """Unknown PatternType falls back to exact match."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "my-model"
+        mapping.pattern_type = "unknown_type"
+
+        assert BackendRouter._pattern_matches(mapping, "my-model") is True
+        assert BackendRouter._pattern_matches(mapping, "other-model") is False
+
+
+class TestRefreshRules:
+    """Tests for refresh_rules method."""
+
+    async def test_refresh_rules_closes_and_clears_backends(self) -> None:
+        """refresh_rules closes all backends and clears cache."""
+        router = BackendRouter()
+        mock_backend1 = AsyncMock()
+        mock_backend2 = AsyncMock()
+        router._cloud_backends[1] = mock_backend1
+        router._cloud_backends[2] = mock_backend2
+
+        await router.refresh_rules()
+
+        mock_backend1.close.assert_called_once()
+        mock_backend2.close.assert_called_once()
+        assert len(router._cloud_backends) == 0
+
+    async def test_refresh_rules_empty_cache(self) -> None:
+        """refresh_rules handles empty cache gracefully."""
+        router = BackendRouter()
+        assert len(router._cloud_backends) == 0
+
+        # Should not raise
+        await router.refresh_rules()
+
+        assert len(router._cloud_backends) == 0
