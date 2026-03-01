@@ -7,12 +7,17 @@ from typing import Any
 
 import pytest
 
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextResult
 from mlx_manager.mlx_server.services.formatters.base import ProtocolFormatter
 
 
 class ConcreteFormatter(ProtocolFormatter):
     """Concrete implementation for testing the base class."""
+
+    @staticmethod
+    def parse_request(request: Any) -> InternalRequest:
+        """Stub implementation for testing."""
+        raise NotImplementedError("Test stub")
 
     def stream_start(self) -> list[dict[str, Any]]:
         """Return a simple start event."""
@@ -129,6 +134,16 @@ class TestProtocolFormatterABC:
             instance = ProtocolFormatter(model_id="test", request_id="req-123")
             result_obj = TextResult(content="test")
             result = ProtocolFormatter.format_complete(instance, result_obj)
+            assert result is None
+        finally:
+            ProtocolFormatter.__abstractmethods__ = original_abstract  # type: ignore[misc]
+
+    def test_abstract_method_parse_request_has_ellipsis_body(self) -> None:
+        """Abstract method parse_request has ellipsis as body."""
+        original_abstract = ProtocolFormatter.__abstractmethods__
+        try:
+            ProtocolFormatter.__abstractmethods__ = frozenset()  # type: ignore[misc]
+            result = ProtocolFormatter.parse_request(None)
             assert result is None
         finally:
             ProtocolFormatter.__abstractmethods__ = original_abstract  # type: ignore[misc]

@@ -75,60 +75,36 @@ v1.2 transforms MLX Manager from a management UI for external servers into a uni
 
 ### v1.2 High-Level Architecture
 
-```
-+----------------------------------------------------------------------+
-|                      MLX UNIFIED SERVER                              |
-+----------------------------------------------------------------------+
-|  API Layer (FastAPI + uvloop + Pydantic v2)                          |
-|  +------------------+  +------------------+  +--------------------+  |
-|  | /v1/chat/        |  | /v1/messages     |  | /v1/embeddings     |  |
-|  | completions      |  | (Anthropic)      |  |                    |  |
-|  | (OpenAI)         |  |                  |  |                    |  |
-|  +---------+--------+  +---------+--------+  +-----------+--------+  |
-|            |                     |                       |           |
-|  +---------v---------------------v-----------------------v--------+  |
-|  |              3-Layer Adapter Pipeline (per request)            |  |
-|  | Layer 3: ProtocolFormatter (OpenAI | Anthropic)               |  |
-|  |          ↓ IR → Protocol-specific SSE chunks                   |  |
-|  | Layer 2: StreamProcessor (request-scoped state)                |  |
-|  |          ↓ Tokens → StreamEvent (IR)                           |  |
-|  | Layer 1: ModelAdapter (model-scoped, persistent)               |  |
-|  |          ↓ Messages → PreparedInput | Complete → AdapterResult |  |
-|  +---------------------------+------------------------------------+  |
-|                              |                                       |
-|  +---------------------------v------------------------------------+  |
-|  |                 Continuous Batching Scheduler                  |  |
-|  |  Priority Queues | Token-level Batching | Dynamic Replacement   |  |
-|  +---------------------------+------------------------------------+  |
-|                              |                                       |
-|  +---------------------------v------------------------------------+  |
-|  |                    Model Pool Manager                          |  |
-|  |  Hot Models (LRU) | Memory Pressure Monitor | On-Demand Load   |  |
-|  |  Each model has 1 persistent adapter instance                  |  |
-|  +---------------------------+------------------------------------+  |
-|                              |                                       |
-|  +---------------------------v------------------------------------+  |
-|  |                    Paged KV Cache Manager                      |  |
-|  |  Block Pool | Block Tables | Prefix Sharing | Copy-on-Write    |  |
-|  +---------------------------+------------------------------------+  |
-|                              |                                       |
-|  +---------------------------v------------------------------------+  |
-|  |                    Model Adapters (per family)                 |  |
-|  |  Text: Qwen | GLM4 | Llama | Gemma | Mistral | Liquid          |  |
-|  |  Vision: QwenVision | GemmaVision (extend text adapters)       |  |
-|  |  Embeddings | Audio (TTS/STT)                                  |  |
-|  +---------------------------+------------------------------------+  |
-|                              |                                       |
-|  +---------------------------v------------------------------------+  |
-|  |                    MLX Libraries                               |  |
-|  |  mlx-lm | mlx-vlm | mlx-embeddings | mlx-audio | MLX Core      |  |
-|  +---------------------------------------------------------------+  |
-|                                                                      |
-|  +---------------------------------------------------------------+  |
-|  |                    Observability (Pydantic LogFire)            |  |
-|  |  Request Tracing | LLM Metrics | SQLite Spans | Alerts         |  |
-|  +---------------------------------------------------------------+  |
-+----------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    subgraph SERVER ["MLX UNIFIED SERVER"]
+        direction TB
+        subgraph API_LAYER ["API Layer — FastAPI + uvloop + Pydantic v2"]
+            direction LR
+            E1["/v1/chat/completions<br/>&#40;OpenAI&#41;"]
+            E2["/v1/messages<br/>&#40;Anthropic&#41;"]
+            E3["/v1/embeddings"]
+        end
+
+        subgraph PIPELINE ["3-Layer Adapter Pipeline &#40;per request&#41;"]
+            direction TB
+            L3["Layer 3: ProtocolFormatter — IR → Protocol-specific SSE"]
+            L2["Layer 2: StreamProcessor — Tokens → StreamEvent &#40;IR&#41;"]
+            L1["Layer 1: ModelAdapter — Messages → PreparedInput"]
+            L3 --> L2 --> L1
+        end
+
+        BATCH["Continuous Batching Scheduler<br/>Priority Queues · Token-level Batching · Dynamic Replacement"]
+        POOL["Model Pool Manager<br/>Hot Models &#40;LRU&#41; · Memory Pressure Monitor · On-Demand Load"]
+        KV["Paged KV Cache Manager<br/>Block Pool · Block Tables · Prefix Sharing · Copy-on-Write"]
+        ADAPTERS["Model Adapters &#40;per family&#41;<br/>Text: Qwen · GLM4 · Llama · Gemma · Mistral · Liquid<br/>Vision · Embeddings · Audio &#40;TTS/STT&#41;"]
+        MLX["MLX Libraries<br/>mlx-lm · mlx-vlm · mlx-embeddings · mlx-audio · MLX Core"]
+
+        API_LAYER --> PIPELINE --> BATCH --> POOL --> KV --> ADAPTERS --> MLX
+    end
+
+    OBS["Observability &#40;Pydantic LogFire&#41;<br/>Request Tracing · LLM Metrics · SQLite Spans · Alerts"]
+    SERVER ~~~ OBS
 ```
 
 ### v1.2 Technology Stack
@@ -427,78 +403,31 @@ class TranscriptionResult(AdapterResult):
 
 ### Request Flow (Streaming Text Example)
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ 1. Router receives POST /v1/chat/completions                     │
-│    - Creates OpenAIFormatter                                     │
-│    - Extracts messages, tools, etc.                              │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 2. Get model from pool                                           │
-│    - loaded_model = pool.get_model(model_id)                     │
-│    - adapter = loaded_model.adapter  (created at load time)      │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 3. Adapter prepares input                                        │
-│    - prepared = adapter.prepare_input(messages, tools)           │
-│    - PreparedInput(prompt="<chat template>", token_ids=[...])    │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 4. Generate tokens (MLX inference)                               │
-│    - for token in model.generate(prepared.token_ids):            │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 5. Create request-scoped processor                               │
-│    - stream_processor = adapter.create_stream_processor()        │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 6. Stream processing loop                                        │
-│    for token in token_stream:                                    │
-│        event = stream_processor.feed(token)  # -> StreamEvent    │
-│        chunk = formatter.format_stream_event(event)  # -> SSE    │
-│        yield chunk                                               │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ 7. Finalize                                                      │
-│    - result = stream_processor.finalize()  # -> TextResult (IR)  │
-│    - final_chunk = formatter.format_response(result)  # -> SSE   │
-│    - yield final_chunk                                           │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    S1["1. Router receives POST /v1/chat/completions<br/>Creates OpenAIFormatter, extracts messages and tools"]
+    S2["2. Get model from pool<br/>loaded_model = pool.get_model&#40;model_id&#41;<br/>adapter = loaded_model.adapter"]
+    S3["3. Adapter prepares input<br/>prepared = adapter.prepare_input&#40;messages, tools&#41;"]
+    S4["4. Generate tokens &#40;MLX inference&#41;<br/>for token in model.generate&#40;prepared.token_ids&#41;"]
+    S5["5. Create request-scoped processor<br/>stream_processor = adapter.create_stream_processor&#40;&#41;"]
+    S6["6. Stream processing loop<br/>event = stream_processor.feed&#40;token&#41; → StreamEvent<br/>chunk = formatter.format_stream_event&#40;event&#41; → SSE"]
+    S7["7. Finalize<br/>result = stream_processor.finalize&#40;&#41; → TextResult<br/>final_chunk = formatter.format_response&#40;result&#41;"]
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
 ```
 
 ### Parallel Request Handling
 
 The architecture supports multiple concurrent requests to the same model:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    LoadedModel (Pool)                           │
-│  ├─ model: nn.Module                                            │
-│  ├─ adapter: QwenAdapter  ←── SHARED across all requests        │
-│  ├─ tokenizer: PreTrainedTokenizer                              │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                ┌─────────────┴─────────────┐
-                │                           │
-                ▼                           ▼
-┌───────────────────────────┐   ┌───────────────────────────┐
-│ Request 1 (OpenAI)        │   │ Request 2 (Anthropic)     │
-│ ├─ stream_processor1      │   │ ├─ stream_processor2      │
-│ ├─ OpenAIFormatter        │   │ ├─ AnthropicFormatter     │
-│ └─ Independent state      │   │ └─ Independent state      │
-└───────────────────────────┘   └───────────────────────────┘
+```mermaid
+flowchart TD
+    LM["<b>LoadedModel &#40;Pool&#41;</b><br/>model: nn.Module<br/>adapter: QwenAdapter — SHARED<br/>tokenizer: PreTrainedTokenizer"]
+
+    LM --> R1 & R2
+
+    R1["<b>Request 1 &#40;OpenAI&#41;</b><br/>stream_processor1<br/>OpenAIFormatter<br/>Independent state"]
+    R2["<b>Request 2 &#40;Anthropic&#41;</b><br/>stream_processor2<br/>AnthropicFormatter<br/>Independent state"]
 ```
 
 Requests are queued, each gets:
@@ -633,73 +562,54 @@ mlx_server/
 
 ### High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Browser (localhost:5173)                        │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    SvelteKit Frontend (Svelte 5)                  │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────────┐   │  │
-│  │  │ ModelBrowser│  │ProfileEditor│  │ ServerDashboard          │   │  │
-│  │  │ - Search    │  │ - Create    │  │ - Status                 │   │  │
-│  │  │ - Download  │  │ - Edit      │  │ - Start/Stop             │   │  │
-│  │  │ - Progress  │  │ - Delete    │  │ - Logs                   │   │  │
-│  │  └─────────────┘  └─────────────┘  └──────────────────────────┘   │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ HTTP/REST + Server-Sent Events
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Backend API (localhost:10242)                       │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    FastAPI Application (Python)                   │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐   │  │
-│  │  │ /api/models     │  │ /api/profiles   │  │ /api/servers     │   │  │
-│  │  │ - search        │  │ - CRUD          │  │ - start/stop     │   │  │
-│  │  │ - download      │  │ - validate      │  │ - status         │   │  │
-│  │  │ - list local    │  │                 │  │ - logs (SSE)     │   │  │
-│  │  └─────────────────┘  └─────────────────┘  └──────────────────┘   │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐   │  │
-│  │  │ /api/system     │  │ HuggingFaceAPI  │  │ ProcessManager   │   │  │
-│  │  │ - memory        │  │ (huggingface_hub│  │ (subprocess)     │   │  │
-│  │  │ - launchd       │  │  library)       │  │                  │   │  │
-│  │  └─────────────────┘  └─────────────────┘  └──────────────────┘   │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                    │                                    │
-│                          SQLite Database                                │
-│                    (~/.mlx-manager/mlx-manager.db)                      │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ subprocess.Popen
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    mlx-openai-server Instances                          │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐  │
-│  │ :10240          │  │ :10241          │  │ :10242                  │  │
-│  │ Profile: Coding │  │ Profile: Think  │  │ Profile: Assistant      │  │
-│  │ Qwen2.5-Coder   │  │ GLM4-MoE        │  │ Qwen3-8B               │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph BROWSER ["Browser &#40;localhost:5173&#41;"]
+        subgraph FE ["SvelteKit Frontend &#40;Svelte 5&#41;"]
+            direction LR
+            MB["ModelBrowser<br/>Search · Download · Progress"]
+            PE["ProfileEditor<br/>Create · Edit · Delete"]
+            SD["ServerDashboard<br/>Status · Start/Stop · Logs"]
+        end
+    end
+
+    BROWSER -- "HTTP/REST + SSE" --> BACKEND
+
+    subgraph BACKEND ["Backend API &#40;localhost:10242&#41;"]
+        subgraph FA ["FastAPI Application"]
+            direction LR
+            AM["/api/models<br/>search · download · list"]
+            AP["/api/profiles<br/>CRUD · validate"]
+            AS["/api/servers<br/>start/stop · status · logs"]
+        end
+        subgraph SVC ["Services"]
+            direction LR
+            SYS["/api/system<br/>memory · launchd"]
+            HF["HuggingFaceAPI"]
+            PM["ProcessManager"]
+        end
+        FA --> SVC
+        DB[("SQLite<br/>~/.mlx-manager/mlx-manager.db")]
+        SVC --> DB
+    end
+
+    BACKEND -- "subprocess.Popen" --> SERVERS
+
+    subgraph SERVERS ["mlx-openai-server Instances"]
+        direction LR
+        S1[":10240<br/>Profile: Coding<br/>Qwen2.5-Coder"]
+        S2[":10241<br/>Profile: Think<br/>GLM4-MoE"]
+        S3[":10242<br/>Profile: Assistant<br/>Qwen3-8B"]
+    end
 ```
 
 ### Data Flow
 
-```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────────────┐
-│ Frontend │────▶│ Backend  │────▶│ HF Hub   │────▶│ ~/.cache/        │
-│ Search   │     │ API      │     │ API      │     │ huggingface/hub  │
-└──────────┘     └──────────┘     └──────────┘     └──────────────────┘
-                      │
-                      ▼
-                ┌──────────┐
-                │ SQLite   │ (profiles, settings)
-                └──────────┘
-                      │
-                      ▼
-                ┌──────────┐     ┌──────────────────┐
-                │ Process  │────▶│ mlx-openai-server│
-                │ Manager  │     │ processes        │
-                └──────────┘     └──────────────────┘
+```mermaid
+flowchart LR
+    FE["Frontend<br/>Search"] --> API["Backend<br/>API"] --> HF["HF Hub<br/>API"] --> CACHE["~/.cache/<br/>huggingface/hub"]
+    API --> DB[("SQLite<br/>profiles, settings")]
+    DB --> PM["Process<br/>Manager"] --> PROC["mlx-openai-server<br/>processes"]
 ```
 
 ---
@@ -1929,30 +1839,16 @@ server_manager = ServerManager()
 
 ### Process Lifecycle
 
-```
-┌─────────────┐
-│   Stopped   │
-└──────┬──────┘
-       │ start_server()
-       ▼
-┌─────────────┐
-│  Starting   │◄──────────────────┐
-└──────┬──────┘                   │
-       │ health check OK          │ restart
-       ▼                          │
-┌─────────────┐                   │
-│   Healthy   │───────────────────┤
-└──────┬──────┘                   │
-       │ health check fails       │
-       ▼                          │
-┌─────────────┐                   │
-│  Unhealthy  │───────────────────┘
-└──────┬──────┘
-       │ stop_server()
-       ▼
-┌─────────────┐
-│   Stopped   │
-└─────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> Stopped
+    Stopped --> Starting : start_server()
+    Starting --> Healthy : health check OK
+    Healthy --> Starting : restart
+    Healthy --> Unhealthy : health check fails
+    Unhealthy --> Starting : restart
+    Unhealthy --> Stopped : stop_server()
+    Stopped --> [*]
 ```
 
 ### Health Check Implementation

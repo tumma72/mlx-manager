@@ -4,7 +4,7 @@ Tests validate the complete pipeline:
 1. HTTP request with base64 image content
 2. Model type detection (VISION)
 3. Image preprocessing (PIL conversion, resize)
-4. mlx-vlm inference (via unified generate_chat_completion with images)
+4. mlx-vlm inference (via IR-based generate_chat_stream/generate_chat_complete_response with images)
 5. Response generation (ChatCompletionResponse)
 
 Tiered approach:

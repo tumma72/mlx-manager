@@ -1,5 +1,6 @@
 """Tests for Anthropic protocol translation (input parsing and stop reason conversion)."""
 
+from mlx_manager.mlx_server.models.ir import InternalRequest
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicToolDefinition,
@@ -12,7 +13,6 @@ from mlx_manager.mlx_server.schemas.anthropic import (
 )
 from mlx_manager.mlx_server.services.formatters import (
     AnthropicFormatter,
-    InternalRequest,
     anthropic_stop_to_openai,
     openai_stop_to_anthropic,
 )

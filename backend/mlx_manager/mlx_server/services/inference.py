@@ -19,7 +19,7 @@ from typing import Any
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InferenceResult, StreamEvent, TextResult
 
 try:  # pragma: no cover
     import logfire  # pragma: no cover
@@ -27,14 +27,6 @@ try:  # pragma: no cover
     LOGFIRE_AVAILABLE = True  # pragma: no cover
 except ImportError:  # pragma: no cover
     LOGFIRE_AVAILABLE = False  # pragma: no cover
-
-
-class InferenceResult(BaseModel):
-    """Non-streaming inference result with token counts."""
-
-    result: TextResult
-    prompt_tokens: int
-    completion_tokens: int
 
 
 class _GenContext(BaseModel):
@@ -225,88 +217,6 @@ async def generate_chat_complete_response(
 
     try:
         return await _complete_chat_ir(ctx)
-    finally:
-        if span_context:
-            span_context.__exit__(None, None, None)
-
-
-# ── Backward-compat wrapper (returns OpenAI dicts) ───────────────
-
-
-async def generate_chat_completion(
-    model_id: str,
-    messages: list[dict],
-    max_tokens: int = 4096,
-    temperature: float = 1.0,
-    top_p: float = 1.0,
-    stop: list[str] | None = None,
-    stream: bool = False,
-    tools: list[dict[str, Any]] | None = None,
-    images: list[Any] | None = None,
-) -> AsyncGenerator[dict, None] | dict:
-    """Generate a chat completion in OpenAI format.
-
-    Backward-compatible wrapper. New code should prefer
-    ``generate_chat_stream`` / ``generate_chat_complete_response``.
-
-    Returns:
-        Streaming: yields OpenAI chunk dicts
-        Non-streaming: returns OpenAI ChatCompletion dict
-    """
-    ctx = await _prepare_generation(
-        model_id,
-        messages,
-        max_tokens,
-        temperature,
-        top_p,
-        stop,
-        tools,
-        images,
-    )
-
-    span_context = None
-    if LOGFIRE_AVAILABLE:
-        span_context = logfire.span(
-            "chat_completion",
-            model=model_id,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stream=stream,
-            has_tools=tools is not None,
-        )
-        span_context.__enter__()
-
-    try:
-        if stream:
-            return _stream_chat_generate(
-                model=ctx.model,
-                tokenizer=ctx.tokenizer,
-                prompt=ctx.prompt,
-                max_tokens=ctx.max_tokens,
-                temperature=ctx.temperature,
-                top_p=ctx.top_p,
-                stop_token_ids=ctx.stop_token_ids,
-                completion_id=ctx.completion_id,
-                created=ctx.created,
-                model_id=ctx.model_id,
-                adapter=ctx.adapter,
-                tools=ctx.tools,
-            )
-        else:
-            return await _generate_chat_complete(
-                model=ctx.model,
-                tokenizer=ctx.tokenizer,
-                prompt=ctx.prompt,
-                max_tokens=ctx.max_tokens,
-                temperature=ctx.temperature,
-                top_p=ctx.top_p,
-                stop_token_ids=ctx.stop_token_ids,
-                completion_id=ctx.completion_id,
-                created=ctx.created,
-                model_id=ctx.model_id,
-                adapter=ctx.adapter,
-                tools=ctx.tools,
-            )
     finally:
         if span_context:
             span_context.__exit__(None, None, None)
@@ -572,111 +482,6 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
         result=result,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-    )
-
-
-# ── Legacy wrappers (old signatures, for tests + backward compat) ─
-
-
-async def _stream_chat_generate(
-    model: Any,
-    tokenizer: Any,
-    prompt: str,
-    max_tokens: int,
-    temperature: float,
-    top_p: float,
-    stop_token_ids: set[int],
-    completion_id: str,
-    created: int,
-    model_id: str,
-    adapter: Any = None,
-    tools: list[dict[str, Any]] | None = None,
-) -> AsyncGenerator[dict, None]:
-    """Legacy wrapper: yields OpenAI chunk dicts.
-
-    Maintained for test compatibility. New code should use generate_chat_stream().
-    Will be removed in Phase 6.
-    """
-    import json
-
-    from mlx_manager.mlx_server.services.formatters.openai import OpenAIFormatter
-
-    ctx = _GenContext(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=prompt,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        stop_token_ids=stop_token_ids,
-        adapter=adapter,
-        model_id=model_id,
-        completion_id=completion_id,
-        created=created,
-        tools=tools,
-        pixel_values=None,
-    )
-    formatter = OpenAIFormatter(model_id=model_id, request_id=completion_id)
-    formatter.created = created
-
-    for sse in formatter.stream_start():
-        yield json.loads(sse["data"])
-
-    async for item in _stream_chat_ir(ctx):
-        if isinstance(item, TextResult):
-            for sse in formatter.stream_end(item.finish_reason, tool_calls=item.tool_calls):
-                data = sse["data"]
-                if data == "[DONE]":
-                    break
-                yield json.loads(data)
-        else:
-            for sse in formatter.stream_event(item):
-                yield json.loads(sse["data"])
-
-
-async def _generate_chat_complete(
-    model: Any,
-    tokenizer: Any,
-    prompt: str,
-    max_tokens: int,
-    temperature: float,
-    top_p: float,
-    stop_token_ids: set[int],
-    completion_id: str,
-    created: int,
-    model_id: str,
-    adapter: Any = None,
-    tools: list[dict[str, Any]] | None = None,
-) -> dict:
-    """Legacy wrapper: returns OpenAI ChatCompletion dict.
-
-    Maintained for test compatibility. New code should use generate_chat_complete_response().
-    Will be removed in Phase 6.
-    """
-    from mlx_manager.mlx_server.services.formatters.openai import OpenAIFormatter
-
-    ctx = _GenContext(
-        model=model,
-        tokenizer=tokenizer,
-        prompt=prompt,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        stop_token_ids=stop_token_ids,
-        adapter=adapter,
-        model_id=model_id,
-        completion_id=completion_id,
-        created=created,
-        tools=tools,
-        pixel_values=None,
-    )
-    ir = await _complete_chat_ir(ctx)
-    formatter = OpenAIFormatter(model_id=model_id, request_id=completion_id)
-    formatter.created = created
-    return formatter.format_complete(
-        ir.result,
-        prompt_tokens=ir.prompt_tokens,
-        completion_tokens=ir.completion_tokens,
     )
 
 

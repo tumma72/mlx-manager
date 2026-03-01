@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mlx_manager.mlx_server.models.ir import InternalRequest, RoutingOutcome
 from mlx_manager.mlx_server.services.cloud.router import (
     BackendRouter,
     get_router,
@@ -18,6 +19,17 @@ from mlx_manager.models import (
     BackendType,
     CloudCredential,
 )
+from mlx_manager.models.enums import PatternType
+from mlx_manager.models.value_objects import InferenceParams
+
+
+def _make_ir(model: str = "test-model", stream: bool = False) -> InternalRequest:
+    return InternalRequest(
+        model=model,
+        messages=[{"role": "user", "content": "Hi"}],
+        params=InferenceParams(max_tokens=100),
+        stream=stream,
+    )
 
 
 class TestPatternMatching:
@@ -25,39 +37,51 @@ class TestPatternMatching:
 
     def test_exact_match(self) -> None:
         """Exact model name matches exactly."""
-        router = BackendRouter()
-        assert router._pattern_matches("gpt-4", "gpt-4") is True
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "gpt-4"
+        mapping.pattern_type = PatternType.EXACT
+        assert BackendRouter._pattern_matches(mapping, "gpt-4") is True
 
     def test_exact_match_different_model(self) -> None:
         """Different model name doesn't match."""
-        router = BackendRouter()
-        assert router._pattern_matches("gpt-4", "gpt-3.5") is False
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "gpt-4"
+        mapping.pattern_type = PatternType.EXACT
+        assert BackendRouter._pattern_matches(mapping, "gpt-3.5") is False
 
     def test_wildcard_asterisk_suffix(self) -> None:
-        """Wildcard pattern with asterisk suffix matches."""
-        router = BackendRouter()
-        assert router._pattern_matches("gpt-*", "gpt-4") is True
-        assert router._pattern_matches("gpt-*", "gpt-4-turbo") is True
-        assert router._pattern_matches("gpt-*", "gpt-3.5-turbo") is True
+        """PREFIX pattern matches models starting with given prefix."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "gpt-"
+        mapping.pattern_type = PatternType.PREFIX
+        assert BackendRouter._pattern_matches(mapping, "gpt-4") is True
+        assert BackendRouter._pattern_matches(mapping, "gpt-4-turbo") is True
+        assert BackendRouter._pattern_matches(mapping, "gpt-3.5-turbo") is True
 
     def test_wildcard_asterisk_no_match(self) -> None:
-        """Wildcard pattern doesn't match unrelated models."""
-        router = BackendRouter()
-        assert router._pattern_matches("gpt-*", "claude-3") is False
-        assert router._pattern_matches("gpt-*", "llama-2") is False
+        """PREFIX pattern doesn't match unrelated models."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "gpt-"
+        mapping.pattern_type = PatternType.PREFIX
+        assert BackendRouter._pattern_matches(mapping, "claude-3") is False
+        assert BackendRouter._pattern_matches(mapping, "llama-2") is False
 
     def test_wildcard_middle_pattern(self) -> None:
-        """Wildcard pattern with asterisk in middle matches."""
-        router = BackendRouter()
-        assert router._pattern_matches("claude-*-opus", "claude-3-opus") is True
-        assert router._pattern_matches("claude-*-opus", "claude-3.5-opus") is True
-        assert router._pattern_matches("claude-*-opus", "claude-3-sonnet") is False
+        """REGEX pattern with wildcard in middle matches correctly."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "claude-.*-opus"
+        mapping.pattern_type = PatternType.REGEX
+        assert BackendRouter._pattern_matches(mapping, "claude-3-opus") is True
+        assert BackendRouter._pattern_matches(mapping, "claude-3.5-opus") is True
+        assert BackendRouter._pattern_matches(mapping, "claude-3-sonnet") is False
 
     def test_fnmatch_question_mark(self) -> None:
-        """Question mark matches single character."""
-        router = BackendRouter()
-        assert router._pattern_matches("gpt-?", "gpt-4") is True
-        assert router._pattern_matches("gpt-?", "gpt-4-turbo") is False
+        """REGEX pattern with single-char wildcard matches correctly."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "gpt-."
+        mapping.pattern_type = PatternType.REGEX
+        assert BackendRouter._pattern_matches(mapping, "gpt-4") is True
+        assert BackendRouter._pattern_matches(mapping, "gpt-4-turbo") is False
 
 
 class TestFindMapping:
@@ -89,6 +113,7 @@ class TestFindMapping:
         """Returns mapping with exact model match."""
         exact_mapping = MagicMock(spec=BackendMapping)
         exact_mapping.model_pattern = "gpt-4"
+        exact_mapping.pattern_type = PatternType.EXACT
         exact_mapping.backend_type = BackendType.OPENAI
 
         mock_result = MagicMock()
@@ -101,14 +126,16 @@ class TestFindMapping:
 
     async def test_respects_priority_order(self, router: BackendRouter, mock_db: AsyncMock) -> None:
         """Higher priority mappings are checked first."""
-        # Lower priority wildcard
+        # Lower priority prefix match
         low_priority = MagicMock(spec=BackendMapping)
-        low_priority.model_pattern = "*"
+        low_priority.model_pattern = ""
+        low_priority.pattern_type = PatternType.PREFIX
         low_priority.backend_type = BackendType.LOCAL
 
         # Higher priority exact match (comes first from DB)
         high_priority = MagicMock(spec=BackendMapping)
         high_priority.model_pattern = "gpt-4"
+        high_priority.pattern_type = PatternType.EXACT
         high_priority.backend_type = BackendType.OPENAI
 
         mock_result = MagicMock()
@@ -138,9 +165,10 @@ class TestFindMapping:
     async def test_wildcard_matches_when_no_exact(
         self, router: BackendRouter, mock_db: AsyncMock
     ) -> None:
-        """Wildcard pattern matches when no exact match exists."""
+        """PREFIX pattern matches when no exact match exists."""
         wildcard = MagicMock(spec=BackendMapping)
-        wildcard.model_pattern = "gpt-*"
+        wildcard.model_pattern = "gpt-"
+        wildcard.pattern_type = PatternType.PREFIX
         wildcard.backend_type = BackendType.OPENAI
 
         mock_result = MagicMock()
@@ -173,17 +201,13 @@ class TestRouteRequest:
         mock_result.scalars.return_value.all.return_value = []
         mock_db.execute.return_value = mock_result
 
-        expected_response = {"id": "local-123", "choices": []}
+        expected_response = MagicMock(spec=RoutingOutcome)
 
         with patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local:
             mock_local.return_value = expected_response
 
-            result = await router.route_request(
-                model="some-model",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("some-model")
+            result = await router.route_request(ir, db=mock_db)
 
             assert result == expected_response
             mock_local.assert_called_once()
@@ -194,24 +218,22 @@ class TestRouteRequest:
         """LOCAL backend type routes to local inference."""
         local_mapping = MagicMock(spec=BackendMapping)
         local_mapping.model_pattern = "local-model"
+        local_mapping.pattern_type = PatternType.EXACT
         local_mapping.backend_type = BackendType.LOCAL
         local_mapping.fallback_backend = None
+        local_mapping.backend_model = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [local_mapping]
         mock_db.execute.return_value = mock_result
 
-        expected_response = {"id": "local-456", "choices": []}
+        expected_response = MagicMock(spec=RoutingOutcome)
 
         with patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local:
             mock_local.return_value = expected_response
 
-            result = await router.route_request(
-                model="local-model",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("local-model")
+            result = await router.route_request(ir, db=mock_db)
 
             assert result == expected_response
 
@@ -220,7 +242,8 @@ class TestRouteRequest:
     ) -> None:
         """OPENAI backend type routes to OpenAI cloud."""
         openai_mapping = MagicMock(spec=BackendMapping)
-        openai_mapping.model_pattern = "gpt-*"
+        openai_mapping.model_pattern = "gpt-"
+        openai_mapping.pattern_type = PatternType.PREFIX
         openai_mapping.backend_type = BackendType.OPENAI
         openai_mapping.backend_model = None
 
@@ -228,30 +251,27 @@ class TestRouteRequest:
         mock_result.scalars.return_value.all.return_value = [openai_mapping]
         mock_db.execute.return_value = mock_result
 
-        expected_response = {"id": "chatcmpl-123", "choices": []}
+        expected_response = MagicMock(spec=RoutingOutcome)
 
         with patch.object(router, "_route_cloud", new_callable=AsyncMock) as mock_cloud:
             mock_cloud.return_value = expected_response
 
-            result = await router.route_request(
-                model="gpt-4",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("gpt-4")
+            result = await router.route_request(ir, db=mock_db)
 
             assert result == expected_response
             mock_cloud.assert_called_once()
-            # Verify backend_type passed
+            # Verify backend_type passed — signature is (db, backend_type, ir)
             call_args = mock_cloud.call_args
-            assert call_args[0][1] == BackendType.OPENAI  # backend_type arg
+            assert call_args[0][1] == BackendType.OPENAI
 
     async def test_anthropic_backend_routes_to_cloud(
         self, router: BackendRouter, mock_db: AsyncMock
     ) -> None:
         """ANTHROPIC backend type routes to Anthropic cloud."""
         anthropic_mapping = MagicMock(spec=BackendMapping)
-        anthropic_mapping.model_pattern = "claude-*"
+        anthropic_mapping.model_pattern = "claude-"
+        anthropic_mapping.pattern_type = PatternType.PREFIX
         anthropic_mapping.backend_type = BackendType.ANTHROPIC
         anthropic_mapping.backend_model = None
 
@@ -259,17 +279,13 @@ class TestRouteRequest:
         mock_result.scalars.return_value.all.return_value = [anthropic_mapping]
         mock_db.execute.return_value = mock_result
 
-        expected_response = {"id": "msg_123", "choices": []}
+        expected_response = MagicMock(spec=RoutingOutcome)
 
         with patch.object(router, "_route_cloud", new_callable=AsyncMock) as mock_cloud:
             mock_cloud.return_value = expected_response
 
-            result = await router.route_request(
-                model="claude-3-opus",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("claude-3-opus")
+            result = await router.route_request(ir, db=mock_db)
 
             assert result == expected_response
             call_args = mock_cloud.call_args
@@ -295,6 +311,7 @@ class TestFailover:
         """Local failure with fallback configured routes to cloud."""
         mapping = MagicMock(spec=BackendMapping)
         mapping.model_pattern = "my-model"
+        mapping.pattern_type = PatternType.EXACT
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = BackendType.OPENAI
         mapping.backend_model = "gpt-4"
@@ -303,7 +320,7 @@ class TestFailover:
         mock_result.scalars.return_value.all.return_value = [mapping]
         mock_db.execute.return_value = mock_result
 
-        cloud_response = {"id": "cloud-fallback", "choices": []}
+        cloud_response = MagicMock(spec=RoutingOutcome)
 
         with (
             patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local,
@@ -312,12 +329,8 @@ class TestFailover:
             mock_local.side_effect = RuntimeError("Local inference failed")
             mock_cloud.return_value = cloud_response
 
-            result = await router.route_request(
-                model="my-model",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("my-model")
+            result = await router.route_request(ir, db=mock_db)
 
             assert result == cloud_response
             mock_local.assert_called_once()
@@ -329,8 +342,10 @@ class TestFailover:
         """Local failure without fallback raises the exception."""
         mapping = MagicMock(spec=BackendMapping)
         mapping.model_pattern = "my-model"
+        mapping.pattern_type = PatternType.EXACT
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = None  # No fallback
+        mapping.backend_model = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mapping]
@@ -340,12 +355,8 @@ class TestFailover:
             mock_local.side_effect = RuntimeError("Local inference failed")
 
             with pytest.raises(RuntimeError, match="Local inference failed"):
-                await router.route_request(
-                    model="my-model",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=100,
-                    db=mock_db,
-                )
+                ir = _make_ir("my-model")
+                await router.route_request(ir, db=mock_db)
 
     async def test_fallback_uses_backend_model_override(
         self, router: BackendRouter, mock_db: AsyncMock
@@ -353,6 +364,7 @@ class TestFailover:
         """Fallback uses backend_model if specified."""
         mapping = MagicMock(spec=BackendMapping)
         mapping.model_pattern = "my-local-model"
+        mapping.pattern_type = PatternType.EXACT
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = BackendType.OPENAI
         mapping.backend_model = "gpt-4-turbo"  # Different from request model
@@ -366,18 +378,15 @@ class TestFailover:
             patch.object(router, "_route_cloud", new_callable=AsyncMock) as mock_cloud,
         ):
             mock_local.side_effect = RuntimeError("Local failed")
-            mock_cloud.return_value = {"id": "fallback", "choices": []}
+            mock_cloud.return_value = MagicMock(spec=RoutingOutcome)
 
-            await router.route_request(
-                model="my-local-model",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=100,
-                db=mock_db,
-            )
+            ir = _make_ir("my-local-model")
+            await router.route_request(ir, db=mock_db)
 
-            # Verify cloud was called with backend_model, not original model
+            # Verify cloud was called with overridden model in ir
+            # Signature: _route_cloud(db, backend_type, ir)
             call_args = mock_cloud.call_args
-            assert call_args[0][2] == "gpt-4-turbo"  # model arg
+            assert call_args[0][2].model == "gpt-4-turbo"
 
 
 class TestGetCloudBackend:

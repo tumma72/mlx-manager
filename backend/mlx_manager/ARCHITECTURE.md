@@ -94,6 +94,10 @@ mlx_manager/
     routers/                # OpenAI + Anthropic compatible API endpoints
     services/               # Thin orchestrators — delegate to adapter.generate()
     models/                 # Model pool, loaded model state, unified adapter
+                            # ir.py: adapter pipeline IR (PreparedInput, StreamEvent,
+                            #   TextResult, EmbeddingResult, AudioResult,
+                            #   TranscriptionResult) PLUS routing IR (InternalRequest,
+                            #   InferenceResult, RoutingOutcome)
       adapters/
         composable.py       # ModelAdapter (single concrete class for all model types)
         configs.py          # FamilyConfig data objects (11 configs: qwen, glm4, llama, etc.)
@@ -102,7 +106,12 @@ mlx_manager/
       pool.py               # Model pool with LRU eviction, creates adapters at load
     parsers/                # Tool call and thinking parsers (composed into adapters)
     services/formatters/    # L3: ProtocolFormatter (per-request, created by router)
+                            # parse_request() converts protocol request → InternalRequest IR
                             # OpenAI + Anthropic translation of StreamEvent IR → SSE
+    services/cloud/         # IR-based cloud routing layer (BackendRouter + cloud backends)
+                            # BackendRouter.route_request(ir) → RoutingOutcome
+                            # OpenAICloudBackend, AnthropicCloudBackend with same-protocol
+                            # passthrough and cross-protocol IR conversion
   static/                   # Embedded frontend build (production only)
 ```
 
@@ -150,51 +159,24 @@ frontend/src/
 
 ## 3. Layered Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Frontend (SvelteKit SPA)                      │
-│  Route guards validate auth on navigation. API client injects   │
-│  Bearer token on every fetch. Stores manage local state.        │
-│  SSE and WebSocket connections authenticate via token query     │
-│  parameter.                                                     │
-├─────────────────────────────────────────────────────────────────┤
-│                     API / Router Layer                           │
-│  Thin endpoints. Validate request schemas. Inject auth via      │
-│  Depends(get_current_user). Select protocol formatters.         │
-│  Dispatch to services. Never contain business logic.            │
-├─────────────────────────────────────────────────────────────────┤
-│                      Service Layer                              │
-│  Business logic singletons. Auth service (JWT, passwords).      │
-│  Encryption service (API keys). HF client (model lifecycle).    │
-│  Health checker (background monitoring). Launchd manager.       │
-│  Probe service (capability discovery). Inference orchestration. │
-├─────────────────────────────────────────────────────────────────┤
-│                mlx_server Adapter Pipeline                       │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │ L1: ModelAdapter (persistent, in LoadedModel)             │ │
-│  │   • prepare_input() — chat template, tools, multimodal   │ │
-│  │   • create_stream_processor() — per-request factory      │ │
-│  │   • Composes: tool_parser, thinking_parser               │ │
-│  ├───────────────────────────────────────────────────────────┤ │
-│  │ L2: StreamProcessor (per-request)                         │ │
-│  │   • feed(token) → StreamEvent (IR)                        │ │
-│  │   • finalize() → AdapterResult                            │ │
-│  ├───────────────────────────────────────────────────────────┤ │
-│  │ L3: ProtocolFormatter (per-request, from router)          │ │
-│  │   • format_stream_event() → OpenAI/Anthropic SSE         │ │
-│  │   • format_response() → protocol-specific JSON           │ │
-│  └───────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────────┤
-│                     Data / Model Layer                           │
-│  SQLModel entities (User, ServerProfile, Download,              │
-│  CloudCredential, BackendMapping, ServerConfig, Setting,        │
-│  ModelCapabilities). Async SQLite sessions via aiosqlite.       │
-├─────────────────────────────────────────────────────────────────┤
-│                   Infrastructure Layer                           │
-│  Configuration (pydantic-settings). Logging (loguru).           │
-│  Observability (LogFire). Static file serving.                  │
-│  Embedded mlx_server mounted at /v1.                            │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    FE["<b>Frontend — SvelteKit SPA</b><br/>Route guards, Bearer token injection,<br/>SSE and WebSocket via token query param."]
+    API["<b>API / Router Layer</b><br/>Thin endpoints. Schema validation, auth injection,<br/>protocol formatter selection. No business logic."]
+    SVC["<b>Service Layer</b><br/>Business logic singletons: Auth, Encryption,<br/>HF client, Health checker, Probe, Inference."]
+
+    subgraph PIPE ["mlx_server Adapter Pipeline"]
+        direction TB
+        L1["<b>L1: ModelAdapter</b> — persistent, in LoadedModel<br/>prepare_input, create_stream_processor<br/>Composes: tool_parser, thinking_parser"]
+        L2["<b>L2: StreamProcessor</b> — per-request<br/>feed&#40;token&#41; → StreamEvent &#40;IR&#41;<br/>finalize&#40;&#41; → AdapterResult"]
+        L3["<b>L3: ProtocolFormatter</b> — per-request<br/>parse_request&#40;&#41; → InternalRequest<br/>format_stream_event → OpenAI/Anthropic SSE"]
+        L1 --> L2 --> L3
+    end
+
+    DATA["<b>Data / Model Layer</b><br/>SQLModel entities: User, ServerProfile, Download,<br/>CloudCredential, BackendMapping, ServerConfig, etc."]
+    INFRA["<b>Infrastructure Layer</b><br/>Configuration &#40;pydantic-settings&#41;, Logging &#40;loguru&#41;,<br/>Observability &#40;LogFire&#41;. Embedded mlx_server at /v1."]
+
+    FE --> API --> SVC --> PIPE --> DATA --> INFRA
 ```
 
 **Layer rules:**
@@ -206,7 +188,9 @@ frontend/src/
   from routers or services that bridge the two components (chat, servers, system).
 - mlx_server implements a 3-layer adapter pipeline (ModelAdapter → StreamProcessor
   → ProtocolFormatter) that makes the inference layer model-type agnostic. Routers
-  select protocol formatters and pipe through them; all model-specific logic lives
+  use `ProtocolFormatter.parse_request()` to create a protocol-neutral `InternalRequest`
+  IR, then optionally route through `BackendRouter.route_request(ir)` for cloud
+  failover before dispatching to local inference. All model-specific logic lives
   in the adapter layer.
 
 ---
@@ -370,7 +354,14 @@ Frontend: fetch("/v1/messages", { method: "POST", body, headers })          (Ant
     ▼
 mlx_server API endpoints (api/v1/chat.py or api/v1/messages.py)
     │  Validate against schema
-    │  Create ProtocolFormatter (OpenAI or Anthropic)
+    │  ProtocolFormatter.parse_request(request) → InternalRequest (IR)
+    │
+    ├─→ If cloud routing enabled:
+    │      BackendRouter.route_request(ir) → RoutingOutcome
+    │      ├─→ Same-protocol passthrough: forward raw_response / raw_stream as-is
+    │      └─→ Cross-protocol IR: format ir_result / ir_stream with ProtocolFormatter
+    │
+    └─→ Local inference: generate_chat_stream() or generate_chat_complete_response()
     ▼
 mlx_server.services.inference.generate_chat_stream()
     │
@@ -400,6 +391,9 @@ StreamingResponse (text/event-stream):
 
 **Key principles**:
 - Frontend hits `/v1/` endpoints directly — no `/api/chat/` middleman
+- Both `/v1/chat/completions` and `/v1/messages` parse requests into `InternalRequest` IR via `ProtocolFormatter.parse_request()` before any routing
+- Both endpoints support cloud routing via `BackendRouter.route_request(ir)` — routing is not limited to the OpenAI endpoint
+- Cloud backends perform same-protocol passthrough (raw_response/raw_stream) for zero-overhead forwarding, or cross-protocol IR conversion when the calling and cloud protocols differ
 - Model adapter created once at load time with Profile settings, reused across all requests
 - Adapter stores system prompt, tool injection preference, and template options
 - StreamProcessor + ProtocolFormatter created fresh per request
@@ -517,40 +511,16 @@ that replaces 12 family-specific adapter subclasses with a single `ModelAdapter`
 class configured from `FamilyConfig` data objects. All model types (TEXT_GEN,
 VISION, EMBEDDINGS, AUDIO) use this single adapter implementation.
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│ ModelAdapter (single concrete class, config-driven)              │
-│ ─────────────────────────────────────────────────────────────     │
-│ • Created once at model load, stored in LoadedModel.adapter      │
-│ • Configured from FamilyConfig (11 configs: qwen, glm4, ...)     │
-│ • Also configured with Profile settings at load time:           │
-│   - system_prompt (injected idempotently if missing)            │
-│   - enable_tool_injection (for non-native-tool models)          │
-│   - template_options (e.g., enable_thinking)                    │
-│ • configure() method for reconfiguring settings (probe, etc.)   │
-│ • Owns ALL generation for ALL model types                        │
-│                                                                   │
-│ Config-driven behavior:                                           │
-│   • Parser factories → create tool_parser, thinking_parser       │
-│   • Template strategy → apply_chat_template() logic              │
-│   • Tool formatter → format tool definitions                     │
-│   • Message converter → handle role transformations              │
-│   • Stop tokens → family-specific stop sequences                 │
-│                                                                   │
-│ ALL model type methods:                                           │
-│   prepare_input() → PreparedInput  (all types, uses stored config)│
-│   configure() → None               (reconfigure Profile settings) │
-│   generate() → output              (all types)                   │
-│   generate_step() → Iterator[str]  (text/vision streaming)       │
-│   create_stream_processor()        (text/vision)                 │
-│   process_complete() → AdapterResult (all types)                 │
-│                                                                   │
-│ Replaces: 12 adapter subclasses                                  │
-│   (QwenAdapter, GLM4Adapter, LlamaAdapter, GemmaAdapter,         │
-│    MistralAdapter, LiquidAdapter, QwenVisionAdapter,             │
-│    GemmaVisionAdapter, EmbeddingsAdapter, KokoroAdapter,         │
-│    WhisperAdapter, DefaultAdapter)                               │
-└───────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph MA ["ModelAdapter — single concrete class, config-driven"]
+        direction TB
+        LIFE["Created once at model load, stored in LoadedModel.adapter<br/>Configured from FamilyConfig &#40;11 configs: qwen, glm4, ...&#41;<br/>Profile settings: system_prompt, enable_tool_injection, template_options"]
+        CONFIG["<b>Config-driven behavior:</b><br/>Parser factories → tool_parser, thinking_parser<br/>Template strategy → apply_chat_template&#40;&#41;<br/>Tool formatter, Message converter, Stop tokens"]
+        METHODS["<b>Methods:</b><br/>prepare_input&#40;&#41; → PreparedInput | configure&#40;&#41; → None<br/>generate&#40;&#41; → output | generate_step&#40;&#41; → Iterator<br/>create_stream_processor&#40;&#41; | process_complete&#40;&#41; → AdapterResult"]
+        REPLACES["<b>Replaces 12 subclasses:</b> QwenAdapter, GLM4Adapter,<br/>LlamaAdapter, GemmaAdapter, MistralAdapter, LiquidAdapter,<br/>QwenVisionAdapter, GemmaVisionAdapter, EmbeddingsAdapter, etc."]
+        LIFE --- CONFIG --- METHODS --- REPLACES
+    end
 ```
 
 **FamilyConfig Structure:**
@@ -576,11 +546,18 @@ class FamilyConfig(BaseModel):
 **Request Flow (All Model Types):**
 
 ```
-Router
+Router (api/v1/chat.py or api/v1/messages.py)
   │
-  ├─→ Select protocol formatter (OpenAI / Anthropic)
+  ├─→ ProtocolFormatter.parse_request(request) → InternalRequest
   │
-  └─→ Service (inference / embeddings / audio)
+  ├─→ If cloud routing enabled:
+  │     BackendRouter.route_request(ir) → RoutingOutcome
+  │     ├─→ Same-protocol passthrough: raw_response / raw_stream forwarded as-is
+  │     │   (e.g. OpenAI endpoint → OpenAI cloud, or Anthropic endpoint → Anthropic cloud)
+  │     └─→ IR result / IR stream: format with ProtocolFormatter
+  │         (cross-protocol: OpenAI endpoint → Anthropic cloud, or vice versa)
+  │
+  └─→ Local inference: Service (inference / embeddings / audio)
       │
       ├─→ adapter.prepare_input() → PreparedInput
       │   │

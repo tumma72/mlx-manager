@@ -12,9 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel
-
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextResult
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
@@ -23,6 +21,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     Usage,
 )
 from mlx_manager.mlx_server.services.formatters.base import ProtocolFormatter
+from mlx_manager.models.enums import ApiType
 from mlx_manager.models.value_objects import InferenceParams
 
 # Stop reason mapping: OpenAI → Anthropic
@@ -42,18 +41,6 @@ _STOP_REASON_TO_OPENAI: dict[str, str] = {
 }
 
 AnthropicStopReason = Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"]
-
-
-class InternalRequest(BaseModel):
-    """Internal request format used by inference service."""
-
-    model: str
-    messages: list[dict[str, Any]]
-    params: InferenceParams
-    stream: bool = False
-    stop: list[str] | None = None
-    tools: list[dict[str, Any]] | None = None
-    images: list[str] | None = None  # Base64 data URLs for vision
 
 
 def openai_stop_to_anthropic(stop_reason: str | None) -> str:
@@ -241,6 +228,8 @@ class AnthropicFormatter(ProtocolFormatter):
             stop=request.stop_sequences,
             tools=tools,
             images=images if images else None,
+            original_request=request,
+            original_protocol=ApiType.ANTHROPIC,
         )
 
     # ── streaming ────────────────────────────────────────────────────

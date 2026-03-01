@@ -16,7 +16,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextResult
 
 
 class ProtocolFormatter(ABC):
@@ -24,6 +24,9 @@ class ProtocolFormatter(ABC):
 
     Instantiated per-request with request metadata. Methods produce
     dicts ready for EventSourceResponse (streaming) or FastAPI response.
+
+    Input parsing:
+        parse_request()    → InternalRequest from protocol-specific request
 
     Streaming lifecycle:
         1. stream_start()  → initial envelope events
@@ -38,6 +41,20 @@ class ProtocolFormatter(ABC):
         self.model_id = model_id
         self.request_id = request_id
         self.created = int(time.time())
+
+    @staticmethod
+    @abstractmethod
+    def parse_request(request: Any) -> InternalRequest:
+        """Convert a protocol-specific request into protocol-neutral IR.
+
+        Args:
+            request: Protocol-specific request (ChatCompletionRequest or
+                     AnthropicMessagesRequest).
+
+        Returns:
+            InternalRequest with original_request and original_protocol set.
+        """
+        ...
 
     @abstractmethod
     def stream_start(self) -> list[dict[str, Any]]:

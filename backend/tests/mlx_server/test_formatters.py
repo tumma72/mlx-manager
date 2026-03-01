@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextResult
 from mlx_manager.mlx_server.services.formatters import (
     AnthropicFormatter,
     OpenAIFormatter,
@@ -21,6 +21,10 @@ from mlx_manager.mlx_server.services.formatters.base import (
 
 class ConcreteFormatter(ProtocolFormatter):
     """Minimal concrete implementation for testing ABC contract."""
+
+    @staticmethod
+    def parse_request(request: Any) -> InternalRequest:
+        raise NotImplementedError("Test stub")
 
     def stream_start(self) -> list[dict[str, Any]]:
         return [{"event": "start", "data": self.model_id}]
@@ -344,7 +348,7 @@ class TestOpenAIFormatterComplete:
         )
         response = fmt.format_complete(result, prompt_tokens=10, completion_tokens=5)
 
-        # Match inference.py _generate_chat_complete output structure
+        # Match OpenAIFormatter.format_complete() output structure
         assert set(response.keys()) == {"id", "object", "created", "model", "choices", "usage"}
         choice = response["choices"][0]
         assert set(choice.keys()) == {"index", "message", "finish_reason"}

@@ -12,7 +12,12 @@ from mlx_manager.mlx_server.api.v1.messages import (
     _handle_streaming,
     create_message,
 )
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import (
+    InferenceResult,
+    InternalRequest,
+    StreamEvent,
+    TextResult,
+)
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
@@ -20,8 +25,6 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     TextBlock,
     TextBlockParam,
 )
-from mlx_manager.mlx_server.services.formatters import InternalRequest
-from mlx_manager.mlx_server.services.inference import InferenceResult
 from mlx_manager.models.value_objects import InferenceParams
 
 

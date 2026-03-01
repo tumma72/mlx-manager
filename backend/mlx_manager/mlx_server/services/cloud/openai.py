@@ -62,13 +62,14 @@ class OpenAICloudBackend(CloudBackendClient):
         Cross-protocol (Anthropic->OpenAI): build request from IR, parse response to IR.
         """
         # Build OpenAI-format request
+        request_data: dict[str, Any]
         if ir.original_protocol == ApiType.OPENAI and ir.original_request is not None:
             # Same-protocol passthrough: use original request with model override
             request_data = ir.original_request.model_dump(exclude_none=True)
             request_data["model"] = ir.model  # Router may have overridden model
         else:
             # Cross-protocol: build from IR fields
-            request_data: dict[str, Any] = {
+            request_data = {
                 "model": ir.model,
                 "messages": ir.messages,
                 "max_tokens": ir.params.max_tokens or 4096,

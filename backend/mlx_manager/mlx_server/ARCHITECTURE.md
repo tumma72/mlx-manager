@@ -39,35 +39,45 @@ concerns and enables parallel request handling with zero per-request detection:
   - `finalize() → AdapterResult` (complete extraction)
 
 ### Layer 3: ProtocolFormatter (Request-Scoped)
-- **Lifecycle**: Created once per request by the router
+- **Lifecycle**: Created once per request by the endpoint handler
 - **Scope**: One formatter per request, determined by endpoint
-- **Responsibility**: Convert protocol-neutral IR to protocol responses
+- **Responsibility**: Convert protocol-neutral IR to protocol responses, and parse
+  protocol-specific requests into IR
+  - `parse_request(request) → InternalRequest` (static — parses incoming request)
   - `StreamEvent` → protocol-specific SSE chunks
-  - `AdapterResult` → protocol-specific complete responses
-  - OpenAIFormatter: IR → OpenAI format
-  - AnthropicFormatter: IR → Anthropic format
+  - `TextResult` → protocol-specific complete responses
+  - OpenAIFormatter: parses `ChatCompletionRequest`, formats IR → OpenAI responses
+  - AnthropicFormatter: parses `AnthropicMessagesRequest`, formats IR → Anthropic responses
 - **Key Methods**:
-  - `format_stream_event(StreamEvent) → ProtocolChunk | None`
-  - `format_response(AdapterResult) → ProtocolResponse`
+  - `parse_request(request) → InternalRequest` (abstract staticmethod)
+  - `stream_start() → list[dict]`
+  - `stream_event(StreamEvent) → list[dict]`
+  - `stream_end(finish_reason, tool_calls, output_tokens) → list[dict]`
+  - `format_complete(TextResult, prompt_tokens, completion_tokens) → Any`
 
 ### Request Flow
 
 ```
-[Router] → creates ProtocolFormatter
+[Endpoint] → Formatter.parse_request(request) → InternalRequest (IR)
     ↓
-[Service] → gets LoadedModel (with adapter)
-    ↓
-[Adapter.prepare_input()] → PreparedInput
-    ↓
-[Metal Thread] → raw token stream
-    ↓
-[StreamProcessor.feed()] → StreamEvent (IR)
-    ↓
-[ProtocolFormatter.format_stream_event()] → SSE chunk → client
-    ↓ (on stream end)
-[StreamProcessor.finalize()] → AdapterResult (IR)
-    ↓
-[ProtocolFormatter.format_response()] → final chunk → client
+[BackendRouter.route_request(ir)] → RoutingOutcome   (if cloud routing enabled)
+    │
+    ├── Cloud route: forward to cloud backend → raw_response / raw_stream
+    │                                          (or ir_result / ir_stream if cross-protocol)
+    │
+    └── Local route: → InferenceService (generate_chat_stream / generate_chat_complete_response)
+            ↓
+        [Adapter.prepare_input()] → PreparedInput
+            ↓
+        [Metal Thread] → raw token stream
+            ↓
+        [StreamProcessor.feed()] → StreamEvent (IR)
+            ↓
+        [ProtocolFormatter.stream_event()] → SSE chunk → client
+            ↓ (on stream end)
+        [StreamProcessor finalize via adapter.process_complete()] → TextResult (IR)
+            ↓
+        [ProtocolFormatter.stream_end()] → final chunks → client
 ```
 
 ### Key Design Principles
@@ -132,6 +142,9 @@ mlx_server/
 
   models/                 # Model lifecycle and unified adapter architecture
     types.py              # ModelType enum (TEXT_GEN, VISION, EMBEDDINGS, AUDIO)
+    ir.py                 # IR types: PreparedInput, StreamEvent, TextResult, EmbeddingResult,
+                          #   AudioResult, TranscriptionResult, InternalRequest,
+                          #   InferenceResult, RoutingOutcome
     detection.py          # detect_model_type(), detect_model_family() — fallback
     pool.py               # ModelPoolManager — LRU cache, adapter-aware loading
     adapters/
@@ -141,18 +154,23 @@ mlx_server/
       registry.py         # Adapter factory: create_adapter(), detect_model_family()
 
   services/               # Inference orchestration (delegates to adapter pipeline)
-    inference.py          # Thin orchestrator: calls adapter.generate() / adapter.generate_step()
+    inference.py          # Public: generate_chat_stream(), generate_chat_complete_response(),
+                          #   generate_completion() (legacy); generate_chat_completion() DELETED
     embeddings.py         # Thin wrapper: calls adapter.generate_embeddings()
     audio.py              # Thin wrapper: calls adapter.generate_speech() / adapter.transcribe()
-    stream_processor.py   # Request-scoped StreamProcessor (adapter-created)
-    formatters/           # Protocol-specific response formatters
-      base.py             # ProtocolFormatter (ABC)
-      openai.py           # OpenAIFormatter (IR → OpenAI responses)
-      anthropic.py        # AnthropicFormatter (IR → Anthropic responses)
+    formatters/           # Protocol-specific response formatters (also parse requests)
+      base.py             # ProtocolFormatter (ABC) — includes parse_request() abstract staticmethod
+      openai.py           # OpenAIFormatter: parse_request() + IR → OpenAI responses
+      anthropic.py        # AnthropicFormatter: parse_request() + IR → Anthropic responses
     structured_output.py  # JSON schema validation for responses
     image_processor.py    # Image URL fetching + resizing for vision
     audit.py              # Request tracking + logging
-    cloud/                # Cloud backend routing (experimental)
+    cloud/                # IR-based cloud routing layer
+      router.py           # BackendRouter: route_request(ir) → RoutingOutcome; get_router() singleton
+      client.py           # CloudBackendClient (ABC): forward_request(ir) → RoutingOutcome;
+                          #   protocol property; AsyncCircuitBreaker
+      openai.py           # OpenAICloudBackend: same-protocol passthrough + cross-protocol conversion
+      anthropic.py        # AnthropicCloudBackend: same-protocol passthrough + cross-protocol conversion
     batching/             # Continuous batching (experimental)
 
   errors/                 # RFC 7807 error handling
@@ -166,50 +184,18 @@ mlx_server/
 
 ## 3. Layered Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     API Layer                           │
-│  Thin protocol endpoints. Validates requests against    │
-│  schemas, creates ProtocolFormatter, pipes through      │
-│  inference service. NO protocol-specific logic.         │
-├─────────────────────────────────────────────────────────┤
-│              Protocol Formatter Layer                   │
-│  Request-scoped formatters convert protocol-neutral IR  │
-│  (StreamEvent, AdapterResult) to protocol responses.    │
-│  OpenAIFormatter, AnthropicFormatter. One per request.  │
-├─────────────────────────────────────────────────────────┤
-│                   Service Layer                         │
-│  Family-agnostic inference orchestration. Gets adapter  │
-│  from LoadedModel, calls prepare_input → generate →     │
-│  process_output pipeline. Model-type agnostic server.   │
-├─────────────────────────────────────────────────────────┤
-│                Stream Processor Layer                   │
-│  Request-scoped processors created by adapters.         │
-│  Incremental pattern matching, per-request state,       │
-│  yields protocol-neutral StreamEvents. One per stream.  │
-├─────────────────────────────────────────────────────────┤
-│                    Adapter Layer                        │
-│  Model-scoped, persistent. Full pipeline owner: input   │
-│  preparation (message conversion, template, tools) AND  │
-│  output processing (tool extraction, thinking, clean).  │
-│  One adapter per loaded model, lives entire lifetime.   │
-├─────────────────────────────────────────────────────────┤
-│                    Model Layer                          │
-│  Model pool with LRU eviction. Each LoadedModel holds   │
-│  a stateful adapter instance composed from injected     │
-│  parsers. Adapter created at load time from DB config.  │
-├─────────────────────────────────────────────────────────┤
-│                   Parser Layer                          │
-│  Standalone, reusable strategy objects for extracting   │
-│  tool calls and thinking blocks from model output.      │
-│  Decoupled from families — same parser serves multiple  │
-│  families. Provides both streaming markers and batch    │
-│  extraction via a single interface.                     │
-├─────────────────────────────────────────────────────────┤
-│                 Infrastructure Layer                    │
-│  Configuration, persistence, error handling, Metal      │
-│  thread utilities, timeouts, observability.             │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    API["<b>API Layer</b><br/>Thin protocol endpoints. Validates requests,<br/>creates ProtocolFormatter. No protocol-specific logic."]
+    FMT["<b>Protocol Formatter Layer</b><br/>Request-scoped formatters: OpenAIFormatter,<br/>AnthropicFormatter. Converts IR to protocol responses."]
+    SVC["<b>Service Layer</b><br/>Family-agnostic inference orchestration.<br/>prepare_input → generate → process_output pipeline."]
+    SP["<b>Stream Processor Layer</b><br/>Request-scoped processors created by adapters.<br/>Incremental pattern matching, yields StreamEvents."]
+    ADP["<b>Adapter Layer</b><br/>Model-scoped, persistent. Full pipeline owner:<br/>input preparation AND output processing."]
+    MDL["<b>Model Layer</b><br/>Model pool with LRU eviction. Each LoadedModel<br/>holds a stateful adapter from injected parsers."]
+    PRS["<b>Parser Layer</b><br/>Standalone strategy objects for tool calls and<br/>thinking blocks. Decoupled from families."]
+    INF["<b>Infrastructure Layer</b><br/>Configuration, persistence, error handling,<br/>Metal thread utilities, timeouts, observability."]
+
+    API --> FMT --> SVC --> SP --> ADP --> MDL --> PRS --> INF
 ```
 
 **Layer rules:**
@@ -228,113 +214,118 @@ mlx_server/
 ### 4.1 Streaming Pipeline (All Text + Vision Models)
 
 ```
-POST /v1/chat/completions (OpenAI)         POST /v1/messages (Anthropic)
-    │                                           │
-    ▼                                           ▼
-api/v1/chat.py                             api/v1/messages.py
-    │                                           │
-    ├── Validate against schema                 ├── Validate against schema
-    ├── Create OpenAIFormatter                  ├── Create AnthropicFormatter
-    │                                           │
-    └──────────────┬────────────────────────────┘
-                   │
-                   ▼  messages + tools + params + formatter
-          services/inference.py
-          ::generate_chat_completion()
-                   │
-                   ├── pool.get_model()         → LoadedModel (with adapter)
-                   │
-                   │   LAYER 1: ModelAdapter (model-scoped, persistent)
-                   │  ┌─────────────────────────────────────────────┐
-                   │  │  Created once at model load time            │
-                   │  │  Pre-configured with family parsers         │
-                   │  │  Owns BOTH input prep AND output processing │
-                   │  └─────────────────────────────────────────────┘
-                   │
-                   ├── adapter.prepare_input(messages, tools, ...)
-                   │   │
-                   │   ├── convert_messages() — handle tool roles
-                   │   ├── apply_chat_template() — messages → prompt
-                   │   ├── format_tools() — native or injected
-                   │   └── aggregate stop_tokens (pre-computed)
-                   │   │
-                   │   ▼  PreparedInput(prompt, stop_tokens, ...)
-                   │
-                   ▼  prompt string + stop tokens
-          Metal Thread (stream_generate / generate)
-                   │
-                   ▼  raw token stream
-                   │
-                   │   LAYER 2: StreamProcessor (request-scoped)
-                   │  ┌─────────────────────────────────────────────┐
-                   │  │  Created per-request via adapter factory    │
-                   │  │  Holds per-request state: buffers, mode     │
-                   │  │  Incremental pattern matching               │
-                   │  └─────────────────────────────────────────────┘
-                   │
-                   ├── stream_processor = adapter.create_stream_processor()
-                   │
-                   ├── For each token:
-                   │   │
-                   │   ├── stream_processor.feed(token) → StreamEvent (IR)
-                   │   │   │
-                   │   │   ├── Match thinking tags → reasoning_content
-                   │   │   ├── Match tool markers → buffer for extraction
-                   │   │   └── Regular text → content
-                   │   │   │
-                   │   │   ▼  StreamEvent (protocol-neutral)
-                   │   │
-                   │   │   LAYER 3: ProtocolFormatter (request-scoped)
-                   │   │  ┌─────────────────────────────────────────┐
-                   │   │  │  Determined by endpoint                 │
-                   │   │  │  Converts IR → protocol-specific SSE    │
-                   │   │  │  OpenAIFormatter / AnthropicFormatter   │
-                   │   │  └─────────────────────────────────────────┘
-                   │   │
-                   │   └── formatter.format_stream_event(event) → SSE chunk
-                   │       │
-                   │       ▼  yield to client
-                   │
-                   ├── On stream end:
-                   │   │
-                   │   ├── stream_processor.finalize() → AdapterResult (IR)
-                   │   │   │
-                   │   │   ├── adapter.tool_parser.extract() → tool_calls
-                   │   │   ├── adapter.thinking_parser.extract() → reasoning
-                   │   │   └── Build TextResult with all extracted content
-                   │   │
-                   │   └── formatter.format_response(result) → final chunk
-                   │       │
-                   │       ▼  yield to client
+POST /v1/chat/completions (OpenAI)             POST /v1/messages (Anthropic)
+    │                                               │
+    ▼                                               ▼
+api/v1/chat.py                                 api/v1/messages.py
+    │                                               │
+    ├── Validate against schema                     ├── Validate against schema
+    ├── OpenAIFormatter.parse_request(request)      ├── AnthropicFormatter.parse_request(request)
+    │   → InternalRequest (IR)                      │   → InternalRequest (IR)
+    │     (original_request + original_protocol     │     (original_request + original_protocol
+    │      attached for passthrough optimization)   │      attached for passthrough optimization)
+    │                                               │
+    │   [if enable_cloud_routing]                   │   [if enable_cloud_routing]
+    │   → BackendRouter.route_request(ir)           │   → BackendRouter.route_request(ir)
+    │     → RoutingOutcome (see Section 17)         │     → RoutingOutcome (see Section 17)
+    │                                               │
+    └──────────────────┬────────────────────────────┘
+                       │  (local/direct inference path)
+                       │  ir.model, ir.messages, ir.params,
+                       │  ir.stop, ir.tools, ir.images
+                       ▼
+              services/inference.py
+              ::generate_chat_stream()
+                       │
+                       ├── pool.get_model()         → LoadedModel (with adapter)
+                       │
+                       │   LAYER 1: ModelAdapter (model-scoped, persistent)
+                       │  ┌─────────────────────────────────────────────┐
+                       │  │  Created once at model load time            │
+                       │  │  Pre-configured with family parsers         │
+                       │  │  Owns BOTH input prep AND output processing │
+                       │  └─────────────────────────────────────────────┘
+                       │
+                       ├── adapter.prepare_input(messages, tools, ...)
+                       │   │
+                       │   ├── convert_messages() — handle tool roles
+                       │   ├── apply_chat_template() — messages → prompt
+                       │   ├── format_tools() — native or injected
+                       │   └── aggregate stop_tokens (pre-computed)
+                       │   │
+                       │   ▼  PreparedInput(prompt, stop_tokens, ...)
+                       │
+                       ▼  prompt string + stop tokens
+              Metal Thread (adapter.generate_step / stream_generate)
+                       │
+                       ▼  raw token stream
+                       │
+                       │   LAYER 2: StreamProcessor (request-scoped)
+                       │  ┌─────────────────────────────────────────────┐
+                       │  │  Created per-request via adapter factory    │
+                       │  │  Holds per-request state: buffers, mode     │
+                       │  │  Incremental pattern matching               │
+                       │  └─────────────────────────────────────────────┘
+                       │
+                       ├── stream_processor = adapter.create_stream_processor()
+                       │
+                       ├── For each token:
+                       │   │
+                       │   ├── stream_processor.feed(token) → StreamEvent (IR)
+                       │   │   │
+                       │   │   ├── Match thinking tags → reasoning_content
+                       │   │   ├── Match tool markers → buffer for extraction
+                       │   │   └── Regular text → content
+                       │   │   │
+                       │   │   ▼  StreamEvent (protocol-neutral)
+                       │   │
+                       │   │   LAYER 3: ProtocolFormatter (request-scoped)
+                       │   │  ┌─────────────────────────────────────────┐
+                       │   │  │  Determined by endpoint                 │
+                       │   │  │  Converts IR → protocol-specific SSE    │
+                       │   │  │  OpenAIFormatter / AnthropicFormatter   │
+                       │   │  └─────────────────────────────────────────┘
+                       │   │
+                       │   └── formatter.stream_event(event) → list[SSE chunk]
+                       │       │
+                       │       ▼  yield to client
+                       │
+                       ├── On stream end (final TextResult from generator):
+                       │   │
+                       │   └── formatter.stream_end(finish_reason, tool_calls, output_tokens)
+                       │       │                    → final SSE chunks
+                       │       ▼  yield to client
 ```
 
 **Key Design Points:**
 - **Vision models use TEXT adapters** — Vision is TEXT_GEN + multimodal input
 - **Same output pipeline** — Vision models produce TextResult, support tools/thinking
-- **Vision adapters extend text family adapters** (e.g., GemmaVisionAdapter extends GemmaAdapter)
-- **Additional input preprocessing** — Image download, PIL conversion, processor formatting
-- **Zero protocol logic in service** — Service orchestrates, formatters handle protocol details
+- **Zero protocol logic in service** — Service returns IR; formatters handle protocol details
+- **IR created at endpoint entry** — `Formatter.parse_request()` runs before routing,
+  attaching `original_request` and `original_protocol` for cloud passthrough optimization
 
 ### 4.2 Non-Streaming Pipeline
 
 ```
-[Router receives request]
+[Endpoint: parse_request(request) → InternalRequest]
     ↓
-[Create ProtocolFormatter based on endpoint]
-    ↓
-[services/inference.py]
-    ↓
-[adapter.prepare_input(messages, tools)] → PreparedInput
-    ↓
-[model.generate(prepared_input)] → raw output (Metal thread)
-    ↓
-[adapter.process_complete(raw_output)] → AdapterResult (IR)
+[BackendRouter.route_request(ir) → RoutingOutcome]   (if cloud routing enabled)
     │
-    ├── tool_parser.extract() → tool_calls
-    ├── thinking_parser.extract() → reasoning
-    └── Build TextResult / EmbeddingResult / AudioResult
-    ↓
-[formatter.format_response(result)] → complete protocol response
+    ├── Cloud (same-protocol): raw_response forwarded directly → protocol response
+    │
+    ├── Cloud (cross-protocol): ir_result → formatter.format_complete() → protocol response
+    │
+    └── Local: generate_chat_complete_response(ir fields...) → InferenceResult
+            ↓
+        [adapter.prepare_input(messages, tools)] → PreparedInput
+            ↓
+        [adapter.generate(prepared_input)] → TextResult (Metal thread)
+            ↓  (or legacy: stream_generate → adapter.process_complete())
+        [InferenceResult(result=TextResult, prompt_tokens, completion_tokens)]
+            ↓
+        [formatter.format_complete(result, prompt_tokens, completion_tokens)]
+            ↓
+        complete protocol response
 ```
 
 ### 4.3 Embeddings Pipeline
@@ -343,42 +334,59 @@ api/v1/chat.py                             api/v1/messages.py
 POST /v1/embeddings
     │
     ▼
+api/v1/embeddings.py::create_embeddings()
+    │
+    ├── detect_model_type() → EMBEDDINGS
+    │
+    ▼
 services/embeddings.py::generate_embeddings()
     │
     ├── pool.get_model() (EMBEDDINGS type → mlx-embeddings)
     │   │
     │   └── LoadedModel with minimal adapter (NullToolParser, NullThinkingParser)
     │
-    ├── adapter.prepare_input(texts) → tokenized batch
-    ├── model.embed() (Metal thread)
+    ├── adapter.prepare_input(texts=texts) → tokenized batch
+    ├── model.embed() (Metal thread via adapter.generate_embeddings())
     ├── adapter.process_complete(embeddings) → EmbeddingResult (IR)
     │   │
-    │   └── Extract embeddings, normalize, compute dimensions
+    │   └── Extract embeddings, normalize, compute dimensions + total_tokens
     │
-    └── formatter.format_response(result) → EmbeddingResponse
+    └── return EmbeddingResult (IR)
+    │
+    ▼  (back in endpoint)
+api/v1/embeddings.py builds EmbeddingResponse directly from EmbeddingResult
+    (no ProtocolFormatter — embeddings use a direct schema build)
 ```
 
 ### 4.4 Audio Pipeline
 
 ```
-POST /v1/audio/speech        → services/audio.py::generate_speech()
-POST /v1/audio/transcriptions → services/audio.py::transcribe_audio()
+POST /v1/audio/speech        → api/v1/speech.py::create_speech()
+POST /v1/audio/transcriptions → api/v1/transcriptions.py::create_transcription()
+    │
+    ▼
+services/audio.py::generate_speech() / transcribe_audio()
     │
     ├── pool.get_model() (AUDIO type → mlx-audio)
     │   │
     │   └── WhisperAdapter or KokoroAdapter
     │
-    ├── TTS: adapter.prepare_input(text, voice) → audio_params
+    ├── TTS: adapter.prepare_input(text_for_tts=text) → audio_params
     │   │
-    │   ├── model.generate_speech() (Metal thread)
-    │   └── adapter.process_complete(audio) → AudioResult (IR)
+    │   ├── adapter.generate_speech() (Metal thread)
+    │   └── return AudioResult(audio_bytes, sample_rate, format)
     │
-    ├── STT: adapter.prepare_input(audio_bytes) → audio_tensor
+    ├── STT: adapter.prepare_input(audio_data=audio_bytes) → audio_tensor
     │   │
-    │   ├── model.transcribe() (Metal thread)
-    │   └── adapter.process_complete(segments) → TranscriptionResult (IR)
+    │   ├── adapter.transcribe() (Metal thread)
+    │   └── return TranscriptionResult(text, segments, language)
     │
-    └── formatter.format_response(result) → Audio bytes / JSON transcription
+    └── return AudioResult / TranscriptionResult (IR)
+    │
+    ▼  (back in endpoint)
+api/v1/speech.py returns Response(content=result.audio_bytes, media_type=...)
+api/v1/transcriptions.py builds TranscriptionResponse from TranscriptionResult
+    (no ProtocolFormatter — audio endpoints use direct response construction)
 ```
 
 ---
@@ -1089,9 +1097,60 @@ class PreparedInput:
 
 ### 7.3 IR Type Hierarchy
 
+All IR types live in `models/ir.py`.
+
 ```python
+# Request IR
+class InternalRequest(BaseModel):
+    """Protocol-neutral request IR.
+
+    Created by ProtocolFormatter.parse_request() from a protocol-specific
+    request. Carries original_request and original_protocol so cloud backends
+    can use same-protocol passthrough without converting to a different format.
+    """
+    model: str
+    messages: list[dict[str, Any]]
+    params: InferenceParams           # max_tokens, temperature, top_p
+    stream: bool = False
+    stop: list[str] | None = None
+    tools: list[dict[str, Any]] | None = None
+    images: list[str] | None = None   # Base64 data URLs for vision
+    original_request: Any | None = None   # Raw protocol-specific request object
+    original_protocol: ApiType | None = None  # Which protocol created this IR
+
+
+class InferenceResult(BaseModel):
+    """Non-streaming inference result with token counts.
+
+    Returned by generate_chat_complete_response() and by cloud backends
+    for cross-protocol conversions. Wraps TextResult with billing counters.
+    """
+    result: TextResult
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class RoutingOutcome(BaseModel):
+    """Tagged union result from BackendRouter.route_request().
+
+    Exactly one of the four fields is set:
+    - ir_result:    non-streaming local or cross-protocol result (needs formatting)
+    - ir_stream:    streaming local or cross-protocol result (needs formatting)
+    - raw_response: same-protocol passthrough non-streaming (forward as-is)
+    - raw_stream:   same-protocol passthrough streaming (forward as-is)
+
+    Properties:
+    - is_passthrough: True when raw_response or raw_stream is set
+    - is_streaming:   True when ir_stream or raw_stream is set
+    """
+    ir_result: InferenceResult | None = None
+    ir_stream: AsyncGenerator | None = None
+    raw_response: dict[str, Any] | BaseModel | None = None
+    raw_stream: AsyncGenerator | None = None
+
+
 # Streaming IR
-class StreamEvent:
+class StreamEvent(BaseModel):
     """Protocol-neutral streaming event.
 
     Yielded by StreamProcessor.feed() during token-by-token processing.
@@ -1104,15 +1163,14 @@ class StreamEvent:
 
 
 # Complete Response IR
-class AdapterResult(ABC):
+class AdapterResult(BaseModel):
     """Base class for complete adapter results.
 
-    All results include token counts and finish reason.
     Subclasses add type-specific fields.
+    Token counts are NOT stored here — they live in InferenceResult
+    which wraps TextResult together with token counts.
     """
-    finish_reason: str
-    prompt_tokens: int
-    completion_tokens: int
+    finish_reason: str = "stop"
 
 
 class TextResult(AdapterResult):
@@ -1120,29 +1178,32 @@ class TextResult(AdapterResult):
 
     Vision models produce TextResult because they use the same output
     pipeline as text models: tool extraction, thinking extraction, cleaning.
+    Token counts are carried by the InferenceResult wrapper.
     """
-    content: str | None = None
+    content: str = ""
     reasoning_content: str | None = None
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class EmbeddingResult(AdapterResult):
     """Result from EMBEDDINGS models."""
-    embeddings: list[list[float]]
-    dimensions: int
+    embeddings: list[list[float]] = []
+    dimensions: int = 0
+    total_tokens: int = 0
 
 
 class AudioResult(AdapterResult):
     """Result from AUDIO TTS models."""
-    audio_data: bytes
-    sample_rate: int
-    format: str  # "wav", "mp3", etc.
+    audio_bytes: bytes = b""
+    sample_rate: int = 0
+    format: str = ""
 
 
 class TranscriptionResult(AdapterResult):
     """Result from AUDIO STT models."""
-    text: str
-    segments: list[Segment] | None = None
+    text: str = ""
+    segments: list[dict[str, Any]] | None = None
+    language: str | None = None
 ```
 
 ### 7.4 Canonical Tool Call Types
@@ -1160,7 +1221,7 @@ Formatters serialize them to protocol formats. No bridging or conversion.
 ### 7.5 Streaming Flow (Protocol-Neutral)
 
 ```
-Token Stream (from Metal thread)
+Token Stream (from Metal thread via adapter.generate_step())
     │
     ▼
 StreamProcessor.feed(token)  [created by adapter.create_stream_processor()]
@@ -1175,32 +1236,23 @@ StreamProcessor.feed(token)  [created by adapter.create_stream_processor()]
     ▼  StreamEvent (protocol-neutral IR)
     │
     ▼
-ProtocolFormatter.format_stream_event(event)  [OpenAI or Anthropic]
+ProtocolFormatter.stream_event(event)  [OpenAI or Anthropic]
     │
-    ├── OpenAIFormatter → ChatCompletionChunk dict
-    ├── AnthropicFormatter → content_block_delta / message_delta SSE events
+    ├── OpenAIFormatter → list of ChatCompletionChunk dicts
+    ├── AnthropicFormatter → list of content_block_delta SSE event dicts
     │
-    ▼  Protocol-specific SSE chunk → client
+    ▼  Protocol-specific SSE chunks → client
 
 
-On stream end:
+On stream end (final TextResult yielded by generator):
     │
     ▼
-StreamProcessor.finalize()
+ProtocolFormatter.stream_end(finish_reason, tool_calls, output_tokens)
     │
-    ├── adapter.tool_parser.extract(accumulated_text) → tool_calls
-    ├── adapter.thinking_parser.extract(accumulated_text) → reasoning
-    ├── adapter.thinking_parser.remove(accumulated_text) → clean content
+    ├── OpenAIFormatter → final chunk + [DONE] sentinel
+    ├── AnthropicFormatter → content_block_stop + message_delta + message_stop events
     │
-    ▼  TextResult (protocol-neutral IR)
-    │
-    ▼
-ProtocolFormatter.format_response(result)
-    │
-    ├── OpenAIFormatter → ChatCompletionResponse
-    ├── AnthropicFormatter → AnthropicMessagesResponse
-    │
-    ▼  Final protocol-specific chunk → client
+    ▼  Final protocol-specific chunks → client
 ```
 
 ---
@@ -1253,32 +1305,71 @@ The design has **unidirectional flow** for output: IR → protocol response.
 class ProtocolFormatter(ABC):
     """Base class for protocol-specific formatters.
 
-    Converts protocol-neutral IR to protocol responses.
-    Created once per request by the router.
+    Has two distinct roles:
+    1. Request parsing (static): parse_request() converts an incoming
+       protocol-specific request into a protocol-neutral InternalRequest.
+    2. Response formatting (instance): streaming lifecycle methods and
+       format_complete() convert IR back into protocol-specific responses.
+
+    Instantiated per-request with model_id and request_id.
     """
 
-    @abstractmethod
-    def format_stream_event(self, event: StreamEvent) -> ProtocolChunk | None:
-        """Convert IR StreamEvent to protocol-specific SSE chunk.
+    def __init__(self, model_id: str, request_id: str) -> None: ...
 
-        May return None to suppress events (e.g., tool deltas in some protocols).
-        Returns dict or Pydantic model ready for SSE serialization.
+    @staticmethod
+    @abstractmethod
+    def parse_request(request: Any) -> InternalRequest:
+        """Convert a protocol-specific request into protocol-neutral IR.
+
+        Sets original_request and original_protocol on the returned IR
+        for cloud backend passthrough optimization.
+
+        OpenAIFormatter:   ChatCompletionRequest  → InternalRequest
+        AnthropicFormatter: AnthropicMessagesRequest → InternalRequest
         """
 
     @abstractmethod
-    def format_response(self, result: AdapterResult) -> ProtocolResponse:
-        """Convert complete IR result to protocol-specific response.
+    def stream_start(self) -> list[dict[str, Any]]:
+        """Emit initial events before content streaming begins.
 
-        Handles all AdapterResult subtypes:
-        - TextResult → ChatCompletionResponse / MessagesResponse
-        - EmbeddingResult → EmbeddingResponse
-        - AudioResult → raw bytes Response
-        - TranscriptionResult → TranscriptionResponse
+        OpenAIFormatter:   role chunk ({"role": "assistant", "content": ""})
+        AnthropicFormatter: message_start + content_block_start events
         """
 
     @abstractmethod
-    def format_error(self, error: Exception) -> ProtocolError:
-        """Convert exception to protocol-specific error response."""
+    def stream_event(self, event: StreamEvent) -> list[dict[str, Any]]:
+        """Format a single streaming event into protocol-specific chunks.
+
+        Returns a list (may be empty or contain multiple chunks).
+        """
+
+    @abstractmethod
+    def stream_end(
+        self,
+        finish_reason: str,
+        *,
+        tool_calls: list[dict[str, Any]] | None = None,
+        output_tokens: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Emit closing events after streaming ends.
+
+        OpenAIFormatter:   final delta chunk + [DONE] sentinel
+        AnthropicFormatter: content_block_stop + message_delta + message_stop
+        """
+
+    @abstractmethod
+    def format_complete(
+        self,
+        result: TextResult,
+        *,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+    ) -> Any:
+        """Format a complete non-streaming response.
+
+        OpenAIFormatter:   → ChatCompletionResponse dict
+        AnthropicFormatter: → AnthropicMessagesResponse Pydantic model
+        """
 ```
 
 ### 8.3 OpenAIFormatter
@@ -1287,81 +1378,64 @@ class ProtocolFormatter(ABC):
 class OpenAIFormatter(ProtocolFormatter):
     """Formats IR as OpenAI-compatible responses.
 
-    Used by: /v1/chat/completions, /v1/completions, /v1/embeddings
+    Used by: /v1/chat/completions
+    Also parses ChatCompletionRequest → InternalRequest via parse_request().
     """
 
-    def format_stream_event(self, event: StreamEvent) -> dict | None:
-        """StreamEvent → ChatCompletionChunk dict.
+    @staticmethod
+    def parse_request(request: ChatCompletionRequest) -> InternalRequest:
+        """Parse OpenAI request to IR, attaching original for passthrough."""
+        return InternalRequest(
+            model=request.model,
+            messages=[m.model_dump() for m in request.messages],
+            params=InferenceParams(
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_p=request.top_p,
+            ),
+            stream=request.stream or False,
+            stop=request.stop,
+            tools=[t.model_dump() for t in request.tools] if request.tools else None,
+            original_request=request,
+            original_protocol=ApiType.OPENAI,
+        )
 
-        Structure:
-        {
-            "id": "chatcmpl-...",
+    def stream_start(self) -> list[dict]:
+        """Emit initial role chunk."""
+        return [{"data": json.dumps({
+            "id": self.request_id,
             "object": "chat.completion.chunk",
-            "choices": [{
-                "index": 0,
-                "delta": {
-                    "content": event.content,           # Regular content
-                    "reasoning_content": event.reasoning_content,  # Thinking
-                    "tool_calls": [event.tool_call_delta],  # Tool deltas
-                },
-                "finish_reason": null,
-            }],
-        }
-        """
-        if not event.content and not event.reasoning_content and not event.tool_call_delta:
-            return None  # Suppress empty events
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
+        })}]
 
+    def stream_event(self, event: StreamEvent) -> list[dict]:
+        """StreamEvent → ChatCompletionChunk dict list."""
+        # Returns empty list if event has no content
+
+    def stream_end(self, finish_reason, *, tool_calls=None, output_tokens=0) -> list[dict]:
+        """Final delta chunk + [DONE] sentinel."""
+
+    def format_complete(self, result: TextResult, *, prompt_tokens=0, completion_tokens=0) -> dict:
+        """TextResult → ChatCompletion response dict."""
         return {
-            "id": self._request_id,
-            "object": "chat.completion.chunk",
+            "id": self.request_id,
+            "object": "chat.completion",
             "choices": [{
                 "index": 0,
-                "delta": self._build_delta(event),
-                "finish_reason": "stop" if event.is_complete else None,
+                "message": {
+                    "role": "assistant",
+                    "content": result.content,
+                    "reasoning_content": result.reasoning_content,
+                    "tool_calls": result.tool_calls,
+                },
+                "finish_reason": result.finish_reason,
             }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
         }
-
-    def format_response(self, result: AdapterResult) -> dict | Response:
-        """AdapterResult → OpenAI response.
-
-        TextResult → ChatCompletionResponse
-        EmbeddingResult → EmbeddingResponse
-        AudioResult → Response(content=bytes, media_type="audio/wav")
-        TranscriptionResult → TranscriptionResponse
-        """
-        if isinstance(result, TextResult):
-            return {
-                "id": self._request_id,
-                "object": "chat.completion",
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": result.content,
-                        "reasoning_content": result.reasoning_content,
-                        "tool_calls": result.tool_calls,
-                    },
-                    "finish_reason": result.finish_reason,
-                }],
-                "usage": {
-                    "prompt_tokens": result.prompt_tokens,
-                    "completion_tokens": result.completion_tokens,
-                    "total_tokens": result.prompt_tokens + result.completion_tokens,
-                },
-            }
-        elif isinstance(result, EmbeddingResult):
-            return {
-                "object": "list",
-                "data": [
-                    {"object": "embedding", "embedding": emb, "index": i}
-                    for i, emb in enumerate(result.embeddings)
-                ],
-                "usage": {
-                    "prompt_tokens": result.prompt_tokens,
-                    "total_tokens": result.prompt_tokens,
-                },
-            }
-        # ... other result types
 ```
 
 ### 8.4 AnthropicFormatter
@@ -1371,6 +1445,7 @@ class AnthropicFormatter(ProtocolFormatter):
     """Formats IR as Anthropic-compatible responses.
 
     Used by: /v1/messages
+    Also parses AnthropicMessagesRequest → InternalRequest via parse_request().
 
     Anthropic has a more complex streaming protocol with multiple event types:
     - message_start
@@ -1381,155 +1456,107 @@ class AnthropicFormatter(ProtocolFormatter):
     - message_stop
     """
 
-    def format_stream_event(self, event: StreamEvent) -> dict | None:
-        """StreamEvent → Anthropic SSE event.
+    @staticmethod
+    def parse_request(request: AnthropicMessagesRequest) -> InternalRequest:
+        """Parse Anthropic request to IR, attaching original for passthrough."""
+        # Converts Anthropic system field + messages to unified messages list
+        # Converts Anthropic tool schemas to OpenAI-compatible tool dicts
+
+    def stream_start(self) -> list[dict]:
+        """Emit message_start + content_block_start events."""
+
+    def stream_event(self, event: StreamEvent) -> list[dict]:
+        """StreamEvent → list of Anthropic content_block_delta SSE event dicts.
 
         Anthropic streams content blocks separately:
-        - Thinking content → content_block_delta with type="thinking"
-        - Regular content → content_block_delta with type="text"
-        - Tool calls → content_block_delta with type="tool_use"
+        - Thinking content → content_block_delta with type="thinking_delta"
+        - Regular content  → content_block_delta with type="text_delta"
+        Returns multiple SSE event dicts for one StreamEvent when needed.
         """
-        events = []
 
-        # Send message_start on first event
-        if self._is_first_event:
-            events.append({
-                "type": "message_start",
-                "message": {"id": self._request_id, "role": "assistant"},
-            })
-            self._is_first_event = False
+    def stream_end(self, finish_reason, *, tool_calls=None, output_tokens=0) -> list[dict]:
+        """Emit content_block_stop + message_delta + message_stop events."""
 
-        # Thinking content block
-        if event.reasoning_content:
-            if not self._thinking_block_started:
-                events.append({
-                    "type": "content_block_start",
-                    "index": self._block_index,
-                    "content_block": {"type": "thinking"},
-                })
-                self._thinking_block_started = True
+    def format_complete(self, result: TextResult, *, prompt_tokens=0, completion_tokens=0):
+        """TextResult → AnthropicMessagesResponse Pydantic model.
 
-            events.append({
-                "type": "content_block_delta",
-                "index": self._block_index,
-                "delta": {"type": "thinking_delta", "thinking": event.reasoning_content},
-            })
-
-        # Regular content block
-        if event.content:
-            if not self._content_block_started:
-                events.append({
-                    "type": "content_block_start",
-                    "index": self._block_index + 1,
-                    "content_block": {"type": "text"},
-                })
-                self._content_block_started = True
-
-            events.append({
-                "type": "content_block_delta",
-                "index": self._block_index + 1,
-                "delta": {"type": "text_delta", "text": event.content},
-            })
-
-        return events  # May return multiple SSE events for one StreamEvent
-
-    def format_response(self, result: AdapterResult) -> dict:
-        """TextResult → Anthropic MessagesResponse.
-
-        Structure:
-        {
-            "id": "msg_...",
-            "type": "message",
-            "role": "assistant",
-            "content": [
-                {"type": "thinking", "thinking": result.reasoning_content},
-                {"type": "text", "text": result.content},
-                {"type": "tool_use", "id": "...", "name": "...", "input": {...}},
-            ],
-            "usage": {...},
-        }
+        Content blocks:
+        - reasoning_content → {"type": "thinking", "thinking": ...}
+        - content           → {"type": "text", "text": ...}
+        - tool_calls        → {"type": "tool_use", "id": ..., "name": ..., "input": ...}
         """
-        content_blocks = []
-
-        if result.reasoning_content:
-            content_blocks.append({
-                "type": "thinking",
-                "thinking": result.reasoning_content,
-            })
-
-        if result.content:
-            content_blocks.append({
-                "type": "text",
-                "text": result.content,
-            })
-
-        if result.tool_calls:
-            for tc in result.tool_calls:
-                content_blocks.append({
-                    "type": "tool_use",
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "input": json.loads(tc.function.arguments),
-                })
-
-        return {
-            "id": self._request_id,
-            "type": "message",
-            "role": "assistant",
-            "content": content_blocks,
-            "usage": {
-                "input_tokens": result.prompt_tokens,
-                "output_tokens": result.completion_tokens,
-            },
-        }
 ```
 
-### 8.5 Router Integration
+### 8.5 Endpoint Integration
 
-Routers determine which formatter to use based on the endpoint:
+Both endpoints follow the same unified flow:
 
 ```python
 # api/v1/chat.py (OpenAI endpoint)
-@router.post("/chat/completions")
-async def create_chat_completion(request: ChatCompletionRequest):
-    formatter = OpenAIFormatter(request_id=generate_id())
+async def _handle_text_request(request, image_urls):
+    # 1. Parse request to IR (attaches original for passthrough)
+    ir = OpenAIFormatter.parse_request(request)
 
-    async for event in generate_chat_completion_stream(
-        model_id=request.model,
-        messages=request.messages,
-        tools=request.tools,
-        # ...
-    ):
-        # event is StreamEvent (IR)
-        chunk = formatter.format_stream_event(event)
-        if chunk:
-            yield f"data: {json.dumps(chunk)}\n\n"
+    # 2. Try cloud routing if enabled
+    if settings.enable_cloud_routing:
+        return await _route_and_respond(ir, request)
 
-    # Final response
-    result = await finalize_stream()  # returns TextResult (IR)
-    final_chunk = formatter.format_response(result)
-    yield f"data: {json.dumps(final_chunk)}\n\n"
+    # 3. Direct inference path
+    return await _handle_direct_inference(ir, request)
+
+
+async def _handle_streaming(ir, request):
+    formatter = OpenAIFormatter(model_id=ir.model, request_id=...)
+    async def event_generator():
+        for sse in formatter.stream_start():
+            yield sse
+        gen = await generate_chat_stream(
+            model_id=ir.model, messages=ir.messages,
+            max_tokens=ir.params.max_tokens or 4096, ...
+        )
+        async for item in gen:
+            if isinstance(item, TextResult):
+                for sse in formatter.stream_end(item.finish_reason,
+                                                tool_calls=item.tool_calls,
+                                                output_tokens=output_tokens):
+                    yield sse
+            else:
+                for sse in formatter.stream_event(item):
+                    yield sse
+    return EventSourceResponse(event_generator())
 
 
 # api/v1/messages.py (Anthropic endpoint)
-@router.post("/messages")
-async def create_message(request: AnthropicMessagesRequest):
-    formatter = AnthropicFormatter(request_id=generate_id())
+async def create_message(request):
+    # 1. Parse request to IR
+    internal = AnthropicFormatter.parse_request(request)
 
-    async for event in generate_chat_completion_stream(
-        model_id=request.model,
-        messages=request.messages,  # Already converted to internal format
-        # ...
-    ):
-        # event is StreamEvent (IR)
-        events = formatter.format_stream_event(event)  # May return multiple events
-        for sse_event in events:
-            yield f"event: {sse_event['type']}\ndata: {json.dumps(sse_event)}\n\n"
+    # 2. Try cloud routing if enabled
+    if settings.enable_cloud_routing:
+        return await _route_and_respond(internal, request)
 
-    # Final response
-    result = await finalize_stream()  # returns TextResult (IR)
-    final_message = formatter.format_response(result)
-    yield f"event: message_stop\ndata: {json.dumps(final_message)}\n\n"
+    # 3. Direct inference path
+    if request.stream:
+        return await _handle_streaming(request, internal)
+    else:
+        result = await _handle_non_streaming(request, internal)
+        return result
+
+
+async def _route_and_respond(ir, request):
+    """Route via BackendRouter and dispatch on RoutingOutcome."""
+    outcome = await backend_router.route_request(ir)
+
+    if outcome.is_passthrough:
+        # Forward raw same-protocol response directly (zero conversion)
+        if outcome.raw_stream:
+            return EventSourceResponse(wrap_raw_stream(outcome.raw_stream))
+        return deserialize_protocol_response(outcome.raw_response)
+
+    if outcome.ir_stream:
+        return _format_ir_stream(outcome.ir_stream, ...)   # Uses formatter
+    if outcome.ir_result:
+        return _format_ir_complete(outcome.ir_result, ...)  # Uses formatter
 ```
 
 ### 8.6 What Replaced ProtocolTranslator
@@ -1540,12 +1567,14 @@ async def create_message(request: AnthropicMessagesRequest):
 - Bidirectional conversion in `protocol.py`, tightly coupled to OpenAI as "internal" format
 
 **Current architecture:**
-- `AnthropicFormatter.parse_request()` converts Anthropic request → `InternalRequest` (generic message dict)
+- `AnthropicFormatter.parse_request()` converts Anthropic request → `InternalRequest` (generic IR)
+- `OpenAIFormatter.parse_request()` converts OpenAI request → `InternalRequest` (generic IR)
+- Both attach `original_request` and `original_protocol` for cloud passthrough optimization
 - Service layer works with generic message dicts (not OpenAI-specific)
 - Adapters produce protocol-neutral IR (StreamEvent, TextResult)
 - **ProtocolFormatter** converts IR → protocol responses (unidirectional)
 - OpenAI is not privileged; it's one formatter among equals
-- `protocol.py` deleted — all functionality absorbed into `formatters/anthropic.py`
+- `protocol.py` deleted — all functionality absorbed into `formatters/anthropic.py` and `formatters/openai.py`
 
 ---
 
@@ -1557,64 +1586,69 @@ The service layer is a **thin orchestrator** that coordinates the adapter
 pipeline without knowing model-specific details. It delegates all
 family-specific logic to adapters.
 
-### 10.2 Universal Inference Flow
+### 10.2 Public Service Functions
+
+`generate_chat_completion()` has been deleted. The public API is:
 
 ```python
-async def generate_chat_completion(
+# services/inference.py — public functions
+
+async def generate_chat_stream(
     model_id: str,
     messages: list[dict],
-    tools: list[dict] | None = None,
-    enable_thinking: bool | None = None,
-    formatter: ProtocolFormatter,
-    **kwargs,
-):
-    """Universal inference service for all text/vision models.
+    max_tokens: int = 4096,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
+    stop: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    images: list[Any] | None = None,
+) -> AsyncGenerator[StreamEvent | TextResult, None]:
+    """Streaming chat generation returning IR events.
 
-    Model-type agnostic: delegates everything to the adapter.
-    Works with any ProtocolFormatter (OpenAI, Anthropic, etc.).
+    Awaiting this coroutine prepares the generation context (model loading,
+    template application) and returns an async generator. The generator yields
+    StreamEvent objects during generation, then a final TextResult with
+    finish_reason, tool_calls, and reasoning_content.
+
+    Callers apply a ProtocolFormatter to convert IR to protocol-specific SSE.
     """
-    # 1. Get model from pool (adapter already attached)
-    loaded = await pool.get_model(model_id)
-    adapter = loaded.adapter  # Pre-configured at load time
 
-    # 2. INPUT PIPELINE (delegated to adapter)
-    prepared = adapter.prepare_input(
-        messages=messages,
-        tools=tools,
-        enable_thinking=enable_thinking,
-    )
 
-    # 3. GENERATION (on Metal thread, model-type aware)
-    if loaded.model_type == ModelType.VISION:
-        raw_stream = await _generate_vision(loaded, prepared, **kwargs)
-    else:  # TEXT_GEN
-        raw_stream = await _generate_text(loaded, prepared, **kwargs)
+async def generate_chat_complete_response(
+    model_id: str,
+    messages: list[dict],
+    max_tokens: int = 4096,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
+    stop: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    images: list[Any] | None = None,
+) -> InferenceResult:
+    """Non-streaming chat generation returning IR result.
 
-    # 4. OUTPUT PIPELINE (delegated to adapter + formatter)
-    stream_processor = adapter.create_stream_processor()
+    Returns InferenceResult(result=TextResult, prompt_tokens, completion_tokens).
+    Callers apply a ProtocolFormatter to convert IR to protocol-specific response.
+    """
 
-    async for token in raw_stream:
-        # Adapter layer: token → StreamEvent (IR)
-        event = stream_processor.feed(token)
 
-        # Formatter layer: StreamEvent → protocol chunk
-        chunk = formatter.format_stream_event(event)
-        if chunk:
-            yield chunk
-
-    # 5. FINALIZE (adapter extracts, formatter formats)
-    result = stream_processor.finalize()  # → TextResult (IR)
-    final_chunk = formatter.format_response(result)
-    yield final_chunk
+async def generate_completion(
+    model_id: str,
+    prompt: str | list[str],
+    max_tokens: int = 16,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
+    stop: list[str] | None = None,
+    stream: bool = False,
+    echo: bool = False,
+) -> AsyncGenerator[dict, None] | dict:
+    """Legacy /v1/completions endpoint. Returns OpenAI-format dicts directly."""
 ```
 
-**What the service layer does:**
-- Get model from pool
-- Call `adapter.prepare_input()` → get PreparedInput
-- Route to appropriate MLX library based on `model_type`
-- Pipe raw stream through `adapter.create_stream_processor()`
-- Pipe IR events through `formatter`
-- No family detection, no parser selection, no protocol logic
+**Key design points:**
+- The service does NOT accept a `formatter` parameter — formatters are used by the endpoint, not the service
+- The service returns protocol-neutral IR (`AsyncGenerator[StreamEvent | TextResult]` or `InferenceResult`)
+- The endpoint is responsible for calling `formatter.stream_event()`, `formatter.stream_end()`, and `formatter.format_complete()`
+- No family detection, no parser selection, no protocol logic inside the service
 
 **What the service layer does NOT do:**
 - Message conversion (adapter's job)
@@ -1623,53 +1657,35 @@ async def generate_chat_completion(
 - Stop token computation (adapter's job, pre-computed)
 - Tool call extraction (adapter's parser's job)
 - Thinking extraction (adapter's parser's job)
-- Protocol formatting (formatter's job)
-- System prompt injection (stored on adapter, applied via `_ensure_system_prompt()`)
-- Tool injection decisions (stored as `_enable_tool_injection` on adapter)
-- Template option passing (stored as `_template_options` on adapter)
+- Protocol formatting (formatter's job — at the endpoint layer)
 
 ### 10.3 Service Layer per Model Type
 
-While the main `generate_chat_completion()` handles TEXT_GEN and VISION,
-specialized services exist for other model types:
+Specialized services for non-chat model types follow the same pattern:
 
 ```python
 # services/embeddings.py
-async def generate_embeddings(
-    model_id: str,
-    texts: list[str],
-    formatter: ProtocolFormatter,
-    **kwargs,
-):
+async def generate_embeddings(model_id: str, texts: list[str], ...) -> EmbeddingResult:
     loaded = await pool.get_model(model_id)
-    adapter = loaded.adapter  # EmbeddingAdapter
-
-    prepared = adapter.prepare_input(texts)
+    adapter = loaded.adapter
+    prepared = adapter.prepare_input(texts=texts)
     embeddings = await _embed_on_metal_thread(loaded, prepared)
-    result = adapter.process_complete(embeddings)  # → EmbeddingResult (IR)
-
-    return formatter.format_response(result)
+    return adapter.process_complete(embeddings)  # → EmbeddingResult (IR)
 
 
 # services/audio.py
-async def generate_speech(
-    model_id: str,
-    text: str,
-    voice: str,
-    formatter: ProtocolFormatter,
-    **kwargs,
-):
+async def generate_speech(model_id: str, text: str, voice: str, ...) -> AudioResult:
     loaded = await pool.get_model(model_id)
-    adapter = loaded.adapter  # KokoroAdapter
-
-    prepared = adapter.prepare_input(text, voice=voice)
+    adapter = loaded.adapter
+    prepared = adapter.prepare_input(text_for_tts=text)
     audio_data = await _tts_on_metal_thread(loaded, prepared)
-    result = adapter.process_complete(audio_data)  # → AudioResult (IR)
+    return adapter.process_complete(audio_data)  # → AudioResult (IR)
 
-    return formatter.format_response(result)
+async def transcribe_audio(model_id: str, audio_bytes: bytes, ...) -> TranscriptionResult:
+    ...
 ```
 
-All services follow the same pattern: **get → prepare → generate → process → format**.
+All services follow the same pattern: **get → prepare → generate → process → return IR**.
 
 ---
 
@@ -1683,10 +1699,10 @@ probing and stored in the database:
 | Axis       | Determines              | Source             | Stored As                    |
 |------------|--------------------------|--------------------|-----------------------------|
 | **Type**   | Which MLX library/loader | `config.json`      | `ModelCapabilities.model_type`  |
-| **Family** | Which adapter subclass   | Model ID + config  | `ModelCapabilities.model_family`|
+| **Family** | Which FamilyConfig + parsers | Model ID + config | `ModelCapabilities.model_family`|
 
 Type determines the MLX library (mlx-lm, mlx-vlm, etc.).
-Family determines the adapter class, default parsers, chat template, stop tokens.
+Family determines the `FamilyConfig` (strategy functions, default parsers, stop tokens, chat template).
 
 ### 11.2 Probe Phase (One-Time)
 
@@ -1761,41 +1777,43 @@ At inference time, the service layer reads everything from the LoadedModel.
 No detection, no per-request adapter creation, no trial calls:
 
 ```
-generate_chat_completion(model_id, messages, tools, formatter, ...):
-    loaded = pool.get_model(model_id)    → LoadedModel with adapter
-    adapter = loaded.adapter             → already initialized
+generate_chat_stream(model_id, messages, tools, ...):
+    ctx = await _prepare_generation(model_id, messages, ...)
+    # _prepare_generation:
+    #   loaded = pool.get_model(model_id)    → LoadedModel with adapter
+    #   adapter = loaded.adapter             → already initialized
+    #   prepared = adapter.prepare_input(messages, tools, images)
+    #   ctx.prompt, ctx.stop_token_ids, ctx.adapter, ...
 
-    # 1. INPUT PIPELINE (delegated to adapter)
-    prepared = adapter.prepare_input(
-        messages=messages,
-        tools=tools,
-        enable_thinking=enable_thinking,
-    )
-    # prepared.prompt — formatted prompt string
-    # prepared.stop_tokens — pre-computed, aggregated
-    # prepared.metadata — any additional context
+    # Modern path: adapter owns the full pipeline
+    async for item in ctx.adapter.generate_step(
+        model=ctx.model,
+        messages=ctx.messages,
+        max_tokens=ctx.max_tokens,
+        ...
+    ):
+        if isinstance(item, TextResult):
+            yield item   # Final result — caller calls formatter.stream_end()
+        else:
+            yield item   # StreamEvent — caller calls formatter.stream_event()
 
-    # 2. GENERATION (Metal thread, model-type aware)
-    raw_stream = await _generate(loaded, prepared)
-
-    # 3. OUTPUT PIPELINE (adapter + formatter)
-    stream_processor = adapter.create_stream_processor()
-
-    async for token in raw_stream:
-        event = stream_processor.feed(token)  # → StreamEvent (IR)
-        chunk = formatter.format_stream_event(event)  # → protocol chunk
-        yield chunk
-
-    # 4. FINALIZE
-    result = stream_processor.finalize()  # → TextResult (IR)
-    final_chunk = formatter.format_response(result)  # → protocol response
-    yield final_chunk
+# At the endpoint, the caller wraps this in formatter calls:
+gen = await generate_chat_stream(...)
+async for item in gen:
+    if isinstance(item, TextResult):
+        for sse in formatter.stream_end(item.finish_reason, tool_calls=item.tool_calls, ...):
+            yield sse
+    else:
+        for sse in formatter.stream_event(item):
+            yield sse
 ```
 
 **Key insight:** The service layer never calls `convert_messages()`,
 `apply_chat_template()`, `format_tools_for_prompt()`, `tool_parser.extract()`,
 or `thinking_parser.extract()` directly. All of that is encapsulated in the
-adapter's `prepare_input()` and the stream processor's `feed()` / `finalize()`.
+adapter's `prepare_input()` and `generate_step()` / `generate()` methods.
+The service also does NOT call formatter methods — formatting is the endpoint's
+responsibility.
 
 ### 11.5 Pool Management
 
@@ -1864,7 +1882,7 @@ for test isolation.
 |-----------------------------|-----------------------|--------------------|
 | `get_model_pool()`          | `ModelPoolManager`    | Global             |
 | `get_settings()`            | `MLXServerSettings`   | Global             |
-| `get_router()`              | `BackendRouter`       | Global             |
+| `get_router()`              | `BackendRouter`       | Global — routes `InternalRequest` IR to local or cloud backends |
 | `audit_service`             | `AuditService`        | Module-level       |
 
 **Note on non-singletons:**
@@ -1909,11 +1927,93 @@ for test isolation.
 
 ---
 
-## 16. Experimental Features
+## 16. Feature Flags
 
-Behind configuration flags, not production-ready:
+Some capabilities are behind configuration flags:
 
-- **Cloud routing** (`enable_cloud_routing`): Rule-based dispatch to cloud
-  backends (OpenAI, Anthropic) with circuit breaker and local fallback.
+- **Cloud routing** (`enable_cloud_routing`): IR-based rule dispatch to cloud
+  backends (OpenAI, Anthropic) with same-protocol passthrough, cross-protocol
+  IR conversion, circuit breaker, and local fallback. Both OpenAI and Anthropic
+  endpoints participate. See Section 17 for full architecture.
 - **Continuous batching** (`enable_batching`): PagedAttention-inspired request
-  scheduling for concurrent text inference.
+  scheduling for concurrent text inference (experimental).
+
+---
+
+## 17. Cloud Routing Architecture
+
+### 17.1 IR-Centric Routing Model
+
+Cloud routing operates on `InternalRequest` IR rather than being wired to a
+specific protocol endpoint. Both `/v1/chat/completions` and `/v1/messages`
+participate equally.
+
+The IR carries `original_request` and `original_protocol` set by
+`Formatter.parse_request()`. This allows cloud backends to use same-protocol
+passthrough: if the original request and the cloud backend speak the same
+protocol, the request can be forwarded without any conversion.
+
+### 17.2 RoutingOutcome Tagged Union
+
+`BackendRouter.route_request(ir: InternalRequest) -> RoutingOutcome` returns
+a tagged union where exactly one field is set:
+
+| Field          | When set                                              | Endpoint action             |
+|----------------|-------------------------------------------------------|-----------------------------|
+| `ir_result`    | Local inference or cross-protocol non-streaming       | `formatter.format_complete()` |
+| `ir_stream`    | Local inference or cross-protocol streaming           | `formatter.stream_event()` loop |
+| `raw_response` | Same-protocol passthrough non-streaming               | Deserialize + return directly |
+| `raw_stream`   | Same-protocol passthrough streaming                   | Wrap in `EventSourceResponse` |
+
+Properties `is_passthrough` and `is_streaming` cover the two-dimensional dispatch.
+
+### 17.3 Same-Protocol Passthrough
+
+When the cloud backend's protocol matches `ir.original_protocol`, the backend
+forwards the original request directly, avoiding all IR conversion:
+
+```python
+# OpenAICloudBackend.forward_request(ir)
+if ir.original_protocol == ApiType.OPENAI and ir.original_request is not None:
+    # Passthrough: dump original request, override model name if router changed it
+    request_data = ir.original_request.model_dump(exclude_none=True)
+    request_data["model"] = ir.model
+    # → returns raw_response or raw_stream (zero IR conversion)
+```
+
+The same logic applies to `AnthropicCloudBackend` for Anthropic→Anthropic.
+
+### 17.4 Cross-Protocol IR Conversion
+
+When the cloud backend's protocol differs from the originating endpoint's
+protocol, the backend converts from IR to the target format, sends the request,
+then parses the response back to IR for the calling endpoint's formatter:
+
+| Client endpoint | Cloud backend | Conversion path |
+|-----------------|---------------|-----------------|
+| OpenAI (`/v1/chat/completions`) | OpenAI cloud | Passthrough — zero conversion |
+| Anthropic (`/v1/messages`) | Anthropic cloud | Passthrough — zero conversion |
+| OpenAI (`/v1/chat/completions`) | Anthropic cloud | IR → `_translate_request()` → cloud → `_parse_response_to_ir()` → `formatter.format_complete()` |
+| Anthropic (`/v1/messages`) | OpenAI cloud | IR fields → OpenAI request → cloud → `_parse_response_to_ir()` → `formatter.format_complete()` |
+
+### 17.5 Pattern Matching
+
+`BackendRouter._find_mapping()` iterates `BackendMapping` rows ordered by
+`priority DESC` and stops at the first match. Each mapping has a `pattern_type`:
+
+| `PatternType` | Match logic               | Example pattern         |
+|---------------|---------------------------|-------------------------|
+| `EXACT`       | `pattern == model`        | `gpt-4o`                |
+| `PREFIX`      | `model.startswith(pattern)` | `gpt-`               |
+| `REGEX`       | `re.fullmatch(pattern, model)` | `claude-.*-sonnet` |
+
+If no mapping matches, the request routes to local inference.
+
+### 17.6 Failover and Circuit Breaker
+
+- `BackendRouter`: if a `LOCAL` mapping fails and `fallback_backend` is set,
+  falls back to the configured cloud backend.
+- `CloudBackendClient`: per-client `AsyncCircuitBreaker` (5 failures → open,
+  30 s reset). Circuit open → `CircuitBreakerError` → router falls back to local.
+- `BackendRouter.refresh_rules()`: call after credential or mapping updates to
+  close and recreate cloud backend clients with fresh credentials.

@@ -9,8 +9,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mlx_manager.mlx_server.models.ir import StreamEvent, TextResult
+from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextResult
+from mlx_manager.mlx_server.schemas.openai import ChatCompletionRequest, extract_content_parts
 from mlx_manager.mlx_server.services.formatters.base import ProtocolFormatter
+from mlx_manager.models.enums import ApiType
+from mlx_manager.models.value_objects import InferenceParams
 
 
 class OpenAIFormatter(ProtocolFormatter):
@@ -19,6 +22,58 @@ class OpenAIFormatter(ProtocolFormatter):
     Streaming produces ``data:`` SSE events with chat.completion.chunk objects.
     Non-streaming produces a chat.completion response dict.
     """
+
+    # ── input parsing ────────────────────────────────────────────────
+
+    @staticmethod
+    def parse_request(request: ChatCompletionRequest) -> InternalRequest:
+        """Convert OpenAI ChatCompletionRequest to protocol-neutral IR.
+
+        Absorbs message conversion (from chat.py _convert_messages_to_dicts)
+        and parameter extraction (from chat.py _handle_direct_request).
+        """
+        messages: list[dict[str, Any]] = []
+        for m in request.messages:
+            if isinstance(m.content, str):
+                text: str | None = m.content
+            elif m.content is not None:
+                text, _ = extract_content_parts(m.content)
+            else:
+                text = m.content  # None for assistant messages with only tool_calls
+
+            msg: dict[str, Any] = {"role": m.role, "content": text}
+            if m.tool_calls:
+                msg["tool_calls"] = [tc.model_dump() for tc in m.tool_calls]
+            if m.tool_call_id is not None:
+                msg["tool_call_id"] = m.tool_call_id
+            messages.append(msg)
+
+        # Normalize stop parameter
+        stop: list[str] | None = (
+            request.stop
+            if isinstance(request.stop, list)
+            else ([request.stop] if request.stop else None)
+        )
+
+        # Convert tools (respecting tool_choice)
+        tools: list[dict[str, Any]] | None = None
+        if request.tools and request.tool_choice != "none":
+            tools = [tool.model_dump() for tool in request.tools]
+
+        return InternalRequest(
+            model=request.model,
+            messages=messages,
+            params=InferenceParams(
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                top_p=request.top_p,
+            ),
+            stream=request.stream,
+            stop=stop,
+            tools=tools,
+            original_request=request,
+            original_protocol=ApiType.OPENAI,
+        )
 
     # ── streaming ────────────────────────────────────────────────────
 
