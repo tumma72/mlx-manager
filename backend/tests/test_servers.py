@@ -551,21 +551,19 @@ async def test_start_endpoint_profile_no_model(auth_client):
 
 @pytest.mark.asyncio
 async def test_start_endpoint_with_invalid_model_options(auth_client, sample_profile_data):
-    """Test start endpoint with invalid JSON in model_options is handled gracefully (lines 282-287)."""
+    """Test start endpoint with invalid JSON in model_options is handled gracefully
+    (lines 282-287)."""
 
     # Create a profile first
     create_response = await auth_client.post("/api/profiles", json=sample_profile_data)
     profile_id = create_response.json()["id"]
-    model_repo_id = create_response.json()["model_repo_id"]
 
     mock_pool = MagicMock()
     mock_pool.is_loaded.return_value = False
 
     # Patch the profile to have invalid model_options JSON
     # We'll patch the DB to return a profile with invalid model_options
-    with patch(
-        "mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool
-    ):
+    with patch("mlx_manager.mlx_server.models.pool.get_model_pool", return_value=mock_pool):
         # The actual endpoint parses model_options JSON - we can test this works
         # by calling the start endpoint (it already has valid profile from above)
         response = await auth_client.post(f"/api/servers/{profile_id}/start")

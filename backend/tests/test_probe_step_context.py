@@ -7,17 +7,14 @@ boilerplate in probe strategies.
 
 import json
 
-import pytest
-
 from mlx_manager.services.probe.steps import (
+    DiagnosticCategory,
+    DiagnosticLevel,
     ProbeDiagnostic,
     ProbeStep,
     StepContext,
-    DiagnosticLevel,
-    DiagnosticCategory,
     probe_step,
 )
-
 
 # ============================================================================
 # StepContext basics
@@ -220,7 +217,7 @@ async def test_step_context_result_to_sse():
     assert sse_output.endswith("\n\n")
 
     # Parse the JSON payload
-    json_str = sse_output[len("data: "):].strip()
+    json_str = sse_output[len("data: ") :].strip()
     data = json.loads(json_str)
 
     assert data["step"] == "check_tools"
@@ -236,7 +233,7 @@ async def test_step_context_failed_result_to_sse():
 
     sse_output = ctx.result.to_sse()
 
-    json_str = sse_output[len("data: "):].strip()
+    json_str = sse_output[len("data: ") :].strip()
     data = json.loads(json_str)
 
     assert data["step"] == "check_thinking"
@@ -254,8 +251,8 @@ async def test_step_context_failed_result_to_sse():
 
 def test_step_context_importable_from_probe_package():
     """StepContext and probe_step are importable from the probe package."""
-    from mlx_manager.services.probe import StepContext as SC
+    from mlx_manager.services.probe import StepContext as ImportedStepContext
     from mlx_manager.services.probe import probe_step as ps
 
-    assert SC is StepContext
+    assert ImportedStepContext is StepContext
     assert ps is probe_step

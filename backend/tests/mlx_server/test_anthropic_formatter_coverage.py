@@ -236,7 +236,7 @@ class TestParseRequestDictBlocks:
         result = AnthropicFormatter.parse_request(req)
 
         # Text block should be collected in a separate message
-        text_msgs = [
+        _text_msgs = [
             m
             for m in result.messages
             if m.get("role") == "assistant" and "content" in m and not m.get("tool_calls")

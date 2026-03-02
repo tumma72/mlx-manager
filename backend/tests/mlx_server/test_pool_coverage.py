@@ -74,9 +74,7 @@ class TestRegisterProfileSettings:
         pool.register_profile_settings("test/model", settings)
         assert "test/model" in pool._profile_settings
 
-    def test_register_with_loaded_model_reconfigures_adapter(
-        self, pool, loaded_model_with_adapter
-    ):
+    def test_register_with_loaded_model_reconfigures_adapter(self, pool, loaded_model_with_adapter):
         """If model is loaded with adapter, adapter.configure() is called (lines 115-153)."""
         pool._models["test-model"] = loaded_model_with_adapter
 
@@ -193,7 +191,8 @@ class TestUnregisterProfileSettings:
         pool.unregister_profile_settings("nonexistent/model")  # Should not raise
 
     def test_unregister_with_loaded_model_resets_adapter(self, pool, loaded_model_with_adapter):
-        """If model is loaded with adapter, adapter.reset_to_defaults() is called (lines 165-167)."""
+        """If model is loaded with adapter, adapter.reset_to_defaults() is called
+        (lines 165-167)."""
         pool._models["test-model"] = loaded_model_with_adapter
         pool._profile_settings["test-model"] = ProfileSettings()
 
@@ -344,9 +343,7 @@ class TestLoadModelDBCachedType:
         mock_adapter.post_load_configure = AsyncMock()
 
         with (
-            patch(
-                "mlx_manager.mlx_server.models.pool.detect_model_type"
-            ) as mock_detect,
+            patch("mlx_manager.mlx_server.models.pool.detect_model_type") as mock_detect,
             patch("mlx_lm.load", return_value=(mock_model, mock_tokenizer)),
             patch("asyncio.to_thread", return_value=(mock_model, mock_tokenizer)),
             patch(
@@ -374,9 +371,7 @@ class TestLoadModelDBCachedType:
             mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
             mock_session.execute = AsyncMock(return_value=mock_result)
 
-            with patch(
-                "mlx_manager.database.get_session", return_value=mock_session_ctx
-            ):
+            with patch("mlx_manager.database.get_session", return_value=mock_session_ctx):
                 result = await pool._load_model("test/model")
 
         # Detection should NOT have been called since DB had cached type
@@ -423,10 +418,8 @@ class TestLoadModelDBCachedType:
             mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
             mock_session.execute = AsyncMock(return_value=mock_result)
 
-            with patch(
-                "mlx_manager.database.get_session", return_value=mock_session_ctx
-            ):
-                result = await pool._load_model("test/model")
+            with patch("mlx_manager.database.get_session", return_value=mock_session_ctx):
+                await pool._load_model("test/model")
 
         # detect_model_type should be called as fallback
         mock_detect.assert_called_once_with("test/model")
@@ -526,7 +519,8 @@ class TestLoadModelCapabilities:
                 return_value=mock_thinking_parser,
             ),
         ):
-            # Mock DB: first call (model type) returns None, second call (capabilities) returns model
+            # Mock DB: first call (model type) returns None,
+            # second call (capabilities) returns model
             type_result = MagicMock()
             type_result.scalar_one_or_none.return_value = None
 
@@ -541,7 +535,7 @@ class TestLoadModelCapabilities:
             mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
             with patch("mlx_manager.database.get_session", return_value=mock_session_ctx):
-                result = await pool._load_model("test/hermes-model")
+                await pool._load_model("test/hermes-model")
 
         # Verify create_adapter was called with tool_parser and thinking_parser
         create_adapter_kwargs = mock_create_adapter.call_args[1]
@@ -667,7 +661,7 @@ class TestLoadModelProfileSettings:
             mock_session.execute = AsyncMock(return_value=mock_result)
 
             with patch("mlx_manager.database.get_session", return_value=mock_session_ctx):
-                result = await pool._load_model("test/model")
+                await pool._load_model("test/model")
 
         # Verify profile tool_parser was passed to create_adapter
         create_adapter_kwargs = mock_create_adapter.call_args[1]
@@ -777,7 +771,7 @@ class TestLoadModelProfileSettings:
             mock_session.execute = AsyncMock(return_value=mock_result)
 
             with patch("mlx_manager.database.get_session", return_value=mock_session_ctx):
-                result = await pool._load_model("test/model")
+                await pool._load_model("test/model")
 
         create_adapter_kwargs = mock_create_adapter.call_args[1]
         assert create_adapter_kwargs.get("thinking_parser") == mock_thinking_parser

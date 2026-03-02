@@ -266,7 +266,7 @@ async def _get_stored_parsers(model_id: str) -> tuple[str | None, str | None]:
 
     async with get_session() as session:
         stmt = (
-            select(Model).where(Model.repo_id == model_id).options(selectinload(Model.capabilities))
+            select(Model).where(Model.repo_id == model_id).options(selectinload(Model.capabilities))  # type: ignore[arg-type]
         )
         result = await session.execute(stmt)
         model = result.scalar_one_or_none()

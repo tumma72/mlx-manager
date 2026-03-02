@@ -6,6 +6,8 @@
 	import type { PreloadedProfileInfo } from '$lib/api/types';
 	import { Card, Button, Select } from '$components/ui';
 	import { Loader2, Save, ChevronDown, ExternalLink } from 'lucide-svelte';
+	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
 
 	// Types for pool configuration
 	type MemoryLimitMode = 'percent' | 'gb';
@@ -114,6 +116,12 @@
 		const target = event.target as HTMLInputElement;
 		memoryValue = parseInt(target.value, 10);
 	}
+
+	async function handleEditProfile(profileId: number) {
+		const url = `${resolve('/profiles')}?edit=${profileId}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- query params appended to resolved base path
+		await goto(url);
+	}
 </script>
 
 {#if loading}
@@ -218,9 +226,10 @@
 			{#if preloadedProfiles.length > 0}
 				<div class="space-y-2">
 					{#each preloadedProfiles as profile (profile.id)}
-						<a
-							href="/profiles?edit={profile.id}"
-							class="flex items-center justify-between px-3 py-2 rounded-md bg-primary/5 border border-primary/10 hover:bg-primary/10 transition-colors group"
+						<button
+							type="button"
+							onclick={() => handleEditProfile(profile.id)}
+							class="flex w-full items-center justify-between px-3 py-2 rounded-md bg-primary/5 border border-primary/10 hover:bg-primary/10 transition-colors group"
 						>
 							<div class="flex items-center gap-2 min-w-0">
 								<span class="text-sm font-medium truncate">{profile.name}</span>
@@ -238,7 +247,7 @@
 									class="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
 								/>
 							</div>
-						</a>
+						</button>
 					{/each}
 				</div>
 			{:else}

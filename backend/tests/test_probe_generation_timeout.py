@@ -21,7 +21,6 @@ import pytest
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.services.probe.base import GenerativeProbe
 
-
 # ---------------------------------------------------------------------------
 # Concrete GenerativeProbe subclass for testing
 # ---------------------------------------------------------------------------
@@ -165,9 +164,11 @@ async def test_generate_timeout_resets_template_options():
     assert mock_adapter.configure.call_count == 2
     # Second call must reset to None
     reset_call = mock_adapter.configure.call_args_list[1]
-    assert reset_call.kwargs.get("template_options") is None or (
-        len(reset_call.args) == 0 and reset_call.kwargs == {"template_options": None}
-    ) or reset_call == ((), {"template_options": None})
+    assert (
+        reset_call.kwargs.get("template_options") is None
+        or (len(reset_call.args) == 0 and reset_call.kwargs == {"template_options": None})
+        or reset_call == ((), {"template_options": None})
+    )
 
 
 # ---------------------------------------------------------------------------

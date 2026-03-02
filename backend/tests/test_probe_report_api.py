@@ -20,7 +20,6 @@ import pytest
 from mlx_manager.services.auth_service import create_access_token
 from mlx_manager.services.probe.steps import ProbeResult, ProbeStep
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -69,7 +68,7 @@ def _parse_sse_events(content: str) -> list[dict]:
     events = []
     for line in content.splitlines():
         if line.startswith("data: ") and not line.startswith("data: [DONE]"):
-            payload = line[len("data: "):]
+            payload = line[len("data: ") :]
             events.append(json.loads(payload))
     return events
 
@@ -166,9 +165,7 @@ async def test_probe_report_event_contains_markdown(auth_client):
     assert len(report_md) > 0, "Report markdown must not be empty"
 
     # Must contain a recognisable section heading
-    assert "## " in report_md or "# " in report_md, (
-        "Report must contain markdown headings"
-    )
+    assert "## " in report_md or "# " in report_md, "Report must contain markdown headings"
     # Must reference the probed model
     assert "some-model" in report_md or model_id in report_md, (
         f"Report should reference the model ID '{model_id}'"

@@ -2,7 +2,7 @@
  * SSR-specific tests for ServerStore
  * These tests run in an environment without window object
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the API module before importing the store
 vi.mock("$api", () => ({

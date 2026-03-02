@@ -971,7 +971,6 @@ class TestInnerProduceTokens:
         assert result["choices"][0]["text"] == "Hello world"
 
 
-
 class TestGoldenFixturesCrossFamily:
     """Cross-family parametrized tests using golden fixtures."""
 
@@ -1140,4 +1139,3 @@ class TestModelAdapterIntegration:
 
         # Should use composable adapter's stop tokens
         assert captured_stop_tokens == {111, 222}
-

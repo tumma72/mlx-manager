@@ -1,6 +1,5 @@
 """Tests for the profiles API router."""
 
-
 import pytest
 
 
@@ -650,7 +649,8 @@ async def test_vision_profile_rejects_audio_params(auth_client):
 
 
 def test_validate_profile_fields_audio_with_inference_raises():
-    """_validate_profile_fields raises 422 when audio profile has inference params (lines 219-220)."""
+    """_validate_profile_fields raises 422 when audio profile has inference params
+    (lines 219-220)."""
     from fastapi import HTTPException
 
     from mlx_manager.models.profiles import ExecutionProfileCreate

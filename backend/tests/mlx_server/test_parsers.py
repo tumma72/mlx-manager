@@ -741,10 +741,7 @@ class TestDevstralArgsParser:
         assert calls[0].function.name == "get_weather"
 
     def test_extract_with_surrounding_text(self) -> None:
-        text = (
-            "I'll check the weather for you.\n"
-            '[TOOL_CALLS]get_weather[ARGS]{"location": "SF"}'
-        )
+        text = 'I\'ll check the weather for you.\n[TOOL_CALLS]get_weather[ARGS]{"location": "SF"}'
         calls = self.parser.extract(text)
         assert len(calls) == 1
         assert calls[0].function.name == "get_weather"
@@ -790,10 +787,7 @@ class TestDevstralArgsParser:
 
     def test_multiple_calls_with_eos(self) -> None:
         """Multiple calls followed by EOS token."""
-        text = (
-            '[TOOL_CALLS]add[ARGS]{"a": 1, "b": 2}'
-            '[TOOL_CALLS]multiply[ARGS]{"a": 3, "b": 4}</s>'
-        )
+        text = '[TOOL_CALLS]add[ARGS]{"a": 1, "b": 2}[TOOL_CALLS]multiply[ARGS]{"a": 3, "b": 4}</s>'
         calls = self.parser.extract(text)
         assert len(calls) == 2
         assert calls[0].function.name == "add"
@@ -824,7 +818,10 @@ class TestOpenAIJsonParser:
     def test_extract_function_wrapper_variant(self) -> None:
         """Variant 1: {"type": "function", "function": {...}}"""
         parser = OpenAIJsonParser()
-        text = '{"type": "function", "function": {"name": "get_weather", "arguments": {"location": "Paris"}}}'
+        text = (
+            '{"type": "function", "function":'
+            ' {"name": "get_weather", "arguments": {"location": "Paris"}}}'
+        )
         calls = parser.extract(text)
         assert len(calls) == 1
         assert calls[0].function.name == "get_weather"
@@ -853,7 +850,10 @@ class TestOpenAIJsonParser:
 
     def test_extract_mixed_with_text(self) -> None:
         parser = OpenAIJsonParser()
-        text = 'Let me check the weather. {"name": "get_weather", "arguments": {"location": "Paris"}} The weather is nice.'
+        text = (
+            'Let me check the weather. {"name": "get_weather", "arguments": {"location": "Paris"}}'
+            " The weather is nice."
+        )
         calls = parser.extract(text)
         assert len(calls) == 1
         assert calls[0].function.name == "get_weather"
@@ -951,7 +951,11 @@ class TestToolCodePythonParser:
 
     def test_extract_mixed_with_text(self) -> None:
         parser = ToolCodePythonParser()
-        text = 'Let me check the weather.\n```tool_code\nget_weather(location="Paris")\n```\nThe weather looks good.'
+        text = (
+            "Let me check the weather.\n"
+            '```tool_code\nget_weather(location="Paris")\n```\n'
+            "The weather looks good."
+        )
         calls = parser.extract(text)
         assert len(calls) == 1
         assert calls[0].function.name == "get_weather"
@@ -1035,7 +1039,11 @@ class TestQwen3CoderXmlParser:
 
     def test_extract_single_call(self) -> None:
         parser = Qwen3CoderXmlParser()
-        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>"
+        )
         calls = parser.extract(text)
         assert len(calls) == 1
         assert calls[0].function.name == "get_weather"
@@ -1142,12 +1150,20 @@ class TestQwen3CoderXmlParser:
 
     def test_validates_correct_function(self) -> None:
         parser = Qwen3CoderXmlParser()
-        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>"
+        )
         assert parser.validates(text, "get_weather") is True
 
     def test_validates_wrong_function(self) -> None:
         parser = Qwen3CoderXmlParser()
-        text = "<tool_call>\n<function=get_weather><parameter=location>Tokyo</parameter></function>\n</tool_call>"
+        text = (
+            "<tool_call>\n"
+            "<function=get_weather><parameter=location>Tokyo</parameter></function>\n"
+            "</tool_call>"
+        )
         assert parser.validates(text, "other_func") is False
 
 

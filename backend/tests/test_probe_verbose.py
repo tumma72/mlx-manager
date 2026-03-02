@@ -186,7 +186,8 @@ async def test_sweep_thinking_verbose_includes_raw_output():
 
     # When verbose=True, at least one diagnostic with raw output sample should appear
     raw_diags = [
-        d for d in diagnostics
+        d
+        for d in diagnostics
         if d.level == DiagnosticLevel.INFO and "raw_output_sample" in d.details
     ]
     assert len(raw_diags) >= 1
@@ -224,7 +225,8 @@ async def test_sweep_thinking_verbose_false_no_raw_output():
 
     # No raw output diagnostics in non-verbose mode
     raw_diags = [
-        d for d in diagnostics
+        d
+        for d in diagnostics
         if d.level == DiagnosticLevel.INFO and "raw_output_sample" in d.details
     ]
     assert len(raw_diags) == 0
@@ -270,8 +272,7 @@ async def test_sweep_tools_verbose_includes_parser_trials():
 
     # When verbose=True, at least one INFO diagnostic with parser_trials should appear
     trial_diags = [
-        d for d in diagnostics
-        if d.level == DiagnosticLevel.INFO and "parser_trials" in d.details
+        d for d in diagnostics if d.level == DiagnosticLevel.INFO and "parser_trials" in d.details
     ]
     assert len(trial_diags) >= 1
 
@@ -310,8 +311,7 @@ async def test_sweep_tools_verbose_false_no_parser_trials():
         )
 
     trial_diags = [
-        d for d in diagnostics
-        if d.level == DiagnosticLevel.INFO and "parser_trials" in d.details
+        d for d in diagnostics if d.level == DiagnosticLevel.INFO and "parser_trials" in d.details
     ]
     assert len(trial_diags) == 0
 

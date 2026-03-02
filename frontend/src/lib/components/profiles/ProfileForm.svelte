@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ExecutionProfile, ExecutionProfileCreate, ExecutionProfileUpdate, DownloadedModel, TemplateParamInfo } from '$api';
+	import type { ExecutionProfile, ExecutionProfileCreate, ExecutionProfileUpdate, DownloadedModel } from '$api';
 	import { models as modelsApi } from '$api';
 	import { Card, Button, Input } from '$components/ui';
 	import { resolve } from '$app/paths';
@@ -376,7 +376,7 @@
 					</p>
 
 					<div class="space-y-3">
-						{#each Object.entries(templateParams) as [key, param]}
+						{#each Object.entries(templateParams) as [key, param] (key)}
 							{#if param.param_type === 'bool'}
 								<div class="space-y-1">
 									<label class="flex items-center gap-2">

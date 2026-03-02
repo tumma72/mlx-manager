@@ -12,10 +12,9 @@ Verifies:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers: mock HF cache repo
@@ -252,6 +251,7 @@ async def test_audit_skips_models_without_config():
 def test_audit_flag_skips_normal_probe():
     """probe --audit triggers _audit_parsers() and does NOT call _probe_single/_probe_all."""
     from typer.testing import CliRunner
+
     from mlx_manager.cli import app
 
     runner = CliRunner()
