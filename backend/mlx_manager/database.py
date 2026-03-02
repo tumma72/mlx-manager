@@ -33,10 +33,12 @@ async_session = async_sessionmaker(
     expire_on_commit=False,
 )
 
-# Stamp revision: the last migration before the catch-up migration.
-# Pre-Alembic databases (created by create_all) are stamped here so that
-# only the catch-up migration (e1a2b3c4d5f6) runs on first upgrade.
-_PRE_ALEMBIC_STAMP = "d8e3f5a7b912"
+# Stamp revision: the last migration applied by create_all.
+# Pre-Alembic databases (created by SQLModel.metadata.create_all) are stamped
+# here so that Alembic skips migrations whose DDL is already reflected in the
+# schema. Must be advanced to the newest head revision each time a new migration
+# is added.
+_PRE_ALEMBIC_STAMP = "f2a3b4c5d6e7"
 
 
 def _run_upgrade(connection, alembic_cfg) -> None:

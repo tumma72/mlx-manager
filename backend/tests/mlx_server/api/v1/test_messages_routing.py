@@ -346,14 +346,9 @@ class TestFormatIRStream:
 class TestCreateMessageRouting:
     """Tests for create_message endpoint: routing integration and fallback."""
 
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.messages._route_and_respond")
-    async def test_routing_enabled_routing_succeeds(self, mock_route, mock_settings):
-        """When routing enabled and succeeds, result is returned."""
-        settings = MagicMock()
-        settings.enable_cloud_routing = True
-        mock_settings.return_value = settings
-
+    async def test_routing_enabled_routing_succeeds(self, mock_route):
+        """When routing succeeds, result is returned."""
         raw = _raw_anthropic_response()
         expected_response = AnthropicMessagesResponse.model_validate(raw)
         mock_route.return_value = expected_response
@@ -369,17 +364,10 @@ class TestCreateMessageRouting:
         mock_route.assert_called_once()
         assert result is expected_response
 
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_settings")
     @patch("mlx_manager.mlx_server.api.v1.messages._route_and_respond")
     @patch("mlx_manager.mlx_server.api.v1.messages._handle_non_streaming")
-    async def test_routing_enabled_routing_fails_falls_back_to_local(
-        self, mock_local, mock_route, mock_settings
-    ):
-        """When enable_cloud_routing=True but routing throws, local inference is used."""
-        settings = MagicMock()
-        settings.enable_cloud_routing = True
-        mock_settings.return_value = settings
-
+    async def test_routing_enabled_routing_fails_falls_back_to_local(self, mock_local, mock_route):
+        """When routing throws, local inference is used as fallback."""
         mock_route.side_effect = RuntimeError("Cloud unavailable")
 
         raw = _raw_anthropic_response()
@@ -395,33 +383,5 @@ class TestCreateMessageRouting:
             result = await create_message(request)
 
         mock_route.assert_called_once()
-        mock_local.assert_called_once()
-        assert result is expected_response
-
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.messages.get_router")
-    @patch("mlx_manager.mlx_server.api.v1.messages._handle_non_streaming")
-    async def test_routing_disabled_goes_directly_to_local(
-        self, mock_local, mock_get_router, mock_settings
-    ):
-        """When enable_cloud_routing=False, router is never called and local inference runs."""
-        settings = MagicMock()
-        settings.enable_cloud_routing = False
-        mock_settings.return_value = settings
-
-        raw = _raw_anthropic_response()
-        expected_response = AnthropicMessagesResponse.model_validate(raw)
-        mock_local.return_value = expected_response
-
-        request = _make_request()  # stream=False
-
-        with patch("mlx_manager.mlx_server.api.v1.messages.audit_service") as mock_audit:
-            mock_audit.track_request.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
-            mock_audit.track_request.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await create_message(request)
-
-        # Router must NOT have been invoked
-        mock_get_router.assert_not_called()
         mock_local.assert_called_once()
         assert result is expected_response

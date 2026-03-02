@@ -1781,23 +1781,21 @@ class TestCreateProviderApiTypeNoneFallback:
 
         mock_user = MagicMock()
 
-        from unittest.mock import AsyncMock as AM
+        from unittest.mock import AsyncMock
 
         mock_session = MagicMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
-        mock_session.execute = AM(return_value=mock_result)
+        mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.add = MagicMock()
-        mock_session.commit = AM()
-        mock_session.refresh = AM()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
 
-        with patch(
-            "mlx_manager.routers.settings.encrypt_api_key", return_value=b"encrypted"
-        ):
+        with patch("mlx_manager.routers.settings.encrypt_api_key", return_value=b"encrypted"):
             with patch("mlx_manager.routers.settings.get_backend_router") as mock_router:
-                mock_router.return_value.refresh_rules = AM()
+                mock_router.return_value.refresh_rules = AsyncMock()
                 # Call the function directly - this bypasses Pydantic validation
-                credential = await create_or_update_provider(
+                await create_or_update_provider(
                     current_user=mock_user,
                     data=mock_data,
                     session=mock_session,
@@ -1876,7 +1874,8 @@ class TestValidationGuardDeadCode:
         assert "pattern_type" in exc_info.value.detail
 
     async def test_update_pool_config_invalid_memory_mode_direct_call(self):
-        """update_pool_config raises 400 for invalid memory_limit_mode when called directly (line 529)."""
+        """update_pool_config raises 400 for invalid memory_limit_mode when called directly
+        (line 529)."""
         from fastapi import HTTPException
 
         from mlx_manager.routers.settings import update_pool_config
@@ -1905,7 +1904,8 @@ class TestValidationGuardDeadCode:
         assert "memory_limit_mode" in exc_info.value.detail
 
     async def test_update_pool_config_invalid_eviction_policy_direct_call(self):
-        """update_pool_config raises 400 for invalid eviction_policy when called directly (line 536)."""
+        """update_pool_config raises 400 for invalid eviction_policy when called directly
+        (line 536)."""
         from fastapi import HTTPException
 
         from mlx_manager.routers.settings import update_pool_config

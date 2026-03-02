@@ -3,6 +3,7 @@
 	import { Button, Input, Select } from '$lib/components/ui';
 	import { Plus, Loader2, AlertTriangle } from 'lucide-svelte';
 	import type { BackendType, PatternType } from '$lib/api/types';
+	import { profileStore } from '$lib/stores';
 
 	interface Props {
 		onSave: () => void;
@@ -15,6 +16,7 @@
 	let patternValue = $state('');
 	let backendType = $state<BackendType>('local');
 	let backendModel = $state('');
+	let selectedProfileId = $state(''); // string form of profile id, '' means none
 	let fallbackBackend = $state<BackendType | ''>('');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -24,6 +26,8 @@
 	const showWarning = $derived.by(() => {
 		return backendType !== 'local' && !configuredProviders.includes(backendType);
 	});
+
+	const isLocal = $derived(backendType === 'local');
 
 	const patternPlaceholders: Record<PatternType, string> = {
 		exact: 'gpt-4-turbo',
@@ -46,12 +50,16 @@
 				pattern_type: patternType,
 				model_pattern: patternValue.trim(),
 				backend_type: backendType,
-				backend_model: backendModel.trim() || undefined,
+				// For local rules: send profile_id; for cloud rules: send backend_model
+				...(isLocal
+					? { profile_id: selectedProfileId !== '' ? Number(selectedProfileId) : null }
+					: { backend_model: backendModel.trim() || undefined }),
 				fallback_backend: fallbackBackend || undefined
 			});
 			// Reset form
 			patternValue = '';
 			backendModel = '';
+			selectedProfileId = '';
 			fallbackBackend = '';
 			onSave();
 		} catch (e) {
@@ -121,17 +129,34 @@
 			{/if}
 		</div>
 
-		<!-- Backend Model (optional) -->
-		<div class="space-y-2">
-			<label for="backend-model" class="text-sm font-medium">
-				Backend Model <span class="text-muted-foreground">(optional)</span>
-			</label>
-			<Input
-				id="backend-model"
-				bind:value={backendModel}
-				placeholder="Override model name for cloud"
-			/>
-		</div>
+		<!-- Profile selector (local) or Backend Model override (cloud) -->
+		{#if isLocal}
+			<div class="space-y-2">
+				<label for="profile-select" class="text-sm font-medium">
+					Profile <span class="text-muted-foreground">(optional)</span>
+				</label>
+				<Select id="profile-select" bind:value={selectedProfileId}>
+					<option value="">Any available profile</option>
+					{#each profileStore.profiles as profile (profile.id)}
+						<option value={String(profile.id)}>{profile.name}</option>
+					{/each}
+				</Select>
+				{#if profileStore.profiles.length === 0}
+					<p class="text-xs text-muted-foreground">No profiles configured yet.</p>
+				{/if}
+			</div>
+		{:else}
+			<div class="space-y-2">
+				<label for="backend-model" class="text-sm font-medium">
+					Backend Model <span class="text-muted-foreground">(optional)</span>
+				</label>
+				<Input
+					id="backend-model"
+					bind:value={backendModel}
+					placeholder="Override model name for cloud"
+				/>
+			</div>
+		{/if}
 
 		<!-- Fallback Backend (optional) -->
 		<div class="space-y-2">

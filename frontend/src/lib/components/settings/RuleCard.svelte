@@ -60,7 +60,9 @@
 			Routes to <span class="font-medium capitalize"
 				>{backendTypeLabels[rule.backend_type] || rule.backend_type}</span
 			>
-			{#if rule.backend_model}
+			{#if rule.profile_name}
+				<span class="text-xs">via <span class="font-medium">{rule.profile_name}</span></span>
+			{:else if rule.backend_model}
 				<span class="text-xs">as {rule.backend_model}</span>
 			{/if}
 			{#if rule.fallback_backend}

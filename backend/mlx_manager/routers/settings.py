@@ -263,11 +263,38 @@ async def list_rules(
     current_user: Annotated[User, Depends(get_current_user)],
     session: AsyncSession = Depends(get_db),
 ):
-    """List all routing rules ordered by priority (highest first)."""
+    """List all routing rules ordered by priority (highest first).
+
+    Joins with ExecutionProfile to include the profile_name in each rule response.
+    """
+    from sqlalchemy.orm import aliased
+
+    from mlx_manager.models.profiles import ExecutionProfile
+
+    profile_alias = aliased(ExecutionProfile)
+
     result = await session.execute(
-        select(BackendMapping).order_by(BackendMapping.priority.desc())  # type: ignore[attr-defined]
+        select(BackendMapping, profile_alias)
+        .outerjoin(profile_alias, BackendMapping.profile_id == profile_alias.id)
+        .order_by(BackendMapping.priority.desc())  # type: ignore[attr-defined]
     )
-    return list(result.scalars().all())
+    rows = result.all()
+
+    return [
+        BackendMappingResponse(
+            id=mapping.id,  # type: ignore[arg-type]
+            model_pattern=mapping.model_pattern,
+            pattern_type=mapping.pattern_type,
+            backend_type=mapping.backend_type,
+            backend_model=mapping.backend_model,
+            fallback_backend=mapping.fallback_backend,
+            profile_id=mapping.profile_id,
+            profile_name=profile.name if profile is not None else None,
+            priority=mapping.priority,
+            enabled=mapping.enabled,
+        )
+        for mapping, profile in rows
+    ]
 
 
 @router.post("/rules", response_model=BackendMappingResponse, status_code=201)
@@ -294,12 +321,26 @@ async def create_rule(
                 detail=f"Invalid regex pattern: {e}",
             )
 
+    # Validate profile_id if provided
+    if data.profile_id is not None:
+        from mlx_manager.models.profiles import ExecutionProfile
+
+        profile_result = await session.execute(
+            select(ExecutionProfile).where(ExecutionProfile.id == data.profile_id)
+        )
+        if profile_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Profile with id={data.profile_id} not found",
+            )
+
     rule = BackendMapping(
         model_pattern=data.model_pattern,
         pattern_type=data.pattern_type,
         backend_type=data.backend_type,
         backend_model=data.backend_model,
         fallback_backend=data.fallback_backend,
+        profile_id=data.profile_id,
         priority=data.priority,
     )
     session.add(rule)
@@ -412,8 +453,21 @@ async def update_rule(
                 detail=f"Invalid regex pattern: {e}",
             )
 
-    # Update fields
+    # Validate profile_id if it is being updated
     update_data = data.model_dump(exclude_unset=True)
+    if "profile_id" in update_data and update_data["profile_id"] is not None:
+        from mlx_manager.models.profiles import ExecutionProfile
+
+        profile_result = await session.execute(
+            select(ExecutionProfile).where(ExecutionProfile.id == update_data["profile_id"])
+        )
+        if profile_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Profile with id={update_data['profile_id']} not found",
+            )
+
+    # Update fields
     for key, value in update_data.items():
         setattr(rule, key, value)
 

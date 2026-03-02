@@ -123,7 +123,8 @@ async def _handle_text_request(
     """Handle text and vision requests.
 
     Creates protocol-neutral IR early, then routes through cloud router
-    if enabled, batching scheduler if enabled, or direct inference.
+    (passthrough when no rules match), batching scheduler if enabled,
+    or direct inference.
     """
     settings = get_settings()
 
@@ -140,12 +141,11 @@ async def _handle_text_request(
     if has_images:
         return await _handle_direct_inference(ir, request)
 
-    # Try cloud routing path if enabled
-    if settings.enable_cloud_routing:
-        try:
-            return await _route_and_respond(ir, request)
-        except Exception as e:
-            logger.warning(f"Cloud routing failed, falling back to local: {e}")
+    # Always route (router is passthrough when no rules match)
+    try:
+        return await _route_and_respond(ir, request)
+    except Exception as e:
+        logger.warning(f"Routing failed, falling back: {e}")
 
     # Try batching path if enabled
     if settings.enable_batching:

@@ -12,6 +12,16 @@ vi.mock("$lib/api/client", () => ({
   },
 }));
 
+// Mock profile store
+vi.mock("$lib/stores", () => ({
+  profileStore: {
+    profiles: [
+      { id: 1, name: "Qwen3 Profile" },
+      { id: 2, name: "GLM4 Profile" },
+    ],
+  },
+}));
+
 describe("RuleForm", () => {
   let mockOnSave: () => void;
   let configuredProviders: BackendType[];
@@ -50,10 +60,26 @@ describe("RuleForm", () => {
       expect(screen.getByLabelText(/Route to Backend/)).toBeInTheDocument();
     });
 
-    it("renders optional fields", () => {
+    it("renders profile selector when local backend is selected", () => {
       render(RuleForm, {
         props: { onSave: mockOnSave, configuredProviders },
       });
+
+      // Default backend is local, so profile selector should be visible
+      expect(screen.getByLabelText(/Profile/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Fallback Backend/)).toBeInTheDocument();
+    });
+
+    it("renders backend model input when cloud backend is selected", async () => {
+      const user = userEvent.setup();
+      render(RuleForm, {
+        props: { onSave: mockOnSave, configuredProviders },
+      });
+
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
 
       expect(screen.getByLabelText(/Backend Model/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Fallback Backend/)).toBeInTheDocument();
@@ -212,6 +238,83 @@ describe("RuleForm", () => {
         screen.queryByText(/Provider not configured/),
       ).not.toBeInTheDocument();
     });
+
+    it("switches from profile selector to backend model input", async () => {
+      const user = userEvent.setup();
+      render(RuleForm, {
+        props: { onSave: mockOnSave, configuredProviders },
+      });
+
+      // Default is local — profile selector should be visible
+      expect(screen.getByLabelText(/Profile/)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Backend Model/)).not.toBeInTheDocument();
+
+      // Switch to openai
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
+
+      // Now backend model input should be visible, not profile selector
+      expect(screen.getByLabelText(/Backend Model/)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Profile/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("profile selection (local backend)", () => {
+    it("shows available profiles in dropdown", () => {
+      render(RuleForm, {
+        props: { onSave: mockOnSave, configuredProviders },
+      });
+
+      const select = screen.getByLabelText(/Profile/) as HTMLSelectElement;
+      const options = Array.from(select.options).map((opt) => opt.textContent);
+
+      expect(options).toContain("Any available profile");
+      expect(options).toContain("Qwen3 Profile");
+      expect(options).toContain("GLM4 Profile");
+    });
+
+    it("submits profile_id when profile is selected", async () => {
+      const user = userEvent.setup();
+      render(RuleForm, {
+        props: { onSave: mockOnSave, configuredProviders },
+      });
+
+      await user.type(screen.getByLabelText(/^Pattern$/), "qwen");
+      await user.selectOptions(screen.getByLabelText(/Profile/), "1");
+      await user.click(screen.getByRole("button", { name: /Add Rule/ }));
+
+      await waitFor(() => {
+        expect(settings.createRule).toHaveBeenCalledWith({
+          pattern_type: "prefix",
+          model_pattern: "qwen",
+          backend_type: "local",
+          profile_id: 1,
+          fallback_backend: undefined,
+        });
+      });
+    });
+
+    it("submits null profile_id when no profile is selected", async () => {
+      const user = userEvent.setup();
+      render(RuleForm, {
+        props: { onSave: mockOnSave, configuredProviders },
+      });
+
+      await user.type(screen.getByLabelText(/^Pattern$/), "gpt-4");
+      await user.click(screen.getByRole("button", { name: /Add Rule/ }));
+
+      await waitFor(() => {
+        expect(settings.createRule).toHaveBeenCalledWith({
+          pattern_type: "prefix",
+          model_pattern: "gpt-4",
+          backend_type: "local",
+          profile_id: null,
+          fallback_backend: undefined,
+        });
+      });
+    });
   });
 
   describe("fallback backend selection", () => {
@@ -261,7 +364,7 @@ describe("RuleForm", () => {
   });
 
   describe("form submission", () => {
-    it("submits minimal rule", async () => {
+    it("submits minimal local rule with profile_id", async () => {
       const user = userEvent.setup();
       render(RuleForm, {
         props: { onSave: mockOnSave, configuredProviders },
@@ -275,13 +378,13 @@ describe("RuleForm", () => {
           pattern_type: "prefix",
           model_pattern: "gpt-4",
           backend_type: "local",
-          backend_model: undefined,
+          profile_id: null,
           fallback_backend: undefined,
         });
       });
     });
 
-    it("submits rule with all fields", async () => {
+    it("submits cloud rule with all fields", async () => {
       const user = userEvent.setup();
       render(RuleForm, {
         props: { onSave: mockOnSave, configuredProviders },
@@ -342,6 +445,11 @@ describe("RuleForm", () => {
         props: { onSave: mockOnSave, configuredProviders },
       });
 
+      // Switch to cloud backend to get the backend model input
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
       await user.type(screen.getByLabelText(/^Pattern$/), "gpt");
       await user.type(
         screen.getByLabelText(/Backend Model/),
@@ -402,6 +510,11 @@ describe("RuleForm", () => {
         props: { onSave: mockOnSave, configuredProviders },
       });
 
+      // Switch to cloud backend to test backend model reset
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
       await user.type(screen.getByLabelText(/^Pattern$/), "gpt-4");
       await user.type(screen.getByLabelText(/Backend Model/), "model-name");
       await user.click(screen.getByRole("button", { name: /Add Rule/ }));
@@ -493,13 +606,18 @@ describe("RuleForm", () => {
     });
   });
 
-  describe("empty backend model handling", () => {
+  describe("empty backend model handling (cloud backends)", () => {
     it("sends undefined for empty backend model", async () => {
       const user = userEvent.setup();
       render(RuleForm, {
         props: { onSave: mockOnSave, configuredProviders },
       });
 
+      // Switch to cloud backend to get backend model input
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
       await user.type(screen.getByLabelText(/^Pattern$/), "gpt-4");
       // Leave backend model empty
       await user.click(screen.getByRole("button", { name: /Add Rule/ }));
@@ -519,6 +637,11 @@ describe("RuleForm", () => {
         props: { onSave: mockOnSave, configuredProviders },
       });
 
+      // Switch to cloud backend to get backend model input
+      await user.selectOptions(
+        screen.getByLabelText(/Route to Backend/),
+        "openai",
+      );
       await user.type(screen.getByLabelText(/^Pattern$/), "gpt-4");
       await user.type(screen.getByLabelText(/Backend Model/), "   ");
       await user.click(screen.getByRole("button", { name: /Add Rule/ }));

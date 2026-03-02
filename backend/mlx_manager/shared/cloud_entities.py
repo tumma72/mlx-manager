@@ -46,6 +46,9 @@ class BackendMapping(SQLModel, table=True):
     backend_type: BackendType
     backend_model: str | None = None  # Override model name for cloud
     fallback_backend: BackendType | None = None  # Optional fallback on failure
+    profile_id: int | None = Field(
+        default=None, foreign_key="execution_profiles.id"
+    )  # Optional local profile to route to
     priority: int = Field(default=0)  # Higher = checked first for pattern matching
     enabled: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

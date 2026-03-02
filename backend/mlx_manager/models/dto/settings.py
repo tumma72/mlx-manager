@@ -36,6 +36,7 @@ class BackendMappingCreate(BaseModel):
     backend_type: BackendType
     backend_model: str | None = None
     fallback_backend: BackendType | None = None
+    profile_id: int | None = None
     priority: int = 0
 
 
@@ -47,6 +48,7 @@ class BackendMappingUpdate(BaseModel):
     backend_type: BackendType | None = None
     backend_model: str | None = None
     fallback_backend: BackendType | None = None
+    profile_id: int | None = None
     priority: int | None = None
     enabled: bool | None = None
 
@@ -60,6 +62,8 @@ class BackendMappingResponse(BaseModel):
     backend_type: BackendType
     backend_model: str | None
     fallback_backend: BackendType | None
+    profile_id: int | None = None
+    profile_name: str | None = None
     priority: int
     enabled: bool
 

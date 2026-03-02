@@ -104,11 +104,7 @@ class MLXServerSettings(BaseSettings):
         description="Environment (development/production)",
     )
 
-    # Cloud routing
-    enable_cloud_routing: bool = Field(
-        default=False,
-        description="Enable backend router for cloud fallback",
-    )
+    # Batching
     batch_block_pool_size: int = Field(
         default=1000,
         description="Number of KV cache blocks per model for batching",

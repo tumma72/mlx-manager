@@ -66,8 +66,14 @@ class BackendRouter:
 
         logger.info(f"Routing {ir.model} to {mapping.backend_type.value}")
 
-        # Apply backend_model override if set
-        if mapping.backend_model:
+        # Apply model override: profile takes precedence over backend_model
+        if mapping.profile_id:
+            repo_id = await self._resolve_profile_model(db, mapping.profile_id)
+            if repo_id:
+                ir = ir.model_copy(update={"model": repo_id})
+            else:
+                logger.warning(f"Profile {mapping.profile_id} not found, skipping override")
+        elif mapping.backend_model:
             ir = ir.model_copy(update={"model": mapping.backend_model})
 
         if mapping.backend_type == BackendType.LOCAL:
@@ -121,6 +127,26 @@ class BackendRouter:
         else:
             # Fallback for unknown pattern types
             return pattern == model
+
+    async def _resolve_profile_model(self, db: AsyncSession, profile_id: int) -> str | None:
+        """Resolve a profile ID to its model's repo_id.
+
+        Uses lazy imports to avoid circular dependencies.
+        """
+        from mlx_manager.models.profiles import ExecutionProfile
+
+        result = await db.execute(
+            select(ExecutionProfile).where(ExecutionProfile.id == profile_id)  # type: ignore[arg-type]
+        )
+        profile = result.scalar_one_or_none()
+        if profile is None or profile.model_id is None:
+            return None
+
+        from mlx_manager.models.entities import Model
+
+        model_result = await db.execute(select(Model).where(Model.id == profile.model_id))  # type: ignore[arg-type]
+        model = model_result.scalar_one_or_none()
+        return model.repo_id if model is not None else None
 
     async def _route_local(self, ir: InternalRequest) -> RoutingOutcome:
         """Route to local MLX inference."""

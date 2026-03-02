@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
-from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.models.ir import InferenceResult, InternalRequest, TextResult
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
@@ -49,13 +48,11 @@ async def create_message(
             # Convert to internal format
             internal = AnthropicFormatter.parse_request(request)
 
-            # Try cloud routing if enabled
-            settings = get_settings()
-            if settings.enable_cloud_routing:
-                try:
-                    return await _route_and_respond(internal, request)
-                except Exception as e:
-                    logger.warning(f"Cloud routing failed, falling back to local: {e}")
+            # Always route (router is passthrough when no rules match)
+            try:
+                return await _route_and_respond(internal, request)
+            except Exception as e:
+                logger.warning(f"Routing failed, falling back: {e}")
 
             # Direct local inference path
             if request.stream:
@@ -243,8 +240,16 @@ def _format_ir_stream(
             yield sse
 
         output_tokens = 0
+        content_events = 0
+        empty_events = 0
         async for item in ir_stream:
             if isinstance(item, TextResult):
+                logger.debug(
+                    f"IR stream complete: {output_tokens} tokens, "
+                    f"{content_events} content events, {empty_events} empty events, "
+                    f"reason={item.finish_reason}, "
+                    f"has_tools={item.tool_calls is not None}"
+                )
                 # Final result — emit closing events
                 for sse in formatter.stream_end(
                     item.finish_reason,
@@ -255,7 +260,18 @@ def _format_ir_stream(
             else:
                 # StreamEvent — emit content delta
                 output_tokens += 1
-                for sse in formatter.stream_event(item):
+                sse_events = formatter.stream_event(item)
+                if sse_events:
+                    content_events += 1
+                else:
+                    empty_events += 1
+                    if empty_events == 1:
+                        logger.debug(
+                            f"First empty event: type={item.type}, "
+                            f"content={item.content!r}, "
+                            f"reasoning={item.reasoning_content!r}"
+                        )
+                for sse in sse_events:
                     yield sse
 
     return EventSourceResponse(generate_events())

@@ -369,6 +369,8 @@ export interface BackendMapping {
   fallback_backend: BackendType | null;
   priority: number;
   enabled: boolean;
+  profile_id?: number | null;
+  profile_name?: string | null; // response only
 }
 
 export interface BackendMappingCreate {
@@ -378,6 +380,7 @@ export interface BackendMappingCreate {
   backend_model?: string;
   fallback_backend?: BackendType;
   priority?: number;
+  profile_id?: number | null;
 }
 
 export interface BackendMappingUpdate {

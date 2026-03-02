@@ -222,6 +222,7 @@ class TestRouteRequest:
         local_mapping.backend_type = BackendType.LOCAL
         local_mapping.fallback_backend = None
         local_mapping.backend_model = None
+        local_mapping.profile_id = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [local_mapping]
@@ -246,6 +247,7 @@ class TestRouteRequest:
         openai_mapping.pattern_type = PatternType.PREFIX
         openai_mapping.backend_type = BackendType.OPENAI
         openai_mapping.backend_model = None
+        openai_mapping.profile_id = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [openai_mapping]
@@ -274,6 +276,7 @@ class TestRouteRequest:
         anthropic_mapping.pattern_type = PatternType.PREFIX
         anthropic_mapping.backend_type = BackendType.ANTHROPIC
         anthropic_mapping.backend_model = None
+        anthropic_mapping.profile_id = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [anthropic_mapping]
@@ -315,6 +318,7 @@ class TestFailover:
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = BackendType.OPENAI
         mapping.backend_model = "gpt-4"
+        mapping.profile_id = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mapping]
@@ -346,6 +350,7 @@ class TestFailover:
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = None  # No fallback
         mapping.backend_model = None
+        mapping.profile_id = None
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mapping]
@@ -368,6 +373,7 @@ class TestFailover:
         mapping.backend_type = BackendType.LOCAL
         mapping.fallback_backend = BackendType.OPENAI
         mapping.backend_model = "gpt-4-turbo"  # Different from request model
+        mapping.profile_id = None  # No profile override
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mapping]
@@ -861,9 +867,7 @@ class TestRouteLocalAndCloud:
         mock_backend = AsyncMock()
         mock_backend.forward_request.return_value = expected_outcome
 
-        with patch.object(
-            router, "_get_cloud_backend", new_callable=AsyncMock
-        ) as mock_get_backend:
+        with patch.object(router, "_get_cloud_backend", new_callable=AsyncMock) as mock_get_backend:
             mock_get_backend.return_value = mock_backend
             result = await router._route_cloud(mock_db, BackendType.OPENAI, ir)
 
@@ -871,9 +875,7 @@ class TestRouteLocalAndCloud:
         mock_get_backend.assert_called_once_with(mock_db, BackendType.OPENAI)
         mock_backend.forward_request.assert_called_once_with(ir)
 
-    async def test_route_request_creates_session_when_db_none(
-        self, router: BackendRouter
-    ) -> None:
+    async def test_route_request_creates_session_when_db_none(self, router: BackendRouter) -> None:
         """route_request with db=None creates session via get_db."""
         ir = _make_ir("some-model")
         expected_outcome = MagicMock(spec=RoutingOutcome)
@@ -888,9 +890,7 @@ class TestRouteLocalAndCloud:
                 "mlx_manager.mlx_server.services.cloud.router.get_db",
                 mock_get_db,
             ),
-            patch.object(
-                router, "_route_with_session", new_callable=AsyncMock
-            ) as mock_route,
+            patch.object(router, "_route_with_session", new_callable=AsyncMock) as mock_route,
         ):
             mock_route.return_value = expected_outcome
             result = await router.route_request(ir, db=None)
@@ -906,6 +906,130 @@ class TestRouteLocalAndCloud:
 
         assert BackendRouter._pattern_matches(mapping, "my-model") is True
         assert BackendRouter._pattern_matches(mapping, "other-model") is False
+
+
+class TestProfileModelResolution:
+    """Tests for profile_id-based model resolution in route_request."""
+
+    @pytest.fixture
+    def router(self) -> BackendRouter:
+        """Create a router instance."""
+        return BackendRouter()
+
+    @pytest.fixture
+    def mock_db(self) -> AsyncMock:
+        """Create a mock database session."""
+        return AsyncMock(spec=AsyncSession)
+
+    async def test_profile_model_resolution(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """When mapping.profile_id is set, IR model is updated to the profile's model repo_id."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "virtual-model"
+        mapping.pattern_type = PatternType.EXACT
+        mapping.backend_type = BackendType.LOCAL
+        mapping.fallback_backend = None
+        mapping.backend_model = None
+        mapping.profile_id = 42
+
+        mock_find_result = MagicMock()
+        mock_find_result.scalars.return_value.all.return_value = [mapping]
+        mock_db.execute.return_value = mock_find_result
+
+        with (
+            patch.object(
+                router,
+                "_resolve_profile_model",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+            patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local,
+        ):
+            mock_resolve.return_value = "mlx-community/Qwen3-0.6B-4bit-DWQ"
+            mock_local.return_value = MagicMock(spec=RoutingOutcome)
+
+            ir = _make_ir("virtual-model")
+            await router.route_request(ir, db=mock_db)
+
+            mock_resolve.assert_called_once_with(mock_db, 42)
+            # IR passed to _route_local must have the resolved repo_id
+            call_args = mock_local.call_args
+            assert call_args[0][0].model == "mlx-community/Qwen3-0.6B-4bit-DWQ"
+
+    async def test_profile_not_found_skips_override(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """When profile_id is set but the profile doesn't exist, IR model is not changed."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "virtual-model"
+        mapping.pattern_type = PatternType.EXACT
+        mapping.backend_type = BackendType.LOCAL
+        mapping.fallback_backend = None
+        mapping.backend_model = None
+        mapping.profile_id = 99
+
+        mock_find_result = MagicMock()
+        mock_find_result.scalars.return_value.all.return_value = [mapping]
+        mock_db.execute.return_value = mock_find_result
+
+        with (
+            patch.object(
+                router,
+                "_resolve_profile_model",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+            patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local,
+        ):
+            mock_resolve.return_value = None  # Profile not found
+            mock_local.return_value = MagicMock(spec=RoutingOutcome)
+
+            with patch("mlx_manager.mlx_server.services.cloud.router.logger") as mock_logger:
+                ir = _make_ir("virtual-model")
+                await router.route_request(ir, db=mock_db)
+
+                # Model must remain unchanged
+                call_args = mock_local.call_args
+                assert call_args[0][0].model == "virtual-model"
+
+                # Warning must be logged
+                mock_logger.warning.assert_called_once()
+                warning_msg = mock_logger.warning.call_args[0][0]
+                assert "99" in warning_msg
+
+    async def test_profile_takes_precedence_over_backend_model(
+        self, router: BackendRouter, mock_db: AsyncMock
+    ) -> None:
+        """When both profile_id and backend_model are set, the profile's model wins."""
+        mapping = MagicMock(spec=BackendMapping)
+        mapping.model_pattern = "virtual-model"
+        mapping.pattern_type = PatternType.EXACT
+        mapping.backend_type = BackendType.LOCAL
+        mapping.fallback_backend = None
+        mapping.backend_model = "some-backend-override"  # Should be ignored
+        mapping.profile_id = 7
+
+        mock_find_result = MagicMock()
+        mock_find_result.scalars.return_value.all.return_value = [mapping]
+        mock_db.execute.return_value = mock_find_result
+
+        with (
+            patch.object(
+                router,
+                "_resolve_profile_model",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+            patch.object(router, "_route_local", new_callable=AsyncMock) as mock_local,
+        ):
+            mock_resolve.return_value = "mlx-community/GLM-4.7-Flash-4bit"
+            mock_local.return_value = MagicMock(spec=RoutingOutcome)
+
+            ir = _make_ir("virtual-model")
+            await router.route_request(ir, db=mock_db)
+
+            # Profile's model must be used, not backend_model
+            call_args = mock_local.call_args
+            assert call_args[0][0].model == "mlx-community/GLM-4.7-Flash-4bit"
+            assert call_args[0][0].model != "some-backend-override"
 
 
 class TestRefreshRules:

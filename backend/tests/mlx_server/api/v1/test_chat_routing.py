@@ -106,57 +106,6 @@ def mock_completion_response():
     }
 
 
-class TestRoutingDisabled:
-    """Tests when cloud routing is disabled (default behavior)."""
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
-    async def test_routing_disabled_goes_to_direct(self, mock_direct, mock_settings, basic_request):
-        """When enable_cloud_routing=False, requests go to direct inference."""
-        # Setup mock settings
-        settings = MagicMock()
-        settings.enable_cloud_routing = False
-        settings.enable_batching = False
-        mock_settings.return_value = settings
-
-        # Setup mock response
-        mock_direct.return_value = MagicMock()
-
-        # Call the handler
-        await _handle_text_request(basic_request, None)
-
-        # Should go directly to direct handler, not router
-        mock_direct.assert_called_once()
-        # Verify it received an InternalRequest and the original request
-        call_args = mock_direct.call_args
-        assert isinstance(call_args[0][0], InternalRequest)
-        assert call_args[0][1] is basic_request
-
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
-    @patch("mlx_manager.mlx_server.api.v1.chat._handle_batched_request")
-    @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
-    async def test_routing_disabled_batching_enabled(
-        self, mock_scheduler_mgr, mock_batched, mock_settings, basic_request
-    ):
-        """When routing disabled but batching enabled, use batching."""
-        settings = MagicMock()
-        settings.enable_cloud_routing = False
-        settings.enable_batching = True
-        mock_settings.return_value = settings
-
-        # Setup scheduler manager mock
-        mgr = MagicMock()
-        mgr.get_priority_for_request.return_value = MagicMock()
-        mock_scheduler_mgr.return_value = mgr
-
-        mock_batched.return_value = MagicMock()
-
-        await _handle_text_request(basic_request, None)
-
-        # Should use batching path
-        mock_batched.assert_called_once()
-
-
 class TestRoutingEnabled:
     """Tests when cloud routing is enabled."""
 
@@ -165,9 +114,8 @@ class TestRoutingEnabled:
     async def test_routing_enabled_uses_router(
         self, mock_get_router, mock_settings, basic_request, mock_completion_response
     ):
-        """When enable_cloud_routing=True, requests go through router."""
+        """Requests always go through the router (passthrough when no rules match)."""
         settings = MagicMock()
-        settings.enable_cloud_routing = True
         settings.enable_batching = False
         settings.timeout_chat_seconds = 900.0  # Required for timeout handling
         mock_settings.return_value = settings
@@ -276,7 +224,6 @@ class TestRoutingFallback:
     ):
         """When routing fails, fall back to direct inference."""
         settings = MagicMock()
-        settings.enable_cloud_routing = True
         settings.enable_batching = False
         mock_settings.return_value = settings
 
@@ -300,7 +247,6 @@ class TestRoutingFallback:
     ):
         """When routing fails and batching is enabled, fall back to batching."""
         settings = MagicMock()
-        settings.enable_cloud_routing = True
         settings.enable_batching = True
         mock_settings.return_value = settings
 
@@ -1176,17 +1122,18 @@ class TestBatchingFallback:
     """Tests for batching scheduler initialization fallback."""
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    @patch("mlx_manager.mlx_server.api.v1.chat._route_and_respond")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_scheduler_not_initialized_falls_back_to_direct(
-        self, mock_direct, mock_scheduler_mgr, mock_settings
+        self, mock_direct, mock_scheduler_mgr, mock_route, mock_settings
     ):
-        """When scheduler not initialized, fall back to direct."""
+        """When routing fails and scheduler not initialized, fall back to direct."""
         settings = MagicMock()
-        settings.enable_cloud_routing = False
         settings.enable_batching = True
         mock_settings.return_value = settings
 
+        mock_route.side_effect = RuntimeError("Router unavailable")
         mock_scheduler_mgr.side_effect = RuntimeError("Scheduler not initialized")
         mock_direct.return_value = MagicMock()
 
@@ -1199,17 +1146,18 @@ class TestBatchingFallback:
         mock_direct.assert_called_once()
 
     @patch("mlx_manager.mlx_server.api.v1.chat.get_settings")
+    @patch("mlx_manager.mlx_server.api.v1.chat._route_and_respond")
     @patch("mlx_manager.mlx_server.api.v1.chat.get_scheduler_manager")
     @patch("mlx_manager.mlx_server.api.v1.chat._handle_direct_inference")
     async def test_scheduler_other_error_falls_back_to_direct(
-        self, mock_direct, mock_scheduler_mgr, mock_settings
+        self, mock_direct, mock_scheduler_mgr, mock_route, mock_settings
     ):
-        """When scheduler encounters other error, fall back to direct."""
+        """When routing fails and scheduler encounters other error, fall back to direct."""
         settings = MagicMock()
-        settings.enable_cloud_routing = False
         settings.enable_batching = True
         mock_settings.return_value = settings
 
+        mock_route.side_effect = RuntimeError("Router unavailable")
         mgr = MagicMock()
         mgr.get_priority_for_request.side_effect = ValueError("Unexpected")
         mock_scheduler_mgr.return_value = mgr
@@ -1739,9 +1687,7 @@ class TestMessageContentNoneSkipped:
                 choices=[],
                 usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             )
-            mock_audit.track_request.return_value.__aenter__ = AsyncMock(
-                return_value=MagicMock()
-            )
+            mock_audit.track_request.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
             mock_audit.track_request.return_value.__aexit__ = AsyncMock(return_value=False)
 
             result = await create_chat_completion(request)
@@ -1775,16 +1721,13 @@ class TestImagePreprocessingPath:
             ) as mock_direct,
         ):
             settings = MagicMock()
-            settings.enable_cloud_routing = False
             settings.enable_batching = False
             mock_settings.return_value = settings
 
             mock_preprocess.return_value = ["data:image/png;base64,abc"]
             mock_direct.return_value = mock_response
 
-            result = await _handle_text_request(
-                request, image_urls=["http://example.com/img.png"]
-            )
+            result = await _handle_text_request(request, image_urls=["http://example.com/img.png"])
 
             assert result == mock_response
             mock_preprocess.assert_called_once_with(["http://example.com/img.png"])
@@ -1820,7 +1763,6 @@ class TestImagePreprocessingPath:
             ) as mock_route,
         ):
             settings = MagicMock()
-            settings.enable_cloud_routing = True
             settings.enable_batching = False
             mock_settings.return_value = settings
             mock_preprocess.return_value = ["data:image/png;base64,abc"]

@@ -8,6 +8,7 @@
 	import RuleCard from './RuleCard.svelte';
 	import RuleForm from './RuleForm.svelte';
 	import RuleTestInput from './RuleTestInput.svelte';
+	import { profileStore } from '$lib/stores';
 
 	// State
 	let rules = $state<BackendMapping[]>([]);
@@ -43,7 +44,8 @@
 		try {
 			const [rulesResult, credentialsResult] = await Promise.all([
 				settings.listRules(),
-				settings.listProviders()
+				settings.listProviders(),
+				profileStore.refresh()
 			]);
 			rules = rulesResult;
 			credentials = credentialsResult;
