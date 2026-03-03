@@ -204,6 +204,26 @@ async def admin_health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
+@router.get("/metrics")
+async def prometheus_metrics() -> PlainTextResponse:
+    """Prometheus-compatible metrics endpoint.
+
+    Returns metrics in Prometheus text exposition format (text/plain; version=0.0.4).
+    Only available when metrics_enabled=True in server settings.
+    """
+    settings = get_settings()
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Metrics not enabled")
+
+    from mlx_manager.mlx_server.services.metrics import get_metrics
+
+    registry = get_metrics()
+    return PlainTextResponse(
+        content=registry.collect_all(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
 # ============================================================================
 # Model Loading Progress SSE
 # ============================================================================
