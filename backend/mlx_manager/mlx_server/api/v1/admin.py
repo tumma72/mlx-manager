@@ -21,12 +21,14 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlmodel import col, select
+from starlette.responses import StreamingResponse
 
 from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.services.audit import audit_service
+from mlx_manager.mlx_server.services.loading_progress import get_loading_progress
 from mlx_manager.mlx_server.utils.memory import get_memory_usage
 
 
@@ -200,6 +202,42 @@ async def unload_model(model_id: str) -> ModelUnloadResponse:
 async def admin_health() -> dict[str, str]:
     """Admin health check endpoint."""
     return {"status": "healthy"}
+
+
+# ============================================================================
+# Model Loading Progress SSE
+# ============================================================================
+
+
+@router.get("/models/{model_id:path}/loading-progress")
+async def model_loading_progress(model_id: str) -> StreamingResponse:
+    """Stream model loading progress via SSE.
+
+    Events: download_progress, weights_loading, adapter_init, ready, error.
+    The stream ends when the model is fully loaded (ready) or an error occurs.
+    A 5-minute timeout prevents orphaned connections.
+    """
+    progress_mgr = get_loading_progress()
+    queue = progress_mgr.subscribe(model_id)
+
+    async def event_generator():  # type: ignore[no-untyped-def]
+        try:
+            while True:
+                event = await asyncio.wait_for(queue.get(), timeout=300)  # 5 min max
+                if event is None:
+                    break  # Stream complete
+                yield f"event: {event.event.value}\ndata: {event.model_dump_json()}\n\n"
+        except TimeoutError:
+            error_data = json.dumps({"error": "Timeout waiting for loading progress"})
+            yield f"event: error\ndata: {error_data}\n\n"
+        finally:
+            progress_mgr.unsubscribe(model_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 # ============================================================================

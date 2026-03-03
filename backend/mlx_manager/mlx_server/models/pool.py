@@ -407,6 +407,15 @@ class ModelPoolManager:
         logger.info(f"Loading model: {model_id}")
         start_time = time.time()
 
+        # Emit loading progress: weights loading started
+        from mlx_manager.mlx_server.services.loading_progress import (
+            LoadingEventType,
+            get_loading_progress,
+        )
+
+        progress_mgr = get_loading_progress()
+        progress_mgr.emit(model_id, LoadingEventType.WEIGHTS_LOADING, progress=0)
+
         # Open Logfire span for model loading observability
         span_context = None
         if LOGFIRE_AVAILABLE:
@@ -476,6 +485,11 @@ class ModelPoolManager:
                 result = await asyncio.to_thread(load, model_id)
                 model, tokenizer = result[0], result[1]
 
+            # Emit loading progress: weights loaded
+            progress_mgr.emit(
+                model_id, LoadingEventType.WEIGHTS_LOADING, progress=100, message="Weights loaded"
+            )
+
             # Get memory after loading
             from mlx_manager.mlx_server.utils.memory import get_memory_usage
 
@@ -514,6 +528,11 @@ class ModelPoolManager:
                         )
             except Exception as e:
                 logger.debug(f"Could not fetch capabilities for {model_id}: {e}")
+
+            # Emit loading progress: adapter initialization
+            progress_mgr.emit(
+                model_id, LoadingEventType.ADAPTER_INIT, message="Initializing adapter"
+            )
 
             # Create composable adapter for all model types
             try:
@@ -645,6 +664,14 @@ class ModelPoolManager:
                 f"{elapsed:.1f}s, {loaded.size_gb:.1f}GB)"
             )
 
+            # Emit loading progress: ready
+            progress_mgr.emit(
+                model_id,
+                LoadingEventType.READY,
+                progress=100,
+                message=f"Model ready ({elapsed:.1f}s, {loaded.size_gb:.1f}GB)",
+            )
+
             # Close Logfire span with success attributes
             if span_context is not None:
                 logfire.info(
@@ -664,6 +691,9 @@ class ModelPoolManager:
                     self._loading[model_id].set()
                     del self._loading[model_id]
             logger.exception(f"Failed to load model {model_id}: {e}")
+
+            # Emit loading progress: error
+            progress_mgr.emit(model_id, LoadingEventType.ERROR, message=str(e))
 
             # Log error to Logfire and close span
             if span_context is not None:
