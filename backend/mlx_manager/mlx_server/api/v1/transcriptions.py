@@ -9,6 +9,7 @@ from loguru import logger
 
 from mlx_manager.mlx_server.schemas.openai import TranscriptionResponse
 from mlx_manager.mlx_server.services.audio import transcribe_audio
+from mlx_manager.mlx_server.utils.request_helpers import validate_model_available
 
 router = APIRouter(tags=["audio"])
 
@@ -31,6 +32,9 @@ async def create_transcription(
     Returns:
         TranscriptionResponse with transcribed text
     """
+    # Validate model is available
+    model = validate_model_available(model)
+
     logger.info(f"STT request: model={model}, filename={file.filename}, language={language}")
 
     # Read uploaded audio data

@@ -21,7 +21,11 @@ from mlx_manager.mlx_server.services.inference import (
     generate_chat_complete_response,
     generate_chat_stream,
 )
-from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
+from mlx_manager.mlx_server.utils.request_helpers import (
+    timeout_error_event,
+    validate_model_available,
+    with_inference_timeout,
+)
 
 router = APIRouter(tags=["messages"])
 
@@ -40,6 +44,9 @@ async def create_message(
     """
     request_id = f"msg_{uuid.uuid4().hex[:24]}"
     logger.info(f"Messages request: model={request.model}, stream={request.stream}")
+
+    # Validate model is available
+    request.model = validate_model_available(request.model)
 
     async with audit_service.track_request(
         request_id=request_id,

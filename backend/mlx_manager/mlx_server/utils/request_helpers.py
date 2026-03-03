@@ -5,11 +5,53 @@ import json
 from collections.abc import Awaitable
 from typing import TypeVar
 
+from fastapi import HTTPException
 from loguru import logger
 
 from mlx_manager.mlx_server.errors import TimeoutHTTPException
 
 T = TypeVar("T")
+
+
+def validate_model_available(model: str | None) -> str:
+    """Validate and resolve the model field.
+
+    If no model is specified, falls back to the configured default_model.
+    Checks that the resolved model is in the available_models list.
+
+    Args:
+        model: The model ID from the request, or None.
+
+    Returns:
+        The resolved model ID.
+
+    Raises:
+        HTTPException: 400 if no model and no default configured.
+        HTTPException: 404 if the model is not in available_models.
+    """
+    from mlx_manager.mlx_server.config import get_settings
+
+    settings = get_settings()
+
+    # Resolve default model
+    if not model:
+        if settings.default_model:
+            model = settings.default_model
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="No model specified and no default model configured",
+            )
+
+    # Check against available models
+    if model not in settings.available_models:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model '{model}' is not available. "
+            f"Available models: {', '.join(settings.available_models)}",
+        )
+
+    return model
 
 
 def timeout_error_event(timeout: float) -> dict:

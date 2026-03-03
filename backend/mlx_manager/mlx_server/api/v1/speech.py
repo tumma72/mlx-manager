@@ -10,6 +10,7 @@ from loguru import logger
 
 from mlx_manager.mlx_server.schemas.openai import SpeechRequest
 from mlx_manager.mlx_server.services.audio import generate_speech
+from mlx_manager.mlx_server.utils.request_helpers import validate_model_available
 
 router = APIRouter(tags=["audio"])
 
@@ -33,6 +34,9 @@ async def create_speech(request: SpeechRequest) -> Response:
     Returns:
         Response with audio bytes and appropriate content type
     """
+    # Validate model is available
+    request.model = validate_model_available(request.model)
+
     logger.info(
         f"TTS request: model={request.model}, text_len={len(request.input)}, voice={request.voice}"
     )

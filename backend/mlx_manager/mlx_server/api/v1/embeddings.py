@@ -20,7 +20,10 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.embeddings import generate_embeddings
-from mlx_manager.mlx_server.utils.request_helpers import with_inference_timeout
+from mlx_manager.mlx_server.utils.request_helpers import (
+    validate_model_available,
+    with_inference_timeout,
+)
 
 router = APIRouter(tags=["embeddings"])
 
@@ -33,6 +36,9 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     in OpenAI-compatible format. Embeddings are L2-normalized.
     """
     request_id = f"emb-{uuid.uuid4().hex[:12]}"
+
+    # Validate model is available
+    request.model = validate_model_available(request.model)
 
     # Normalize input to list
     texts = [request.input] if isinstance(request.input, str) else list(request.input)

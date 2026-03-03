@@ -45,7 +45,12 @@ from mlx_manager.mlx_server.services.inference import (
 from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
 )
-from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
+from mlx_manager.mlx_server.utils.request_helpers import (
+    timeout_error_event,
+    validate_model_available,
+    with_inference_timeout,
+)
+from mlx_manager.mlx_server.utils.validation import validate_image_url
 
 router = APIRouter(tags=["chat"])
 
@@ -66,6 +71,9 @@ async def create_chat_completion(
     request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     logger.info(f"Chat completion request: model={request.model}, stream={request.stream}")
 
+    # Validate model is available
+    request.model = validate_model_available(request.model)
+
     # Extract text and images from all user messages
     all_image_urls: list[str] = []
 
@@ -75,6 +83,10 @@ async def create_chat_completion(
         _, images = extract_content_parts(message.content)
         if message.role == "user":
             all_image_urls.extend(images)
+
+    # Validate image URLs (MIME type and size for data URLs)
+    for url in all_image_urls:
+        validate_image_url(url)
 
     has_images = len(all_image_urls) > 0
 

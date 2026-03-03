@@ -18,7 +18,11 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.inference import generate_completion
-from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
+from mlx_manager.mlx_server.utils.request_helpers import (
+    timeout_error_event,
+    validate_model_available,
+    with_inference_timeout,
+)
 
 router = APIRouter(tags=["completions"])
 
@@ -34,6 +38,9 @@ async def create_completion(
     """
     request_id = f"cmpl-{uuid.uuid4().hex[:12]}"
     logger.info(f"Completion request: model={request.model}, stream={request.stream}")
+
+    # Validate model is available
+    request.model = validate_model_available(request.model)
 
     # Handle stop parameter
     stop: list[str] | None = (
