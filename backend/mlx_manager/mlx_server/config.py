@@ -76,6 +76,14 @@ class MLXServerSettings(BaseSettings):
         description="Maximum GPU cache size in GB",
     )
 
+    # Image validation
+    max_image_size_mb: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum decoded base64 image size in MB",
+    )
+
     # Generation defaults
     default_max_tokens: int = Field(
         default=4096,
@@ -139,6 +147,14 @@ class MLXServerSettings(BaseSettings):
         ge=1,
         le=365,
         description="Days to retain audit logs before cleanup",
+    )
+
+    # Graceful shutdown
+    drain_timeout_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        description="Seconds to wait for in-flight requests to complete during shutdown",
     )
 
     # Admin authentication
