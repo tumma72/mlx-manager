@@ -161,7 +161,7 @@ def create_app(embedded: bool = False) -> FastAPI:
         instrument_fastapi(app_instance)
 
     # Add health endpoint (shutdown-aware)
-    @app_instance.get("/health")
+    @app_instance.get("/health", response_model=None)
     async def health() -> dict[str, Any] | JSONResponse:
         """Health check endpoint. Returns 503 with draining status during shutdown."""
         state = get_shutdown_state()
