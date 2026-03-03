@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.errors import ProblemDetail, TimeoutProblem
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
@@ -28,7 +29,16 @@ from mlx_manager.mlx_server.utils.request_helpers import (
 router = APIRouter(tags=["embeddings"])
 
 
-@router.post("/embeddings", response_model=EmbeddingResponse)
+@router.post(
+    "/embeddings",
+    response_model=EmbeddingResponse,
+    responses={
+        422: {"model": ProblemDetail, "description": "Validation Error"},
+        404: {"model": ProblemDetail, "description": "Model Not Found"},
+        408: {"model": TimeoutProblem, "description": "Request Timeout"},
+        500: {"model": ProblemDetail, "description": "Internal Server Error"},
+    },
+)
 async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     """Create embeddings for the input text(s).
 

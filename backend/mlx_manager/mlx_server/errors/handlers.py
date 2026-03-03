@@ -13,10 +13,23 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from mlx_manager.mlx_server.errors.problem_details import (
+    ErrorCode,
     ProblemDetail,
     TimeoutHTTPException,
     TimeoutProblem,
 )
+
+# Map HTTP status codes to programmatic error codes
+ERROR_CODE_MAP: dict[int, ErrorCode] = {
+    400: ErrorCode.INVALID_REQUEST,
+    401: ErrorCode.UNAUTHORIZED,
+    403: ErrorCode.FORBIDDEN,
+    404: ErrorCode.RESOURCE_NOT_FOUND,
+    422: ErrorCode.VALIDATION_ERROR,
+    429: ErrorCode.RATE_LIMITED,
+    500: ErrorCode.INTERNAL_ERROR,
+    503: ErrorCode.SERVICE_UNAVAILABLE,
+}
 
 
 def generate_request_id() -> str:
@@ -71,6 +84,8 @@ async def http_exception_handler(
         503: "Service Unavailable",
     }
 
+    error_code = ERROR_CODE_MAP.get(exc.status_code)
+
     problem = ProblemDetail(
         type=problem_types.get(exc.status_code, "about:blank"),
         title=problem_titles.get(exc.status_code, "Error"),
@@ -78,6 +93,7 @@ async def http_exception_handler(
         detail=str(exc.detail) if exc.detail else None,
         instance=str(request.url.path),
         request_id=request_id,
+        error_code=error_code,
     )
 
     return JSONResponse(
@@ -104,6 +120,7 @@ async def timeout_exception_handler(
         instance=str(request.url.path),
         request_id=request_id,
         timeout_seconds=exc.timeout_seconds,
+        error_code=ErrorCode.REQUEST_TIMEOUT,
     )
 
     return JSONResponse(
@@ -143,6 +160,7 @@ async def validation_exception_handler(
         detail=f"Request validation failed with {len(errors)} error(s)",
         instance=str(request.url.path),
         request_id=request_id,
+        error_code=ErrorCode.VALIDATION_ERROR,
         errors=errors,
     )
 
@@ -173,6 +191,7 @@ async def generic_exception_handler(
         detail="An unexpected error occurred. Please try again later.",
         instance=str(request.url.path),
         request_id=request_id,
+        error_code=ErrorCode.INTERNAL_ERROR,
     )
 
     return JSONResponse(

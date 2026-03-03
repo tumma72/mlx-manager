@@ -12,6 +12,7 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.errors import ProblemDetail, TimeoutProblem
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.ir import (
     InferenceResult,
@@ -58,7 +59,16 @@ router = APIRouter(tags=["chat"])
 _structured_output_validator = StructuredOutputValidator()
 
 
-@router.post("/chat/completions", response_model=None)
+@router.post(
+    "/chat/completions",
+    response_model=None,
+    responses={
+        422: {"model": ProblemDetail, "description": "Validation Error"},
+        404: {"model": ProblemDetail, "description": "Model Not Found"},
+        408: {"model": TimeoutProblem, "description": "Request Timeout"},
+        500: {"model": ProblemDetail, "description": "Internal Server Error"},
+    },
+)
 async def create_chat_completion(
     request: ChatCompletionRequest,
 ) -> EventSourceResponse | ChatCompletionResponse:

@@ -10,6 +10,7 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.errors import ProblemDetail, TimeoutProblem
 from mlx_manager.mlx_server.schemas.openai import (
     CompletionChoice,
     CompletionRequest,
@@ -27,7 +28,16 @@ from mlx_manager.mlx_server.utils.request_helpers import (
 router = APIRouter(tags=["completions"])
 
 
-@router.post("/completions", response_model=None)
+@router.post(
+    "/completions",
+    response_model=None,
+    responses={
+        422: {"model": ProblemDetail, "description": "Validation Error"},
+        404: {"model": ProblemDetail, "description": "Model Not Found"},
+        408: {"model": TimeoutProblem, "description": "Request Timeout"},
+        500: {"model": ProblemDetail, "description": "Internal Server Error"},
+    },
+)
 async def create_completion(
     request: CompletionRequest,
 ) -> EventSourceResponse | CompletionResponse:

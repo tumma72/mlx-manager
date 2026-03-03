@@ -4,10 +4,46 @@ Provides structured error responses per RFC 7807:
 https://datatracker.ietf.org/doc/html/rfc7807
 """
 
+from enum import StrEnum
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+
+
+class ErrorCode(StrEnum):
+    """Programmatic error codes for client handling.
+
+    Provides machine-readable codes that clients can switch on,
+    independent of human-readable titles/details which may change.
+    """
+
+    # Validation
+    VALIDATION_ERROR = "validation_error"
+    FIELD_MAX_LENGTH_EXCEEDED = "field_max_length_exceeded"
+    INVALID_REQUEST = "invalid_request"
+
+    # Resource
+    MODEL_NOT_FOUND = "model_not_found"
+    RESOURCE_NOT_FOUND = "resource_not_found"
+
+    # Auth
+    UNAUTHORIZED = "unauthorized"
+    FORBIDDEN = "forbidden"
+
+    # Rate limiting
+    RATE_LIMITED = "rate_limited"
+
+    # Timeout
+    REQUEST_TIMEOUT = "request_timeout"
+
+    # Server
+    INTERNAL_ERROR = "internal_error"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+
+    # Inference
+    INFERENCE_ERROR = "inference_error"
+    GENERATION_ERROR = "generation_error"
 
 
 class ProblemDetail(BaseModel):
@@ -40,6 +76,10 @@ class ProblemDetail(BaseModel):
     )
 
     # Extension fields (RFC 7807 allows additional members)
+    error_code: str | None = Field(
+        default=None,
+        description="Programmatic error code for client handling",
+    )
     errors: list[dict[str, Any]] | None = Field(
         default=None,
         description="Validation errors (for 422 responses)",
