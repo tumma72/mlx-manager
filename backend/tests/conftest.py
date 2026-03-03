@@ -260,6 +260,7 @@ async def auth_client(test_engine, test_user_data):
         await session.commit()
 
     # Create test Model records for profile tests
+    # IDs: 1=text-gen, 2=text-gen, 3=vision, 4=text-gen, 5=audio
     async with async_session() as session:
         model1 = Model(
             repo_id="mlx-community/test-model-4bit",
@@ -281,7 +282,12 @@ async def auth_client(test_engine, test_user_data):
             model_type="text-gen",
             local_path="/fake/path/to/updated-model",
         )
-        session.add_all([model1, model2, model3, model4])
+        model5 = Model(
+            repo_id="mlx-community/Kokoro-82M-4bit",
+            model_type="audio",
+            local_path="/fake/path/to/kokoro",
+        )
+        session.add_all([model1, model2, model3, model4, model5])
         await session.commit()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -315,6 +321,19 @@ async def auth_client(test_engine, test_user_data):
 
 
 @pytest.fixture(scope="function")
+async def auth_db(auth_client):
+    """Provide a DB session factory for tests that need direct DB access.
+
+    Uses conftest's module-level app reference (not a reimported one) to ensure
+    the correct dependency override is resolved even after test_main.py reloads
+    the mlx_manager.main module.
+    """
+    db_override = app.dependency_overrides.get(get_db)
+    assert db_override is not None, "auth_client fixture did not set DB override"
+    yield db_override
+
+
+@pytest.fixture(scope="function")
 async def admin_client(test_engine, test_admin_user_data):
     """Create an async test client with admin authentication.
 
@@ -339,6 +358,7 @@ async def admin_client(test_engine, test_admin_user_data):
         await session.commit()
 
     # Create test Model records for profile tests
+    # IDs: 1=text-gen, 2=text-gen, 3=vision, 4=text-gen, 5=audio
     async with async_session() as session:
         model1 = Model(
             repo_id="mlx-community/test-model-4bit",
@@ -360,7 +380,12 @@ async def admin_client(test_engine, test_admin_user_data):
             model_type="text-gen",
             local_path="/fake/path/to/updated-model",
         )
-        session.add_all([model1, model2, model3, model4])
+        model5 = Model(
+            repo_id="mlx-community/Kokoro-82M-4bit",
+            model_type="audio",
+            local_path="/fake/path/to/kokoro",
+        )
+        session.add_all([model1, model2, model3, model4, model5])
         await session.commit()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:

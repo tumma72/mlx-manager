@@ -110,6 +110,22 @@ Environment variables (all optional):
 | `MLX_MANAGER_DEFAULT_PORT_START` | `10240` | Starting port for servers |
 | `MLX_MANAGER_JWT_SECRET` | Auto-generated | JWT signing secret |
 
+### MLX Server Configuration
+
+The embedded MLX inference server accepts `MLX_SERVER_*` environment variables. All settings are opt-in with safe defaults -- zero configuration needed for local use.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MLX_SERVER_ADMIN_TOKEN` | *none* | Bearer token for `/v1/admin/*` endpoints |
+| `MLX_SERVER_RATE_LIMIT_RPM` | `0` (off) | Requests per minute per IP |
+| `MLX_SERVER_METRICS_ENABLED` | `false` | Enable Prometheus metrics at `/v1/admin/metrics` |
+| `MLX_SERVER_MAX_MEMORY_GB` | `0` (auto) | Model pool memory limit (0 = 75% of device RAM) |
+| `MLX_SERVER_MAX_MODELS` | `4` | Max models loaded simultaneously |
+| `MLX_SERVER_TIMEOUT_CHAT_SECONDS` | `900` | Chat completions timeout |
+| `MLX_SERVER_DRAIN_TIMEOUT_SECONDS` | `30` | Graceful shutdown drain timeout |
+
+See [docs/MLX_SERVER.md](docs/MLX_SERVER.md) for the full configuration reference, security guide, metrics list, and API documentation.
+
 ## Development
 
 ```bash
@@ -117,7 +133,7 @@ git clone https://github.com/tumma72/mlx-manager.git
 cd mlx-manager
 make install-dev  # Install dependencies
 make dev          # Start dev servers
-make test         # Run tests (1000+ tests)
+make test         # Run tests (1900+ tests)
 ```
 
 ## License

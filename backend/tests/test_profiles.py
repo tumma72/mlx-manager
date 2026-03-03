@@ -486,36 +486,12 @@ async def test_update_profile_clear_model_options(auth_client, sample_profile_da
 async def test_create_audio_profile_with_audio_params(auth_client):
     """Test creating an audio profile sets audio params correctly (lines 249-254).
 
-    Creates an audio model in the DB, then creates a profile with audio defaults.
+    Uses the audio model (id=5) pre-created by the auth_client fixture.
     """
-
-    from mlx_manager.database import get_db
-    from mlx_manager.main import app
-    from mlx_manager.models import Model
-
-    # Add an audio model to the DB by calling the session directly via the override
-    audio_model_id = None
-    db_override = app.dependency_overrides.get(get_db)
-    if db_override is not None:
-        async for session in db_override():
-            audio_model = Model(
-                repo_id="mlx-community/Kokoro-82M-4bit",
-                model_type="audio",
-                local_path="/fake/path/to/kokoro",
-            )
-            session.add(audio_model)
-            await session.commit()
-            await session.refresh(audio_model)
-            audio_model_id = audio_model.id
-            break
-
-    if audio_model_id is None:
-        pytest.skip("Could not create audio model via DB override")
-
-    # Create an audio profile with audio defaults
+    # model_id=5 is the audio model (mlx-community/Kokoro-82M-4bit) from conftest
     profile_data = {
         "name": "Audio Profile",
-        "model_id": audio_model_id,
+        "model_id": 5,
         "audio": {
             "tts_voice": "af_sky",
             "tts_speed": 1.0,
@@ -540,33 +516,10 @@ async def test_create_audio_profile_with_audio_params(auth_client):
 @pytest.mark.asyncio
 async def test_audio_profile_rejects_inference_params(auth_client):
     """Test that audio profile with inference params raises 422 (lines 219-220)."""
-    from mlx_manager.database import get_db
-    from mlx_manager.main import app
-    from mlx_manager.models import Model
-
-    # Add an audio model to the DB
-    audio_model_id = None
-    db_override = app.dependency_overrides.get(get_db)
-    if db_override is not None:
-        async for session in db_override():
-            audio_model = Model(
-                repo_id="mlx-community/Kokoro-audio-test",
-                model_type="audio",
-                local_path="/fake/path/to/audio",
-            )
-            session.add(audio_model)
-            await session.commit()
-            await session.refresh(audio_model)
-            audio_model_id = audio_model.id
-            break
-
-    if audio_model_id is None:
-        pytest.skip("Could not create audio model via DB override")
-
-    # Try to create audio profile with inference params - should fail
+    # model_id=5 is the audio model from conftest
     profile_data = {
         "name": "Bad Audio Profile",
-        "model_id": audio_model_id,
+        "model_id": 5,
         "inference": {"temperature": 0.7, "max_tokens": 100},
     }
     response = await auth_client.post("/api/profiles", json=profile_data)
@@ -577,33 +530,10 @@ async def test_audio_profile_rejects_inference_params(auth_client):
 @pytest.mark.asyncio
 async def test_audio_profile_rejects_context_params(auth_client):
     """Test that audio profile with context params raises 422 (lines 219-220)."""
-    from mlx_manager.database import get_db
-    from mlx_manager.main import app
-    from mlx_manager.models import Model
-
-    # Add an audio model to the DB
-    audio_model_id = None
-    db_override = app.dependency_overrides.get(get_db)
-    if db_override is not None:
-        async for session in db_override():
-            audio_model = Model(
-                repo_id="mlx-community/Kokoro-audio-ctx-test",
-                model_type="audio",
-                local_path="/fake/path/to/audio-ctx",
-            )
-            session.add(audio_model)
-            await session.commit()
-            await session.refresh(audio_model)
-            audio_model_id = audio_model.id
-            break
-
-    if audio_model_id is None:
-        pytest.skip("Could not create audio model via DB override")
-
-    # Try to create audio profile with context params - should fail
+    # model_id=5 is the audio model from conftest
     profile_data = {
         "name": "Bad Audio Context Profile",
-        "model_id": audio_model_id,
+        "model_id": 5,
         "context": {"system_prompt": "You are a TTS system."},
     }
     response = await auth_client.post("/api/profiles", json=profile_data)

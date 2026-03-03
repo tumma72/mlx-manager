@@ -532,21 +532,31 @@ async def test_get_memory_status_runtime_error(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_start_endpoint_profile_no_model(auth_client):
+async def test_start_endpoint_profile_no_model(auth_client, auth_db):
     """Test start endpoint returns 400 when profile has no model assigned (line 275)."""
-    # Create a profile WITHOUT a model assignment
+    from sqlalchemy import text
+
+    # Create a profile with a model first (model_id is required by the API)
     profile_data = {
         "name": "Profile Without Model",
-        "description": "A profile with no model",
-        # No model_id
+        "model_id": 1,
     }
     create_response = await auth_client.post("/api/profiles", json=profile_data)
-    if create_response.status_code != 201:
-        pytest.skip("Profile without model not supported in current API")
+    assert create_response.status_code == 201
     profile_id = create_response.json()["id"]
+
+    # Null out model_id directly in the DB to simulate a profile without a model
+    async for session in auth_db():
+        await session.execute(
+            text("UPDATE execution_profiles SET model_id = NULL WHERE id = :pid"),
+            {"pid": profile_id},
+        )
+        await session.commit()
+        break
 
     response = await auth_client.post(f"/api/servers/{profile_id}/start")
     assert response.status_code == 400
+    assert "no model assigned" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -573,40 +583,57 @@ async def test_start_endpoint_with_invalid_model_options(auth_client, sample_pro
 
 
 @pytest.mark.asyncio
-async def test_stop_endpoint_profile_no_model(auth_client):
+async def test_stop_endpoint_profile_no_model(auth_client, auth_db):
     """Test stop endpoint returns 400 when profile has no model (line 345)."""
-    # We need a profile without model - try to manipulate via direct creation
-    # In the current API, we can try with a profile that somehow has no model
-    # by creating one with just a name and no model_id
+    from sqlalchemy import text
+
+    # Create a profile with a model first, then null it out
     profile_data = {
         "name": "Profile Without Model For Stop",
-        "description": "Test",
-        # No model_id
+        "model_id": 1,
     }
     create_response = await auth_client.post("/api/profiles", json=profile_data)
-    if create_response.status_code != 201:
-        pytest.skip("Profile without model not supported in current API")
+    assert create_response.status_code == 201
     profile_id = create_response.json()["id"]
+
+    async for session in auth_db():
+        await session.execute(
+            text("UPDATE execution_profiles SET model_id = NULL WHERE id = :pid"),
+            {"pid": profile_id},
+        )
+        await session.commit()
+        break
 
     response = await auth_client.post(f"/api/servers/{profile_id}/stop")
     assert response.status_code == 400
+    assert "no model assigned" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint_profile_no_model(auth_client):
+async def test_health_endpoint_profile_no_model(auth_client, auth_db):
     """Test health endpoint returns 400 when profile has no model (line 443)."""
+    from sqlalchemy import text
+
+    # Create a profile with a model first, then null it out
     profile_data = {
         "name": "Health Profile Without Model",
-        "description": "Test",
-        # No model_id
+        "model_id": 1,
     }
     create_response = await auth_client.post("/api/profiles", json=profile_data)
-    if create_response.status_code != 201:
-        pytest.skip("Profile without model not supported in current API")
+    assert create_response.status_code == 201
     profile_id = create_response.json()["id"]
+
+    async for session in auth_db():
+        await session.execute(
+            text("UPDATE execution_profiles SET model_id = NULL WHERE id = :pid"),
+            {"pid": profile_id},
+        )
+        await session.commit()
+        break
 
     response = await auth_client.get(f"/api/servers/{profile_id}/health")
     assert response.status_code == 400
+    assert "no model assigned" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
