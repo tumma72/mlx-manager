@@ -238,8 +238,8 @@ class TestModelSizeFromDisk:
             mock_settings.hf_cache_path = tmp_path
             size = pool._estimate_model_size(model_id)
 
-        # Should be ~4.2GB (4GB * 1.05 overhead)
-        assert size == pytest.approx(4.0 * 1.05, rel=0.01)
+        # Should be ~5.0GB (4GB * 1.25 overhead)
+        assert size == pytest.approx(4.0 * 1.25, rel=0.01)
 
     def test_estimate_ignores_non_weight_files(self, pool, tmp_path):
         """Only counts .safetensors, .bin, .gguf files (lines 254-256)."""
@@ -260,7 +260,7 @@ class TestModelSizeFromDisk:
             size = pool._estimate_model_size(model_id)
 
         # Only the 1GB safetensors file should count
-        assert size == pytest.approx(1.0 * 1.05, rel=0.01)
+        assert size == pytest.approx(1.0 * 1.25, rel=0.01)
 
     def test_estimate_falls_back_when_no_weight_files(self, pool, tmp_path):
         """Falls back to name-pattern when cache has no weight files (line 257-266)."""
@@ -320,8 +320,8 @@ class TestModelSizeFromDisk:
             mock_settings.hf_cache_path = tmp_path
             size = pool._estimate_model_size(model_id)
 
-        # Should use the new snapshot (2GB + 5% overhead)
-        assert size == pytest.approx(2.0 * 1.05, rel=0.01)
+        # Should use the new snapshot (2GB + 25% overhead)
+        assert size == pytest.approx(2.0 * 1.25, rel=0.01)
 
 
 # ============================================================================

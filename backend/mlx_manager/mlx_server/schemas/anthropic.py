@@ -5,7 +5,7 @@ Reference: https://platform.claude.com/docs/en/api/messages
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # --- Content Block Types ---
 
@@ -73,6 +73,12 @@ class MessageParam(BaseModel):
     role: Literal["user", "assistant"]
     content: str | list[ContentBlock]
 
+    @model_validator(mode="after")
+    def validate_content_length(self) -> "MessageParam":
+        if isinstance(self.content, list) and len(self.content) > 256:
+            raise ValueError("content may contain at most 256 blocks")
+        return self
+
 
 # --- Request Model ---
 
@@ -90,17 +96,23 @@ class AnthropicMessagesRequest(BaseModel):
     """
 
     model: str
-    max_tokens: int = Field(ge=1)  # Required - no default
-    messages: list[MessageParam]
+    max_tokens: int = Field(ge=1, le=128000)  # Required - no default
+    messages: list[MessageParam] = Field(..., max_length=1024)
     system: str | list[TextBlockParam] | None = None
     temperature: float = Field(default=1.0, ge=0.0, le=1.0)
     top_p: float | None = None
     top_k: int | None = None
-    stop_sequences: list[str] | None = None
+    stop_sequences: list[str] | None = Field(default=None, max_length=16)
     stream: bool = False
     metadata: dict[str, Any] | None = None
-    tools: list[AnthropicToolDefinition] | None = None
+    tools: list[AnthropicToolDefinition] | None = Field(default=None, max_length=256)
     tool_choice: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_system_length(self) -> "AnthropicMessagesRequest":
+        if isinstance(self.system, list) and len(self.system) > 64:
+            raise ValueError("system may contain at most 64 blocks")
+        return self
 
 
 # --- Response Models ---

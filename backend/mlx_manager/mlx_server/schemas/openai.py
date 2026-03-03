@@ -6,7 +6,7 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # --- Tool Calling Schemas ---
 
@@ -146,7 +146,7 @@ class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str | list[ContentBlock] | None = None
     # For assistant messages with tool calls
-    tool_calls: list[ToolCall] | None = None
+    tool_calls: list[ToolCall] | None = Field(default=None, max_length=128)
     # For tool response messages
     tool_call_id: str | None = None
     # For reasoning models - extracted chain-of-thought content
@@ -159,7 +159,7 @@ class ChatCompletionRequest(BaseModel):
     """OpenAI Chat Completion request."""
 
     model: str
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(..., max_length=1024)
     max_tokens: int | None = Field(default=None, ge=1, le=128000)
     temperature: float = Field(default=1.0, ge=0.0, le=2.0)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -170,11 +170,17 @@ class ChatCompletionRequest(BaseModel):
     # n: int = 1  # Not supported initially (always 1)
 
     # Tool calling support
-    tools: list[Tool] | None = None
+    tools: list[Tool] | None = Field(default=None, max_length=256)
     tool_choice: ToolChoiceOption = None
 
     # Structured output support
     response_format: ResponseFormat | None = None
+
+    @model_validator(mode="after")
+    def validate_stop_length(self) -> "ChatCompletionRequest":
+        if isinstance(self.stop, list) and len(self.stop) > 16:
+            raise ValueError("stop may contain at most 16 entries")
+        return self
 
 
 class CompletionRequest(BaseModel):
@@ -188,6 +194,12 @@ class CompletionRequest(BaseModel):
     stream: bool = False
     stop: list[str] | str | None = None
     echo: bool = False
+
+    @model_validator(mode="after")
+    def validate_stop_length(self) -> "CompletionRequest":
+        if isinstance(self.stop, list) and len(self.stop) > 16:
+            raise ValueError("stop may contain at most 16 entries")
+        return self
 
 
 # --- Response Models ---

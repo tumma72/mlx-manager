@@ -15,20 +15,52 @@ import json
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlmodel import col, select
 
+from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
 from mlx_manager.mlx_server.models.pool import get_model_pool
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.utils.memory import get_memory_usage
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+
+async def verify_admin_token(
+    authorization: str | None = Header(default=None),
+) -> None:
+    """Verify admin Bearer token if configured.
+
+    When MLX_SERVER_ADMIN_TOKEN is not set, this is a no-op (open access).
+    When set, requires a valid Bearer token in the Authorization header.
+    """
+    settings = get_settings()
+    if settings.admin_token is None:
+        return
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or token != settings.admin_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid admin token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(verify_admin_token)],
+)
 
 
 # --- Response Models ---

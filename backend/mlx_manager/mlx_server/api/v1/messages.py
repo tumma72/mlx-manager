@@ -1,5 +1,6 @@
 """Anthropic Messages API endpoint."""
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from mlx_manager.mlx_server.config import get_settings
 from mlx_manager.mlx_server.models.ir import InferenceResult, InternalRequest, TextResult
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
@@ -19,6 +21,7 @@ from mlx_manager.mlx_server.services.inference import (
     generate_chat_complete_response,
     generate_chat_stream,
 )
+from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
 
 router = APIRouter(tags=["messages"])
 
@@ -82,15 +85,22 @@ async def _handle_non_streaming(
     Uses the 3-layer adapter pipeline: inference returns IR TextResult,
     AnthropicFormatter converts it to an Anthropic Messages response.
     """
-    inference_result = await generate_chat_complete_response(
-        model_id=internal.model,
-        messages=internal.messages,
-        max_tokens=internal.params.max_tokens,
-        temperature=internal.params.temperature,
-        top_p=internal.params.top_p or 1.0,
-        stop=internal.stop,
-        tools=internal.tools,
-        images=internal.images,
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
+
+    inference_result = await with_inference_timeout(
+        generate_chat_complete_response(
+            model_id=internal.model,
+            messages=internal.messages,
+            max_tokens=internal.params.max_tokens,
+            temperature=internal.params.temperature,
+            top_p=internal.params.top_p or 1.0,
+            stop=internal.stop,
+            tools=internal.tools,
+            images=internal.images,
+        ),
+        timeout=timeout,
+        description="Messages",
     )
 
     formatter = AnthropicFormatter(
@@ -121,44 +131,55 @@ async def _handle_streaming(
     - event: message_delta (final stop_reason and usage)
     - event: message_stop (stream complete)
     """
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
 
     async def generate_events() -> Any:
-        formatter = AnthropicFormatter(
-            model_id=request.model,
-            request_id=f"msg_{uuid.uuid4().hex[:24]}",
-        )
+        try:
+            formatter = AnthropicFormatter(
+                model_id=request.model,
+                request_id=f"msg_{uuid.uuid4().hex[:24]}",
+            )
 
-        # Emit Anthropic message_start + content_block_start
-        for sse in formatter.stream_start():
-            yield sse
+            # Emit Anthropic message_start + content_block_start
+            for sse in formatter.stream_start():
+                yield sse
 
-        # Stream IR events and format as Anthropic content_block_delta
-        gen = await generate_chat_stream(
-            model_id=internal.model,
-            messages=internal.messages,
-            max_tokens=internal.params.max_tokens,
-            temperature=internal.params.temperature,
-            top_p=internal.params.top_p or 1.0,
-            stop=internal.stop,
-            tools=internal.tools,
-            images=internal.images,
-        )
+            # Apply timeout to preparation (model loading, template application)
+            gen = await asyncio.wait_for(
+                generate_chat_stream(
+                    model_id=internal.model,
+                    messages=internal.messages,
+                    max_tokens=internal.params.max_tokens,
+                    temperature=internal.params.temperature,
+                    top_p=internal.params.top_p or 1.0,
+                    stop=internal.stop,
+                    tools=internal.tools,
+                    images=internal.images,
+                ),
+                timeout=timeout,
+            )
 
-        output_tokens = 0
-        async for item in gen:
-            if isinstance(item, TextResult):
-                # Final result — emit closing events
-                for sse in formatter.stream_end(
-                    item.finish_reason,
-                    tool_calls=item.tool_calls,
-                    output_tokens=output_tokens,
-                ):
-                    yield sse
-            else:
-                # StreamEvent — emit content delta
-                output_tokens += 1
-                for sse in formatter.stream_event(item):
-                    yield sse
+            output_tokens = 0
+            async for item in gen:
+                if isinstance(item, TextResult):
+                    # Final result — emit closing events
+                    for sse in formatter.stream_end(
+                        item.finish_reason,
+                        tool_calls=item.tool_calls,
+                        output_tokens=output_tokens,
+                    ):
+                        yield sse
+                else:
+                    # StreamEvent — emit content delta
+                    output_tokens += 1
+                    for sse in formatter.stream_event(item):
+                        yield sse
+
+        except TimeoutError:
+            logger.warning(f"Streaming messages request timed out after {timeout}s")
+            # Send error event before closing (per CONTEXT.md streaming errors)
+            yield timeout_error_event(timeout)
 
     return EventSourceResponse(generate_events())
 
@@ -175,9 +196,15 @@ async def _route_and_respond(
     - IR streaming (ir_stream): format with AnthropicFormatter
     - IR non-streaming (ir_result): format with AnthropicFormatter
     """
+    settings = get_settings()
+    timeout = settings.timeout_chat_seconds
     backend_router = get_router()
 
-    outcome = await backend_router.route_request(ir)
+    outcome = await with_inference_timeout(
+        backend_router.route_request(ir),
+        timeout=timeout,
+        description="Messages (routed)",
+    )
 
     # Passthrough: cloud backend returned protocol-native response
     if outcome.is_passthrough:
@@ -239,17 +266,10 @@ def _format_ir_stream(
         for sse in formatter.stream_start():
             yield sse
 
+        # Stream IR events and format as Anthropic content_block_delta
         output_tokens = 0
-        content_events = 0
-        empty_events = 0
         async for item in ir_stream:
             if isinstance(item, TextResult):
-                logger.debug(
-                    f"IR stream complete: {output_tokens} tokens, "
-                    f"{content_events} content events, {empty_events} empty events, "
-                    f"reason={item.finish_reason}, "
-                    f"has_tools={item.tool_calls is not None}"
-                )
                 # Final result — emit closing events
                 for sse in formatter.stream_end(
                     item.finish_reason,
@@ -260,18 +280,7 @@ def _format_ir_stream(
             else:
                 # StreamEvent — emit content delta
                 output_tokens += 1
-                sse_events = formatter.stream_event(item)
-                if sse_events:
-                    content_events += 1
-                else:
-                    empty_events += 1
-                    if empty_events == 1:
-                        logger.debug(
-                            f"First empty event: type={item.type}, "
-                            f"content={item.content!r}, "
-                            f"reasoning={item.reasoning_content!r}"
-                        )
-                for sse in sse_events:
+                for sse in formatter.stream_event(item):
                     yield sse
 
     return EventSourceResponse(generate_events())

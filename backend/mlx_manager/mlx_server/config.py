@@ -141,6 +141,12 @@ class MLXServerSettings(BaseSettings):
         description="Days to retain audit logs before cleanup",
     )
 
+    # Admin authentication
+    admin_token: str | None = Field(
+        default=None,
+        description="Bearer token for /v1/admin/* endpoints. When None, admin endpoints are open.",
+    )
+
     def get_database_path(self) -> Path:
         """Get the resolved database path.
 

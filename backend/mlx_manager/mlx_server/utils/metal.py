@@ -6,12 +6,16 @@ which is required because Metal GPU operations have thread affinity.
 Two patterns are supported:
 - run_on_metal_thread: for single-result operations (e.g. embeddings, non-streaming completions)
 - stream_from_metal_thread: for streaming operations (e.g. token-by-token generation)
+
+stream_from_metal_thread uses asyncio.Event-based signaling: the producer thread
+calls loop.call_soon_threadsafe(event.set) after each put, waking the consumer
+with near-zero latency instead of relying on busy-polling.
 """
 
 import asyncio
 import threading
 from collections.abc import AsyncGenerator, Callable, Iterator
-from queue import Empty, Queue
+from queue import Queue
 from typing import TypeVar
 
 from mlx_manager.mlx_server.utils.memory import clear_cache
@@ -67,51 +71,59 @@ async def run_on_metal_thread(
 
 async def stream_from_metal_thread(
     fn: Callable[[], Iterator[T]],
-    poll_interval: float = 0.1,
+    poll_interval: float = 0.05,
 ) -> AsyncGenerator[T, None]:
     """Yield items produced by an iterator running on a dedicated Metal thread.
 
     Args:
         fn: Zero-arg callable that returns an ``Iterator[T]``.
             Each yielded item is forwarded to the async consumer.
-        poll_interval: Seconds between queue polls (default 100 ms).
+        poll_interval: Fallback timeout (seconds) for event wait. Only used
+            if the thread-safe event signal is missed. Default 50 ms.
 
     Yields:
         Items produced by the iterator, in order.
     """
     item_queue: Queue[T | Exception | object] = Queue()
+    ready = asyncio.Event()
 
-    def _worker() -> None:
+    def _worker(loop: asyncio.AbstractEventLoop) -> None:
         try:
             for item in fn():
                 item_queue.put(item)
+                loop.call_soon_threadsafe(ready.set)
         except Exception as exc:
             item_queue.put(exc)
+            loop.call_soon_threadsafe(ready.set)
         finally:
             item_queue.put(_SENTINEL)
+            loop.call_soon_threadsafe(ready.set)
 
-    gen_thread = threading.Thread(target=_worker, daemon=True)
+    loop = asyncio.get_running_loop()
+    gen_thread = threading.Thread(target=_worker, args=(loop,), daemon=True)
     gen_thread.start()
 
     try:
-        loop = asyncio.get_running_loop()
-
         while True:
+            # Wait for producer signal (with fallback timeout)
             try:
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: item_queue.get(timeout=poll_interval),
-                )
-            except Empty:
-                continue
+                await asyncio.wait_for(ready.wait(), timeout=poll_interval)
+            except TimeoutError:
+                pass
+            ready.clear()
 
-            if result is _SENTINEL:
-                break
+            # Drain all available items
+            while not item_queue.empty():
+                result = item_queue.get_nowait()
 
-            if isinstance(result, Exception):
-                raise result
+                if result is _SENTINEL:
+                    gen_thread.join(timeout=1.0)
+                    return
 
-            yield result  # type: ignore[misc]
+                if isinstance(result, Exception):
+                    raise result
+
+                yield result  # type: ignore[misc]
 
         gen_thread.join(timeout=1.0)
     finally:

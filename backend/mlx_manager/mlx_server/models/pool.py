@@ -256,11 +256,11 @@ class ModelPoolManager:
                     )
                     if weight_size > 0:
                         size_gb = weight_size / (1024**3)
-                        # Add ~5% overhead for runtime buffers (MLX memory-maps weights)
-                        estimated = size_gb * 1.05
+                        # Add ~25% overhead for KV cache and runtime buffers
+                        estimated = size_gb * 1.25
                         logger.debug(
                             f"Model size from disk for {model_id}: "
-                            f"{size_gb:.1f}GB weights + 5% overhead = {estimated:.1f}GB"
+                            f"{size_gb:.1f}GB weights + 25% overhead = {estimated:.1f}GB"
                         )
                         return estimated
         except Exception as e:

@@ -12,7 +12,6 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
-from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.ir import (
     InferenceResult,
@@ -46,6 +45,7 @@ from mlx_manager.mlx_server.services.inference import (
 from mlx_manager.mlx_server.services.structured_output import (
     StructuredOutputValidator,
 )
+from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
 
 router = APIRouter(tags=["chat"])
 
@@ -181,18 +181,11 @@ async def _route_and_respond(
     timeout = settings.timeout_chat_seconds
     backend_router = get_router()
 
-    try:
-        outcome = await asyncio.wait_for(
-            backend_router.route_request(ir),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        logger.warning(f"Routed chat completion timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Chat completion timed out after {int(timeout)} seconds. "
-            f"The backend may be overloaded or the request too large.",
-        )
+    outcome = await with_inference_timeout(
+        backend_router.route_request(ir),
+        timeout=timeout,
+        description="Chat completion (routed)",
+    )
 
     # Passthrough: cloud backend returned protocol-native response
     if outcome.is_passthrough:
@@ -308,13 +301,7 @@ async def _handle_streaming(
         except TimeoutError:
             logger.warning(f"Streaming chat completion timed out after {timeout}s")
             # Send error event before closing (per CONTEXT.md streaming errors)
-            error_event = {
-                "error": {
-                    "type": "https://mlx-manager.dev/errors/timeout",
-                    "message": f"Request timed out after {int(timeout)} seconds",
-                }
-            }
-            yield {"event": "error", "data": json.dumps(error_event)}
+            yield timeout_error_event(timeout)
 
     return EventSourceResponse(event_generator())
 
@@ -331,27 +318,20 @@ async def _handle_non_streaming(
     settings = get_settings()
     timeout = settings.timeout_chat_seconds
 
-    try:
-        inference_result = await asyncio.wait_for(
-            generate_chat_complete_response(
-                model_id=ir.model,
-                messages=ir.messages,
-                max_tokens=ir.params.max_tokens or 4096,
-                temperature=ir.params.temperature or 1.0,
-                top_p=ir.params.top_p or 1.0,
-                stop=ir.stop,
-                tools=ir.tools,
-                images=ir.images,
-            ),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        logger.warning(f"Chat completion timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Chat completion timed out after {int(timeout)} seconds. "
-            f"Consider using a smaller model or reducing max_tokens.",
-        )
+    inference_result = await with_inference_timeout(
+        generate_chat_complete_response(
+            model_id=ir.model,
+            messages=ir.messages,
+            max_tokens=ir.params.max_tokens or 4096,
+            temperature=ir.params.temperature or 1.0,
+            top_p=ir.params.top_p or 1.0,
+            stop=ir.stop,
+            tools=ir.tools,
+            images=ir.images,
+        ),
+        timeout=timeout,
+        description="Chat completion",
+    )
 
     text_result = inference_result.result
 
@@ -587,13 +567,7 @@ async def _stream_batched_response(
         except TimeoutError:
             logger.warning(f"Streaming batched completion timed out after {timeout}s")
             # Send error event before closing
-            error_event = {
-                "error": {
-                    "type": "https://mlx-manager.dev/errors/timeout",
-                    "message": f"Request timed out after {int(timeout)} seconds",
-                }
-            }
-            yield {"event": "error", "data": json.dumps(error_event)}
+            yield timeout_error_event(timeout)
 
     return EventSourceResponse(generate_stream())
 
@@ -616,15 +590,11 @@ async def _complete_batched_response(
             token_text = token_data.get("text", "")
             collected_tokens.append(token_text)
 
-    try:
-        await asyncio.wait_for(collect_tokens(), timeout=timeout)
-    except TimeoutError:
-        logger.warning(f"Batched chat completion timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Chat completion timed out after {int(timeout)} seconds. "
-            f"Consider reducing max_tokens or batch load.",
-        )
+    await with_inference_timeout(
+        collect_tokens(),
+        timeout=timeout,
+        description="Batched chat completion",
+    )
 
     # Build response text
     response_text = "".join(collected_tokens)

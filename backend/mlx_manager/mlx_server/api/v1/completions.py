@@ -10,7 +10,6 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from mlx_manager.mlx_server.config import get_settings
-from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.schemas.openai import (
     CompletionChoice,
     CompletionRequest,
@@ -19,6 +18,7 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.inference import generate_completion
+from mlx_manager.mlx_server.utils.request_helpers import timeout_error_event, with_inference_timeout
 
 router = APIRouter(tags=["completions"])
 
@@ -97,13 +97,7 @@ async def _handle_streaming(
         except TimeoutError:
             logger.warning(f"Streaming completion timed out after {timeout}s")
             # Send error event before closing
-            error_event = {
-                "error": {
-                    "type": "https://mlx-manager.dev/errors/timeout",
-                    "message": f"Request timed out after {int(timeout)} seconds",
-                }
-            }
-            yield {"event": "error", "data": json.dumps(error_event)}
+            yield timeout_error_event(timeout)
 
     return EventSourceResponse(event_generator())
 
@@ -116,27 +110,20 @@ async def _handle_non_streaming(
     settings = get_settings()
     timeout = settings.timeout_completions_seconds
 
-    try:
-        result = await asyncio.wait_for(
-            generate_completion(
-                model_id=request.model,
-                prompt=request.prompt,
-                max_tokens=request.max_tokens or 16,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                stop=stop,
-                stream=False,
-                echo=request.echo,
-            ),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        logger.warning(f"Completion timed out after {timeout}s")
-        raise TimeoutHTTPException(
-            timeout_seconds=timeout,
-            detail=f"Completion timed out after {int(timeout)} seconds. "
-            f"Consider using a smaller model or reducing max_tokens.",
-        )
+    result = await with_inference_timeout(
+        generate_completion(
+            model_id=request.model,
+            prompt=request.prompt,
+            max_tokens=request.max_tokens or 16,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            stop=stop,
+            stream=False,
+            echo=request.echo,
+        ),
+        timeout=timeout,
+        description="Completion",
+    )
 
     # Cast to dict since we passed stream=False
     result_dict = cast(dict[str, Any], result)

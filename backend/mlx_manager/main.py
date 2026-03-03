@@ -350,8 +350,11 @@ if STATIC_DIR.exists():
 
         # Try to serve the exact file
         file_path = STATIC_DIR / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
+        resolved = file_path.resolve()
+        if not resolved.is_relative_to(STATIC_DIR.resolve()):
+            return JSONResponse({"error": "Not found"}, status_code=404)
+        if resolved.exists() and resolved.is_file():
+            return FileResponse(resolved)
 
         # Fallback to index.html for SPA routing
         index_path = STATIC_DIR / "index.html"

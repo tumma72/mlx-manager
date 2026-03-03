@@ -4,14 +4,12 @@ OpenAI-compatible endpoint for generating text embeddings.
 Reference: https://platform.openai.com/docs/api-reference/embeddings
 """
 
-import asyncio
 import uuid
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from mlx_manager.mlx_server.config import get_settings
-from mlx_manager.mlx_server.errors import TimeoutHTTPException
 from mlx_manager.mlx_server.models.detection import detect_model_type
 from mlx_manager.mlx_server.models.types import ModelType
 from mlx_manager.mlx_server.schemas.openai import (
@@ -22,6 +20,7 @@ from mlx_manager.mlx_server.schemas.openai import (
 )
 from mlx_manager.mlx_server.services.audit import audit_service
 from mlx_manager.mlx_server.services.embeddings import generate_embeddings
+from mlx_manager.mlx_server.utils.request_helpers import with_inference_timeout
 
 router = APIRouter(tags=["embeddings"])
 
@@ -61,12 +60,13 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     ) as audit_ctx:
         try:
             # Generate embeddings with timeout
-            result = await asyncio.wait_for(
+            result = await with_inference_timeout(
                 generate_embeddings(
                     model_id=request.model,
                     texts=texts,
                 ),
                 timeout=timeout,
+                description="Embeddings generation",
             )
 
             # Update audit context with token count
@@ -85,13 +85,8 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
                 ),
             )
 
-        except TimeoutError:
-            logger.warning(f"Embeddings generation timed out after {timeout}s")
-            raise TimeoutHTTPException(
-                timeout_seconds=timeout,
-                detail=f"Embeddings generation timed out after {int(timeout)} seconds. "
-                f"Consider reducing batch size or using a smaller model.",
-            )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.exception(f"Embeddings generation failed: {e}")
             raise HTTPException(status_code=500, detail=str(e)) from e

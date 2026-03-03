@@ -11,6 +11,7 @@ Extended capabilities:
 - Structured output: JSON schema validation (handled at API layer)
 """
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator, Iterator
@@ -384,7 +385,8 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
     from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
 
     actual_tokenizer = getattr(ctx.tokenizer, "tokenizer", ctx.tokenizer)
-    prompt_tokens = len(actual_tokenizer.encode(ctx.prompt))
+    loop = asyncio.get_running_loop()
+    prompt_tokens = len(await loop.run_in_executor(None, actual_tokenizer.encode, ctx.prompt))
 
     if ctx.messages is not None:
         # Modern path: adapter owns the full pipeline
@@ -398,7 +400,9 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
             images=ctx.images,
         )
         completion_tokens = (
-            len(result.content.split()) if ctx.images else len(ctx.tokenizer.encode(result.content))
+            len(result.content.split())
+            if ctx.images
+            else len(await loop.run_in_executor(None, actual_tokenizer.encode, result.content))
         )
     else:
         # Legacy path: use pre-computed prompt
@@ -447,7 +451,9 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
                 return (response_text, finish_reason)
 
             response_text, finish_reason = await run_on_metal_thread(run_generation)
-            completion_tokens = len(ctx.tokenizer.encode(response_text))
+            completion_tokens = len(
+                await loop.run_in_executor(None, actual_tokenizer.encode, response_text)
+            )
 
         adapter = ctx.adapter
         if adapter is None:
@@ -691,7 +697,8 @@ async def _generate_raw_completion(
 
     # Get actual tokenizer (Processor wraps tokenizer, regular tokenizer is itself)
     actual_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
-    prompt_tokens = len(actual_tokenizer.encode(prompt))
+    loop = asyncio.get_running_loop()
+    prompt_tokens = len(await loop.run_in_executor(None, actual_tokenizer.encode, prompt))
 
     def run_generation() -> tuple[str, str]:
         """Run complete generation in dedicated thread (owns Metal context)."""
@@ -726,7 +733,9 @@ async def _generate_raw_completion(
 
     # Prepend prompt if echo requested
     text = (prompt + response_text) if echo else response_text
-    completion_tokens = len(tokenizer.encode(response_text))
+    completion_tokens = len(
+        await loop.run_in_executor(None, actual_tokenizer.encode, response_text)
+    )
 
     return {
         "id": completion_id,

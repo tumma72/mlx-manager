@@ -96,8 +96,18 @@ class StreamProcessor:
         self._in_pattern = starts_in_thinking
         self._pattern_start = "<think>" if starts_in_thinking else ""
         self._is_thinking_pattern = starts_in_thinking
-        self._accumulated = ""  # Full response for final processing
-        self._yielded_content = ""  # What we've yielded as content to client
+        self._accumulated_parts: list[str] = []  # Full response for final processing
+        self._yielded_parts: list[str] = []  # What we've yielded as content to client
+
+    @property
+    def _accumulated(self) -> str:
+        """Lazily join accumulated parts."""
+        return "".join(self._accumulated_parts)
+
+    @property
+    def _yielded_content(self) -> str:
+        """Lazily join yielded content parts."""
+        return "".join(self._yielded_parts)
 
     def feed(self, token: str) -> StreamEvent:
         """Feed a token, get StreamEvent.
@@ -109,7 +119,7 @@ class StreamProcessor:
             StreamEvent with reasoning_content (inside thinking tags)
             or content (regular text), or empty if buffering
         """
-        self._accumulated += token
+        self._accumulated_parts.append(token)
 
         if self._in_pattern:
             return self._handle_in_pattern(token)
@@ -133,12 +143,12 @@ class StreamProcessor:
                     self._pending_buffer = combined[-i:]
                     to_yield = combined[:-i]
                     if to_yield:
-                        self._yielded_content += to_yield
+                        self._yielded_parts.append(to_yield)
                         return StreamEvent(content=to_yield)
                     return StreamEvent()
 
         # No pattern detected, yield token as content
-        self._yielded_content += combined
+        self._yielded_parts.append(combined)
         return StreamEvent(content=combined)
 
     def _handle_in_pattern(self, token: str) -> StreamEvent:
@@ -226,7 +236,7 @@ class StreamProcessor:
             self._in_pattern = False
 
             if before:
-                self._yielded_content += before
+                self._yielded_parts.append(before)
                 if after_pattern:
                     subsequent = self.feed(after_pattern)
                     if was_thinking:
@@ -259,7 +269,7 @@ class StreamProcessor:
             return StreamEvent()
 
         if before:
-            self._yielded_content += before
+            self._yielded_parts.append(before)
             return StreamEvent(content=before)
         return StreamEvent()
 
@@ -275,16 +285,19 @@ class StreamProcessor:
         """
         # Flush any pending buffer (incomplete pattern marker)
         if self._pending_buffer:
-            self._yielded_content += self._pending_buffer
+            self._yielded_parts.append(self._pending_buffer)
             self._pending_buffer = ""
 
+        # Join once to avoid repeated O(n) joins inside finalize()
+        accumulated = self._accumulated
+
         # Debug: Log accumulated text for tool call analysis
-        logger.debug(f"StreamProcessor.finalize(): accumulated={len(self._accumulated)} chars")
+        logger.debug(f"StreamProcessor.finalize(): accumulated={len(accumulated)} chars")
 
         # Use adapter's parsers for final extraction
-        tool_calls_list = self._adapter.tool_parser.extract(self._accumulated)
-        reasoning_content = self._adapter.thinking_parser.extract(self._accumulated)
-        final_content = self._accumulated
+        tool_calls_list = self._adapter.tool_parser.extract(accumulated)
+        reasoning_content = self._adapter.thinking_parser.extract(accumulated)
+        final_content = accumulated
         if reasoning_content:
             final_content = self._adapter.thinking_parser.remove(final_content)
         final_content = self._adapter.clean_response(final_content)
