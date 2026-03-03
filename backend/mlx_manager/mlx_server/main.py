@@ -13,6 +13,7 @@ from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
 from mlx_manager.mlx_server.config import mlx_server_settings
 from mlx_manager.mlx_server.errors import register_error_handlers
+from mlx_manager.mlx_server.middleware.rate_limit import RateLimitMiddleware
 from mlx_manager.mlx_server.middleware.request_id import RequestIDMiddleware
 from mlx_manager.mlx_server.middleware.shutdown import (
     GracefulShutdownMiddleware,
@@ -137,11 +138,21 @@ def create_app(embedded: bool = False) -> FastAPI:
         lifespan=None if embedded else lifespan,
     )
 
+    # Add metrics middleware (request latency + active request tracking)
+    if mlx_server_settings.metrics_enabled:
+        from mlx_manager.mlx_server.middleware.metrics import MetricsMiddleware
+
+        app_instance.add_middleware(MetricsMiddleware)
+
     # Add request ID middleware (propagates/generates X-Request-ID for every request)
     app_instance.add_middleware(RequestIDMiddleware)
 
     # Add graceful shutdown middleware (tracks active requests, returns 503 during drain)
     app_instance.add_middleware(GracefulShutdownMiddleware)
+
+    # Add rate limiting middleware (per-IP token bucket, disabled when rpm=0)
+    if mlx_server_settings.rate_limit_rpm > 0:
+        app_instance.add_middleware(RateLimitMiddleware, rpm=mlx_server_settings.rate_limit_rpm)
 
     # Register RFC 7807 error handlers
     register_error_handlers(app_instance)

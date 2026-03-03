@@ -31,6 +31,8 @@ class TestCreateApp:
         """Embedded app does not configure logfire even if enabled."""
         with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
             mock_settings.logfire_enabled = True
+            mock_settings.rate_limit_rpm = 0
+            mock_settings.metrics_enabled = False
 
             with patch("mlx_manager.mlx_server.main.register_error_handlers"):
                 with patch("mlx_manager.mlx_server.main.v1_router"):
@@ -44,6 +46,8 @@ class TestCreateApp:
         """Standalone app with logfire disabled does not instrument."""
         with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
             mock_settings.logfire_enabled = False
+            mock_settings.rate_limit_rpm = 0
+            mock_settings.metrics_enabled = False
 
             from mlx_manager.mlx_server.main import create_app
 
@@ -54,6 +58,8 @@ class TestCreateApp:
         """Standalone app with logfire enabled configures instrumentation."""
         with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
             mock_settings.logfire_enabled = True
+            mock_settings.rate_limit_rpm = 0
+            mock_settings.metrics_enabled = False
 
             with patch(
                 "mlx_manager.mlx_server.observability.logfire_config.configure_logfire"

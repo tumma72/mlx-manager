@@ -149,12 +149,25 @@ class MLXServerSettings(BaseSettings):
         description="Days to retain audit logs before cleanup",
     )
 
+    # Rate limiting
+    rate_limit_rpm: int = Field(
+        default=0,
+        ge=0,
+        description="Rate limit: requests per minute per IP. 0 = disabled.",
+    )
+
     # Graceful shutdown
     drain_timeout_seconds: float = Field(
         default=30.0,
         ge=1.0,
         le=300.0,
         description="Seconds to wait for in-flight requests to complete during shutdown",
+    )
+
+    # Prometheus metrics
+    metrics_enabled: bool = Field(
+        default=False,
+        description="Enable Prometheus metrics endpoint at /v1/admin/metrics",
     )
 
     # Admin authentication

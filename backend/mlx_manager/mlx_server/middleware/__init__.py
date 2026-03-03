@@ -1,5 +1,6 @@
 """Middleware components for MLX Server."""
 
+from mlx_manager.mlx_server.middleware.rate_limit import RateLimitMiddleware, TokenBucket
 from mlx_manager.mlx_server.middleware.request_id import RequestIDMiddleware
 from mlx_manager.mlx_server.middleware.shutdown import (
     GracefulShutdownMiddleware,
@@ -11,8 +12,10 @@ from mlx_manager.mlx_server.middleware.timeout import get_timeout_for_endpoint, 
 
 __all__ = [
     "GracefulShutdownMiddleware",
+    "RateLimitMiddleware",
     "RequestIDMiddleware",
     "ShutdownState",
+    "TokenBucket",
     "get_shutdown_state",
     "get_timeout_for_endpoint",
     "reset_shutdown_state",
