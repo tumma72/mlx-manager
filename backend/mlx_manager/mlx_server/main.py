@@ -1,15 +1,23 @@
 """MLX Inference Server - FastAPI Application."""
 
+import asyncio
+import signal
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from loguru import logger
+from starlette.responses import JSONResponse
 
 from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
 from mlx_manager.mlx_server.config import mlx_server_settings
 from mlx_manager.mlx_server.errors import register_error_handlers
+from mlx_manager.mlx_server.middleware.request_id import RequestIDMiddleware
+from mlx_manager.mlx_server.middleware.shutdown import (
+    GracefulShutdownMiddleware,
+    get_shutdown_state,
+)
 from mlx_manager.mlx_server.models import pool
 from mlx_manager.mlx_server.models.pool import ModelPoolManager
 from mlx_manager.mlx_server.utils.memory import get_memory_usage, set_memory_limit
@@ -54,12 +62,37 @@ async def lifespan(app: FastAPI):
         logger.info("Batching scheduler initialized")
 
     logger.info(f"Memory usage at startup: {get_memory_usage()}")
+
+    # Set up graceful shutdown signal handler
+    shutdown_state = get_shutdown_state()
+    loop = asyncio.get_running_loop()
+
+    def handle_sigterm() -> None:
+        logger.info("SIGTERM received, starting graceful shutdown...")
+        shutdown_state.start_drain()
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, handle_sigterm)
+    except NotImplementedError:
+        # Windows doesn't support add_signal_handler
+        pass
+
     logger.info("MLX Server ready")
 
     yield
 
     # Shutdown
     logger.info("MLX Server shutting down...")
+
+    # Graceful shutdown: wait for active requests to drain
+    if shutdown_state.is_shutting_down:
+        drain_timeout = mlx_server_settings.drain_timeout_seconds
+        logger.info(f"Waiting up to {drain_timeout}s for active requests to drain...")
+        drained = await shutdown_state.wait_for_drain(drain_timeout)
+        if drained:
+            logger.info("All active requests completed")
+        else:
+            logger.warning("Proceeding with shutdown despite active requests")
 
     # Shutdown scheduler manager if initialized
     if scheduler_mgr is not None:
@@ -104,6 +137,12 @@ def create_app(embedded: bool = False) -> FastAPI:
         lifespan=None if embedded else lifespan,
     )
 
+    # Add request ID middleware (propagates/generates X-Request-ID for every request)
+    app_instance.add_middleware(RequestIDMiddleware)
+
+    # Add graceful shutdown middleware (tracks active requests, returns 503 during drain)
+    app_instance.add_middleware(GracefulShutdownMiddleware)
+
     # Register RFC 7807 error handlers
     register_error_handlers(app_instance)
 
@@ -121,10 +160,20 @@ def create_app(embedded: bool = False) -> FastAPI:
 
         instrument_fastapi(app_instance)
 
-    # Add health endpoint
+    # Add health endpoint (shutdown-aware)
     @app_instance.get("/health")
-    async def health() -> dict[str, Any]:
-        """Health check endpoint."""
+    async def health() -> dict[str, Any] | JSONResponse:
+        """Health check endpoint. Returns 503 with draining status during shutdown."""
+        state = get_shutdown_state()
+        if state.is_shutting_down:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "draining",
+                    "version": __version__,
+                    "active_requests": state.active_requests,
+                },
+            )
         return {"status": "healthy", "version": __version__}
 
     return app_instance

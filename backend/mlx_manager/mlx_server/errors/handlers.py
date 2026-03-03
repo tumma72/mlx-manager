@@ -20,8 +20,19 @@ from mlx_manager.mlx_server.errors.problem_details import (
 
 
 def generate_request_id() -> str:
-    """Generate unique request ID for log correlation."""
+    """Generate unique request ID for log correlation.
+
+    Used as fallback when RequestIDMiddleware has not set request.state.request_id.
+    """
     return f"req_{uuid.uuid4().hex[:12]}"
+
+
+def _get_request_id(request: Request) -> str:
+    """Get request ID from middleware, or generate fallback."""
+    try:
+        return request.state.request_id  # type: ignore[no-any-return]
+    except AttributeError:
+        return generate_request_id()
 
 
 async def http_exception_handler(
@@ -29,7 +40,7 @@ async def http_exception_handler(
     exc: HTTPException,
 ) -> JSONResponse:
     """Handle HTTPException with Problem Details response."""
-    request_id = generate_request_id()
+    request_id = _get_request_id(request)
 
     # Log the error with request_id for correlation
     logger.warning(
@@ -81,7 +92,7 @@ async def timeout_exception_handler(
     exc: TimeoutHTTPException,
 ) -> JSONResponse:
     """Handle TimeoutHTTPException with specialized Problem Details."""
-    request_id = generate_request_id()
+    request_id = _get_request_id(request)
 
     logger.warning(
         f"Request timeout after {exc.timeout_seconds}s: {request.url.path}",
@@ -107,7 +118,7 @@ async def validation_exception_handler(
     exc: RequestValidationError,
 ) -> JSONResponse:
     """Handle Pydantic validation errors with Problem Details."""
-    request_id = generate_request_id()
+    request_id = _get_request_id(request)
 
     # Extract validation errors
     errors: list[dict[str, Any]] = []
@@ -147,7 +158,7 @@ async def generic_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
     """Handle unexpected exceptions without exposing internals."""
-    request_id = generate_request_id()
+    request_id = _get_request_id(request)
 
     # Log full exception for debugging, but don't expose to client
     logger.exception(
