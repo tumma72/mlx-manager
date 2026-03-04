@@ -303,7 +303,7 @@ async def sweep_tools(
         gen_result = await strategy._generate(loaded, messages_with_tools)
         last_output = gen_result.content
     except Exception as e:
-        logger.debug("Generic injection generation failed: {}", e)
+        logger.debug("Generic injection generation failed: %s", e)
 
     # ── Phase 2: DISCOVER ─────────────────────────────────────────
     if last_output is not None:

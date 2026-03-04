@@ -22,9 +22,11 @@ function createMockRule(
 
 describe("RuleCard", () => {
   let mockOnDelete: () => void;
+  let mockOnEdit: () => void;
 
   beforeEach(() => {
     mockOnDelete = vi.fn();
+    mockOnEdit = vi.fn();
   });
 
   describe("rendering", () => {
@@ -33,6 +35,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ pattern_type: "prefix" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -44,6 +47,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ model_pattern: "gpt-4" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -55,6 +59,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ backend_type: "openai" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -66,6 +71,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ backend_type: "local" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -77,6 +83,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ backend_type: "anthropic" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -88,6 +95,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule(),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -100,10 +108,23 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule(),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
       expect(screen.getByTitle("Delete rule")).toBeInTheDocument();
+    });
+
+    it("renders edit button", () => {
+      render(RuleCard, {
+        props: {
+          rule: createMockRule(),
+          onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
+        },
+      });
+
+      expect(screen.getByTitle("Edit rule")).toBeInTheDocument();
     });
   });
 
@@ -113,6 +134,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ pattern_type: "exact" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -125,6 +147,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ pattern_type: "prefix" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -137,6 +160,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ pattern_type: "regex" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -151,6 +175,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ backend_model: "gpt-4-turbo" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -162,6 +187,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ backend_model: null }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -175,6 +201,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ fallback_backend: "local" }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -186,6 +213,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ fallback_backend: null }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -200,6 +228,7 @@ describe("RuleCard", () => {
           rule: createMockRule(),
           hasWarning: true,
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -212,6 +241,7 @@ describe("RuleCard", () => {
           rule: createMockRule(),
           hasWarning: false,
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -223,6 +253,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule(),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -236,6 +267,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ enabled: false }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -248,6 +280,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ enabled: true }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -263,6 +296,7 @@ describe("RuleCard", () => {
         props: {
           rule: createMockRule({ id: 42 }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -272,12 +306,30 @@ describe("RuleCard", () => {
     });
   });
 
+  describe("edit action", () => {
+    it("calls onEdit when edit button clicked", async () => {
+      const user = userEvent.setup();
+      render(RuleCard, {
+        props: {
+          rule: createMockRule({ id: 42 }),
+          onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
+        },
+      });
+
+      await user.click(screen.getByTitle("Edit rule"));
+
+      expect(mockOnEdit).toHaveBeenCalled();
+    });
+  });
+
   describe("data attributes", () => {
     it("sets data-rule-id attribute", () => {
       const { container } = render(RuleCard, {
         props: {
           rule: createMockRule({ id: 99 }),
           onDelete: mockOnDelete,
+          onEdit: mockOnEdit,
         },
       });
 
@@ -297,7 +349,7 @@ describe("RuleCard", () => {
       });
 
       render(RuleCard, {
-        props: { rule, onDelete: mockOnDelete },
+        props: { rule, onDelete: mockOnDelete, onEdit: mockOnEdit },
       });
 
       expect(screen.getByText("regex")).toBeInTheDocument();
@@ -316,7 +368,7 @@ describe("RuleCard", () => {
       });
 
       render(RuleCard, {
-        props: { rule, hasWarning: true, onDelete: mockOnDelete },
+        props: { rule, hasWarning: true, onDelete: mockOnDelete, onEdit: mockOnEdit },
       });
 
       expect(screen.getByText("Unconfigured")).toBeInTheDocument();

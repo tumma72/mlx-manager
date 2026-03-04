@@ -29,6 +29,8 @@ ARCHITECTURE_TO_FAMILY: dict[str, str] = {
     "Qwen2ForCausalLM": "qwen",
     "Qwen2VLForConditionalGeneration": "qwen",
     "Qwen3ForCausalLM": "qwen",
+    "Qwen3_5ForCausalLM": "qwen",
+    "Qwen3_5ForConditionalGeneration": "qwen",
     "MistralForCausalLM": "mistral",
     "GemmaForCausalLM": "gemma",
     "Gemma2ForCausalLM": "gemma",

@@ -101,9 +101,7 @@ class AnthropicMessagesRequest(BaseModel):
                 {
                     "model": "mlx-community/Qwen3-0.6B-4bit-DWQ",
                     "max_tokens": 256,
-                    "messages": [
-                        {"role": "user", "content": "What is the capital of France?"}
-                    ],
+                    "messages": [{"role": "user", "content": "What is the capital of France?"}],
                     "system": "You are a helpful assistant.",
                     "temperature": 0.7,
                     "stream": False,
@@ -133,6 +131,13 @@ class AnthropicMessagesRequest(BaseModel):
 
 
 # --- Response Models ---
+
+
+class ThinkingBlock(BaseModel):
+    """Thinking (reasoning) content block in response."""
+
+    type: Literal["thinking"] = "thinking"
+    thinking: str
 
 
 class TextBlock(BaseModel):
@@ -168,7 +173,7 @@ class AnthropicMessagesResponse(BaseModel):
     type: Literal["message"] = "message"
     role: Literal["assistant"] = "assistant"
     model: str
-    content: list[TextBlock | ToolUseBlock]
+    content: list[ThinkingBlock | TextBlock | ToolUseBlock]
     stop_reason: Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"] | None
     stop_sequence: str | None = None
     usage: Usage
@@ -204,6 +209,13 @@ class ContentBlockStartBlock(BaseModel):
     text: str = ""
 
 
+class ThinkingStartBlock(BaseModel):
+    """Thinking block in content_block_start event."""
+
+    type: Literal["thinking"] = "thinking"
+    thinking: str = ""
+
+
 class ToolUseStartBlock(BaseModel):
     """Tool use block in content_block_start event."""
 
@@ -218,7 +230,7 @@ class ContentBlockStartEvent(BaseModel):
 
     type: Literal["content_block_start"] = "content_block_start"
     index: int
-    content_block: ContentBlockStartBlock | ToolUseStartBlock
+    content_block: ThinkingStartBlock | ContentBlockStartBlock | ToolUseStartBlock
 
 
 class TextDelta(BaseModel):
@@ -226,6 +238,13 @@ class TextDelta(BaseModel):
 
     type: Literal["text_delta"] = "text_delta"
     text: str
+
+
+class ThinkingDelta(BaseModel):
+    """Thinking delta in content_block_delta event."""
+
+    type: Literal["thinking_delta"] = "thinking_delta"
+    thinking: str
 
 
 class InputJsonDelta(BaseModel):
@@ -240,7 +259,7 @@ class ContentBlockDeltaEvent(BaseModel):
 
     type: Literal["content_block_delta"] = "content_block_delta"
     index: int
-    delta: TextDelta | InputJsonDelta
+    delta: ThinkingDelta | TextDelta | InputJsonDelta
 
 
 class ContentBlockStopEvent(BaseModel):

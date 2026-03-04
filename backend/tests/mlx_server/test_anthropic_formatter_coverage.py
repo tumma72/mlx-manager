@@ -278,7 +278,7 @@ class TestAnthropicFormatterStreamEndWithTools:
     """Test stream_end emits proper tool_use content blocks."""
 
     def test_stream_end_with_single_tool_call(self):
-        """stream_end with one tool call emits content_block_start, input_json_delta, and stop."""
+        """stream_end with one tool call emits text block open/close then tool block."""
         fmt = AnthropicFormatter("model", "msg_1")
         tool_calls = [
             {
@@ -292,21 +292,28 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # Events: content_block_stop (text), content_block_start (tool, empty input),
+        # Events: content_block_start (empty text), content_block_stop (text),
+        #         content_block_start (tool, empty input),
         #         content_block_delta (input_json_delta), content_block_stop (tool),
         #         message_delta, message_stop
-        assert len(events) == 6
+        assert len(events) == 7
 
         event_names = [e["event"] for e in events]
-        assert event_names[0] == "content_block_stop"  # Close text block
-        assert event_names[1] == "content_block_start"  # Start tool_use block
-        assert event_names[2] == "content_block_delta"  # input_json_delta
-        assert event_names[3] == "content_block_stop"  # Stop tool_use block
-        assert event_names[4] == "message_delta"
-        assert event_names[5] == "message_stop"
+        assert event_names[0] == "content_block_start"  # Open empty text block
+        assert event_names[1] == "content_block_stop"  # Close text block
+        assert event_names[2] == "content_block_start"  # Start tool_use block
+        assert event_names[3] == "content_block_delta"  # input_json_delta
+        assert event_names[4] == "content_block_stop"  # Stop tool_use block
+        assert event_names[5] == "message_delta"
+        assert event_names[6] == "message_stop"
+
+        # Verify the empty text block at index 0
+        text_block_start = json.loads(events[0]["data"])
+        assert text_block_start["content_block"]["type"] == "text"
+        assert text_block_start["index"] == 0
 
         # Verify the tool_use content_block_start has empty input
-        tool_block_start = json.loads(events[1]["data"])
+        tool_block_start = json.loads(events[2]["data"])
         assert tool_block_start["type"] == "content_block_start"
         assert tool_block_start["index"] == 1  # Text is index 0
         cb = tool_block_start["content_block"]
@@ -316,7 +323,7 @@ class TestAnthropicFormatterStreamEndWithTools:
         assert cb["input"] == {}  # Empty per Anthropic spec; input is sent via input_json_delta
 
         # Verify the input_json_delta carries the actual tool arguments
-        input_delta_event = json.loads(events[2]["data"])
+        input_delta_event = json.loads(events[3]["data"])
         assert input_delta_event["type"] == "content_block_delta"
         assert input_delta_event["index"] == 1
         delta = input_delta_event["delta"]
@@ -324,7 +331,7 @@ class TestAnthropicFormatterStreamEndWithTools:
         assert json.loads(delta["partial_json"]) == {"location": "Tokyo"}
 
         # Verify the tool_use content_block_stop
-        tool_block_stop = json.loads(events[3]["data"])
+        tool_block_stop = json.loads(events[4]["data"])
         assert tool_block_stop["type"] == "content_block_stop"
         assert tool_block_stop["index"] == 1
 
@@ -345,35 +352,35 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # content_block_stop(text)
+        # content_block_start(text) + content_block_stop(text)
         # + 2*(content_block_start + content_block_delta + content_block_stop)
         # + message_delta + message_stop
-        assert len(events) == 9
+        assert len(events) == 10
 
-        # First tool: content_block_start at events[1], delta at events[2], stop at events[3]
-        first_start = json.loads(events[1]["data"])
+        # First tool: content_block_start at events[2], delta at events[3], stop at events[4]
+        first_start = json.loads(events[2]["data"])
         assert first_start["index"] == 1
         assert first_start["content_block"]["name"] == "get_weather"
         assert first_start["content_block"]["input"] == {}
 
-        first_delta = json.loads(events[2]["data"])
+        first_delta = json.loads(events[3]["data"])
         assert first_delta["index"] == 1
         assert first_delta["delta"]["type"] == "input_json_delta"
         assert json.loads(first_delta["delta"]["partial_json"]) == {"location": "Tokyo"}
 
-        # Second tool: content_block_start at events[4], delta at events[5], stop at events[6]
-        second_start = json.loads(events[4]["data"])
+        # Second tool: content_block_start at events[5], delta at events[6], stop at events[7]
+        second_start = json.loads(events[5]["data"])
         assert second_start["index"] == 2
         assert second_start["content_block"]["name"] == "get_time"
         assert second_start["content_block"]["input"] == {}
 
-        second_delta = json.loads(events[5]["data"])
+        second_delta = json.loads(events[6]["data"])
         assert second_delta["index"] == 2
         assert second_delta["delta"]["type"] == "input_json_delta"
         assert json.loads(second_delta["delta"]["partial_json"]) == {"timezone": "JST"}
 
     def test_stream_end_with_tool_call_invalid_json_arguments(self):
-        """stream_end handles invalid JSON in tool call arguments gracefully (lines 329-330)."""
+        """stream_end handles invalid JSON in tool call arguments gracefully."""
         fmt = AnthropicFormatter("model", "msg_3")
         tool_calls = [
             {
@@ -387,16 +394,16 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        # Should not raise; produces start + delta + stop for the tool block
-        assert len(events) == 6
+        # Should not raise; produces empty text block + start + delta + stop for the tool block
+        assert len(events) == 7
 
-        tool_start = json.loads(events[1]["data"])
+        tool_start = json.loads(events[2]["data"])
         cb = tool_start["content_block"]
         assert cb["type"] == "tool_use"
         assert cb["input"] == {}  # Always empty in content_block_start
 
         # The input_json_delta should carry the serialised empty-dict fallback
-        input_delta = json.loads(events[2]["data"])
+        input_delta = json.loads(events[3]["data"])
         assert input_delta["delta"]["type"] == "input_json_delta"
         assert json.loads(input_delta["delta"]["partial_json"]) == {}  # Invalid JSON → empty dict
 
@@ -412,14 +419,14 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        assert len(events) == 6
-        tool_start = json.loads(events[1]["data"])
+        assert len(events) == 7
+        tool_start = json.loads(events[2]["data"])
         cb = tool_start["content_block"]
         assert cb["name"] == ""  # No function name
         assert cb["input"] == {}  # content_block_start always has empty input
 
         # input_json_delta carries the empty-dict fallback
-        input_delta = json.loads(events[2]["data"])
+        input_delta = json.loads(events[3]["data"])
         assert input_delta["delta"]["type"] == "input_json_delta"
         assert json.loads(input_delta["delta"]["partial_json"]) == {}
 
@@ -435,20 +442,26 @@ class TestAnthropicFormatterStreamEndWithTools:
         ]
         events = fmt.stream_end("tool_calls", tool_calls=tool_calls)
 
-        assert len(events) == 6
-        tool_start = json.loads(events[1]["data"])
+        assert len(events) == 7
+        tool_start = json.loads(events[2]["data"])
         cb = tool_start["content_block"]
         assert cb["id"] == "toolu_0"  # Fallback ID
 
-    def test_stream_end_no_tool_calls_emits_three_events(self):
-        """stream_end without tool_calls emits exactly 3 events (existing behavior preserved)."""
+    def test_stream_end_no_tool_calls_emits_events(self):
+        """stream_end without tool_calls emits empty text block, message_delta, message_stop."""
         fmt = AnthropicFormatter("model", "msg_6")
         events = fmt.stream_end("stop", tool_calls=None)
 
-        assert len(events) == 3
-        assert events[0]["event"] == "content_block_stop"
-        assert events[1]["event"] == "message_delta"
-        assert events[2]["event"] == "message_stop"
+        assert len(events) == 4
+        assert events[0]["event"] == "content_block_start"
+        assert events[1]["event"] == "content_block_stop"
+        assert events[2]["event"] == "message_delta"
+        assert events[3]["event"] == "message_stop"
+
+        # Verify the empty text block
+        text_start = json.loads(events[0]["data"])
+        assert text_start["content_block"]["type"] == "text"
+        assert text_start["index"] == 0
 
     def test_stream_end_tool_calls_stop_reason_is_tool_use(self):
         """stream_end with tool_calls has 'tool_use' stop reason in message_delta."""
@@ -503,7 +516,7 @@ class TestAnthropicFormatterStreamEndWithTools:
         event_types = [e["event"] for e in all_events]
         assert event_types == [
             "message_start",
-            "content_block_start",  # text block
+            "content_block_start",  # text block opened lazily on first content
             "content_block_delta",  # "Let me check"
             "content_block_stop",  # close text block
             "content_block_start",  # tool_use block (empty input)
@@ -513,12 +526,238 @@ class TestAnthropicFormatterStreamEndWithTools:
             "message_stop",
         ]
 
-        # Verify tool_use block content_block_start has empty input
+        # Verify text block is index 0
+        text_start_data = json.loads(all_events[1]["data"])
+        assert text_start_data["content_block"]["type"] == "text"
+        assert text_start_data["index"] == 0
+
+        # Verify tool_use block content_block_start has empty input at index 1
         tool_start_data = json.loads(all_events[4]["data"])
         assert tool_start_data["content_block"]["name"] == "get_weather"
         assert tool_start_data["content_block"]["input"] == {}
+        assert tool_start_data["index"] == 1
 
         # Verify input_json_delta carries the actual arguments
         input_delta_data = json.loads(all_events[5]["data"])
         assert input_delta_data["delta"]["type"] == "input_json_delta"
         assert json.loads(input_delta_data["delta"]["partial_json"]) == {"location": "NYC"}
+
+
+# ---------------------------------------------------------------------------
+# Tests for thinking (reasoning_content) support
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicFormatterThinking:
+    """Test thinking/reasoning_content support in AnthropicFormatter."""
+
+    # ── non-streaming ────────────────────────────────────────────────
+
+    def test_format_complete_with_reasoning_content(self):
+        """Non-streaming: ThinkingBlock is prepended when reasoning_content is set."""
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        fmt = AnthropicFormatter("model", "msg_think_1")
+        result = TextResult(
+            content="Paris is the capital.",
+            reasoning_content="Let me think about this carefully.",
+            finish_reason="stop",
+        )
+        response = fmt.format_complete(result)
+
+        assert len(response.content) == 2
+        assert response.content[0].type == "thinking"
+        assert response.content[0].thinking == "Let me think about this carefully."
+        assert response.content[1].type == "text"
+        assert response.content[1].text == "Paris is the capital."
+
+    def test_format_complete_without_reasoning_content(self):
+        """Non-streaming: No ThinkingBlock when reasoning_content is None."""
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        fmt = AnthropicFormatter("model", "msg_think_2")
+        result = TextResult(content="Hello!", reasoning_content=None, finish_reason="stop")
+        response = fmt.format_complete(result)
+
+        assert len(response.content) == 1
+        assert response.content[0].type == "text"
+
+    def test_format_complete_empty_reasoning_content(self):
+        """Non-streaming: No ThinkingBlock when reasoning_content is empty string."""
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        fmt = AnthropicFormatter("model", "msg_think_3")
+        result = TextResult(content="Hello!", reasoning_content="", finish_reason="stop")
+        response = fmt.format_complete(result)
+
+        assert len(response.content) == 1
+        assert response.content[0].type == "text"
+
+    def test_format_complete_reasoning_only(self):
+        """Non-streaming: Only ThinkingBlock when reasoning_content set and content is empty."""
+        from mlx_manager.mlx_server.models.ir import TextResult
+
+        fmt = AnthropicFormatter("model", "msg_think_4")
+        result = TextResult(content="", reasoning_content="deep thoughts", finish_reason="stop")
+        response = fmt.format_complete(result)
+
+        # content="" is falsy so TextBlock is skipped; ThinkingBlock prevents the empty fallback
+        assert len(response.content) == 1
+        assert response.content[0].type == "thinking"
+        assert response.content[0].thinking == "deep thoughts"
+
+    # ── streaming: reasoning then text ───────────────────────────────
+
+    def test_stream_event_reasoning_opens_thinking_block(self):
+        """First reasoning_content event opens a thinking block at index 0."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_5")
+        events = fmt.stream_event(StreamEvent(reasoning_content="thinking..."))
+
+        assert len(events) == 2
+        start = json.loads(events[0]["data"])
+        assert start["type"] == "content_block_start"
+        assert start["index"] == 0
+        assert start["content_block"]["type"] == "thinking"
+        assert start["content_block"]["thinking"] == ""
+
+        delta = json.loads(events[1]["data"])
+        assert delta["type"] == "content_block_delta"
+        assert delta["index"] == 0
+        assert delta["delta"]["type"] == "thinking_delta"
+        assert delta["delta"]["thinking"] == "thinking..."
+
+    def test_stream_event_subsequent_reasoning_no_new_block_start(self):
+        """Subsequent reasoning_content events reuse the open thinking block."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_6")
+        fmt.stream_event(StreamEvent(reasoning_content="part 1"))
+        events = fmt.stream_event(StreamEvent(reasoning_content="part 2"))
+
+        # Only a delta — no new content_block_start
+        assert len(events) == 1
+        delta = json.loads(events[0]["data"])
+        assert delta["type"] == "content_block_delta"
+        assert delta["delta"]["type"] == "thinking_delta"
+        assert delta["delta"]["thinking"] == "part 2"
+
+    def test_stream_event_content_after_reasoning_closes_thinking_opens_text(self):
+        """content after reasoning_content closes thinking block and opens text block."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_7")
+        fmt.stream_event(StreamEvent(reasoning_content="my reasoning"))
+        events = fmt.stream_event(StreamEvent(content="my answer"))
+
+        # content_block_stop(thinking,0), content_block_start(text,1), content_block_delta(text,1)
+        assert len(events) == 3
+        stop = json.loads(events[0]["data"])
+        assert stop["type"] == "content_block_stop"
+        assert stop["index"] == 0
+
+        start = json.loads(events[1]["data"])
+        assert start["type"] == "content_block_start"
+        assert start["index"] == 1
+        assert start["content_block"]["type"] == "text"
+
+        delta = json.loads(events[2]["data"])
+        assert delta["type"] == "content_block_delta"
+        assert delta["index"] == 1
+        assert delta["delta"]["type"] == "text_delta"
+        assert delta["delta"]["text"] == "my answer"
+
+    def test_stream_event_content_without_reasoning_opens_text_at_index_0(self):
+        """content without prior reasoning opens text block at index 0."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_8")
+        events = fmt.stream_event(StreamEvent(content="hello"))
+
+        assert len(events) == 2
+        start = json.loads(events[0]["data"])
+        assert start["index"] == 0
+        assert start["content_block"]["type"] == "text"
+
+        delta = json.loads(events[1]["data"])
+        assert delta["index"] == 0
+        assert delta["delta"]["type"] == "text_delta"
+
+    def test_full_streaming_with_thinking_and_text(self):
+        """Full streaming lifecycle with thinking then text produces correct event sequence."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_full")
+
+        all_events: list[dict] = []
+        all_events.extend(fmt.stream_start())
+        all_events.extend(fmt.stream_event(StreamEvent(reasoning_content="step 1")))
+        all_events.extend(fmt.stream_event(StreamEvent(reasoning_content="step 2")))
+        all_events.extend(fmt.stream_event(StreamEvent(content="answer")))
+        all_events.extend(fmt.stream_end("stop"))
+
+        event_types = [e["event"] for e in all_events]
+        assert event_types == [
+            "message_start",
+            "content_block_start",  # thinking block at index 0
+            "content_block_delta",  # thinking_delta "step 1"
+            "content_block_delta",  # thinking_delta "step 2" (no new block_start)
+            "content_block_stop",  # close thinking block
+            "content_block_start",  # text block at index 1
+            "content_block_delta",  # text_delta "answer"
+            "content_block_stop",  # close text block
+            "message_delta",
+            "message_stop",
+        ]
+
+        # Verify indices
+        think_start = json.loads(all_events[1]["data"])
+        assert think_start["index"] == 0
+        assert think_start["content_block"]["type"] == "thinking"
+
+        text_start = json.loads(all_events[5]["data"])
+        assert text_start["index"] == 1
+        assert text_start["content_block"]["type"] == "text"
+
+    def test_stream_end_after_reasoning_only_emits_empty_text_block(self):
+        """stream_end after reasoning-only stream closes thinking and adds empty text block."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_end")
+        fmt.stream_event(StreamEvent(reasoning_content="some thoughts"))
+        events = fmt.stream_end("stop")
+
+        event_types = [e["event"] for e in events]
+        assert event_types == [
+            "content_block_stop",  # close thinking block (index 0)
+            "content_block_start",  # open empty text block (index 1)
+            "content_block_stop",  # close empty text block
+            "message_delta",
+            "message_stop",
+        ]
+
+        think_stop = json.loads(events[0]["data"])
+        assert think_stop["index"] == 0
+
+        text_start = json.loads(events[1]["data"])
+        assert text_start["index"] == 1
+        assert text_start["content_block"]["type"] == "text"
+
+    def test_stream_end_after_text_only_closes_text_block(self):
+        """stream_end after text-only stream closes the text block normally."""
+        from mlx_manager.mlx_server.models.ir import StreamEvent
+
+        fmt = AnthropicFormatter("model", "msg_think_end2")
+        fmt.stream_event(StreamEvent(content="hello"))
+        events = fmt.stream_end("stop")
+
+        event_types = [e["event"] for e in events]
+        assert event_types == [
+            "content_block_stop",  # close text block at index 0
+            "message_delta",
+            "message_stop",
+        ]
+
+        text_stop = json.loads(events[0]["data"])
+        assert text_stop["index"] == 0

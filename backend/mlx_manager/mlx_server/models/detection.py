@@ -170,6 +170,8 @@ def detect_model_type(model_id: str, config: dict[str, Any] | None = None) -> Mo
         "vision",
         "qwen2-vl",
         "qwen2.5-vl",
+        "qwen3-vl",
+        "qwen3.5-vl",
         "llava",
         "pixtral",
         "gemma-3",  # Gemma 3 multimodal (gemma-3-*-it models)
@@ -324,6 +326,8 @@ def detect_model_type_detailed(
         "vision",
         "qwen2-vl",
         "qwen2.5-vl",
+        "qwen3-vl",
+        "qwen3.5-vl",
         "llava",
         "pixtral",
         "gemma-3",

@@ -592,3 +592,718 @@ def test_generative_probe_has_sweep_capabilities():
     assert hasattr(GenerativeProbe, "sweep_capabilities"), (
         "GenerativeProbe must have sweep_capabilities() method"
     )
+
+
+# ---------------------------------------------------------------------------
+# Direct sweep function tests for uncovered lines in sweeps.py
+# ---------------------------------------------------------------------------
+
+
+def _make_gen_result(content: str):
+    """Create a mock generation result with a .content attribute."""
+    result = MagicMock()
+    result.content = content
+    return result
+
+
+def _make_tag_discovery(name: str, style: str, paired: bool, matched_parsers: list[str]):
+    """Create a TagDiscovery instance."""
+    from mlx_manager.services.probe.steps import TagDiscovery
+
+    return TagDiscovery(name=name, style=style, paired=paired, matched_parsers=matched_parsers)
+
+
+def _make_mock_thinking_parser(parser_id: str, extract_return, stream_markers_list):
+    """Create a mock ThinkingParser class that returns given values."""
+
+    class MockParser:
+        @property
+        def parser_id(self):
+            return parser_id
+
+        @property
+        def stream_markers(self):
+            return stream_markers_list
+
+        def extract(self, text):
+            return extract_return
+
+    return MockParser
+
+
+def _make_mock_tool_parser(parser_id: str, validates_return: bool, stream_markers_list=None):
+    """Create a mock ToolCallParser class that returns given values."""
+
+    class MockToolParser:
+        @property
+        def parser_id(self):
+            return parser_id
+
+        @property
+        def stream_markers(self):
+            return stream_markers_list or []
+
+        def validates(self, text, expected_fn):
+            return validates_return
+
+        def extract(self, text):
+            return []
+
+    return MockToolParser
+
+
+# ---------------------------------------------------------------------------
+# sweep_thinking: Lines 141-145 — Phase 3 tag-first detection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_thinking_phase3_tag_first_detection():
+    """Phase 3: tag-first detection when _discover_and_map_tags finds tags matching a parser
+    and the parser's extract() returns content. (Lines 141-145)"""
+    from mlx_manager.services.probe.sweeps import sweep_thinking
+
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(
+        return_value=_make_gen_result("<think>step by step reasoning</think>answer")
+    )
+    loaded = MagicMock()
+
+    # Parser that successfully extracts thinking content
+    mock_parser = _make_mock_thinking_parser(
+        "think_tag", "step by step reasoning", [("<think>", "</think>")]
+    )
+
+    mock_parsers = {
+        "null": MagicMock,
+        "think_tag": mock_parser,
+    }
+
+    # Tag discovery returns a tag with matched_parsers containing "think_tag"
+    mock_tag = _make_tag_discovery("think", "xml", True, ["think_tag"])
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.THINKING_PARSERS", mock_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[mock_tag],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            return_value=["think_tag"],
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_thinking_parser_id",
+            return_value=None,
+        ),
+    ):
+        supports, parser_id, diags, tags = await sweep_thinking(
+            "test/model", loaded, strategy, None, family=None
+        )
+
+    assert supports is True
+    assert parser_id == "think_tag"
+
+
+# ---------------------------------------------------------------------------
+# sweep_thinking: Lines 182-183 — Phase 4 retry exception handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_thinking_phase4_retry_exception():
+    """Phase 4: retry generation fails with exception, then falls through
+    to unclosed tag matching. (Lines 182-183 + 191-198)"""
+    from mlx_manager.services.probe.sweeps import sweep_thinking
+
+    # First call succeeds with content that has an unclosed tag
+    # Second call (retry) raises an exception
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(
+        side_effect=[
+            _make_gen_result("some output without thinking tags"),
+            RuntimeError("retry generation failed"),
+        ]
+    )
+    loaded = MagicMock()
+
+    # Parser whose stream_markers match the unclosed tag "think"
+    mock_parser = _make_mock_thinking_parser(
+        "think_tag",
+        None,  # extract returns None (no match)
+        [("<think>", "</think>")],
+    )
+
+    mock_parsers = {
+        "null": MagicMock,
+        "think_tag": mock_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.THINKING_PARSERS", mock_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],  # No tags discovered
+        ),
+        patch(
+            "mlx_manager.services.probe.base._find_unclosed_thinking_tag",
+            return_value="think",  # Unclosed <think> tag found
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_thinking_parser_id",
+            return_value=None,
+        ),
+    ):
+        supports, parser_id, diags, tags = await sweep_thinking(
+            "test/model", loaded, strategy, None, family=None
+        )
+
+    # Retry failed, but unclosed tag "think" matches parser stream_markers
+    # "<think>" -> strip("<>") -> "think" == unclosed "think"
+    assert supports is True
+    assert parser_id == "think_tag"
+
+
+# ---------------------------------------------------------------------------
+# sweep_thinking: Lines 191-198 — Phase 4 unclosed tag matching stream_markers
+# (retry succeeds but no parser extract matches)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_thinking_phase4_unclosed_tag_matches_stream_markers():
+    """Phase 4: retry succeeds but no parser.extract() matches the retry output;
+    then unclosed tag matches a parser's stream_markers. (Lines 191-198)"""
+    from mlx_manager.services.probe.sweeps import sweep_thinking
+
+    # First call: normal output, second call: retry output (no thinking tags either)
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(
+        side_effect=[
+            _make_gen_result("output with unclosed think tag"),
+            _make_gen_result("retry output still no closed tags"),
+        ]
+    )
+    loaded = MagicMock()
+
+    # Parser whose extract returns None (doesn't match retry output)
+    # but stream_markers contain [THINK] which matches unclosed "THINK"
+    mock_bracket_parser = _make_mock_thinking_parser(
+        "mistral_think",
+        None,  # extract returns None
+        [("[THINK]", "[/THINK]")],
+    )
+
+    mock_parsers = {
+        "null": MagicMock,
+        "mistral_think": mock_bracket_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.THINKING_PARSERS", mock_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._find_unclosed_thinking_tag",
+            return_value="THINK",
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_thinking_parser_id",
+            return_value=None,
+        ),
+    ):
+        supports, parser_id, diags, tags = await sweep_thinking(
+            "test/model", loaded, strategy, None, family=None
+        )
+
+    # Unclosed "THINK" matches "[THINK]" -> strip("[]") -> "THINK"
+    assert supports is True
+    assert parser_id == "mistral_think"
+
+
+# ---------------------------------------------------------------------------
+# sweep_thinking: Line 203 — Phase 5 unknown thinking tag detection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_thinking_phase5_unknown_tag_diagnostic():
+    """Phase 5: _detect_unknown_thinking_tags finds an unknown tag and adds
+    a WARNING diagnostic. (Line 203)"""
+    from mlx_manager.services.probe.steps import DiagnosticCategory, DiagnosticLevel
+    from mlx_manager.services.probe.sweeps import sweep_thinking
+
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(
+        return_value=_make_gen_result("<custom_reason>some reasoning</custom_reason>answer")
+    )
+    loaded = MagicMock()
+
+    # No parsers match anything
+    mock_parser = _make_mock_thinking_parser("think_tag", None, [("<think>", "</think>")])
+    mock_parsers = {
+        "null": MagicMock,
+        "think_tag": mock_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.THINKING_PARSERS", mock_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._find_unclosed_thinking_tag",
+            return_value=None,  # No unclosed tag
+        ),
+        patch(
+            "mlx_manager.services.probe.base._detect_unknown_thinking_tags",
+            return_value="custom_reason",  # Unknown tag found
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_thinking_parser_id",
+            return_value=None,
+        ),
+    ):
+        supports, parser_id, diags, tags = await sweep_thinking(
+            "test/model", loaded, strategy, None, family=None
+        )
+
+    assert supports is False
+    assert parser_id == "null"
+    assert len(diags) == 1
+    assert diags[0].level == DiagnosticLevel.WARNING
+    assert diags[0].category == DiagnosticCategory.THINKING_DIALECT
+    assert "custom_reason" in diags[0].message
+    assert "custom_reason" in diags[0].details["detected_tag"]
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Lines 385-388, 393, 397-401 — Phase 4 template delivery
+# tag merging + tag-matched parser validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_phase4_template_tag_merge_and_validation():
+    """Phase 4: template delivery discovers new tags (merged, lines 385-388),
+    collects template_matched parser IDs (line 393), and validates a
+    tag-matched parser (lines 397-401)."""
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    # Phase 1 generic injection produces output with no matching parsers
+    # Phase 4 template delivery produces output with matching parsers
+    gen_calls = [
+        _make_gen_result("I don't know how to use tools"),  # Phase 1 generic
+        _make_gen_result('<tool_call>{"name":"get_weather"}</tool_call>'),  # Phase 4 template
+    ]
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(side_effect=gen_calls)
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=True)
+    loaded.tokenizer = MagicMock()
+
+    # A parser that validates only the template output
+    class TemplateMatchParser:
+        @property
+        def parser_id(self):
+            return "hermes_json"
+
+        @property
+        def stream_markers(self):
+            return [("<tool_call>", "</tool_call>")]
+
+        def validates(self, text, expected_fn):
+            # Only validate when called with template output
+            return "tool_call" in text
+
+        def extract(self, text):
+            return []
+
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": TemplateMatchParser,
+    }
+
+    # Phase 2: generic output has no tags
+    generic_tags = []
+    # Phase 4: template output has a new tag
+    template_tags = [_make_tag_discovery("tool_call", "xml", True, ["hermes_json"])]
+
+    discover_calls = [generic_tags, template_tags]
+    discover_call_idx = {"i": 0}
+
+    def mock_discover(output, parsers):
+        idx = discover_call_idx["i"]
+        discover_call_idx["i"] += 1
+        return discover_calls[idx] if idx < len(discover_calls) else []
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            side_effect=mock_discover,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            side_effect=lambda candidates, fam: sorted(candidates),
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    assert tool_format == "template"
+    assert parser_id == "hermes_json"
+    # The template tag should be merged into all_tags
+    tag_names = [t.name for t in all_tags]
+    assert "tool_call" in tag_names
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Line 413 — Phase 4 debug log when no parser matches template
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_phase4_template_no_parser_match():
+    """Phase 4: template delivery produces output but no parser validates it.
+    Falls through to logger.debug (line 413) and eventually to Phase 5."""
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    # Phase 1: no output or no match
+    # Phase 4: template produces output but no parser validates
+    gen_calls = [
+        _make_gen_result("no tools here"),  # Phase 1 generic
+        _make_gen_result("template output but unparseable format"),  # Phase 4 template
+    ]
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(side_effect=gen_calls)
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=True)
+    loaded.tokenizer = MagicMock()
+
+    # Parser that never validates
+    never_match_parser = _make_mock_tool_parser("hermes_json", False)
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": never_match_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            side_effect=lambda candidates, fam: sorted(candidates),
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    # No parser matched — should return (None, None, ...)
+    assert tool_format is None
+    assert parser_id is None
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Lines 385-388 only — template tag merging with dedup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_phase4_template_tag_dedup():
+    """Phase 4: template tags that already exist in all_discovered_tags are
+    not duplicated (dedup by name+style). (Lines 385-388)"""
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    gen_calls = [
+        _make_gen_result("generic output with some_tag"),  # Phase 1
+        _make_gen_result("template output with some_tag"),  # Phase 4
+    ]
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(side_effect=gen_calls)
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=True)
+    loaded.tokenizer = MagicMock()
+
+    never_match_parser = _make_mock_tool_parser("hermes_json", False)
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": never_match_parser,
+    }
+
+    # Both generic and template discover the same tag (should not duplicate)
+    existing_tag = _make_tag_discovery("tool_call", "xml", True, [])
+    new_tag = _make_tag_discovery("function", "xml", True, [])
+    duplicate_tag = _make_tag_discovery("tool_call", "xml", True, [])  # same name+style
+
+    discover_call_idx = {"i": 0}
+
+    def mock_discover(output, parsers):
+        idx = discover_call_idx["i"]
+        discover_call_idx["i"] += 1
+        if idx == 0:
+            return [existing_tag]  # Phase 2: generic found "tool_call"
+        else:
+            # Phase 4: template found "tool_call" (dup) + "function" (new)
+            return [duplicate_tag, new_tag]
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            side_effect=mock_discover,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            side_effect=lambda candidates, fam: sorted(candidates),
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    # Should have 2 unique tags, not 3 (dedup removed the duplicate "tool_call")
+    tag_keys = [(t.name, t.style) for t in all_tags]
+    assert tag_keys.count(("tool_call", "xml")) == 1
+    assert ("function", "xml") in tag_keys
+    assert len(all_tags) == 2
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Lines 305-306 — Phase 1 generic injection exception
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_phase1_generic_injection_exception():
+    """Phase 1: generic injection generation fails with exception.
+    last_output stays None, falls through to Phase 4 or Phase 5. (Lines 305-306)"""
+    import logging
+
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    strategy = MagicMock()
+    # First call (Phase 1) fails, second call (Phase 4 template) also not reached
+    # because can_try_template is False
+    strategy._generate = AsyncMock(side_effect=RuntimeError("generation error"))
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=False)
+    loaded.tokenizer = MagicMock()
+
+    never_match_parser = _make_mock_tool_parser("hermes_json", False)
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": never_match_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=False,
+        ),
+        # Suppress the logger.debug call which has a format string bug ({} vs %s)
+        patch.object(logging.getLogger("mlx_manager.services.probe.sweeps"), "debug"),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    # No output at all — should return (None, None, ...)
+    assert tool_format is None
+    assert parser_id is None
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Lines 417-418 — Phase 4 template delivery exception
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_phase4_template_delivery_exception():
+    """Phase 4: template delivery generation fails with exception. (Lines 417-418)"""
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    # Phase 1 succeeds with no matching output, Phase 4 raises exception
+    gen_calls = [
+        _make_gen_result("no tools here"),  # Phase 1 generic
+        RuntimeError("template delivery failed"),  # Phase 4 template
+    ]
+    strategy = MagicMock()
+    strategy._generate = AsyncMock(side_effect=gen_calls)
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=True)
+    loaded.tokenizer = MagicMock()
+
+    never_match_parser = _make_mock_tool_parser("hermes_json", False)
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": never_match_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base._prioritize_parsers",
+            side_effect=lambda candidates, fam: sorted(candidates),
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    # Template delivery failed but generic output had no matches either
+    assert tool_format is None
+    assert parser_id is None
+
+
+# ---------------------------------------------------------------------------
+# sweep_tools: Line 483 — No output at all (last_output is None)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sweep_tools_no_output_at_all():
+    """Phase 5: last_output is None (both Phase 1 failed and no template delivery).
+    Hits the else branch with 'no tool support detected (no output)'. (Line 483)"""
+    import logging
+
+    from mlx_manager.services.probe.sweeps import sweep_tools
+
+    strategy = MagicMock()
+    # Phase 1 fails with exception, so last_output stays None
+    # Phase 4 template delivery also fails with exception
+    strategy._generate = AsyncMock(side_effect=RuntimeError("all generation failed"))
+
+    loaded = MagicMock()
+    loaded.adapter = MagicMock()
+    loaded.adapter.supports_native_tools = MagicMock(return_value=True)
+    loaded.tokenizer = MagicMock()
+
+    never_match_parser = _make_mock_tool_parser("hermes_json", False)
+    mock_tool_parsers = {
+        "null": MagicMock,
+        "hermes_json": never_match_parser,
+    }
+
+    with (
+        patch("mlx_manager.mlx_server.parsers.TOOL_PARSERS", mock_tool_parsers),
+        patch(
+            "mlx_manager.services.probe.base._discover_and_map_tags",
+            return_value=[],
+        ),
+        patch(
+            "mlx_manager.services.probe.base._has_tokenization_artifacts",
+            return_value=False,
+        ),
+        patch(
+            "mlx_manager.services.probe.base.get_family_tool_parser_id",
+            return_value=None,
+        ),
+        patch(
+            "mlx_manager.mlx_server.utils.template_tools.has_native_tool_support",
+            return_value=True,
+        ),
+        # Suppress the logger.debug call which has a format string bug ({} vs %s)
+        patch.object(logging.getLogger("mlx_manager.services.probe.sweeps"), "debug"),
+    ):
+        tool_format, parser_id, diags, all_tags = await sweep_tools(
+            "test/model", loaded, strategy, family=None
+        )
+
+    assert tool_format is None
+    assert parser_id is None

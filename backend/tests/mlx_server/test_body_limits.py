@@ -29,9 +29,7 @@ class TestMessageCountLimit:
 
     def test_exactly_1024_messages_is_valid(self):
         """1024 messages is at the limit and must be accepted."""
-        messages = [
-            ChatMessage(role="user", content=f"Message {i}") for i in range(1024)
-        ]
+        messages = [ChatMessage(role="user", content=f"Message {i}") for i in range(1024)]
         req = ChatCompletionRequest(model="test-model", messages=messages)
         assert len(req.messages) == 1024
 
@@ -39,9 +37,7 @@ class TestMessageCountLimit:
         """1025 messages exceeds max_length=1024 and must raise a validation error."""
         from pydantic import ValidationError
 
-        messages = [
-            ChatMessage(role="user", content=f"Message {i}") for i in range(1025)
-        ]
+        messages = [ChatMessage(role="user", content=f"Message {i}") for i in range(1025)]
         with pytest.raises(ValidationError) as exc_info:
             ChatCompletionRequest(model="test-model", messages=messages)
 
@@ -49,7 +45,8 @@ class TestMessageCountLimit:
         # At least one error should reference messages or list_too_long
         error_types = {e["type"] for e in errors}
         assert "too_long" in error_types or any(
-            "message" in str(e).lower() or "max_length" in str(e).lower()
+            "message" in str(e).lower()
+            or "max_length" in str(e).lower()
             or "too_long" in str(e).lower()
             for e in errors
         )
@@ -108,8 +105,7 @@ class TestToolCountLimit:
         errors = exc_info.value.errors()
         error_types = {e["type"] for e in errors}
         assert "too_long" in error_types or any(
-            "too_long" in str(e).lower() or "max_length" in str(e).lower()
-            for e in errors
+            "too_long" in str(e).lower() or "max_length" in str(e).lower() for e in errors
         )
 
     def test_no_tools_is_valid(self):
@@ -158,10 +154,7 @@ class TestStopSequenceLimit:
 
         # The model_validator raises ValueError("stop may contain at most 16 entries")
         errors = exc_info.value.errors()
-        assert any(
-            "16" in str(e) or "stop" in str(e).lower()
-            for e in errors
-        )
+        assert any("16" in str(e) or "stop" in str(e).lower() for e in errors)
 
     def test_string_stop_is_valid(self):
         """Single string stop sequence is always valid."""

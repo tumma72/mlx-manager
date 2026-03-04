@@ -1,17 +1,23 @@
 <script lang="ts">
 	import { settings } from '$lib/api/client';
 	import { Button, Input, Select } from '$lib/components/ui';
-	import { Plus, Loader2, AlertTriangle } from 'lucide-svelte';
-	import type { BackendType, PatternType } from '$lib/api/types';
+	import { Plus, Pencil, Loader2, AlertTriangle } from 'lucide-svelte';
+	import type { BackendMapping, BackendType, PatternType } from '$lib/api/types';
 	import { profileStore } from '$lib/stores';
 
 	interface Props {
 		onSave: () => void;
 		configuredProviders: BackendType[];
+		rule?: BackendMapping;
+		onCancel?: () => void;
 	}
 
-	let { onSave, configuredProviders }: Props = $props();
+	let { onSave, configuredProviders, rule = undefined, onCancel = undefined }: Props = $props();
 
+	const isEditMode = $derived(rule !== undefined);
+
+	// Initialise form state from rule prop (edit) or defaults (create).
+	// Use $derived.by so the form resets whenever the rule prop changes.
 	let patternType = $state<PatternType>('prefix');
 	let patternValue = $state('');
 	let backendType = $state<BackendType>('local');
@@ -20,6 +26,27 @@
 	let fallbackBackend = $state<BackendType | ''>('');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+
+	// Re-populate form fields when the `rule` prop changes (switching between rules or
+	// toggling between create and edit mode).
+	$effect(() => {
+		if (rule) {
+			patternType = rule.pattern_type;
+			patternValue = rule.model_pattern;
+			backendType = rule.backend_type;
+			backendModel = rule.backend_model ?? '';
+			selectedProfileId = rule.profile_id != null ? String(rule.profile_id) : '';
+			fallbackBackend = rule.fallback_backend ?? '';
+		} else {
+			patternType = 'prefix';
+			patternValue = '';
+			backendType = 'local';
+			backendModel = '';
+			selectedProfileId = '';
+			fallbackBackend = '';
+		}
+		error = null;
+	});
 
 	// Use $derived.by() to maintain reactivity for configuredProviders prop
 	// This ensures the warning updates when the parent's configuredProviders changes
@@ -46,24 +73,36 @@
 		error = null;
 
 		try {
-			await settings.createRule({
-				pattern_type: patternType,
-				model_pattern: patternValue.trim(),
-				backend_type: backendType,
-				// For local rules: send profile_id; for cloud rules: send backend_model
-				...(isLocal
-					? { profile_id: selectedProfileId !== '' ? Number(selectedProfileId) : null }
-					: { backend_model: backendModel.trim() || undefined }),
-				fallback_backend: fallbackBackend || undefined
-			});
-			// Reset form
-			patternValue = '';
-			backendModel = '';
-			selectedProfileId = '';
-			fallbackBackend = '';
+			if (isEditMode && rule) {
+				await settings.updateRule(rule.id, {
+					pattern_type: patternType,
+					model_pattern: patternValue.trim(),
+					backend_type: backendType,
+					...(isLocal
+						? { profile_id: selectedProfileId !== '' ? Number(selectedProfileId) : null }
+						: { backend_model: backendModel.trim() || null }),
+					fallback_backend: fallbackBackend || null
+				});
+			} else {
+				await settings.createRule({
+					pattern_type: patternType,
+					model_pattern: patternValue.trim(),
+					backend_type: backendType,
+					// For local rules: send profile_id; for cloud rules: send backend_model
+					...(isLocal
+						? { profile_id: selectedProfileId !== '' ? Number(selectedProfileId) : null }
+						: { backend_model: backendModel.trim() || undefined }),
+					fallback_backend: fallbackBackend || undefined
+				});
+				// Reset form only in create mode
+				patternValue = '';
+				backendModel = '';
+				selectedProfileId = '';
+				fallbackBackend = '';
+			}
 			onSave();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to create rule';
+			error = e instanceof Error ? e.message : isEditMode ? 'Failed to update rule' : 'Failed to create rule';
 		} finally {
 			saving = false;
 		}
@@ -83,7 +122,7 @@
 </script>
 
 <form onsubmit={handleSubmit} class="space-y-4 rounded-lg border bg-card p-4">
-	<h3 class="text-sm font-medium">Add Routing Rule</h3>
+	<h3 class="text-sm font-medium">{isEditMode ? 'Edit Routing Rule' : 'Add Routing Rule'}</h3>
 
 	{#if error}
 		<div class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -174,14 +213,21 @@
 		</div>
 	</div>
 
-	<div class="flex justify-end">
+	<div class="flex justify-end gap-2">
+		{#if isEditMode && onCancel}
+			<Button type="button" variant="outline" onclick={onCancel} disabled={saving}>
+				Cancel
+			</Button>
+		{/if}
 		<Button type="submit" disabled={saving}>
 			{#if saving}
 				<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+			{:else if isEditMode}
+				<Pencil class="mr-2 h-4 w-4" />
 			{:else}
 				<Plus class="mr-2 h-4 w-4" />
 			{/if}
-			Add Rule
+			{isEditMode ? 'Save Changes' : 'Add Rule'}
 		</Button>
 	</div>
 </form>

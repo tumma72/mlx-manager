@@ -17,6 +17,7 @@ from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
     TextBlock,
+    ThinkingBlock,
     ToolUseBlock,
     Usage,
 )
@@ -85,11 +86,22 @@ class AnthropicFormatter(ProtocolFormatter):
     """Formats IR types into Anthropic Messages API protocol.
 
     Streaming produces named SSE events following the Anthropic spec:
-        message_start → content_block_start → content_block_delta(s)
+        message_start
+        [content_block_start(thinking) → content_block_delta(thinking_delta)s
+         → content_block_stop]          ← only when reasoning_content is present
+        content_block_start(text) → content_block_delta(text_delta)s
         → content_block_stop → message_delta → message_stop
 
     Non-streaming produces an AnthropicMessagesResponse Pydantic model.
+    Content blocks are ordered: [ThinkingBlock?, TextBlock?, ToolUseBlock*].
     """
+
+    def __init__(self, model_id: str, request_id: str) -> None:
+        super().__init__(model_id, request_id)
+        # Streaming state: tracks which blocks have been opened/closed
+        self._thinking_block_open: bool = False
+        self._text_block_open: bool = False
+        self._next_block_index: int = 0
 
     # ── input parsing ────────────────────────────────────────────────
 
@@ -254,35 +266,90 @@ class AnthropicFormatter(ProtocolFormatter):
                     }
                 ),
             },
-            {
-                "event": "content_block_start",
-                "data": json.dumps(
-                    {
-                        "type": "content_block_start",
-                        "index": 0,
-                        "content_block": {"type": "text", "text": ""},
-                    }
-                ),
-            },
         ]
 
     def stream_event(self, event: StreamEvent) -> list[dict[str, Any]]:
-        # Anthropic streams text content only (reasoning is not in Anthropic spec)
-        text = event.content or ""
-        if not text:
-            return []
-        return [
-            {
-                "event": "content_block_delta",
-                "data": json.dumps(
+        events: list[dict[str, Any]] = []
+
+        # -- reasoning_content → thinking block --
+        if event.reasoning_content:
+            if not self._thinking_block_open:
+                # Open the thinking block lazily
+                events.append(
                     {
-                        "type": "content_block_delta",
-                        "index": 0,
-                        "delta": {"type": "text_delta", "text": text},
+                        "event": "content_block_start",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_start",
+                                "index": self._next_block_index,
+                                "content_block": {"type": "thinking", "thinking": ""},
+                            }
+                        ),
                     }
-                ),
-            }
-        ]
+                )
+                self._thinking_block_open = True
+            events.append(
+                {
+                    "event": "content_block_delta",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_delta",
+                            "index": self._next_block_index,
+                            "delta": {
+                                "type": "thinking_delta",
+                                "thinking": event.reasoning_content,
+                            },
+                        }
+                    ),
+                }
+            )
+
+        # -- content → text block --
+        if event.content:
+            if self._thinking_block_open and not self._text_block_open:
+                # Close the thinking block before opening the text block
+                events.append(
+                    {
+                        "event": "content_block_stop",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_stop",
+                                "index": self._next_block_index,
+                            }
+                        ),
+                    }
+                )
+                self._thinking_block_open = False
+                self._next_block_index += 1
+            if not self._text_block_open:
+                # Open the text block lazily
+                events.append(
+                    {
+                        "event": "content_block_start",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_start",
+                                "index": self._next_block_index,
+                                "content_block": {"type": "text", "text": ""},
+                            }
+                        ),
+                    }
+                )
+                self._text_block_open = True
+            events.append(
+                {
+                    "event": "content_block_delta",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_delta",
+                            "index": self._next_block_index,
+                            "delta": {"type": "text_delta", "text": event.content},
+                        }
+                    ),
+                }
+            )
+
+        return events
 
     def stream_end(
         self,
@@ -294,23 +361,92 @@ class AnthropicFormatter(ProtocolFormatter):
         anthropic_stop = openai_stop_to_anthropic(finish_reason)
         events: list[dict[str, Any]] = []
 
-        # Close the text content block
-        events.append(
-            {
-                "event": "content_block_stop",
-                "data": json.dumps(
+        # Close whichever content block is currently open.
+        # If no block was opened at all (e.g. empty response), open+close a text block.
+        if self._thinking_block_open:
+            events.append(
+                {
+                    "event": "content_block_stop",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_stop",
+                            "index": self._next_block_index,
+                        }
+                    ),
+                }
+            )
+            self._thinking_block_open = False
+            self._next_block_index += 1
+            # If there was only thinking and no text, open+close an empty text block
+            if not self._text_block_open:
+                events.append(
                     {
-                        "type": "content_block_stop",
-                        "index": 0,
+                        "event": "content_block_start",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_start",
+                                "index": self._next_block_index,
+                                "content_block": {"type": "text", "text": ""},
+                            }
+                        ),
                     }
-                ),
-            }
-        )
+                )
+                events.append(
+                    {
+                        "event": "content_block_stop",
+                        "data": json.dumps(
+                            {
+                                "type": "content_block_stop",
+                                "index": self._next_block_index,
+                            }
+                        ),
+                    }
+                )
+                self._next_block_index += 1
+        elif self._text_block_open:
+            events.append(
+                {
+                    "event": "content_block_stop",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_stop",
+                            "index": self._next_block_index,
+                        }
+                    ),
+                }
+            )
+            self._next_block_index += 1
+        else:
+            # No blocks opened yet — emit an empty text block
+            events.append(
+                {
+                    "event": "content_block_start",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_start",
+                            "index": self._next_block_index,
+                            "content_block": {"type": "text", "text": ""},
+                        }
+                    ),
+                }
+            )
+            events.append(
+                {
+                    "event": "content_block_stop",
+                    "data": json.dumps(
+                        {
+                            "type": "content_block_stop",
+                            "index": self._next_block_index,
+                        }
+                    ),
+                }
+            )
+            self._next_block_index += 1
 
         # Emit tool_use content blocks if present
         if tool_calls:
             for i, tc in enumerate(tool_calls):
-                block_index = i + 1  # text block is index 0
+                block_index = self._next_block_index + i
                 func = tc.get("function", {})
                 tool_id = tc.get("id", f"toolu_{i}")
                 tool_name = func.get("name", "")
@@ -403,7 +539,9 @@ class AnthropicFormatter(ProtocolFormatter):
             result.finish_reason
         )
 
-        content: list[TextBlock | ToolUseBlock] = []
+        content: list[ThinkingBlock | TextBlock | ToolUseBlock] = []
+        if result.reasoning_content:
+            content.append(ThinkingBlock(thinking=result.reasoning_content))
         if result.content:
             content.append(TextBlock(text=result.content))
 

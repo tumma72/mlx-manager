@@ -388,9 +388,9 @@ class TestAnthropicFormatterStreamStart:
     def test_emits_message_start_and_content_block_start(self) -> None:
         fmt = AnthropicFormatter("claude-model", "msg_abc123")
         events = fmt.stream_start()
-        assert len(events) == 2
+        assert len(events) == 1
 
-        # message_start
+        # message_start only — content blocks are opened lazily
         assert events[0]["event"] == "message_start"
         data = json.loads(events[0]["data"])
         assert data["type"] == "message_start"
@@ -404,32 +404,45 @@ class TestAnthropicFormatterStreamStart:
         assert msg["stop_sequence"] is None
         assert msg["usage"] == {"input_tokens": 0, "output_tokens": 0}
 
-        # content_block_start
-        assert events[1]["event"] == "content_block_start"
-        data = json.loads(events[1]["data"])
-        assert data["type"] == "content_block_start"
-        assert data["index"] == 0
-        assert data["content_block"] == {"type": "text", "text": ""}
-
 
 class TestAnthropicFormatterStreamEvent:
     def test_content_token(self) -> None:
+        """First content token lazily opens the text block then emits a delta."""
         fmt = AnthropicFormatter("model", "msg_1")
         event = StreamEvent(type="content", content="Hello")
         events = fmt.stream_event(event)
+        assert len(events) == 2
+        assert events[0]["event"] == "content_block_start"
+        start_data = json.loads(events[0]["data"])
+        assert start_data["index"] == 0
+        assert start_data["content_block"] == {"type": "text", "text": ""}
+        assert events[1]["event"] == "content_block_delta"
+        delta_data = json.loads(events[1]["data"])
+        assert delta_data["type"] == "content_block_delta"
+        assert delta_data["index"] == 0
+        assert delta_data["delta"] == {"type": "text_delta", "text": "Hello"}
+
+    def test_content_token_subsequent_no_new_block_start(self) -> None:
+        """Subsequent content tokens reuse the open text block."""
+        fmt = AnthropicFormatter("model", "msg_1")
+        fmt.stream_event(StreamEvent(type="content", content="Hello"))
+        events = fmt.stream_event(StreamEvent(type="content", content=" world"))
         assert len(events) == 1
         assert events[0]["event"] == "content_block_delta"
-        data = json.loads(events[0]["data"])
-        assert data["type"] == "content_block_delta"
-        assert data["index"] == 0
-        assert data["delta"] == {"type": "text_delta", "text": "Hello"}
 
-    def test_reasoning_only_yields_nothing(self) -> None:
-        """Anthropic protocol doesn't support reasoning_content in streaming."""
+    def test_reasoning_only_opens_thinking_block(self) -> None:
+        """reasoning_content opens a thinking block and emits a thinking_delta."""
         fmt = AnthropicFormatter("model", "msg_1")
         event = StreamEvent(type="reasoning_content", reasoning_content="thinking...")
         events = fmt.stream_event(event)
-        assert events == []
+        assert len(events) == 2
+        assert events[0]["event"] == "content_block_start"
+        start_data = json.loads(events[0]["data"])
+        assert start_data["content_block"]["type"] == "thinking"
+        assert events[1]["event"] == "content_block_delta"
+        delta_data = json.loads(events[1]["data"])
+        assert delta_data["delta"]["type"] == "thinking_delta"
+        assert delta_data["delta"]["thinking"] == "thinking..."
 
     def test_empty_event_yields_nothing(self) -> None:
         fmt = AnthropicFormatter("model", "msg_1")
@@ -445,40 +458,49 @@ class TestAnthropicFormatterStreamEvent:
 
 
 class TestAnthropicFormatterStreamEnd:
-    def test_emits_three_closing_events(self) -> None:
+    def test_emits_closing_events_with_empty_text_block(self) -> None:
+        """stream_end with no prior content emits an empty text block then message events."""
         fmt = AnthropicFormatter("model", "msg_1")
         events = fmt.stream_end("stop", output_tokens=42)
-        assert len(events) == 3
+        assert len(events) == 4
+
+        # content_block_start (empty text block)
+        assert events[0]["event"] == "content_block_start"
+        data = json.loads(events[0]["data"])
+        assert data["content_block"]["type"] == "text"
+        assert data["index"] == 0
 
         # content_block_stop
-        assert events[0]["event"] == "content_block_stop"
-        data = json.loads(events[0]["data"])
+        assert events[1]["event"] == "content_block_stop"
+        data = json.loads(events[1]["data"])
         assert data["type"] == "content_block_stop"
         assert data["index"] == 0
 
         # message_delta
-        assert events[1]["event"] == "message_delta"
-        data = json.loads(events[1]["data"])
+        assert events[2]["event"] == "message_delta"
+        data = json.loads(events[2]["data"])
         assert data["type"] == "message_delta"
         assert data["delta"]["stop_reason"] == "end_turn"
         assert data["delta"]["stop_sequence"] is None
         assert data["usage"]["output_tokens"] == 42
 
         # message_stop
-        assert events[2]["event"] == "message_stop"
-        data = json.loads(events[2]["data"])
+        assert events[3]["event"] == "message_stop"
+        data = json.loads(events[3]["data"])
         assert data["type"] == "message_stop"
 
     def test_stop_reason_translation(self) -> None:
         fmt = AnthropicFormatter("model", "msg_1")
         events = fmt.stream_end("tool_calls")
-        data = json.loads(events[1]["data"])
+        # message_delta is now at index 2 (after empty text block start+stop)
+        data = json.loads(events[2]["data"])
         assert data["delta"]["stop_reason"] == "tool_use"
 
     def test_length_stop_reason(self) -> None:
         fmt = AnthropicFormatter("model", "msg_1")
         events = fmt.stream_end("length")
-        data = json.loads(events[1]["data"])
+        # message_delta is now at index 2 (after empty text block start+stop)
+        data = json.loads(events[2]["data"])
         assert data["delta"]["stop_reason"] == "max_tokens"
 
 
@@ -535,7 +557,7 @@ class TestAnthropicFormatterComplete:
         assert d["usage"]["output_tokens"] == 5
 
     def test_full_streaming_event_sequence(self) -> None:
-        """Verify the complete streaming lifecycle matches messages.py behavior."""
+        """Verify the complete streaming lifecycle with lazy block opening."""
         fmt = AnthropicFormatter("model", "msg_lifecycle")
 
         # Collect all events
@@ -546,12 +568,16 @@ class TestAnthropicFormatterComplete:
         all_events.extend(fmt.stream_end("stop", output_tokens=2))
 
         # Verify event sequence
+        # stream_start: message_start
+        # first stream_event: content_block_start(text,0) + content_block_delta(0)
+        # second stream_event: content_block_delta(0)   (block already open)
+        # stream_end: content_block_stop(0) + message_delta + message_stop
         event_types = [e["event"] for e in all_events]
         assert event_types == [
             "message_start",
-            "content_block_start",
-            "content_block_delta",
-            "content_block_delta",
+            "content_block_start",  # lazily opened on first content token
+            "content_block_delta",  # "Hello"
+            "content_block_delta",  # " world"
             "content_block_stop",
             "message_delta",
             "message_stop",

@@ -163,9 +163,7 @@ class ChatCompletionRequest(BaseModel):
             "examples": [
                 {
                     "model": "mlx-community/Qwen3-0.6B-4bit-DWQ",
-                    "messages": [
-                        {"role": "user", "content": "What is the capital of France?"}
-                    ],
+                    "messages": [{"role": "user", "content": "What is the capital of France?"}],
                     "temperature": 0.7,
                     "max_tokens": 256,
                     "stream": False,

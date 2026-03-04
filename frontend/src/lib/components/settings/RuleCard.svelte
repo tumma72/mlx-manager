@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { GripVertical, Trash2, AlertTriangle } from 'lucide-svelte';
+	import { GripVertical, Trash2, Pencil, AlertTriangle } from 'lucide-svelte';
 	import type { BackendMapping } from '$lib/api/types';
 
 	interface Props {
 		rule: BackendMapping;
 		hasWarning?: boolean;
 		onDelete: () => void;
+		onEdit: () => void;
 	}
 
-	let { rule, hasWarning = false, onDelete }: Props = $props();
+	let { rule, hasWarning = false, onDelete, onEdit }: Props = $props();
 
 	const patternTypeColors: Record<string, string> = {
 		exact: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -74,6 +75,13 @@
 	</div>
 
 	<!-- Actions -->
+	<button
+		onclick={onEdit}
+		class="p-2 text-muted-foreground transition-colors hover:text-foreground"
+		title="Edit rule"
+	>
+		<Pencil class="h-4 w-4" />
+	</button>
 	<button
 		onclick={onDelete}
 		class="p-2 text-muted-foreground transition-colors hover:text-destructive"

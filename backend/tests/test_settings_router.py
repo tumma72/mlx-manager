@@ -1588,6 +1588,390 @@ class TestGetProviderDefaults:
 
 
 # ============================================================================
+# Routing Rules Profile ID Validation Tests
+# ============================================================================
+
+
+class TestCreateRuleWithProfileId:
+    """Tests for profile_id validation in POST /api/settings/rules."""
+
+    async def test_create_rule_with_nonexistent_profile_id(self, auth_client):
+        """Rejects rule creation when profile_id references a nonexistent profile."""
+        response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "gpt-4",
+                "backend_type": "openai",
+                "profile_id": 99999,
+            },
+        )
+        assert response.status_code == 400
+        assert "Profile with id=99999 not found" in response.json()["detail"]
+
+    async def test_create_rule_with_valid_profile_id(self, auth_client):
+        """Accepts rule creation when profile_id references an existing profile."""
+        # Create a profile first via the API
+        profile_response = await auth_client.post(
+            "/api/profiles",
+            json={
+                "name": "Rule Test Profile",
+                "model_id": 1,
+                "inference": {"temperature": 0.7},
+            },
+        )
+        assert profile_response.status_code == 201
+        profile_id = profile_response.json()["id"]
+
+        response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "gpt-4",
+                "backend_type": "openai",
+                "profile_id": profile_id,
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["profile_id"] == profile_id
+
+    async def test_create_rule_with_null_profile_id(self, auth_client):
+        """Allows rule creation with null profile_id (no validation needed)."""
+        response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "gpt-4",
+                "backend_type": "openai",
+                "profile_id": None,
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["profile_id"] is None
+
+
+class TestUpdateRuleWithProfileId:
+    """Tests for profile_id validation in PUT /api/settings/rules/{rule_id}."""
+
+    async def test_update_rule_with_nonexistent_profile_id(self, auth_client):
+        """Rejects rule update when profile_id references a nonexistent profile."""
+        # Create rule first
+        create_response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "test",
+                "backend_type": "openai",
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        response = await auth_client.put(
+            f"/api/settings/rules/{rule_id}",
+            json={"profile_id": 99999},
+        )
+        assert response.status_code == 400
+        assert "Profile with id=99999 not found" in response.json()["detail"]
+
+    async def test_update_rule_with_valid_profile_id(self, auth_client):
+        """Accepts rule update when profile_id references an existing profile."""
+        # Create a profile first
+        profile_response = await auth_client.post(
+            "/api/profiles",
+            json={
+                "name": "Update Rule Profile",
+                "model_id": 1,
+                "inference": {"temperature": 0.5},
+            },
+        )
+        assert profile_response.status_code == 201
+        profile_id = profile_response.json()["id"]
+
+        # Create rule
+        create_response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "test",
+                "backend_type": "openai",
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Update with valid profile_id
+        response = await auth_client.put(
+            f"/api/settings/rules/{rule_id}",
+            json={"profile_id": profile_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["profile_id"] == profile_id
+
+    async def test_update_rule_with_null_profile_id_skips_validation(self, auth_client):
+        """Null profile_id in update skips validation (no lookup needed)."""
+        # Create rule with no profile_id
+        create_response = await auth_client.post(
+            "/api/settings/rules",
+            json={
+                "model_pattern": "test",
+                "backend_type": "openai",
+            },
+        )
+        rule_id = create_response.json()["id"]
+
+        # Setting profile_id to None explicitly should succeed
+        response = await auth_client.put(
+            f"/api/settings/rules/{rule_id}",
+            json={"profile_id": None},
+        )
+        assert response.status_code == 200
+        assert response.json()["profile_id"] is None
+
+
+# ============================================================================
+# HuggingFace Token Endpoint Tests
+# ============================================================================
+
+
+class TestGetHuggingFaceStatus:
+    """Tests for GET /api/settings/huggingface."""
+
+    async def test_no_token_configured(self, auth_client):
+        """Returns configured=False when no token exists."""
+        response = await auth_client.get("/api/settings/huggingface")
+        assert response.status_code == 200
+        assert response.json() == {"configured": False}
+
+    async def test_token_configured(self, auth_client):
+        """Returns configured=True when a token is saved."""
+        # Save a token first
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_test_token_12345"},
+        )
+
+        response = await auth_client.get("/api/settings/huggingface")
+        assert response.status_code == 200
+        assert response.json() == {"configured": True}
+
+    async def test_requires_auth(self, client):
+        """Requires authentication."""
+        response = await client.get("/api/settings/huggingface")
+        assert response.status_code == 401
+
+
+class TestSaveHuggingFaceToken:
+    """Tests for PUT /api/settings/huggingface."""
+
+    async def test_save_new_token(self, auth_client):
+        """Creates a new HuggingFace token entry."""
+        response = await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_new_token_12345"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"configured": True}
+
+        # Verify it's configured
+        status_response = await auth_client.get("/api/settings/huggingface")
+        assert status_response.json() == {"configured": True}
+
+    async def test_update_existing_token(self, auth_client):
+        """Updates an existing HuggingFace token."""
+        # Save initial token
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_initial_token"},
+        )
+
+        # Update with new token
+        response = await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_updated_token"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"configured": True}
+
+    async def test_save_empty_token_rejected(self, auth_client):
+        """Rejects empty or whitespace-only tokens."""
+        response = await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "   "},
+        )
+        assert response.status_code == 400
+        assert "Token is required" in response.json()["detail"]
+
+    async def test_requires_auth(self, client):
+        """Requires authentication."""
+        response = await client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_test"},
+        )
+        assert response.status_code == 401
+
+
+class TestDeleteHuggingFaceToken:
+    """Tests for DELETE /api/settings/huggingface."""
+
+    async def test_delete_existing_token(self, auth_client):
+        """Deletes an existing HuggingFace token."""
+        # Save a token first
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_to_delete"},
+        )
+
+        response = await auth_client.delete("/api/settings/huggingface")
+        assert response.status_code == 204
+
+        # Verify it's gone
+        status_response = await auth_client.get("/api/settings/huggingface")
+        assert status_response.json() == {"configured": False}
+
+    async def test_delete_nonexistent_token(self, auth_client):
+        """Deleting when no token exists is a no-op (still 204)."""
+        response = await auth_client.delete("/api/settings/huggingface")
+        assert response.status_code == 204
+
+    async def test_requires_auth(self, client):
+        """Requires authentication."""
+        response = await client.delete("/api/settings/huggingface")
+        assert response.status_code == 401
+
+
+class TestTestHuggingFaceToken:
+    """Tests for POST /api/settings/huggingface/test."""
+
+    async def test_no_token_configured(self, auth_client):
+        """Returns 404 when no token is configured."""
+        response = await auth_client.post("/api/settings/huggingface/test")
+        assert response.status_code == 404
+        assert "No HuggingFace token configured" in response.json()["detail"]
+
+    async def test_success(self, auth_client):
+        """Tests successful HuggingFace token validation."""
+        # Save a token first
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_valid_token"},
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"name": "testuser"}
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert data["username"] == "testuser"
+
+    async def test_invalid_token_401(self, auth_client):
+        """Returns error when HF API returns 401 (invalid token)."""
+        # Save a token first
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_invalid_token"},
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 401
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 400
+            assert "Invalid token" in response.json()["detail"]
+
+    async def test_hf_api_other_error(self, auth_client):
+        """Returns error when HF API returns unexpected status code."""
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_some_token"},
+        )
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 500
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 400
+            assert "status 500" in response.json()["detail"]
+
+    async def test_connect_error(self, auth_client):
+        """Returns error when HF API is unreachable."""
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_some_token"},
+        )
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.side_effect = httpx.ConnectError("connection refused")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 400
+            assert "Could not connect" in response.json()["detail"]
+
+    async def test_timeout(self, auth_client):
+        """Returns error when HF API request times out."""
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_some_token"},
+        )
+
+        with patch("mlx_manager.routers.settings.httpx.AsyncClient") as mock_client:
+            mock_instance = AsyncMock()
+            mock_instance.get.side_effect = httpx.TimeoutException("timed out")
+            mock_instance.__aenter__.return_value = mock_instance
+            mock_instance.__aexit__.return_value = None
+            mock_client.return_value = mock_instance
+
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 400
+            assert "timed out" in response.json()["detail"]
+
+    async def test_decryption_failure(self, auth_client):
+        """Returns error when stored token cannot be decrypted."""
+        # Save a valid token first
+        await auth_client.put(
+            "/api/settings/huggingface",
+            json={"token": "hf_valid_token"},
+        )
+
+        # Mock decrypt to raise InvalidToken
+        with patch(
+            "mlx_manager.routers.settings.decrypt_api_key",
+            side_effect=__import__(
+                "mlx_manager.services.encryption_service", fromlist=["InvalidToken"]
+            ).InvalidToken("bad token"),
+        ):
+            response = await auth_client.post("/api/settings/huggingface/test")
+            assert response.status_code == 400
+            assert "cannot be decrypted" in response.json()["detail"]
+
+    async def test_requires_auth(self, client):
+        """Requires authentication."""
+        response = await client.post("/api/settings/huggingface/test")
+        assert response.status_code == 401
+
+
+# ============================================================================
 # Provider Connection Tests - Uncovered Branches
 # ============================================================================
 

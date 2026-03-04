@@ -618,3 +618,353 @@ class TestModernPathLogging:
         call_args = [call[0][0] for call in mock_logger.debug.call_args_list]
         # Should log detected tool calls
         assert any("Detected" in str(msg) and "tool call" in str(msg) for msg in call_args)
+
+
+# ---------------------------------------------------------------------------
+# _prepare_generation adapter fallback (lines 79-82)
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareGenerationAdapterFallback:
+    """Test adapter fallback in _prepare_generation when loaded.adapter is None."""
+
+    async def test_prepare_generation_creates_default_adapter_when_none(self) -> None:
+        """_prepare_generation creates default adapter when loaded.adapter is None.
+
+        Covers lines 80-82: fallback from None adapter to create_adapter("default", ...).
+        """
+        from mlx_manager.mlx_server.services.inference import generate_chat_complete_response
+
+        tokenizer = _make_fake_tokenizer()
+        model = MagicMock()
+        loaded = MagicMock()
+        loaded.model = model
+        loaded.tokenizer = tokenizer
+        loaded.adapter = None  # No adapter -- triggers fallback at lines 79-82
+        loaded.model_type = "text-gen"
+
+        mock_pool = MagicMock()
+        mock_pool.get_model = AsyncMock(return_value=loaded)
+
+        # The fallback adapter will call adapter.prepare_input(), which calls
+        # tokenizer.apply_chat_template. Then adapter.generate() is called on
+        # the modern path (messages is not None).
+        # We need to mock adapter.generate since the real one needs GPU.
+        # But the adapter is created INSIDE _prepare_generation, so we patch
+        # create_adapter to return a controllable adapter.
+        from mlx_manager.mlx_server.models.adapters.composable import create_adapter
+
+        real_adapter = create_adapter("default", tokenizer, model_type="text-gen")
+
+        async def fake_generate(**kwargs):
+            return TextResult(content="Fallback response", finish_reason="stop")
+
+        with (
+            patch(
+                "mlx_manager.mlx_server.models.pool.get_model_pool",
+                return_value=mock_pool,
+            ),
+            patch(
+                "mlx_manager.mlx_server.models.adapters.composable.create_adapter",
+                return_value=real_adapter,
+            ) as mock_create,
+            patch.object(real_adapter, "generate", side_effect=fake_generate),
+        ):
+            result = await generate_chat_complete_response(
+                model_id="test/model",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+
+        # Verify create_adapter was called with "default" as family
+        mock_create.assert_called_once_with("default", tokenizer, model_type="text-gen")
+        assert result.result.content == "Fallback response"
+        assert result.result.finish_reason == "stop"
+
+
+# ---------------------------------------------------------------------------
+# Legacy stream path: tool debug logging (lines 351-354, 358-359)
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyStreamToolLogging:
+    """Test debug logging in legacy stream path when tools are present."""
+
+    async def test_legacy_stream_logs_raw_output_when_tools_present(self) -> None:
+        """Legacy stream path logs raw model output when ctx.tools is set.
+
+        Covers lines 351-354: raw output logging when tools are provided.
+        """
+        from mlx_manager.mlx_server.services.inference import _GenContext, _stream_chat_ir
+
+        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("qwen")
+
+        ctx = _GenContext(
+            model=model,
+            tokenizer=tokenizer,
+            prompt="test prompt",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            stop_token_ids={128009},
+            adapter=adapter,
+            model_id="test/model",
+            completion_id="chatcmpl-legacy-tools",
+            created=1700000000,
+            tools=[{"type": "function", "function": {"name": "search"}}],
+            pixel_values=None,
+            messages=None,  # Legacy path
+        )
+
+        # stream_from_metal_thread yields tokens, then a stop token
+        async def mock_stream(produce_fn, **kwargs):
+            yield ("Some output text", 1, False)
+            yield ("", 128009, True)
+
+        with (
+            patch(
+                "mlx_manager.mlx_server.utils.metal.stream_from_metal_thread",
+                side_effect=mock_stream,
+            ),
+            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
+        ):
+            events = []
+            async for event in _stream_chat_ir(ctx):
+                events.append(event)
+
+        # Should log generation config (line 311-314) and raw output (line 352-354)
+        debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+        assert any("Generation config" in msg for msg in debug_messages)
+        assert any("RAW MODEL OUTPUT" in msg for msg in debug_messages)
+
+    async def test_legacy_stream_logs_tool_calls_detected(self) -> None:
+        """Legacy stream path logs when tool_calls detected in process_complete result.
+
+        Covers lines 358-359: tool_calls detection logging.
+        """
+        from mlx_manager.mlx_server.services.inference import _GenContext, _stream_chat_ir
+
+        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("qwen")
+
+        tool_call_dict = {
+            "id": "call_456",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": '{"city": "NYC"}'},
+        }
+
+        # Mock process_complete to return a result with tool_calls
+        original_process_complete = adapter.process_complete
+
+        def fake_process_complete(raw_text: str, finish_reason: str = "stop"):
+            result = original_process_complete(raw_text, finish_reason)
+            # Inject tool_calls into the result to trigger the logging branch
+            return TextResult(
+                content=result.content,
+                finish_reason="tool_calls",
+                tool_calls=[tool_call_dict],
+            )
+
+        ctx = _GenContext(
+            model=model,
+            tokenizer=tokenizer,
+            prompt="test prompt",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            stop_token_ids={128009},
+            adapter=adapter,
+            model_id="test/model",
+            completion_id="chatcmpl-legacy-tc",
+            created=1700000000,
+            tools=[{"type": "function", "function": {"name": "get_weather"}}],
+            pixel_values=None,
+            messages=None,  # Legacy path
+        )
+
+        async def mock_stream(produce_fn, **kwargs):
+            yield ("tool output", 1, False)
+            yield ("", 128009, True)
+
+        with (
+            patch(
+                "mlx_manager.mlx_server.utils.metal.stream_from_metal_thread",
+                side_effect=mock_stream,
+            ),
+            patch.object(adapter, "process_complete", side_effect=fake_process_complete),
+            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
+        ):
+            events = []
+            async for event in _stream_chat_ir(ctx):
+                events.append(event)
+
+        # Should log "Detected N tool calls in streaming response" (line 359)
+        debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+        assert any("Detected" in msg and "tool call" in msg for msg in debug_messages)
+
+        # Final event should have tool_calls
+        final = events[-1]
+        assert isinstance(final, TextResult)
+        assert final.tool_calls is not None
+        assert len(final.tool_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# _complete_chat_ir: tool_calls and reasoning_content logging (lines 464-467)
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteChatIRLogging:
+    """Test debug logging for tool_calls and reasoning_content in _complete_chat_ir."""
+
+    async def test_complete_chat_ir_logs_tool_calls(self) -> None:
+        """_complete_chat_ir logs when result has tool_calls.
+
+        Covers line 465: debug logging for tool_calls in non-streaming response.
+        Uses modern path (messages is not None) with mocked adapter.generate().
+        """
+        from mlx_manager.mlx_server.services.inference import _complete_chat_ir, _GenContext
+
+        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("qwen")
+
+        tool_call_dict = {
+            "id": "call_789",
+            "type": "function",
+            "function": {"name": "lookup", "arguments": '{"id": 42}'},
+        }
+
+        ctx = _GenContext(
+            model=model,
+            tokenizer=tokenizer,
+            prompt="test",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            stop_token_ids={128009},
+            adapter=adapter,
+            model_id="test/model",
+            completion_id="chatcmpl-tc-log",
+            created=1700000000,
+            tools=[{"type": "function", "function": {"name": "lookup"}}],
+            pixel_values=None,
+            messages=[{"role": "user", "content": "Look up item"}],  # Modern path
+        )
+
+        async def fake_generate(**kwargs):
+            return TextResult(
+                content="Looking up",
+                finish_reason="tool_calls",
+                tool_calls=[tool_call_dict],
+            )
+
+        with (
+            patch.object(adapter, "generate", side_effect=fake_generate),
+            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
+        ):
+            result = await _complete_chat_ir(ctx)
+
+        # Line 465: should log "Detected N tool calls in response"
+        debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+        assert any("Detected" in msg and "tool call" in msg for msg in debug_messages)
+
+        assert result.result.tool_calls is not None
+        assert len(result.result.tool_calls) == 1
+
+    async def test_complete_chat_ir_logs_reasoning_content(self) -> None:
+        """_complete_chat_ir logs when result has reasoning_content.
+
+        Covers line 467: debug logging for reasoning_content in non-streaming response.
+        Uses modern path (messages is not None) with mocked adapter.generate().
+        """
+        from mlx_manager.mlx_server.services.inference import _complete_chat_ir, _GenContext
+
+        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("qwen")
+
+        ctx = _GenContext(
+            model=model,
+            tokenizer=tokenizer,
+            prompt="test",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            stop_token_ids={128009},
+            adapter=adapter,
+            model_id="test/model",
+            completion_id="chatcmpl-reason-log",
+            created=1700000000,
+            tools=None,
+            pixel_values=None,
+            messages=[{"role": "user", "content": "Think about this"}],  # Modern path
+        )
+
+        async def fake_generate(**kwargs):
+            return TextResult(
+                content="The answer is 42",
+                finish_reason="stop",
+                reasoning_content="Let me think step by step about this problem...",
+            )
+
+        with (
+            patch.object(adapter, "generate", side_effect=fake_generate),
+            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
+        ):
+            result = await _complete_chat_ir(ctx)
+
+        # Line 467: should log "Extracted reasoning content (N chars)"
+        debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+        assert any("reasoning content" in msg for msg in debug_messages)
+
+        assert result.result.reasoning_content is not None
+        assert "step by step" in result.result.reasoning_content
+
+    async def test_complete_chat_ir_logs_both_tool_calls_and_reasoning(self) -> None:
+        """_complete_chat_ir logs both tool_calls and reasoning_content when present.
+
+        Covers both lines 465 and 467 in a single response.
+        """
+        from mlx_manager.mlx_server.services.inference import _complete_chat_ir, _GenContext
+
+        loaded, model, tokenizer, adapter = _make_loaded_model_with_real_adapter("qwen")
+
+        tool_call_dict = {
+            "id": "call_both",
+            "type": "function",
+            "function": {"name": "calc", "arguments": '{"expr": "2+2"}'},
+        }
+
+        ctx = _GenContext(
+            model=model,
+            tokenizer=tokenizer,
+            prompt="test",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            stop_token_ids={128009},
+            adapter=adapter,
+            model_id="test/model",
+            completion_id="chatcmpl-both-log",
+            created=1700000000,
+            tools=[{"type": "function", "function": {"name": "calc"}}],
+            pixel_values=None,
+            messages=[{"role": "user", "content": "Calculate"}],  # Modern path
+        )
+
+        async def fake_generate(**kwargs):
+            return TextResult(
+                content="I need to calculate",
+                finish_reason="tool_calls",
+                tool_calls=[tool_call_dict],
+                reasoning_content="The user wants a calculation, I should use the calc tool",
+            )
+
+        with (
+            patch.object(adapter, "generate", side_effect=fake_generate),
+            patch("mlx_manager.mlx_server.services.inference.logger") as mock_logger,
+        ):
+            result = await _complete_chat_ir(ctx)
+
+        debug_messages = [str(call) for call in mock_logger.debug.call_args_list]
+        # Both logging branches should be hit
+        assert any("tool call" in msg for msg in debug_messages)
+        assert any("reasoning content" in msg for msg in debug_messages)
+
+        assert result.result.tool_calls is not None
+        assert result.result.reasoning_content is not None

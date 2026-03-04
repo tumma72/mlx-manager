@@ -57,9 +57,9 @@ async def _collect_sse_events(response: Any) -> list[dict]:
                 event: dict[str, str] = {}
                 for line in lines:
                     if line.startswith("event:"):
-                        event["event"] = line[len("event:"):].strip()
+                        event["event"] = line[len("event:") :].strip()
                     elif line.startswith("data:"):
-                        event["data"] = line[len("data:"):].strip()
+                        event["data"] = line[len("data:") :].strip()
                 if event:
                     events.append(event)
     return events
@@ -82,9 +82,7 @@ class TestStreamingTimeoutSSEBranch:
         """Return (settings_patch, gen_patch) context managers."""
         settings = MagicMock()
         settings.timeout_chat_seconds = timeout_seconds
-        p_settings = patch(
-            "mlx_manager.mlx_server.api.v1.chat.get_settings", return_value=settings
-        )
+        p_settings = patch("mlx_manager.mlx_server.api.v1.chat.get_settings", return_value=settings)
         p_gen = patch(
             "mlx_manager.mlx_server.api.v1.chat.generate_chat_stream",
             new_callable=AsyncMock,

@@ -67,9 +67,7 @@ class TestReloadSettings:
             # Patch get_settings so the call after cache_clear doesn't hit real env
             new_settings = MagicMock()
             new_settings.model_dump.return_value = _make_settings_dump()
-            with patch(
-                "mlx_manager.mlx_server.config.get_settings", return_value=new_settings
-            ):
+            with patch("mlx_manager.mlx_server.config.get_settings", return_value=new_settings):
                 # Call the raw function (bypassing the patch on the module's name)
                 # We need to access the original; easier to invoke cache_clear manually.
                 get_settings.cache_clear()
@@ -95,9 +93,7 @@ class TestReloadSettings:
 
         with patch("mlx_manager.mlx_server.config.get_settings", side_effect=side_effect):
             with patch.object(
-                __import__(
-                    "mlx_manager.mlx_server.config", fromlist=["get_settings"]
-                ).get_settings,
+                __import__("mlx_manager.mlx_server.config", fromlist=["get_settings"]).get_settings,
                 "cache_clear",
                 return_value=None,
             ):
@@ -204,9 +200,7 @@ class TestReloadSettings:
         old_dump = _make_settings_dump(
             host="127.0.0.1", port=10242, database_path="~/.mlx-manager/mlx-server.db"
         )
-        new_dump = _make_settings_dump(
-            host="0.0.0.0", port=9999, database_path="/tmp/other.db"
-        )
+        new_dump = _make_settings_dump(host="0.0.0.0", port=9999, database_path="/tmp/other.db")
 
         old_settings = MagicMock()
         old_settings.model_dump.return_value = old_dump
@@ -579,9 +573,7 @@ class TestAdminReloadConfig:
         from mlx_manager.mlx_server.api.v1.admin import admin_reload_config
 
         changes = {"port": {"old": 10242, "new": 9999}}
-        warnings = [
-            "port changed from 10242 to 9999 but requires a server restart to take effect"
-        ]
+        warnings = ["port changed from 10242 to 9999 but requires a server restart to take effect"]
 
         with patch(
             "mlx_manager.mlx_server.api.v1.admin.reload_settings",

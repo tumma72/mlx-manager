@@ -43,12 +43,21 @@ def validate_model_available(model: str | None) -> str:
                 detail="No model specified and no default model configured",
             )
 
-    # Check against available models
-    if model not in settings.available_models:
+    # Check against available models (static config + loaded pool models)
+    available = set(settings.available_models)
+    try:
+        from mlx_manager.mlx_server.models.pool import get_model_pool
+
+        pool = get_model_pool()
+        available.update(pool.get_loaded_models())
+    except RuntimeError:
+        pass  # Pool not initialized yet
+
+    if model not in available:
         raise HTTPException(
             status_code=404,
             detail=f"Model '{model}' is not available. "
-            f"Available models: {', '.join(settings.available_models)}",
+            f"Available models: {', '.join(sorted(available))}",
         )
 
     return model

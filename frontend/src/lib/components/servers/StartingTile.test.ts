@@ -28,6 +28,7 @@ vi.mock("$stores", () => {
 vi.mock("$api", () => ({
   servers: {
     status: vi.fn().mockResolvedValue({ running: false, failed: false }),
+    health: vi.fn().mockResolvedValue({ status: "starting", model_loaded: false }),
   },
 }));
 

@@ -21,6 +21,9 @@
 	let deleteDialogOpen = $state(false);
 	let ruleToDelete = $state<number | null>(null);
 
+	// Edit state
+	let editingRule = $state<BackendMapping | null>(null);
+
 	// Transform rules to sortable items with string IDs
 	const sortableItems = $derived(
 		rules.map((rule) => ({
@@ -108,9 +111,18 @@
 		ruleToDelete = null;
 	}
 
-	// Handle rule created
-	async function handleRuleCreated() {
+	// Handle rule created or updated
+	async function handleRuleSaved() {
+		editingRule = null;
 		await loadData();
+	}
+
+	function handleEditRule(rule: BackendMapping) {
+		editingRule = rule;
+	}
+
+	function handleCancelEdit() {
+		editingRule = null;
 	}
 </script>
 
@@ -141,8 +153,13 @@
 	<!-- Test input -->
 	<RuleTestInput {rules} />
 
-	<!-- Add rule form -->
-	<RuleForm onSave={handleRuleCreated} {configuredProviders} />
+	<!-- Add / Edit rule form -->
+	<RuleForm
+		onSave={handleRuleSaved}
+		{configuredProviders}
+		rule={editingRule ?? undefined}
+		onCancel={handleCancelEdit}
+	/>
 
 	<!-- Rules list -->
 	<Card class="p-4">
@@ -177,6 +194,7 @@
 								rule={item.rule}
 								hasWarning={hasWarning(item.rule)}
 								onDelete={() => requestDelete(item.rule.id)}
+								onEdit={() => handleEditRule(item.rule)}
 							/>
 						</SortableList.Item>
 					{/each}

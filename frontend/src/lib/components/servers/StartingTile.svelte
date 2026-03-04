@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { ExecutionProfile } from '$api';
 	import { servers as serversApi, servers } from '$api';
 	import { serverStore } from '$stores';
@@ -67,15 +68,22 @@
 		}
 	}
 
-	// On mount: start polling if profile is starting and not already polling
+	// On mount: start polling if profile is starting and not already polling.
+	// The mutation block and pollServerStatus() call are wrapped in untrack() to
+	// avoid a dependency cycle: isPolling is both read (in condition + pollServerStatus)
+	// and written ($state), which would re-trigger the effect infinitely.
 	$effect(() => {
-		// Start polling when component mounts for a starting profile
-		if (serverStore.isStarting(profile.id) && !isPolling && !serverStore.isProfilePolling(profile.id)) {
-			if (serverStore.startProfilePolling(profile.id)) {
-				isPolling = true;
-				startTime = Date.now();
-				pollServerStatus();
-			}
+		const starting = serverStore.isStarting(profile.id);
+		const alreadyPolling = serverStore.isProfilePolling(profile.id);
+
+		if (starting && !alreadyPolling) {
+			untrack(() => {
+				if (!isPolling && serverStore.startProfilePolling(profile.id)) {
+					isPolling = true;
+					startTime = Date.now();
+					pollServerStatus();
+				}
+			});
 		}
 
 		// Cleanup on unmount
