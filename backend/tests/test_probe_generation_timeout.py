@@ -235,7 +235,8 @@ async def test_vision_generate_timeout():
         await asyncio.sleep(100)
 
     mock_adapter = MagicMock()
-    mock_adapter.generate = AsyncMock(side_effect=slow_generate)
+    # Use the async function directly to avoid unawaited coroutine from AsyncMock
+    mock_adapter.generate = slow_generate
     mock_adapter.configure = MagicMock()
 
     mock_loaded = MagicMock()
