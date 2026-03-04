@@ -1,5 +1,6 @@
 """Database setup for MLX Server audit logging."""
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from loguru import logger
-from sqlalchemy import CursorResult, delete
+from sqlalchemy import CursorResult, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, col
 
@@ -73,10 +74,10 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def cleanup_old_logs() -> int:
-    """Delete audit logs older than retention period.
+    """Delete audit logs older than retention period, then run size-based cleanup.
 
     Returns:
-        Number of deleted records.
+        Total number of deleted records (time-based + size-based).
     """
     from mlx_manager.mlx_server.models.audit import AuditLog
 
@@ -94,7 +95,83 @@ async def cleanup_old_logs() -> int:
             logger.info(
                 f"Cleaned up {deleted} audit logs older than {settings.audit_retention_days} days"
             )
-        return deleted
+
+    # Run size-based cleanup after time-based cleanup
+    size_deleted = await cleanup_by_size()
+    return deleted + size_deleted
+
+
+async def cleanup_by_size() -> int:
+    """Delete oldest audit log records until the DB file is under the configured size limit.
+
+    Checks the DB file size against ``audit_max_mb``. If over the limit, deletes
+    records in batches of 1000 (oldest first) until the size is within bounds, then
+    runs VACUUM to reclaim disk space.
+
+    Returns:
+        Total number of deleted records. 0 if already under the size limit.
+    """
+    from mlx_manager.mlx_server.models.audit import AuditLog
+
+    settings = get_settings()
+    db_path = settings.get_database_path()
+    limit_bytes = settings.audit_max_mb * 1024 * 1024
+
+    # If the database file does not exist yet, nothing to do
+    if not db_path.exists():
+        return 0
+
+    current_size = os.path.getsize(db_path)
+    if current_size <= limit_bytes:
+        return 0
+
+    logger.info(
+        f"Audit DB size {current_size / 1024 / 1024:.1f} MB exceeds limit "
+        f"{settings.audit_max_mb} MB — purging oldest records"
+    )
+
+    total_deleted = 0
+    batch_size = 1000
+
+    while current_size > limit_bytes:
+        async with get_session() as session:
+            # Find oldest batch of records by timestamp
+            from sqlmodel import select
+
+            subq_result = await session.execute(
+                select(AuditLog.id).order_by(col(AuditLog.timestamp).asc()).limit(batch_size)
+            )
+            ids_to_delete = [row[0] for row in subq_result.all()]
+
+            if not ids_to_delete:
+                # No more records to delete
+                break
+
+            cursor = cast(
+                CursorResult,
+                await session.execute(delete(AuditLog).where(col(AuditLog.id).in_(ids_to_delete))),
+            )
+            batch_deleted = cursor.rowcount or 0
+            total_deleted += batch_deleted
+
+        if batch_deleted == 0:
+            break
+
+        # Re-check size after each batch
+        current_size = os.path.getsize(db_path) if db_path.exists() else 0
+
+    if total_deleted > 0:
+        # VACUUM to reclaim freed disk space — only run after actual deletes
+        async with get_session() as session:
+            await session.execute(text("VACUUM"))
+        logger.info(
+            f"Size-based cleanup purged {total_deleted} audit records; "
+            f"DB size now {os.path.getsize(db_path) / 1024 / 1024:.1f} MB"
+            if db_path.exists()
+            else f"Size-based cleanup purged {total_deleted} audit records"
+        )
+
+    return total_deleted
 
 
 def reset_for_testing() -> None:

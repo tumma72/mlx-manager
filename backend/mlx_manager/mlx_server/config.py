@@ -148,6 +148,18 @@ class MLXServerSettings(BaseSettings):
         le=365,
         description="Days to retain audit logs before cleanup",
     )
+    audit_max_mb: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Maximum audit log database size in MB before oldest records are purged",
+    )
+    audit_cleanup_interval_minutes: int = Field(
+        default=60,
+        ge=1,
+        le=1440,
+        description="How often to run audit log cleanup in minutes",
+    )
 
     # Rate limiting
     rate_limit_rpm: int = Field(

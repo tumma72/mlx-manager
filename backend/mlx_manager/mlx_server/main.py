@@ -26,6 +26,19 @@ from mlx_manager.mlx_server.utils.memory import get_memory_usage, set_memory_lim
 __all__ = ["create_app"]
 
 
+async def _audit_cleanup_loop() -> None:
+    """Background task that periodically cleans up old audit log records."""
+    from mlx_manager.mlx_server.database import cleanup_old_logs
+
+    interval = mlx_server_settings.audit_cleanup_interval_minutes * 60
+    while True:
+        try:
+            await cleanup_old_logs()
+        except Exception as exc:
+            logger.warning("Audit cleanup failed: %s", exc)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for standalone mode."""
@@ -33,9 +46,19 @@ async def lifespan(app: FastAPI):
     logger.info("MLX Server starting...")
 
     # Initialize audit database
+    from mlx_manager.mlx_server.database import cleanup_old_logs
     from mlx_manager.mlx_server.database import init_db as init_audit_db
 
     await init_audit_db()
+
+    # Run initial cleanup at startup
+    try:
+        await cleanup_old_logs()
+    except Exception as exc:
+        logger.warning("Initial audit cleanup failed: %s", exc)
+
+    # Start periodic audit cleanup background task
+    audit_cleanup_task = asyncio.create_task(_audit_cleanup_loop())
 
     # Set memory limit (auto-detect from device if not explicitly configured)
     max_memory_gb = mlx_server_settings.max_memory_gb
@@ -101,6 +124,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("MLX Server shutting down...")
+
+    # Cancel audit cleanup background task
+    audit_cleanup_task.cancel()
+    try:
+        await audit_cleanup_task
+    except asyncio.CancelledError:
+        pass
 
     # Graceful shutdown: wait for active requests to drain
     if shutdown_state.is_shutting_down:
