@@ -176,6 +176,16 @@ class MLXServerSettings(BaseSettings):
         description="Bearer token for /v1/admin/* endpoints. When None, admin endpoints are open.",
     )
 
+    # Startup preloading
+    preload_models: list[str] = Field(
+        default_factory=list,
+        description="Model IDs to preload at server startup for reduced cold-start latency",
+    )
+    warmup_prompt: str = Field(
+        default="Hello",
+        description="Prompt to run after preloading to warm up the model",
+    )
+
     def get_database_path(self) -> Path:
         """Get the resolved database path.
 

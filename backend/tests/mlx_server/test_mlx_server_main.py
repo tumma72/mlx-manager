@@ -120,6 +120,7 @@ class TestLifespan:
             mock_settings.max_memory_gb = 32.0
             mock_settings.max_models = 4
             mock_settings.enable_batching = False
+            mock_settings.preload_models = []
 
             with patch(
                 "mlx_manager.mlx_server.database.init_db",
@@ -158,6 +159,7 @@ class TestLifespan:
             mock_settings.enable_batching = True
             mock_settings.batch_block_pool_size = 1024
             mock_settings.batch_max_batch_size = 8
+            mock_settings.preload_models = []
 
             with patch(
                 "mlx_manager.mlx_server.database.init_db",
@@ -196,6 +198,7 @@ class TestLifespan:
             mock_settings.max_memory_gb = 16.0
             mock_settings.max_models = 2
             mock_settings.enable_batching = False
+            mock_settings.preload_models = []
 
             with patch(
                 "mlx_manager.mlx_server.database.init_db",
@@ -256,3 +259,194 @@ class TestModuleLevelApp:
 
         with pytest.raises(AttributeError, match="has no attribute"):
             main_mod.__getattr__("nonexistent")
+
+
+class TestPreloadConfig:
+    """Tests for preload_models and warmup_prompt config settings."""
+
+    def test_preload_models_default_is_empty_list(self):
+        """preload_models defaults to empty list (backward compat — no preloading)."""
+        from mlx_manager.mlx_server.config import MLXServerSettings
+
+        settings = MLXServerSettings()
+        assert settings.preload_models == []
+
+    def test_preload_models_parses_list(self):
+        """preload_models parses a list of model IDs."""
+        from mlx_manager.mlx_server.config import MLXServerSettings
+
+        settings = MLXServerSettings(
+            preload_models=[
+                "mlx-community/Llama-3.2-3B-Instruct-4bit",
+                "mlx-community/Qwen3-0.6B-4bit-DWQ",
+            ]
+        )
+        assert len(settings.preload_models) == 2
+        assert "mlx-community/Llama-3.2-3B-Instruct-4bit" in settings.preload_models
+        assert "mlx-community/Qwen3-0.6B-4bit-DWQ" in settings.preload_models
+
+    def test_warmup_prompt_default(self):
+        """warmup_prompt defaults to 'Hello'."""
+        from mlx_manager.mlx_server.config import MLXServerSettings
+
+        settings = MLXServerSettings()
+        assert settings.warmup_prompt == "Hello"
+
+    def test_warmup_prompt_configurable(self):
+        """warmup_prompt can be overridden."""
+        from mlx_manager.mlx_server.config import MLXServerSettings
+
+        settings = MLXServerSettings(warmup_prompt="Warm up the GPU!")
+        assert settings.warmup_prompt == "Warm up the GPU!"
+
+
+class TestLifespanPreload:
+    """Tests for preload integration in the lifespan handler."""
+
+    @pytest.mark.asyncio
+    async def test_empty_preload_list_is_noop(self):
+        """Empty preload_models list means apply_preload_list is never called."""
+        from mlx_manager.mlx_server.main import lifespan
+
+        mock_app = MagicMock()
+        mock_pool_instance = AsyncMock()
+
+        with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
+            mock_settings.max_memory_gb = 16.0
+            mock_settings.max_models = 2
+            mock_settings.enable_batching = False
+            mock_settings.preload_models = []
+
+            with patch(
+                "mlx_manager.mlx_server.database.init_db",
+                new_callable=AsyncMock,
+            ):
+                with patch("mlx_manager.mlx_server.main.set_memory_limit"):
+                    with patch("mlx_manager.mlx_server.main.pool"):
+                        with patch(
+                            "mlx_manager.mlx_server.main.ModelPoolManager",
+                            return_value=mock_pool_instance,
+                        ):
+                            with patch(
+                                "mlx_manager.mlx_server.main.get_memory_usage",
+                                return_value={"active_gb": 0.0},
+                            ):
+                                async with lifespan(mock_app):
+                                    pass
+
+            # apply_preload_list should not have been called
+            mock_pool_instance.apply_preload_list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_preload_list_calls_apply_preload(self):
+        """Non-empty preload_models list triggers apply_preload_list on the pool."""
+        from mlx_manager.mlx_server.main import lifespan
+
+        mock_app = MagicMock()
+        mock_pool_instance = AsyncMock()
+        mock_pool_instance.apply_preload_list = AsyncMock(
+            return_value={"mlx-community/Qwen3-0.6B-4bit-DWQ": "loaded"}
+        )
+
+        with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
+            mock_settings.max_memory_gb = 16.0
+            mock_settings.max_models = 2
+            mock_settings.enable_batching = False
+            mock_settings.preload_models = ["mlx-community/Qwen3-0.6B-4bit-DWQ"]
+
+            with patch(
+                "mlx_manager.mlx_server.database.init_db",
+                new_callable=AsyncMock,
+            ):
+                with patch("mlx_manager.mlx_server.main.set_memory_limit"):
+                    with patch("mlx_manager.mlx_server.main.pool"):
+                        with patch(
+                            "mlx_manager.mlx_server.main.ModelPoolManager",
+                            return_value=mock_pool_instance,
+                        ):
+                            with patch(
+                                "mlx_manager.mlx_server.main.get_memory_usage",
+                                return_value={"active_gb": 0.0},
+                            ):
+                                async with lifespan(mock_app):
+                                    pass
+
+            mock_pool_instance.apply_preload_list.assert_called_once_with(
+                ["mlx-community/Qwen3-0.6B-4bit-DWQ"]
+            )
+
+    @pytest.mark.asyncio
+    async def test_preload_failure_does_not_crash_startup(self):
+        """A failure in apply_preload_list is caught and logged — server still starts."""
+        from mlx_manager.mlx_server.main import lifespan
+
+        mock_app = MagicMock()
+        mock_pool_instance = AsyncMock()
+        mock_pool_instance.apply_preload_list = AsyncMock(
+            side_effect=RuntimeError("GPU memory full")
+        )
+
+        with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
+            mock_settings.max_memory_gb = 16.0
+            mock_settings.max_models = 2
+            mock_settings.enable_batching = False
+            mock_settings.preload_models = ["mlx-community/Llama-3.2-3B-Instruct-4bit"]
+
+            with patch(
+                "mlx_manager.mlx_server.database.init_db",
+                new_callable=AsyncMock,
+            ):
+                with patch("mlx_manager.mlx_server.main.set_memory_limit"):
+                    with patch("mlx_manager.mlx_server.main.pool"):
+                        with patch(
+                            "mlx_manager.mlx_server.main.ModelPoolManager",
+                            return_value=mock_pool_instance,
+                        ):
+                            with patch(
+                                "mlx_manager.mlx_server.main.get_memory_usage",
+                                return_value={"active_gb": 0.0},
+                            ):
+                                # Should not raise — exception is swallowed with a warning
+                                async with lifespan(mock_app):
+                                    pass  # Server came up despite preload failure
+
+    @pytest.mark.asyncio
+    async def test_partial_preload_failure_logs_warning(self):
+        """apply_preload_list returning partial failures logs warning but continues."""
+        from mlx_manager.mlx_server.main import lifespan
+
+        mock_app = MagicMock()
+        mock_pool_instance = AsyncMock()
+        mock_pool_instance.apply_preload_list = AsyncMock(
+            return_value={
+                "mlx-community/Qwen3-0.6B-4bit-DWQ": "loaded",
+                "mlx-community/nonexistent-model": "failed: model not found",
+            }
+        )
+
+        with patch("mlx_manager.mlx_server.main.mlx_server_settings") as mock_settings:
+            mock_settings.max_memory_gb = 16.0
+            mock_settings.max_models = 2
+            mock_settings.enable_batching = False
+            mock_settings.preload_models = [
+                "mlx-community/Qwen3-0.6B-4bit-DWQ",
+                "mlx-community/nonexistent-model",
+            ]
+
+            with patch(
+                "mlx_manager.mlx_server.database.init_db",
+                new_callable=AsyncMock,
+            ):
+                with patch("mlx_manager.mlx_server.main.set_memory_limit"):
+                    with patch("mlx_manager.mlx_server.main.pool"):
+                        with patch(
+                            "mlx_manager.mlx_server.main.ModelPoolManager",
+                            return_value=mock_pool_instance,
+                        ):
+                            with patch(
+                                "mlx_manager.mlx_server.main.get_memory_usage",
+                                return_value={"active_gb": 0.0},
+                            ):
+                                # Should not raise — partial failure is non-fatal
+                                async with lifespan(mock_app):
+                                    pass

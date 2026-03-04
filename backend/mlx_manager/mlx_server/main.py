@@ -64,6 +64,23 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Memory usage at startup: {get_memory_usage()}")
 
+    # Preload models if configured
+    if mlx_server_settings.preload_models:
+        logger.info(
+            f"Preloading {len(mlx_server_settings.preload_models)} model(s): "
+            f"{mlx_server_settings.preload_models}"
+        )
+        try:
+            results = await pool.model_pool.apply_preload_list(mlx_server_settings.preload_models)
+            loaded_ok = [m for m, s in results.items() if s in ("loaded", "already_loaded")]
+            failed = [m for m, s in results.items() if s.startswith("failed")]
+            if loaded_ok:
+                logger.info(f"Preload complete: {len(loaded_ok)} model(s) ready")
+            if failed:
+                logger.warning(f"Preload failed for {len(failed)} model(s): {failed}")
+        except Exception as exc:
+            logger.warning(f"Preload step encountered an unexpected error: {exc}")
+
     # Set up graceful shutdown signal handler
     shutdown_state = get_shutdown_state()
     loop = asyncio.get_running_loop()
