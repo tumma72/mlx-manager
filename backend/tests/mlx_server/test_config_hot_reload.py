@@ -2,7 +2,6 @@
 
 import asyncio
 import signal
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -59,7 +58,7 @@ class TestReloadSettings:
 
     def test_reload_clears_cache(self):
         """reload_settings calls get_settings.cache_clear()."""
-        from mlx_manager.mlx_server.config import get_settings, reload_settings
+        from mlx_manager.mlx_server.config import get_settings
 
         # Ensure cache is populated
         get_settings()
@@ -78,7 +77,6 @@ class TestReloadSettings:
 
     def test_reload_returns_no_changes_when_env_unchanged(self):
         """reload_settings returns empty changes dict when nothing changed."""
-        from mlx_manager.mlx_server.config import get_settings, reload_settings
 
         old_settings = MagicMock()
         old_dump = _make_settings_dump()

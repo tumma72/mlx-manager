@@ -67,7 +67,8 @@ _structured_output_validator = StructuredOutputValidator()
             "description": (
                 "Chat completion response. "
                 "Returns a JSON object (ChatCompletionResponse) when stream=false, "
-                "or an SSE stream of ChatCompletionChunk events followed by [DONE] when stream=true."
+                "or an SSE stream of ChatCompletionChunk events "
+                "followed by [DONE] when stream=true."
             )
         },
         422: {"model": ProblemDetail, "description": "Validation Error"},
