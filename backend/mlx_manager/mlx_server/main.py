@@ -189,6 +189,12 @@ async def lifespan(app: FastAPI):
 
     if pool.model_pool:
         await pool.model_pool.cleanup()
+
+    # Dispose the database engine to close aiosqlite connections cleanly
+    from mlx_manager.mlx_server.database import _get_engine
+
+    await _get_engine().dispose()
+
     logger.info("MLX Server stopped")
 
 
