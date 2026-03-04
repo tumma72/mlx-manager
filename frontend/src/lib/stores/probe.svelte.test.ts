@@ -615,6 +615,166 @@ describe("probeStore", () => {
     });
   });
 
+  describe("diagnostics accumulation", () => {
+    it("accumulates diagnostics from non-probe_complete steps", async () => {
+      const modelId = "test-diag-model";
+      const step1: ProbeStep = {
+        step: "tools-check",
+        status: "completed",
+        diagnostics: [
+          { level: "info", category: "type", message: "Tool support detected", details: {} },
+          { level: "warning", category: "type", message: "Partial support", details: {} },
+        ],
+      };
+      const step2: ProbeStep = {
+        step: "thinking-check",
+        status: "completed",
+        diagnostics: [
+          { level: "info", category: "thinking_dialect", message: "Thinking detected", details: {} },
+        ],
+      };
+
+      const chunks = [
+        `data: ${JSON.stringify(step1)}\n`,
+        `data: ${JSON.stringify(step2)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      expect(state.diagnostics).toHaveLength(3);
+      expect(state.diagnostics[0].message).toBe("Tool support detected");
+      expect(state.diagnostics[1].message).toBe("Partial support");
+      expect(state.diagnostics[2].message).toBe("Thinking detected");
+
+      probeStore.reset(modelId);
+    });
+
+    it("does NOT accumulate diagnostics from probe_complete step", async () => {
+      const modelId = "test-diag-skip";
+      const step1: ProbeStep = {
+        step: "tools-check",
+        status: "completed",
+        diagnostics: [
+          { level: "info", category: "type", message: "From tools step", details: {} },
+        ],
+      };
+      const probeCompleteStep: ProbeStep = {
+        step: "probe_complete",
+        status: "completed",
+        diagnostics: [
+          { level: "info", category: "family", message: "Should be skipped", details: {} },
+        ],
+      };
+
+      const chunks = [
+        `data: ${JSON.stringify(step1)}\n`,
+        `data: ${JSON.stringify(probeCompleteStep)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      // Only the tools-check diagnostic should be present, not probe_complete's
+      expect(state.diagnostics).toHaveLength(1);
+      expect(state.diagnostics[0].message).toBe("From tools step");
+
+      probeStore.reset(modelId);
+    });
+  });
+
+  describe("probeResult extraction", () => {
+    it("extracts probeResult from probe_complete step details.result", async () => {
+      const modelId = "test-result-model";
+      const probeCompleteStep: ProbeStep = {
+        step: "probe_complete",
+        status: "completed",
+        details: {
+          result: {
+            supports_tools: true,
+            supports_thinking: false,
+            tool_call_parser: "qwen",
+          },
+        },
+      };
+
+      const chunks = [
+        `data: ${JSON.stringify(probeCompleteStep)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      expect(state.probeResult).toEqual({
+        supports_tools: true,
+        supports_thinking: false,
+        tool_call_parser: "qwen",
+      });
+
+      probeStore.reset(modelId);
+    });
+
+    it("does not set probeResult when probe_complete has no details.result", async () => {
+      const modelId = "test-no-result";
+      const probeCompleteStep: ProbeStep = {
+        step: "probe_complete",
+        status: "completed",
+        details: { summary: "Probe finished" },
+      };
+
+      const chunks = [
+        `data: ${JSON.stringify(probeCompleteStep)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      expect(state.probeResult).toBeNull();
+
+      probeStore.reset(modelId);
+    });
+
+    it("does not set probeResult from non-probe_complete steps with details.result", async () => {
+      const modelId = "test-non-complete-result";
+      const step: ProbeStep = {
+        step: "tools-check",
+        status: "completed",
+        details: { result: { some_data: true } },
+      };
+
+      const chunks = [
+        `data: ${JSON.stringify(step)}\n`,
+        "data: [DONE]\n",
+      ];
+
+      mockFetch.mockResolvedValueOnce(createMockStreamResponse(chunks));
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      expect(state.probeResult).toBeNull();
+
+      probeStore.reset(modelId);
+    });
+  });
+
   describe("completion edge cases", () => {
     it("does not mark completed twice if stream ends after [DONE]", async () => {
       const modelId = "test-model";

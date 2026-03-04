@@ -987,4 +987,203 @@ describe("PollingCoordinator", () => {
       expect(refreshFn).toHaveBeenCalledTimes(3);
     });
   });
+
+  describe("SSR guard (line 56)", () => {
+    it("returns early when document is undefined", async () => {
+      // Restore original document first, then set to undefined
+      globalThis.document = originalDocument;
+      // @ts-expect-error - simulating SSR environment where document is undefined
+      delete globalThis.document;
+
+      vi.resetModules();
+      const module = await import("./polling-coordinator.svelte");
+      const ssrCoordinator = module.pollingCoordinator;
+
+      // The coordinator should still work for register/start even without document
+      const refreshFn = vi.fn().mockResolvedValue(undefined);
+      ssrCoordinator.register("servers", {
+        interval: 5000,
+        minInterval: 0,
+        refreshFn,
+      });
+
+      ssrCoordinator.start("servers");
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      ssrCoordinator.destroy();
+
+      // Restore mock document for other tests
+      // @ts-expect-error - restoring mock document
+      globalThis.document = mockDocument;
+    });
+  });
+
+  describe("idempotency guard (line 57)", () => {
+    it("attaches visibility listener only once", async () => {
+      // The constructor already called setupVisibilityListener once.
+      // Call it again via the private method to test the idempotency guard.
+      const addEventListenerCalls = mockDocument.addEventListener.mock.calls.filter(
+        (call) => call[0] === "visibilitychange",
+      );
+      expect(addEventListenerCalls).toHaveLength(1);
+
+      // Calling setupVisibilityListener again should not add a second listener
+      // Access via bracket notation since it's private
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).setupVisibilityListener();
+
+      const addEventListenerCallsAfter = mockDocument.addEventListener.mock.calls.filter(
+        (call) => call[0] === "visibilitychange",
+      );
+      expect(addEventListenerCallsAfter).toHaveLength(1);
+    });
+  });
+
+  describe("shouldPoll false paths via interval callbacks", () => {
+    it("start() interval skips refresh when isVisible is false (line 117, 178)", async () => {
+      const refreshFn = vi.fn().mockResolvedValue(undefined);
+
+      PollingCoordinator.register("servers", {
+        interval: 5000,
+        minInterval: 0,
+        refreshFn,
+      });
+
+      PollingCoordinator.start("servers");
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      // Allow the initial refresh promise to settle
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Directly set isVisible to false WITHOUT triggering pauseAll
+      // (which would clear the interval). This exercises the shouldPoll guard
+      // inside the start() interval callback.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).isVisible = false;
+
+      // The interval from start() is still running, but shouldPoll returns false
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(1); // No new call
+
+      // Restore and verify it works again
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).isVisible = true;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("start() interval skips refresh when globalPause is true (line 117, 179)", async () => {
+      const refreshFn = vi.fn().mockResolvedValue(undefined);
+
+      PollingCoordinator.register("servers", {
+        interval: 5000,
+        minInterval: 0,
+        refreshFn,
+      });
+
+      PollingCoordinator.start("servers");
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Directly set globalPause without calling setGlobalPause (which clears intervals)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).globalPause = true;
+
+      // Interval still running but shouldPoll returns false due to globalPause
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      // Restore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).globalPause = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("start() interval skips refresh when key is paused (line 117, 181-182)", async () => {
+      const refreshFn = vi.fn().mockResolvedValue(undefined);
+
+      PollingCoordinator.register("servers", {
+        interval: 5000,
+        minInterval: 0,
+        refreshFn,
+      });
+
+      PollingCoordinator.start("servers");
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Directly mark the key as paused without calling pause() (which calls stop())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const state = (PollingCoordinator as any).pollingState.get("servers");
+      state.paused = true;
+
+      // Interval still running but shouldPoll returns false due to state.paused
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      // Restore
+      state.paused = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("resumeAll interval shouldPoll check (line 210)", () => {
+    it("resumeAll interval skips refresh when shouldPoll returns false", async () => {
+      const refreshFn = vi.fn().mockResolvedValue(undefined);
+
+      PollingCoordinator.register("servers", {
+        interval: 5000,
+        minInterval: 0,
+        refreshFn,
+      });
+
+      PollingCoordinator.start("servers");
+      expect(refreshFn).toHaveBeenCalledTimes(1);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Get the visibility handler
+      const visibilityHandler = mockDocument.addEventListener.mock.calls.find(
+        (call) => call[0] === "visibilitychange",
+      )?.[1];
+      expect(visibilityHandler).toBeDefined();
+
+      // Hide tab (clears intervals via pauseAll)
+      mockDocument.visibilityState = "hidden";
+      visibilityHandler();
+
+      // Show tab (triggers resumeAll, which creates new intervals)
+      mockDocument.visibilityState = "visible";
+      visibilityHandler();
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // resumeAll triggered immediate refresh
+      expect(refreshFn).toHaveBeenCalledTimes(2);
+
+      // Now directly set globalPause to true WITHOUT calling setGlobalPause
+      // so the resumeAll-created interval is still running
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).globalPause = true;
+
+      // The interval from resumeAll fires, but shouldPoll returns false
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(2); // No new call
+
+      // Restore and verify interval still works
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (PollingCoordinator as any).globalPause = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(refreshFn).toHaveBeenCalledTimes(3);
+    });
+  });
 });

@@ -487,6 +487,32 @@ describe("models API", () => {
     });
   });
 
+  describe("listDownloaded", () => {
+    it("lists downloaded models", async () => {
+      const mockModels = [
+        { model_id: "mlx-community/test", size_gb: 2.5 },
+        { model_id: "mlx-community/other", size_gb: 1.0 },
+      ];
+      mockFetch.mockResolvedValueOnce(mockResponse(mockModels));
+
+      const result = await models.listDownloaded();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/models/downloaded",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(mockModels);
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockErrorResponse("Failed to list downloaded models", 500),
+      );
+
+      await expect(models.listDownloaded()).rejects.toThrow(ApiError);
+    });
+  });
+
   describe("delete", () => {
     it("deletes a model", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
@@ -1149,6 +1175,76 @@ describe("settings API", () => {
         body: JSON.stringify(updates),
       });
       expect(result).toEqual(updatedConfig);
+    });
+  });
+
+  describe("getHuggingFaceStatus", () => {
+    it("gets HuggingFace token status", async () => {
+      const status = { configured: true };
+      mockFetch.mockResolvedValueOnce(mockResponse(status));
+
+      const result = await settings.getHuggingFaceStatus();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/huggingface",
+        expect.objectContaining(defaultHeaders),
+      );
+      expect(result).toEqual(status);
+    });
+  });
+
+  describe("saveHuggingFaceToken", () => {
+    it("saves a HuggingFace token", async () => {
+      const response = { configured: true };
+      mockFetch.mockResolvedValueOnce(mockResponse(response));
+
+      const result = await settings.saveHuggingFaceToken("hf_test_token_123");
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/huggingface", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "hf_test_token_123" }),
+      });
+      expect(result).toEqual(response);
+    });
+  });
+
+  describe("deleteHuggingFaceToken", () => {
+    it("deletes the HuggingFace token", async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(undefined));
+
+      await settings.deleteHuggingFaceToken();
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/settings/huggingface", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
+  describe("testHuggingFaceToken", () => {
+    it("tests the HuggingFace token", async () => {
+      const response = { success: true, username: "test-user" };
+      mockFetch.mockResolvedValueOnce(mockResponse(response));
+
+      const result = await settings.testHuggingFaceToken();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/settings/huggingface/test",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      expect(result).toEqual(response);
+    });
+
+    it("throws ApiError when token is invalid", async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockErrorResponse("Invalid token", 401),
+      );
+
+      await expect(settings.testHuggingFaceToken()).rejects.toThrow(ApiError);
     });
   });
 

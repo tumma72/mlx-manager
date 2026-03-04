@@ -145,6 +145,58 @@ describe("ModelConfigStore", () => {
       expect(state?.error).toBeNull(); // No error shown to user
     });
 
+    it("uses fallback with multimodal detection from tags on API error", async () => {
+      vi.mocked(modelsApi.getConfig).mockRejectedValue(
+        new Error("API unavailable"),
+      );
+
+      // Model name alone is not parseable, but tags contain "vision"
+      await modelConfigStore.fetchConfig("mlx-community/custom-model", [
+        "vision",
+        "mlx",
+      ]);
+      flushSync();
+
+      const state = modelConfigStore.getConfig("mlx-community/custom-model");
+      expect(state?.loading).toBe(false);
+      expect(state?.error).toBeNull();
+      expect(state?.characteristics?.is_multimodal).toBe(true);
+      expect(state?.characteristics?.multimodal_type).toBe("vision");
+    });
+
+    it("uses fallback with tool-capable family detection on API error", async () => {
+      vi.mocked(modelsApi.getConfig).mockRejectedValue(
+        new Error("Server error"),
+      );
+
+      // GLM is a tool-capable family — fallback should detect both architecture and tool-use
+      await modelConfigStore.fetchConfig("mlx-community/GLM-4-9B-4bit");
+      flushSync();
+
+      const state = modelConfigStore.getConfig("mlx-community/GLM-4-9B-4bit");
+      expect(state?.loading).toBe(false);
+      expect(state?.error).toBeNull();
+      expect(state?.characteristics?.architecture_family).toBe("GLM");
+      expect(state?.characteristics?.quantization_bits).toBe(4);
+      expect(state?.characteristics?.is_tool_use).toBe(true);
+    });
+
+    it("passes tags to API when provided", async () => {
+      vi.mocked(modelsApi.getConfig).mockResolvedValue({
+        architecture_family: "Qwen",
+      } as never);
+
+      await modelConfigStore.fetchConfig("mlx-community/Qwen-7B", [
+        "text-generation",
+        "mlx",
+      ]);
+
+      expect(modelsApi.getConfig).toHaveBeenCalledWith(
+        "mlx-community/Qwen-7B",
+        ["text-generation", "mlx"],
+      );
+    });
+
     it("calls API with correct model ID", async () => {
       vi.mocked(modelsApi.getConfig).mockResolvedValue({
         architecture_family: "Mistral",
