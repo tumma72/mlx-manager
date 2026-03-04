@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
 Status: In progress — ad-hoc tasks in progress
-Last activity: 2026-03-04 - Completed P3-2 (Audit Log Rotation Scheduling + Size-Based Rotation)
+Last activity: 2026-03-04 - Completed P3-1 (OpenAPI Spec Enrichment)
 
-Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done
+Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -286,6 +286,8 @@ Recent decisions affecting current work:
 - **VACUUM only after actual deletes**: Running VACUUM on a large DB is slow; skip when cleanup_by_size finds nothing to remove
 - **Audit cleanup background task via asyncio.create_task**: Loop runs cleanup then sleeps (sleep AFTER cleanup, not before); cancelled with task.cancel() + CancelledError catch on shutdown
 - **Initial audit cleanup at startup**: cleanup_old_logs() called once before the background task to handle stale data without waiting for the first interval
+- **model_config json_schema_extra examples**: Use ConfigDict(json_schema_extra={"examples": [...]}) at class level for Pydantic OpenAPI request examples — not per-field, one full realistic example per schema
+- **responses={200: {description}} for streaming**: Streaming endpoints use response_model=None; add 200 key to responses dict to document both JSON and SSE variants in the spec
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -333,7 +335,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed P3-2 (Audit Log Rotation Scheduling + Size-Based Rotation)
+Stopped at: Completed P3-1 (OpenAPI Spec Enrichment)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
