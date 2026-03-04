@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
 Status: In progress — ad-hoc tasks in progress
-Last activity: 2026-03-04 - Completed P3-3 (Config Hot-Reload via SIGHUP)
+Last activity: 2026-03-04 - Completed P3-4 (Connection Pooling for Embedded Mode)
 
-Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done + P3-3 (config hot-reload) done
+Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done + P3-3 (config hot-reload) done + P3-4 (connection pooling) done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -293,6 +293,9 @@ Recent decisions affecting current work:
 - **loop.add_signal_handler() for SIGHUP**: async-safe signal registration; callbacks run on event loop thread; (NotImplementedError, AttributeError) guard skips on Windows
 - **reload_settings() shared helper**: SIGHUP callback and admin endpoint share identical diff/warn logic via single function in config.py
 - **loop.remove_signal_handler(SIGHUP) on shutdown**: prevents stale handler firing after pool cleanup
+- **set_shared_engine() for embedded mode**: injects manager engine into mlx_server/database.py before mounting; both components share a single SQLite connection pool to avoid WAL conflicts
+- **Scoped create_all with tables= kwarg**: init_db() passes [AuditLog.__table__] to prevent touching host-application tables when sharing an engine
+- **Session continuity via global assignment**: set_shared_engine() assigns to _engine/_async_session directly so all downstream call sites (_get_engine, _get_session_factory, init_db) pick up the shared pool without logic changes
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -340,9 +343,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed P3-3 (Config Hot-Reload via SIGHUP)
+Stopped at: Completed P3-4 (Connection Pooling for Embedded Mode)
 Resume file: None
-Next: Continue with any remaining phase 15/16 tasks or milestone audit
+Next: Continue with any remaining ad-hoc tasks or milestone audit
 
 ### Roadmap Evolution
 
