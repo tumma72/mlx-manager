@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mlx_manager.config import settings as manager_settings
 from mlx_manager.database import (
+    async_session,
     detect_orphaned_downloads,
     engine,
     init_db,
@@ -286,6 +287,13 @@ app = FastAPI(
 
 # Instrument FastAPI with LogFire (after app creation)
 instrument_fastapi(app)
+
+# Share the manager's engine with the embedded MLX Server so both components
+# use the same connection pool to the same SQLite file.  Must happen before
+# create_mlx_server_app() so init_db() inside the server lifespan picks it up.
+from mlx_manager.mlx_server.database import set_shared_engine
+
+set_shared_engine(engine, async_session)
 
 # Mount MLX Server at /v1 prefix (after instrumentation for proper tracing)
 # Routes: /v1/models, /v1/chat/completions, /v1/completions, /v1/embeddings

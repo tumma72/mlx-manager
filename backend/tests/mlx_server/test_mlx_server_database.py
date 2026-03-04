@@ -15,6 +15,7 @@ from mlx_manager.mlx_server.database import (
     get_session,
     init_db,
     reset_for_testing,
+    set_shared_engine,
 )
 
 
@@ -266,6 +267,76 @@ class TestResetForTesting:
 
         assert db_mod._engine is None
         assert db_mod._async_session is None
+
+    def test_reset_clears_shared_engine_state(self):
+        """reset_for_testing clears shared engine and session factory globals."""
+        import mlx_manager.mlx_server.database as db_mod
+
+        # Simulate state left by set_shared_engine
+        db_mod._engine = "shared_engine"
+        db_mod._async_session = "shared_session"
+        db_mod._shared_engine = "shared_engine"
+        db_mod._shared_session_factory = "shared_session"
+
+        reset_for_testing()
+
+        assert db_mod._engine is None
+        assert db_mod._async_session is None
+        assert db_mod._shared_engine is None
+        assert db_mod._shared_session_factory is None
+
+
+class TestSetSharedEngine:
+    """Tests for set_shared_engine embedded-mode injection."""
+
+    def test_set_shared_engine_sets_engine_globals(self):
+        """set_shared_engine populates _engine and _shared_engine globals."""
+        import mlx_manager.mlx_server.database as db_mod
+
+        fake_engine = MagicMock(name="engine")
+        fake_session = MagicMock(name="session_factory")
+
+        set_shared_engine(fake_engine, fake_session)
+
+        assert db_mod._engine is fake_engine
+        assert db_mod._shared_engine is fake_engine
+        assert db_mod._async_session is fake_session
+        assert db_mod._shared_session_factory is fake_session
+
+    def test_set_shared_engine_without_factory_creates_one(self):
+        """set_shared_engine builds a session factory when none is provided."""
+        import mlx_manager.mlx_server.database as db_mod
+
+        fake_engine = MagicMock(name="engine")
+        set_shared_engine(fake_engine)
+
+        assert db_mod._engine is fake_engine
+        assert db_mod._shared_engine is fake_engine
+        # A session factory must have been created automatically
+        assert db_mod._async_session is not None
+        assert db_mod._shared_session_factory is not None
+
+    def test_set_shared_engine_makes_get_engine_return_it(self):
+        """_get_engine() returns the shared engine after set_shared_engine() is called."""
+        fake_engine = MagicMock(name="engine")
+        fake_session = MagicMock(name="session_factory")
+
+        set_shared_engine(fake_engine, fake_session)
+
+        result = _get_engine()
+        assert result is fake_engine
+
+    def test_backward_compat_no_shared_engine_creates_own(self):
+        """When no shared engine is set, _get_engine() creates its own engine."""
+        # After reset_for_testing (run by autouse fixture), no shared engine exists.
+        with patch("mlx_manager.mlx_server.database.get_settings") as mock_settings:
+            mock_settings.return_value.database_path = ":memory:"
+
+            engine = _get_engine()
+
+        assert engine is not None
+        # It should NOT be a mock — it's a real SQLAlchemy engine
+        assert hasattr(engine, "connect") or hasattr(engine, "begin")
 
 
 class TestCleanupBySize:

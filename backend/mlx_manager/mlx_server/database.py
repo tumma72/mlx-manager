@@ -18,6 +18,40 @@ from mlx_manager.mlx_server.config import get_settings
 _engine = None
 _async_session = None
 
+# Shared engine injected from the host application in embedded mode.
+# When set, _get_engine() and _get_session_factory() return these instead of
+# creating their own, so both components share a single connection pool.
+_shared_engine = None
+_shared_session_factory = None
+
+
+def set_shared_engine(engine, session_factory=None) -> None:
+    """Inject a shared engine for embedded mode.
+
+    When MLX Server runs embedded inside MLX Manager, both components point at
+    the same SQLite file.  By sharing the *engine* they also share the
+    connection pool, which avoids duplicate connections and WAL-mode conflicts.
+
+    Args:
+        engine: An AsyncEngine instance created by the host application.
+        session_factory: Optional async_sessionmaker bound to *engine*.  If
+            omitted a new sessionmaker is created from the provided engine.
+    """
+    global _shared_engine, _shared_session_factory, _engine, _async_session
+    _shared_engine = engine
+    _engine = engine
+    if session_factory is not None:
+        _shared_session_factory = session_factory
+        _async_session = session_factory
+    else:
+        # Build a compatible session factory from the provided engine
+        _shared_session_factory = async_sessionmaker(
+            engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        _async_session = _shared_session_factory
+
 
 def _get_engine():
     """Get or create the database engine."""
@@ -48,13 +82,21 @@ def _get_session_factory():
 
 
 async def init_db() -> None:
-    """Initialize the database and create tables."""
-    # Import models to register them
+    """Initialize the database and create tables.
+
+    Creates only the MLX Server's own tables (audit_logs).  Passing the
+    explicit ``tables`` list to ``create_all`` ensures we never touch tables
+    that belong to the host application when running in embedded mode.
+    """
+    # Import so the model registers its table with SQLModel.metadata
     from mlx_manager.mlx_server.models.audit import AuditLog  # noqa: F401
 
     engine = _get_engine()
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.run_sync(
+            SQLModel.metadata.create_all,
+            tables=[AuditLog.__table__],  # type: ignore[attr-defined]
+        )
     logger.info("MLX Server database initialized")
 
 
@@ -176,6 +218,8 @@ async def cleanup_by_size() -> int:
 
 def reset_for_testing() -> None:
     """Reset database state for testing."""
-    global _engine, _async_session
+    global _engine, _async_session, _shared_engine, _shared_session_factory
     _engine = None
     _async_session = None
+    _shared_engine = None
+    _shared_session_factory = None
