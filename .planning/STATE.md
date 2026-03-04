@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
 Status: In progress — ad-hoc tasks in progress
-Last activity: 2026-03-04 - Completed P3-1 (OpenAPI Spec Enrichment)
+Last activity: 2026-03-04 - Completed P3-3 (Config Hot-Reload via SIGHUP)
 
-Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done
+Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done + P3-3 (config hot-reload) done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -289,6 +289,11 @@ Recent decisions affecting current work:
 - **model_config json_schema_extra examples**: Use ConfigDict(json_schema_extra={"examples": [...]}) at class level for Pydantic OpenAPI request examples — not per-field, one full realistic example per schema
 - **responses={200: {description}} for streaming**: Streaming endpoints use response_model=None; add 200 key to responses dict to document both JSON and SSE variants in the spec
 
+- **IMMUTABLE_SETTINGS frozenset for config hot-reload**: host, port, database_path require restart; declared as frozenset in config.py for O(1) membership test
+- **loop.add_signal_handler() for SIGHUP**: async-safe signal registration; callbacks run on event loop thread; (NotImplementedError, AttributeError) guard skips on Windows
+- **reload_settings() shared helper**: SIGHUP callback and admin endpoint share identical diff/warn logic via single function in config.py
+- **loop.remove_signal_handler(SIGHUP) on shutdown**: prevents stale handler firing after pool cleanup
+
 See PROJECT.md Key Decisions table for full history.
 
 ### Pending Todos
@@ -335,7 +340,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed P3-1 (OpenAPI Spec Enrichment)
+Stopped at: Completed P3-3 (Config Hot-Reload via SIGHUP)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
