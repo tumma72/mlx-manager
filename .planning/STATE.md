@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
-Status: In progress — Phase 15 plan 20 complete
-Last activity: 2026-02-25 - Completed 15-20 (Verbose Flag Utilization TDD)
+Status: In progress — ad-hoc tasks in progress
+Last activity: 2026-03-04 - Completed P3-5 (Model Preload Warming)
 
-Progress: [████████████████] Phase 15-20 done
+Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -201,6 +201,8 @@ Recent decisions affecting current work:
 - **Cast for Union return types**: Use cast(AsyncGenerator[dict, None], gen) for inference functions returning Union types
 - **update_memory_limit sets MLX limit**: Calls mx.set_memory_limit() directly for immediate memory limit effect
 - **apply_preload_list marks evictable**: Models not in preload list have preloaded=False for LRU eviction
+- **Startup preload non-fatal**: try/except wraps apply_preload_list in lifespan so preload failures log a warning and never block server startup
+- **warmup_prompt present but unused**: Field stored for future inference warmup; not called in lifespan to keep main.py import-clean
 - **refresh_rules clears backends**: Cached cloud backends closed and cleared on rule/credential changes
 - **Adapters inherit from DefaultAdapter**: Makes existing adapters (Llama, Qwen, Mistral, Gemma) protocol-compliant without duplicating code
 - **ToolChoiceOption as type alias**: `Literal["none", "auto", "required"] | dict[str, Any] | None` provides flexibility for tool_choice parameter
@@ -326,8 +328,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-25
-Stopped at: Completed 15-20 (Verbose Flag Utilization TDD — verbose threaded through probe pipeline)
+Last session: 2026-03-04
+Stopped at: Completed P3-5 (Model Preload Warming — preload_models config + lifespan integration)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
