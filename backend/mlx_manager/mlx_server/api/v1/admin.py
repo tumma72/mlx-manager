@@ -23,7 +23,7 @@ from sqlalchemy import desc, func
 from sqlmodel import col, select
 from starlette.responses import StreamingResponse
 
-from mlx_manager.mlx_server.config import get_settings
+from mlx_manager.mlx_server.config import get_settings, reload_settings
 from mlx_manager.mlx_server.database import get_session
 from mlx_manager.mlx_server.models.audit import AuditLog, AuditLogResponse
 from mlx_manager.mlx_server.models.pool import get_model_pool
@@ -202,6 +202,53 @@ async def unload_model(model_id: str) -> ModelUnloadResponse:
 async def admin_health() -> dict[str, str]:
     """Admin health check endpoint."""
     return {"status": "healthy"}
+
+
+class ReloadConfigResponse(BaseModel):
+    """Response for config reload operation."""
+
+    reloaded: bool
+    changes: dict[str, Any]
+    warnings: list[str]
+
+
+@router.post("/reload-config", response_model=ReloadConfigResponse)
+async def admin_reload_config() -> ReloadConfigResponse:
+    """Reload MLX Server configuration from environment variables / .env file.
+
+    Clears the cached settings and reloads all values from the current
+    environment.  Returns a summary of what changed.
+
+    Settings that require a server restart (``host``, ``port``,
+    ``database_path``) cannot take effect immediately; a warning is
+    included in the response for each such change.
+
+    This endpoint has the same effect as sending ``SIGHUP`` to the process.
+    """
+    logger.info("Admin: reloading configuration via endpoint")
+    result = reload_settings()
+    changes = result["changes"]
+    warnings = result["warnings"]
+
+    if changes:
+        for name, diff in changes.items():
+            logger.info(
+                "Config reloaded: %s changed from %r to %r",
+                name,
+                diff["old"],
+                diff["new"],
+            )
+    else:
+        logger.info("Config reloaded via admin endpoint: no changes detected")
+
+    for warning in warnings:
+        logger.warning("Config hot-reload: %s", warning)
+
+    return ReloadConfigResponse(
+        reloaded=True,
+        changes=changes,
+        warnings=warnings,
+    )
 
 
 @router.get("/metrics")

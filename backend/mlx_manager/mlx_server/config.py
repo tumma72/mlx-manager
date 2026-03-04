@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,9 @@ from mlx_manager.config import DEFAULT_PORT
 # Default database paths
 DEFAULT_MLX_MANAGER_DB = "~/.mlx-manager/mlx-manager.db"
 DEFAULT_MLX_SERVER_DB = "~/.mlx-manager/mlx-server.db"
+
+# Settings that require a server restart to take effect — cannot be hot-reloaded.
+IMMUTABLE_SETTINGS: frozenset[str] = frozenset({"database_path", "host", "port"})
 
 
 class MLXServerSettings(BaseSettings):
@@ -226,6 +230,46 @@ def is_embedded() -> bool:
         True if embedded_mode is enabled, False otherwise
     """
     return get_settings().embedded_mode
+
+
+def reload_settings() -> dict[str, Any]:
+    """Clear the settings cache and reload from environment/files.
+
+    Compares old and new settings, returning a dict that describes what
+    changed.  Immutable settings (database_path, host, port) that have
+    changed are recorded under a separate ``warnings`` key so callers can
+    inform operators that a restart is required.
+
+    Returns:
+        A dict with two keys:
+        - ``"changes"``: mapping of setting name ->
+          ``{"old": <old_value>, "new": <new_value>}`` for every field
+          whose value changed.
+        - ``"warnings"``: list of human-readable strings for immutable
+          settings that changed but cannot take effect without a restart.
+    """
+    old_settings = get_settings()
+    old_values: dict[str, Any] = old_settings.model_dump()
+
+    # Invalidate the lru_cache so the next call loads fresh values
+    get_settings.cache_clear()
+    new_settings = get_settings()
+    new_values: dict[str, Any] = new_settings.model_dump()
+
+    changes: dict[str, dict[str, Any]] = {}
+    warnings: list[str] = []
+
+    for key, old_val in old_values.items():
+        new_val = new_values.get(key)
+        if old_val != new_val:
+            changes[key] = {"old": old_val, "new": new_val}
+            if key in IMMUTABLE_SETTINGS:
+                warnings.append(
+                    f"{key} changed from {old_val!r} to {new_val!r}"
+                    " but requires a server restart to take effect"
+                )
+
+    return {"changes": changes, "warnings": warnings}
 
 
 # For backward compatibility

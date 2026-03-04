@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from mlx_manager.mlx_server import __version__
 from mlx_manager.mlx_server.api.v1 import v1_router
-from mlx_manager.mlx_server.config import mlx_server_settings
+from mlx_manager.mlx_server.config import mlx_server_settings, reload_settings
 from mlx_manager.mlx_server.errors import register_error_handlers
 from mlx_manager.mlx_server.middleware.rate_limit import RateLimitMiddleware
 from mlx_manager.mlx_server.middleware.request_id import RequestIDMiddleware
@@ -118,12 +118,52 @@ async def lifespan(app: FastAPI):
         # Windows doesn't support add_signal_handler
         pass
 
+    # Set up config hot-reload signal handler (Unix only)
+    def handle_sighup() -> None:
+        """Reload settings from environment/config on SIGHUP.
+
+        Runs as a callback on the event loop — safe to call async-adjacent
+        code (no blocking I/O).  Immutable settings (host, port,
+        database_path) that changed are logged as WARNINGs.
+        """
+        logger.info("SIGHUP received, reloading configuration...")
+        try:
+            result = reload_settings()
+            changes = result["changes"]
+            warnings = result["warnings"]
+            if changes:
+                for name, diff in changes.items():
+                    logger.info(
+                        "Config reloaded: %s changed from %r to %r",
+                        name,
+                        diff["old"],
+                        diff["new"],
+                    )
+            else:
+                logger.info("Config reloaded: no changes detected")
+            for warning in warnings:
+                logger.warning("Config hot-reload: %s", warning)
+        except Exception as exc:
+            logger.exception("Config reload failed: %s", exc)
+
+    try:
+        loop.add_signal_handler(signal.SIGHUP, handle_sighup)
+    except (NotImplementedError, AttributeError):
+        # Windows does not have SIGHUP
+        logger.debug("SIGHUP not available on this platform; skipping signal handler")
+
     logger.info("MLX Server ready")
 
     yield
 
     # Shutdown
     logger.info("MLX Server shutting down...")
+
+    # Remove SIGHUP handler on shutdown
+    try:
+        loop.remove_signal_handler(signal.SIGHUP)
+    except (NotImplementedError, AttributeError):
+        pass
 
     # Cancel audit cleanup background task
     audit_cleanup_task.cancel()
