@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
 Status: In progress — ad-hoc tasks in progress
-Last activity: 2026-03-04 - Completed P3-5 (Model Preload Warming)
+Last activity: 2026-03-04 - Completed P3-2 (Audit Log Rotation Scheduling + Size-Based Rotation)
 
-Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done
+Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -282,6 +282,10 @@ Recent decisions affecting current work:
 - **Stdlib logger %s format**: coordinator.py uses standard library logger with InterceptHandler; format strings must use %s not {} to avoid TypeError in getMessage()
 - **sweep_capabilities on GenerativeProbe**: Sweep logic moved from ProbingCoordinator to GenerativeProbe.sweep_capabilities(); coordinator uses isinstance check; self IS passed as strategy to sweep functions
 - **Generation timeout via asyncio.wait_for**: GenerativeProbe._generate() and VisionProbe._generate() wrap adapter.generate() with asyncio.wait_for(timeout=60.0); TimeoutError is re-raised as descriptive builtin TimeoutError; finally block always resets template_options
+- **cleanup_by_size() separate from cleanup_old_logs()**: Size-based rotation is a separate public function so it is independently testable and patchable; cleanup_old_logs() chains to it and returns the combined delete count
+- **VACUUM only after actual deletes**: Running VACUUM on a large DB is slow; skip when cleanup_by_size finds nothing to remove
+- **Audit cleanup background task via asyncio.create_task**: Loop runs cleanup then sleeps (sleep AFTER cleanup, not before); cancelled with task.cancel() + CancelledError catch on shutdown
+- **Initial audit cleanup at startup**: cleanup_old_logs() called once before the background task to handle stale data without waiting for the first interval
 
 See PROJECT.md Key Decisions table for full history.
 
@@ -329,7 +333,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed P3-5 (Model Preload Warming — preload_models config + lifespan integration)
+Stopped at: Completed P3-2 (Audit Log Rotation Scheduling + Size-Based Rotation)
 Resume file: None
 Next: Continue with any remaining phase 15/16 tasks or milestone audit
 
