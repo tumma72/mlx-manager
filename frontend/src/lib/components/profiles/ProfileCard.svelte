@@ -122,8 +122,11 @@
 				clearTimeout(pollTimeoutId);
 				pollTimeoutId = null;
 			}
-			// Note: Don't stop profile polling here - it should continue even if component unmounts
-			// The polling state is managed by the store and will be cleared when polling actually stops
+			// Clear polling state so it can be restarted if component remounts
+			if (isPolling) {
+				isPolling = false;
+				serverStore.stopProfilePolling(profile.id);
+			}
 		};
 	});
 

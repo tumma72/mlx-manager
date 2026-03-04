@@ -84,7 +84,11 @@
 				clearTimeout(pollTimeoutId);
 				pollTimeoutId = null;
 			}
-			// Don't stop profile polling here - it might be picked up by a re-mounted tile
+			// Clear polling state so a re-mounted tile can restart polling
+			if (isPolling) {
+				isPolling = false;
+				serverStore.stopProfilePolling(profile.id);
+			}
 		};
 	});
 

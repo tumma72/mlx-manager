@@ -63,6 +63,11 @@ function getOrCreateHmrState(): HmrState {
         restartingProfiles: new SvelteSet<number>(),
         pollingProfiles: new Set<number>(),
       };
+    } else {
+      // Always reset pollingProfiles on HMR — the actual polling loops
+      // (setTimeout callbacks) die when modules reload, so stale entries
+      // would permanently block polling from restarting.
+      win[hmrKey].pollingProfiles = new Set<number>();
     }
     return win[hmrKey];
   }
