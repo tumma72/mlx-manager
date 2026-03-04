@@ -63,6 +63,13 @@ _structured_output_validator = StructuredOutputValidator()
     "/chat/completions",
     response_model=None,
     responses={
+        200: {
+            "description": (
+                "Chat completion response. "
+                "Returns a JSON object (ChatCompletionResponse) when stream=false, "
+                "or an SSE stream of ChatCompletionChunk events followed by [DONE] when stream=true."
+            )
+        },
         422: {"model": ProblemDetail, "description": "Validation Error"},
         404: {"model": ProblemDetail, "description": "Model Not Found"},
         408: {"model": TimeoutProblem, "description": "Request Timeout"},

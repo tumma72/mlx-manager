@@ -6,7 +6,7 @@ Reference: https://platform.openai.com/docs/api-reference/chat
 import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # --- Tool Calling Schemas ---
 
@@ -158,6 +158,22 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     """OpenAI Chat Completion request."""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "mlx-community/Qwen3-0.6B-4bit-DWQ",
+                    "messages": [
+                        {"role": "user", "content": "What is the capital of France?"}
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 256,
+                    "stream": False,
+                }
+            ]
+        }
+    )
+
     model: str
     messages: list[ChatMessage] = Field(..., max_length=1024)
     max_tokens: int | None = Field(default=None, ge=1, le=128000)
@@ -185,6 +201,20 @@ class ChatCompletionRequest(BaseModel):
 
 class CompletionRequest(BaseModel):
     """OpenAI Completion request (legacy)."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "mlx-community/Qwen3-0.6B-4bit-DWQ",
+                    "prompt": "The quick brown fox",
+                    "max_tokens": 64,
+                    "temperature": 1.0,
+                    "stream": False,
+                }
+            ]
+        }
+    )
 
     model: str
     prompt: str | list[str]
@@ -322,6 +352,17 @@ class EmbeddingRequest(BaseModel):
 
     Reference: https://platform.openai.com/docs/api-reference/embeddings
     """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "mlx-community/all-MiniLM-L6-v2-4bit",
+                    "input": "The food was delicious and the waiter was very attentive.",
+                }
+            ]
+        }
+    )
 
     input: str | list[str]  # Single string or batch of strings
     model: str

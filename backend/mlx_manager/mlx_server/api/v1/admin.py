@@ -348,11 +348,11 @@ async def get_audit_stats() -> dict[str, Any]:
 
 @router.get("/audit-logs/export")
 async def export_audit_logs(
-    model: str | None = Query(default=None),
-    backend_type: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    start_time: datetime | None = Query(default=None),
-    end_time: datetime | None = Query(default=None),
+    model: str | None = Query(default=None, description="Filter by model name"),
+    backend_type: str | None = Query(default=None, description="Filter by backend type (local, openai, anthropic)"),
+    status: str | None = Query(default=None, description="Filter by status (success, error, timeout)"),
+    start_time: datetime | None = Query(default=None, description="Start of time range (ISO 8601)"),
+    end_time: datetime | None = Query(default=None, description="End of time range (ISO 8601)"),
     format: str = Query(default="jsonl", description="Export format: jsonl or csv"),
 ) -> PlainTextResponse:
     """Export audit logs in JSONL or CSV format.

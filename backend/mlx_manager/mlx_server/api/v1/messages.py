@@ -35,6 +35,15 @@ router = APIRouter(tags=["messages"])
     "/messages",
     response_model=None,
     responses={
+        200: {
+            "description": (
+                "Anthropic Messages API response. "
+                "Returns a JSON object (AnthropicMessagesResponse) when stream=false, "
+                "or an SSE stream of Anthropic-format events "
+                "(message_start, content_block_start, content_block_delta, "
+                "content_block_stop, message_delta, message_stop) when stream=true."
+            )
+        },
         422: {"model": ProblemDetail, "description": "Validation Error"},
         404: {"model": ProblemDetail, "description": "Model Not Found"},
         408: {"model": TimeoutProblem, "description": "Request Timeout"},

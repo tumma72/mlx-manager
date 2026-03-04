@@ -5,7 +5,7 @@ Reference: https://platform.claude.com/docs/en/api/messages
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # --- Content Block Types ---
 
@@ -94,6 +94,23 @@ class AnthropicMessagesRequest(BaseModel):
     - content can be string or array of content blocks
     - temperature range is 0.0 to 1.0 (not 0.0 to 2.0)
     """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "mlx-community/Qwen3-0.6B-4bit-DWQ",
+                    "max_tokens": 256,
+                    "messages": [
+                        {"role": "user", "content": "What is the capital of France?"}
+                    ],
+                    "system": "You are a helpful assistant.",
+                    "temperature": 0.7,
+                    "stream": False,
+                }
+            ]
+        }
+    )
 
     model: str
     max_tokens: int = Field(ge=1, le=128000)  # Required - no default

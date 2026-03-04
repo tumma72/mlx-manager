@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from loguru import logger
 
+from mlx_manager.mlx_server.errors import ProblemDetail
 from mlx_manager.mlx_server.schemas.openai import SpeechRequest
 from mlx_manager.mlx_server.services.audio import generate_speech
 from mlx_manager.mlx_server.utils.request_helpers import validate_model_available
@@ -22,7 +23,15 @@ AUDIO_CONTENT_TYPES = {
 }
 
 
-@router.post("/audio/speech")
+@router.post(
+    "/audio/speech",
+    responses={
+        200: {"description": "Audio data in the requested format (WAV, FLAC, or MP3 bytes)"},
+        422: {"model": ProblemDetail, "description": "Validation Error"},
+        404: {"model": ProblemDetail, "description": "Model Not Found"},
+        500: {"model": ProblemDetail, "description": "Internal Server Error"},
+    },
+)
 async def create_speech(request: SpeechRequest) -> Response:
     """Generate speech audio from text.
 

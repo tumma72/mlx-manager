@@ -32,6 +32,13 @@ router = APIRouter(tags=["completions"])
     "/completions",
     response_model=None,
     responses={
+        200: {
+            "description": (
+                "Text completion response. "
+                "Returns a JSON object (CompletionResponse) when stream=false, "
+                "or an SSE stream of completion chunks followed by [DONE] when stream=true."
+            )
+        },
         422: {"model": ProblemDetail, "description": "Validation Error"},
         404: {"model": ProblemDetail, "description": "Model Not Found"},
         408: {"model": TimeoutProblem, "description": "Request Timeout"},
