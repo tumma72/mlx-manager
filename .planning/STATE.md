@@ -12,9 +12,9 @@ See: .planning/PROJECT.md (updated 2026-01-27)
 Phase: 15 of 16 (Code Cleanup & Integration Tests)
 Plan: 20 of 20 complete
 Status: In progress — ad-hoc tasks in progress
-Last activity: 2026-03-04 - Completed P3-4 (Connection Pooling for Embedded Mode)
+Last activity: 2026-03-04 - Completed P3-6 (Test Coverage for Critical Untested Paths)
 
-Progress: [████████████████] Phase 15-20 done + P3-5 (model preload) done + P3-2 (audit rotation) done + P3-1 (OpenAPI enrichment) done + P3-3 (config hot-reload) done + P3-4 (connection pooling) done
+Progress: [████████████████] Phase 15-20 done + P3-1 to P3-6 done
 
 **UAT Gaps Fixed:**
 1. ~~Empty responses with thinking models~~ - FIXED (15-04: StreamingProcessor redesign)
@@ -343,7 +343,7 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed P3-4 (Connection Pooling for Embedded Mode)
+Stopped at: Completed P3-6 (Test Coverage for Critical Untested Paths)
 Resume file: None
 Next: Continue with any remaining ad-hoc tasks or milestone audit
 
