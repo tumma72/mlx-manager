@@ -1,8 +1,15 @@
 """Pytest fixtures for backend tests."""
 
 import os
+import sys
 from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# MLX libraries (mlx-lm, mlx-vlm, mlx-audio, mlx-embeddings) only work on macOS
+# Apple Silicon. Skip the entire mlx_server test directory on other platforms to
+# avoid hangs/segfaults during import.
+if sys.platform != "darwin":
+    collect_ignore_glob = ["mlx_server/*"]
 
 import pytest
 from httpx import ASGITransport, AsyncClient
