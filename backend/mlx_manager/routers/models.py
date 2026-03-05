@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -75,7 +76,8 @@ async def search_models(
         )
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Failed to search MLX models: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/local", response_model=list[LocalModel])

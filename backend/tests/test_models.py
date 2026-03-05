@@ -63,7 +63,7 @@ async def test_search_models_error(auth_client):
         mock.search_mlx_models = AsyncMock(side_effect=Exception("Search failed"))
         response = await auth_client.get("/api/models/search?query=test")
         assert response.status_code == 500
-        assert "Search failed" in response.json()["detail"]
+        assert response.json()["detail"] == "Internal server error"
 
 
 @pytest.mark.asyncio

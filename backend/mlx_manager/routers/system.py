@@ -136,7 +136,8 @@ async def install_launchd_service(
 
         return {"plist_path": plist_path, "label": launchd_manager.get_label(profile)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Failed to install launchd service for profile {profile.id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/launchd/uninstall/{profile_id}", status_code=204)
@@ -203,7 +204,10 @@ async def get_audit_logs(
             response.raise_for_status()
             return response.json()  # type: ignore[no-any-return]
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+        logger.exception(f"Failed to fetch audit logs from MLX Server: {e}")
+        raise HTTPException(
+            status_code=e.response.status_code, detail="Internal server error"
+        ) from e
     except Exception as e:
         logger.warning(f"Failed to fetch audit logs: {e}")
         raise HTTPException(status_code=503, detail="MLX Server not available") from e
@@ -220,7 +224,10 @@ async def get_audit_stats(
             response.raise_for_status()
             return response.json()  # type: ignore[no-any-return]
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+        logger.exception(f"Failed to fetch audit stats from MLX Server: {e}")
+        raise HTTPException(
+            status_code=e.response.status_code, detail="Internal server error"
+        ) from e
     except Exception as e:
         logger.warning(f"Failed to fetch audit stats: {e}")
         raise HTTPException(status_code=503, detail="MLX Server not available") from e
@@ -265,7 +272,10 @@ async def export_audit_logs(
                 headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=str(e)) from e
+        logger.exception(f"Failed to export audit logs from MLX Server: {e}")
+        raise HTTPException(
+            status_code=e.response.status_code, detail="Internal server error"
+        ) from e
     except Exception as e:
         logger.warning(f"Failed to export audit logs: {e}")
         raise HTTPException(status_code=503, detail="MLX Server not available") from e

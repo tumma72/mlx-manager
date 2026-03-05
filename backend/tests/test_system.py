@@ -252,7 +252,7 @@ async def test_install_launchd_service_exception(auth_client, sample_profile_dat
         response = await auth_client.post(f"/api/system/launchd/install/{profile_id}")
 
     assert response.status_code == 500
-    assert "Failed to write plist" in response.json()["detail"]
+    assert response.json()["detail"] == "Internal server error"
 
 
 # ============================================================================
