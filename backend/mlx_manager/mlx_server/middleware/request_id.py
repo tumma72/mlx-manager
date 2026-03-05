@@ -31,6 +31,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
         request.state.request_id = request_id
 
-        response = await call_next(request)
+        response: Response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response

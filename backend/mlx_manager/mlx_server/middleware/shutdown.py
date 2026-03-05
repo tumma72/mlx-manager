@@ -126,7 +126,7 @@ class GracefulShutdownMiddleware(BaseHTTPMiddleware):
 
         state.request_started()
         try:
-            response = await call_next(request)
+            response: Response = await call_next(request)
             return response
         finally:
             state.request_finished()

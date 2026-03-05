@@ -110,7 +110,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
         """Process request with rate limiting."""
         if self.rpm <= 0:
-            return await call_next(request)
+            passthrough: Response = await call_next(request)
+            return passthrough
 
         self._maybe_cleanup()
 
@@ -135,7 +136,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        response = await call_next(request)
+        response: Response = await call_next(request)
 
         # Add rate limit headers to successful responses
         remaining = max(0, int(bucket.tokens))

@@ -25,7 +25,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
 
         try:
-            response = await call_next(request)
+            response: Response = await call_next(request)
             return response
         finally:
             duration = time.perf_counter() - start
