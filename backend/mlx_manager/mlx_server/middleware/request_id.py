@@ -25,7 +25,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with request ID propagation."""
         # Accept client-provided ID or generate new one
         request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"

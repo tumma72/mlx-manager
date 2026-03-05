@@ -142,7 +142,7 @@ async def update_model_capabilities(repo_id: str, **caps: object) -> None:
             if hasattr(ModelCapabilities, key):
                 cap_kwargs[key] = value
 
-        capability = ModelCapabilities(**cap_kwargs)
+        capability = ModelCapabilities.model_validate(cap_kwargs)
         session.add(capability)
         await session.commit()
         logger.info(f"Updated capabilities for {repo_id} (type={model_type})")

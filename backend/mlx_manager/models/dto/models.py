@@ -32,89 +32,89 @@ class ModelResponse(BaseModel):
     # Capabilities from STI hierarchy (None = not probed)
     capabilities: CapabilitiesResponse | None = None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def model_id(self) -> str:
         """Alias for repo_id used by the frontend capabilities mapping."""
         return self.repo_id
 
     # Backward-compatible flat accessors for frontend transition
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def probed_at(self) -> datetime | None:
         return self.capabilities.probed_at if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def probe_version(self) -> int | None:
         return self.capabilities.probe_version if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def model_family(self) -> str | None:
         return self.capabilities.model_family if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_native_tools(self) -> bool | None:
         return self.capabilities.supports_native_tools if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_thinking(self) -> bool | None:
         return self.capabilities.supports_thinking if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def tool_format(self) -> str | None:
         return self.capabilities.tool_format if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def practical_max_tokens(self) -> int | None:
         return self.capabilities.practical_max_tokens if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def tool_parser_id(self) -> str | None:
         return self.capabilities.tool_parser_id if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def thinking_parser_id(self) -> str | None:
         return self.capabilities.thinking_parser_id if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_multi_image(self) -> bool | None:
         return self.capabilities.supports_multi_image if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_video(self) -> bool | None:
         return self.capabilities.supports_video if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def embedding_dimensions(self) -> int | None:
         return self.capabilities.embedding_dimensions if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def max_sequence_length(self) -> int | None:
         return self.capabilities.max_sequence_length if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def is_normalized(self) -> bool | None:
         return self.capabilities.is_normalized if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_tts(self) -> bool | None:
         return self.capabilities.supports_tts if self.capabilities else None
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def supports_stt(self) -> bool | None:
         return self.capabilities.supports_stt if self.capabilities else None

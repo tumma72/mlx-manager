@@ -39,10 +39,10 @@ def safe_eval_expr(node: ast.AST) -> float:
         left = safe_eval_expr(node.left)
         right = safe_eval_expr(node.right)
         op_func = SAFE_OPERATORS[type(node.op)]
-        return float(op_func(left, right))  # type: ignore[arg-type]
+        return float(op_func(left, right))
     elif isinstance(node, ast.UnaryOp) and type(node.op) in SAFE_OPERATORS:
         op_func = SAFE_OPERATORS[type(node.op)]
-        return float(op_func(safe_eval_expr(node.operand)))  # type: ignore[arg-type]
+        return float(op_func(safe_eval_expr(node.operand)))
     else:
         raise ValueError(f"Unsupported expression element: {ast.dump(node)}")
 

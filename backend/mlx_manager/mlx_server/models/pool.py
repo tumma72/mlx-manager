@@ -455,14 +455,14 @@ class ModelPoolManager:
             # Load based on type
             if model_type == ModelType.VISION:
                 # Vision models use mlx-vlm (returns model, processor)
-                from mlx_vlm import load as load_vlm  # type: ignore[import-untyped]
+                from mlx_vlm import load as load_vlm
 
                 result = await asyncio.to_thread(load_vlm, model_id)
                 model, tokenizer = result[0], result[1]  # processor stored as tokenizer
             elif model_type == ModelType.EMBEDDINGS:
                 # Embedding models use mlx-embeddings
                 from mlx_embeddings.utils import (
-                    load as load_embeddings,  # type: ignore[import-untyped]
+                    load as load_embeddings,
                 )
 
                 result = await asyncio.to_thread(load_embeddings, model_id)
@@ -470,7 +470,7 @@ class ModelPoolManager:
             elif model_type == ModelType.AUDIO:
                 # Audio models use mlx-audio (load via utils.load_model which
                 # auto-detects TTS vs STT and returns the nn.Module)
-                from mlx_audio.utils import load_model as load_audio  # type: ignore[import-untyped]
+                from mlx_audio.utils import load_model as load_audio
 
                 try:
                     model = await asyncio.to_thread(load_audio, model_id)
@@ -998,21 +998,21 @@ class ModelPoolManager:
             # Load based on specified type (no detection)
             if model_type == ModelType.VISION:
                 # Vision models use mlx-vlm (returns model, processor)
-                from mlx_vlm import load as load_vlm  # type: ignore[import-untyped]
+                from mlx_vlm import load as load_vlm
 
                 result = await asyncio.to_thread(load_vlm, model_id)
                 model, tokenizer = result[0], result[1]  # processor stored as tokenizer
             elif model_type == ModelType.EMBEDDINGS:
                 # Embedding models use mlx-embeddings
                 from mlx_embeddings.utils import (
-                    load as load_embeddings,  # type: ignore[import-untyped]
+                    load as load_embeddings,
                 )
 
                 result = await asyncio.to_thread(load_embeddings, model_id)
                 model, tokenizer = result[0], result[1]
             elif model_type == ModelType.AUDIO:
                 # Audio models use mlx-audio
-                from mlx_audio.utils import load_model as load_audio  # type: ignore[import-untyped]
+                from mlx_audio.utils import load_model as load_audio
 
                 model = await asyncio.to_thread(load_audio, model_id)
                 tokenizer = None  # Audio models don't use tokenizers

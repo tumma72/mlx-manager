@@ -287,7 +287,7 @@ async def model_loading_progress(model_id: str) -> StreamingResponse:
     progress_mgr = get_loading_progress()
     queue = progress_mgr.subscribe(model_id)
 
-    async def event_generator():  # type: ignore[no-untyped-def]
+    async def event_generator():
         try:
             while True:
                 event = await asyncio.wait_for(queue.get(), timeout=300)  # 5 min max

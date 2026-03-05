@@ -37,7 +37,7 @@ class ExecutionProfile(SQLModel, table=True):
     identifies which subset of nullable columns is populated.
     """
 
-    __tablename__ = "execution_profiles"  # type: ignore
+    __tablename__ = "execution_profiles"
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)

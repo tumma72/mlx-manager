@@ -38,7 +38,7 @@ API_TYPE_FOR_BACKEND: dict[BackendType, ApiType] = {
 class BackendMapping(SQLModel, table=True):
     """Maps model patterns to backends with fallback configuration."""
 
-    __tablename__ = "backend_mappings"  # type: ignore
+    __tablename__ = "backend_mappings"
 
     id: int | None = Field(default=None, primary_key=True)
     model_pattern: str = Field(index=True)  # e.g., "gpt-*" or exact model name
@@ -58,7 +58,7 @@ class BackendMapping(SQLModel, table=True):
 class CloudCredential(SQLModel, table=True):
     """Encrypted cloud API credentials."""
 
-    __tablename__ = "cloud_credentials"  # type: ignore
+    __tablename__ = "cloud_credentials"
 
     id: int | None = Field(default=None, primary_key=True)
     backend_type: BackendType  # No longer unique - allows multiple providers of same API type

@@ -37,7 +37,7 @@ dependencies = [
     "alembic>=1.18.1",
     "authlib>=1.3.0",
     "pwdlib[argon2]>=0.3.0",
-    "torchvision>=0.25.0; sys_platform == 'darwin'",
+    #"torchvision>=0.25.0; sys_platform == 'darwin'",
     # MLX Server dependencies
     "logfire[fastapi,httpx,sqlalchemy]>=3.0.0",
     "sse-starlette>=2.0.0",
@@ -52,8 +52,6 @@ dependencies = [
     # Structured output validation
     "jsonschema>=4.0.0",
     "loguru>=0.7.3",
-    "misaki[en]>=0.9.0",
-    "en-core-web-sm",
 ]
 
 [project.optional-dependencies]
@@ -121,6 +119,18 @@ filterwarnings = [
     "ignore::logfire._internal.config.LogfireNotConfiguredWarning",
     # Asyncio Queue.get() coroutines from GC during multi-test runs (race condition from WebSocket tests)
     "ignore:coroutine 'Queue.get' was never awaited:RuntimeWarning",
+]
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.rules]
+possibly-unresolved-reference = "warn"
+possibly-missing-import = "warn"
+
+[tool.ty.src]
+exclude = [
+    "tests/",
 ]
 
 [tool.mypy]

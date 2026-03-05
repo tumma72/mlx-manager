@@ -319,7 +319,7 @@ def extract_anthropic_content(
             # Handle dict form (from JSON parsing)
             if block.get("type") == "text":
                 text_parts.append(block.get("text", ""))
-        elif hasattr(block, "type") and block.type == "text":
+        elif isinstance(block, TextBlockParam):
             # Handle Pydantic model form
             text_parts.append(block.text)
 

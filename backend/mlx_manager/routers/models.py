@@ -153,7 +153,7 @@ async def start_download(
     # Create DB record for the download
     download_record = Download(
         model_id=request.model_id,
-        status="pending",
+        status=DownloadStatusEnum.PENDING,
         started_at=datetime.now(tz=UTC),
     )
     db.add(download_record)

@@ -37,7 +37,24 @@ COMMON_SPECIAL_TOKENS = [
 
 
 # Sentinel for "not provided" in configure() — distinct from None which means "clear"
-_UNSET: Any = object()
+class _UnsetType:
+    """Sentinel type for unset parameters."""
+
+    _instance: _UnsetType | None = None
+
+    def __new__(cls) -> _UnsetType:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+_UNSET = _UnsetType()
 
 
 class ModelAdapter:
@@ -71,6 +88,8 @@ class ModelAdapter:
             getattr(tokenizer, "tokenizer", tokenizer) if tokenizer is not None else None
         )
         # Parsers: explicit override > config factory > NullParser
+        self._tool_parser: ToolCallParser
+        self._thinking_parser: ThinkingParser
         if tool_parser is not None:
             self._tool_parser = tool_parser
         elif self._config.tool_parser_factory:
@@ -90,9 +109,9 @@ class ModelAdapter:
         self._model_id = model_id
 
         # Profile settings — stored once, used at every request
-        self._system_prompt = system_prompt
-        self._enable_tool_injection = enable_tool_injection
-        self._template_options = template_options
+        self._system_prompt: str | None = system_prompt
+        self._enable_tool_injection: bool = enable_tool_injection
+        self._template_options: dict[str, Any] | None = template_options
 
     @property
     def family(self) -> str:
@@ -345,11 +364,11 @@ class ModelAdapter:
 
     def configure(
         self,
-        system_prompt: str | None = _UNSET,
-        enable_tool_injection: bool | None = _UNSET,
-        template_options: dict[str, Any] | None = _UNSET,
-        tool_parser: ToolCallParser | None = _UNSET,
-        thinking_parser: ThinkingParser | None = _UNSET,
+        system_prompt: str | None | _UnsetType = _UNSET,
+        enable_tool_injection: bool | None | _UnsetType = _UNSET,
+        template_options: dict[str, Any] | None | _UnsetType = _UNSET,
+        tool_parser: ToolCallParser | None | _UnsetType = _UNSET,
+        thinking_parser: ThinkingParser | None | _UnsetType = _UNSET,
     ) -> None:
         """Reconfigure adapter settings (e.g., for probe or Profile changes).
 
@@ -357,22 +376,22 @@ class ModelAdapter:
         Parsers: pass an instance to swap, pass None to reset to family default,
         omit to leave unchanged.
         """
-        if system_prompt is not _UNSET:
+        if not isinstance(system_prompt, _UnsetType):
             self._system_prompt = system_prompt
-        if enable_tool_injection is not _UNSET:
+        if not isinstance(enable_tool_injection, _UnsetType):
             self._enable_tool_injection = (
                 enable_tool_injection if enable_tool_injection is not None else False
             )
-        if template_options is not _UNSET:
+        if not isinstance(template_options, _UnsetType):
             self._template_options = template_options
-        if tool_parser is not _UNSET:
+        if not isinstance(tool_parser, _UnsetType):
             if tool_parser is not None:
                 self._tool_parser = tool_parser
             elif self._config.tool_parser_factory:
                 self._tool_parser = self._config.tool_parser_factory()
             else:
                 self._tool_parser = NullToolParser()
-        if thinking_parser is not _UNSET:
+        if not isinstance(thinking_parser, _UnsetType):
             if thinking_parser is not None:
                 self._thinking_parser = thinking_parser
             elif self._config.thinking_parser_factory:
@@ -446,13 +465,17 @@ class ModelAdapter:
             from mlx_vlm.prompt_utils import apply_chat_template as vlm_apply_chat_template
             from mlx_vlm.utils import load_config
 
+            assert self._model_id is not None, "model_id required for vision models"
             config = load_config(self._model_id)
-            messages = vlm_apply_chat_template(
-                self._tokenizer,
-                config,
-                messages,
-                return_messages=True,
-                num_images=len(images),
+            messages = cast(
+                list[dict[str, Any]],
+                vlm_apply_chat_template(
+                    self._tokenizer,
+                    config,
+                    messages,
+                    return_messages=True,
+                    num_images=len(images),
+                ),
             )
             pixel_values = images
 
@@ -543,14 +566,18 @@ class ModelAdapter:
 
         if self._model_type == "vision":
             # Vision models always use mlx-vlm (handles both image and text-only)
+            assert self._tokenizer is not None, "tokenizer required for vision models"
+            tokenizer = self._tokenizer
+            pixel_values = cast(Any, prepared.pixel_values)
+
             def run_vision_gen() -> tuple[str, str]:
                 from mlx_vlm import generate as vlm_generate
 
                 response = vlm_generate(
                     model,
-                    self._tokenizer,
+                    tokenizer,
                     prepared.prompt,
-                    prepared.pixel_values,
+                    pixel_values,
                     max_tokens=max_tokens,
                     temp=temperature,
                     verbose=False,
@@ -622,18 +649,23 @@ class ModelAdapter:
         )
 
         if self._model_type == "vision":
+            assert self._tokenizer is not None, "tokenizer required for vision models"
+            tokenizer = self._tokenizer
+
             if prepared.pixel_values:
                 # Vision with images: non-streaming, simulate single event
                 from mlx_manager.mlx_server.utils.metal import run_on_metal_thread
+
+                pv: Any = prepared.pixel_values
 
                 def run_vision_gen() -> str:
                     from mlx_vlm import generate as vlm_generate
 
                     response = vlm_generate(
                         model,
-                        self._tokenizer,
+                        tokenizer,
                         prepared.prompt,
-                        prepared.pixel_values,
+                        pv,
                         max_tokens=max_tokens,
                         temp=temperature,
                         verbose=False,
@@ -656,7 +688,7 @@ class ModelAdapter:
 
                 for resp in vlm_stream_generate(
                     model,
-                    self._tokenizer,
+                    tokenizer,
                     prepared.prompt,
                     max_tokens=max_tokens,
                     temp=temperature,

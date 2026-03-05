@@ -380,7 +380,7 @@ async def whisper_post_load_hook(model: Any, model_id: str) -> None:
     canonical_repo = f"openai/{name}"
 
     try:
-        from transformers import WhisperProcessor
+        from transformers import WhisperProcessor  # ty: ignore[possibly-missing-import]
 
         processor = await asyncio.to_thread(WhisperProcessor.from_pretrained, canonical_repo)
         model._processor = processor

@@ -7,7 +7,7 @@ import webbrowser
 from typing import Any
 
 import httpx
-import rumps  # type: ignore[import-untyped,import-not-found]
+import rumps
 from loguru import logger
 
 from mlx_manager import __version__
@@ -44,7 +44,7 @@ class MLXManagerApp(rumps.App):
 
         # Disable stop initially
         # rumps.App.menu supports string indexing at runtime
-        self.menu["Stop Server"].set_callback(None)  # type: ignore[call-overload]
+        self.menu["Stop Server"].set_callback(None)
 
         # Auto-start server
         self._auto_start()
@@ -78,16 +78,16 @@ class MLXManagerApp(rumps.App):
     def _update_status(self, status: str, is_running: bool) -> None:
         """Update menu status item and icon."""
         # rumps.App.menu supports string indexing at runtime
-        self.menu["Status: Checking..."].title = f"Status: {status}"  # type: ignore[call-overload]
+        self.menu["Status: Checking..."].title = f"Status: {status}"
 
         if is_running:
             self.title = "MLX \u25cf"  # Filled circle
-            self.menu["Start Server"].set_callback(None)  # type: ignore[call-overload]
-            self.menu["Stop Server"].set_callback(self.stop_server)  # type: ignore[call-overload]
+            self.menu["Start Server"].set_callback(None)
+            self.menu["Stop Server"].set_callback(self.stop_server)
         else:
             self.title = "MLX \u25cb"  # Empty circle
-            self.menu["Start Server"].set_callback(self.start_server)  # type: ignore[call-overload]
-            self.menu["Stop Server"].set_callback(None)  # type: ignore[call-overload]
+            self.menu["Start Server"].set_callback(self.start_server)
+            self.menu["Stop Server"].set_callback(None)
 
     @rumps.timer(5)
     def check_health(self, _: Any) -> None:

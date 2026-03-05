@@ -105,7 +105,7 @@ class GracefulShutdownMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with shutdown awareness."""
         state = get_shutdown_state()
 

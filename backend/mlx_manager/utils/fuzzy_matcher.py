@@ -16,7 +16,6 @@ Two implementations are provided:
 
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import cast
 
 # Parser options no longer used with embedded MLX Server
 # Return empty options to maintain API compatibility
@@ -158,7 +157,7 @@ class FuzzyMatcher(ABC):
 
         # Get available options for this parser type
         key = f"{parser_type}s"  # e.g., "tool_call_parsers"
-        available = cast(list[str], options.get(key, []))
+        available = options.get(key, [])
         if not available:
             return None
 

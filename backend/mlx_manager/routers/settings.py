@@ -276,13 +276,13 @@ async def list_rules(
     result = await session.execute(
         select(BackendMapping, profile_alias)
         .outerjoin(profile_alias, BackendMapping.profile_id == profile_alias.id)
-        .order_by(BackendMapping.priority.desc())  # type: ignore[attr-defined]
+        .order_by(BackendMapping.priority.desc())
     )
     rows = result.all()
 
     return [
         BackendMappingResponse(
-            id=mapping.id,  # type: ignore[arg-type]
+            id=mapping.id,
             model_pattern=mapping.model_pattern,
             pattern_type=mapping.pattern_type,
             backend_type=mapping.backend_type,
@@ -400,7 +400,7 @@ async def test_rule_match(
     result = await session.execute(
         select(BackendMapping)
         .where(BackendMapping.enabled == True)  # noqa: E712
-        .order_by(BackendMapping.priority.desc())  # type: ignore[attr-defined]
+        .order_by(BackendMapping.priority.desc())
     )
     rules = result.scalars().all()
 

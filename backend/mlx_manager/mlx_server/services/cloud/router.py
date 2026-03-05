@@ -108,7 +108,7 @@ class BackendRouter:
 
         for mapping in mappings:
             if self._pattern_matches(mapping, model):
-                return mapping  # type: ignore[return-value]
+                return mapping
 
         return None
 

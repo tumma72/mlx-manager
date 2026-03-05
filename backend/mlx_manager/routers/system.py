@@ -104,7 +104,7 @@ async def get_system_info(
     # Try to get MLX version
     mlx_version = None
     try:
-        import mlx  # type: ignore[import-not-found]
+        import mlx
 
         mlx_version = getattr(mlx, "__version__", "installed")
     except ImportError as e:
@@ -202,7 +202,7 @@ async def get_audit_logs(
                 f"{MLX_SERVER_URL}/admin/audit-logs", params=params, timeout=10.0
             )
             response.raise_for_status()
-            return response.json()  # type: ignore[no-any-return]
+            return response.json()
     except httpx.HTTPStatusError as e:
         logger.exception(f"Failed to fetch audit logs from MLX Server: {e}")
         raise HTTPException(
@@ -222,7 +222,7 @@ async def get_audit_stats(
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{MLX_SERVER_URL}/admin/audit-logs/stats", timeout=10.0)
             response.raise_for_status()
-            return response.json()  # type: ignore[no-any-return]
+            return response.json()
     except httpx.HTTPStatusError as e:
         logger.exception(f"Failed to fetch audit stats from MLX Server: {e}")
         raise HTTPException(

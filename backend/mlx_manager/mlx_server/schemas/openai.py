@@ -111,12 +111,10 @@ def extract_content_parts(
                     image_urls.append(img_url.get("url", ""))
                 elif isinstance(img_url, str):
                     image_urls.append(img_url)
-        elif hasattr(block, "type"):
-            # Handle Pydantic model form
-            if block.type == "text":
-                text_parts.append(block.text)
-            elif block.type == "image_url":
-                image_urls.append(block.image_url.url)
+        elif isinstance(block, TextContentBlock):
+            text_parts.append(block.text)
+        elif isinstance(block, ImageContentBlock):
+            image_urls.append(block.image_url.url)
 
     return " ".join(text_parts), image_urls
 

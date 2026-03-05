@@ -30,7 +30,7 @@ class UserBase(SQLModel):
 class User(UserBase, table=True):
     """User database model."""
 
-    __tablename__ = "users"  # type: ignore
+    __tablename__ = "users"
 
     id: int | None = Field(default=None, primary_key=True)
     hashed_password: str
@@ -72,7 +72,7 @@ class Model(SQLModel, table=True):
 class Setting(SQLModel, table=True):
     """Application settings."""
 
-    __tablename__ = "settings"  # type: ignore
+    __tablename__ = "settings"
 
     key: str = Field(primary_key=True)
     value: str
@@ -82,7 +82,7 @@ class Setting(SQLModel, table=True):
 class Download(SQLModel, table=True):
     """Active download tracking."""
 
-    __tablename__ = "downloads"  # type: ignore
+    __tablename__ = "downloads"
 
     id: int | None = Field(default=None, primary_key=True)
     model_id: str = Field(index=True)
@@ -105,7 +105,7 @@ class Download(SQLModel, table=True):
 class ServerConfig(SQLModel, table=True):
     """Global server configuration (singleton - only id=1 used)."""
 
-    __tablename__ = "server_config"  # type: ignore
+    __tablename__ = "server_config"
 
     id: int | None = Field(default=None, primary_key=True)
     # Model pool settings

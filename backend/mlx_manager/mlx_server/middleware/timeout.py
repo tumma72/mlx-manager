@@ -45,7 +45,7 @@ def with_timeout(
                     timeout=seconds,
                 )
             except TimeoutError:
-                logger.warning(f"Endpoint {func.__name__} timed out after {seconds}s")
+                logger.warning(f"Endpoint {func.__name__} timed out after {seconds}s")  # ty: ignore[unresolved-attribute]
                 raise TimeoutHTTPException(
                     timeout_seconds=seconds,
                     detail=f"Request timed out after {int(seconds)} seconds. "

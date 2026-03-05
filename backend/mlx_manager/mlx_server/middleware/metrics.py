@@ -14,7 +14,7 @@ from starlette.responses import Response
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Middleware that records request latency and active request count."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
+    async def dispatch(self, request: Request, call_next) -> Response:
         from mlx_manager.mlx_server.services.metrics import get_metrics
 
         metrics = get_metrics()

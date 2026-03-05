@@ -285,6 +285,7 @@ async def _stream_chat_ir(
         def run_vision_generation() -> str:
             from mlx_vlm import generate as vlm_generate
 
+            assert ctx.pixel_values is not None, "pixel_values required for vision generation"
             response = vlm_generate(
                 ctx.model,
                 ctx.tokenizer,
@@ -411,6 +412,7 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
             def run_vision_generation() -> tuple[str, str]:
                 from mlx_vlm import generate as vlm_generate
 
+                assert ctx.pixel_values is not None, "pixel_values required for vision generation"
                 response = vlm_generate(
                     ctx.model,
                     ctx.tokenizer,

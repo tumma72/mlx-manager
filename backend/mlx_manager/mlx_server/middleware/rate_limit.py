@@ -107,7 +107,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         for ip in stale:
             del self._buckets[ip]
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next) -> Response:
         """Process request with rate limiting."""
         if self.rpm <= 0:
             passthrough: Response = await call_next(request)

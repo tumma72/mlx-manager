@@ -16,9 +16,13 @@ from mlx_manager.mlx_server.models.ir import InternalRequest, StreamEvent, TextR
 from mlx_manager.mlx_server.schemas.anthropic import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
+    ImageBlockParam,
     TextBlock,
+    TextBlockParam,
     ThinkingBlock,
+    ToolResultBlockParam,
     ToolUseBlock,
+    ToolUseBlockParam,
     Usage,
 )
 from mlx_manager.mlx_server.services.formatters.base import ProtocolFormatter
@@ -142,48 +146,45 @@ class AnthropicFormatter(ProtocolFormatter):
             elif isinstance(msg.content, list):
                 text_parts = []
                 for block in msg.content:
-                    if hasattr(block, "type"):
-                        if block.type == "text":
-                            text_parts.append(block.text)
-                        elif block.type == "image":
-                            # Convert Anthropic image to data URL
-                            data_url = f"data:{block.source.media_type};base64,{block.source.data}"
-                            images.append(data_url)
-                        elif block.type == "tool_use":
-                            # Tool use from assistant - convert to OpenAI format
-                            messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": "",
-                                    "tool_calls": [
-                                        {
-                                            "id": block.id,
-                                            "type": "function",
-                                            "function": {
-                                                "name": block.name,
-                                                "arguments": json.dumps(block.input),
-                                            },
-                                        }
-                                    ],
-                                }
-                            )
-                            continue
-                        elif block.type == "tool_result":
-                            # Tool result from user - convert to OpenAI format
-                            if isinstance(block.content, str):
-                                result_content = block.content
-                            else:
-                                result_content = " ".join(
-                                    b.text for b in block.content if hasattr(b, "text")
-                                )
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": block.tool_use_id,
-                                    "content": result_content,
-                                }
-                            )
-                            continue
+                    if isinstance(block, TextBlockParam):
+                        text_parts.append(block.text)
+                    elif isinstance(block, ImageBlockParam):
+                        # Convert Anthropic image to data URL
+                        data_url = f"data:{block.source.media_type};base64,{block.source.data}"
+                        images.append(data_url)
+                    elif isinstance(block, ToolUseBlockParam):
+                        # Tool use from assistant - convert to OpenAI format
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": block.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": block.name,
+                                            "arguments": json.dumps(block.input),
+                                        },
+                                    }
+                                ],
+                            }
+                        )
+                        continue
+                    elif isinstance(block, ToolResultBlockParam):
+                        # Tool result from user - convert to OpenAI format
+                        if isinstance(block.content, str):
+                            result_content = block.content
+                        else:
+                            result_content = " ".join(b.text for b in block.content)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": block.tool_use_id,
+                                "content": result_content,
+                            }
+                        )
+                        continue
                     elif isinstance(block, dict):
                         if block.get("type") == "text":
                             text_parts.append(block.get("text", ""))
@@ -546,7 +547,7 @@ class AnthropicFormatter(ProtocolFormatter):
             content.append(TextBlock(text=result.content))
 
         if result.tool_calls:
-            anthropic_stop = "tool_use"  # type: ignore[assignment]
+            anthropic_stop = "tool_use"
             for tc in result.tool_calls:
                 func = tc.get("function", {})
                 tool_id = tc.get("id", "toolu_0")

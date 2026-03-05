@@ -214,7 +214,7 @@ async def run_on_metal_thread(
                 raise RuntimeError(f"{error_context}: {result}") from result
             raise result
 
-        return result  # type: ignore[no-any-return, return-value]
+        return result
     finally:
         clear_cache()
 
@@ -258,6 +258,6 @@ async def stream_from_metal_thread(
                 if isinstance(result, Exception):
                     raise result
 
-                yield result  # type: ignore[misc]
+                yield result
     finally:
         clear_cache()

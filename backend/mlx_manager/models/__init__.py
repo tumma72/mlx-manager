@@ -17,7 +17,7 @@ _SHARED_NAMES = {
 }
 
 
-def __getattr__(name: str):  # type: ignore[no-untyped-def]
+def __getattr__(name: str):
     """Lazy import of shared cloud entities for backward compatibility."""
     if name in _SHARED_NAMES:
         import mlx_manager.shared.cloud_entities as _cloud

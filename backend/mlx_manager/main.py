@@ -324,7 +324,7 @@ app.mount("/v1", mlx_server_app, name="mlx_server")
 
 # CORS configuration - more permissive since we serve frontend from same origin
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[invalid-argument-type]
     allow_origins=[
         "http://localhost:5173",  # SvelteKit dev server
         "http://127.0.0.1:5173",

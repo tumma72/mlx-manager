@@ -44,7 +44,7 @@ class AuditLogBase(SQLModel):
 class AuditLog(AuditLogBase, table=True):
     """Audit log database table."""
 
-    __tablename__ = "audit_logs"  # type: ignore[assignment]
+    __tablename__ = "audit_logs"
 
     id: int | None = Field(default=None, primary_key=True)
 
