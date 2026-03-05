@@ -5,6 +5,19 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-03-05
+
+A **patch release** fixing Homebrew installation and adding ty type checker support.
+
+### Fixed
+
+- Removed transitive dependencies (`misaki[en]`, `en-core-web-sm`) from direct dependencies that broke pip-based installations (including Homebrew)
+
+### Changed
+
+- Added [ty](https://docs.astral.sh/ty/) type checker configuration and resolved all diagnostics
+- Improved type safety: replaced string-based union narrowing with `isinstance()` checks, added proper sentinel typing
+
 ## [1.2.0] - 2026-03-05
 
 A **hardening and quality release** that makes the v1.1 inference server production-ready. Driven by a comprehensive code review (67 findings across 5 dimensions — architecture, design patterns, clean code, security, performance), all must-fix and should-fix items have been resolved.
