@@ -4,7 +4,7 @@ class MlxManager < Formula
   desc "Web-based MLX model manager for Apple Silicon Macs"
   homepage "https://github.com/tumma72/mlx-manager"
   url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.2.0.tar.gz"
-  sha256 "" # TODO: Update sha256 after tagging v1.2.0
+  sha256 "90e9667e18fd087c21cb38cbb64457cef9684e01f1ec98bf80aace38577b4405"
   license "MIT"
   version "1.2.0"
 
