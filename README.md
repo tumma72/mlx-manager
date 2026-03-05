@@ -14,13 +14,13 @@
 
 ## Why MLX Manager?
 
-Running local LLMs typically requires juggling multiple tools, config files, and terminal commands. MLX Manager gives you:
+Running local LLMs typically requires juggling multiple tools, config files, and terminal commands. Tools like Ollama and LM Studio make model management easier, but they rely on llama.cpp — a cross-platform C++ runtime that treats Apple Silicon as one target among many. MLX Manager takes a different approach: it includes a purpose-built inference server that calls the MLX framework directly, so every operation runs natively on Metal GPU without translation layers, format conversions, or cross-platform abstractions.
 
 - **One-click model downloads** from HuggingFace MLX models (mlx-community, lmstudio-community, and more)
 - **Smart model discovery** - filter by architecture (Llama, Qwen, Mistral), quantization (4-bit, 8-bit), and capabilities (multimodal, tool use)
-- **Embedded inference server** - high-speed MLX inference engine with OpenAI and Anthropic API compatibility
-- **Model pool with LRU eviction** - load multiple models simultaneously, auto-evict when memory is low
-- **4 model types** - text generation, vision, embeddings, and audio (TTS/STT)
+- **Purpose-built inference server** - direct MLX framework integration with OpenAI and Anthropic API compatibility, not a wrapper around llama.cpp
+- **Multi-model, multi-type** - load text, vision, embeddings, and audio models simultaneously with LRU eviction. Not one-model-at-a-time
+- **Two-phase model lifecycle** - models are probed at load time to discover capabilities (tool calling, thinking, streaming), then served with zero runtime overhead
 - **Visual server management** - start, stop, and monitor models with real-time CPU/memory metrics
 - **Rich chat interface** - test models with image/video/text attachments, thinking model support, and MCP tool integration
 - **Cloud routing** - seamlessly route requests to OpenAI/Anthropic APIs when local models can't handle them
@@ -83,7 +83,9 @@ message = client.messages.create(
 
 ## Embedded Inference Server
 
-MLX Manager includes a fully self-contained inference server mounted at `/v1`. No external inference backends needed.
+MLX Manager includes a fully self-contained inference server mounted at `/v1`. No external inference backends needed — the server calls mlx-lm, mlx-vlm, mlx-embeddings, and mlx-audio directly, keeping everything on the Metal GPU without process boundaries or IPC overhead.
+
+**Why build our own instead of wrapping Ollama or llama.cpp?** Those projects target every platform and GPU vendor, which means abstraction layers, GGUF format conversions, and lowest-common-denominator threading. MLX Manager's server is Apple Silicon-only by design: it uses a persistent Metal GPU thread with a job queue for thread affinity, list-buffer string assembly to avoid O(n^2) concatenation in streaming, and a two-phase probe-then-serve lifecycle that eliminates capability checks from the hot path. The result is an inference server that behaves like a native macOS application — because it is one.
 
 ### Multi-Protocol API
 
@@ -99,13 +101,16 @@ MLX Manager includes a fully self-contained inference server mounted at `/v1`. N
 
 ### Key Capabilities
 
-- **Unified adapter architecture** - single ModelAdapter handles all model types with family-specific configs
+- **Unified adapter architecture** - single ModelAdapter handles all model types with data-driven family configs (no subclass explosion)
 - **8 model families** - Qwen, GLM-4, Llama, Gemma, Mistral/Devstral/Magistral, Liquid, Whisper, Kokoro
 - **Smart model detection** - auto-detects model type, family, and capabilities from config.json
-- **Model probing** - discovers tool-calling, thinking, and streaming capabilities at load time
+- **Two-phase probe-then-serve** - discovers tool-calling format, thinking delimiters, and streaming support at load time; hot path runs with zero capability checks
+- **Persistent Metal GPU thread** - dedicated thread with job queue ensures Metal thread affinity across all requests
+- **Multi-model pool with LRU eviction** - host text, vision, embeddings, and audio models simultaneously; auto-evict when memory pressure rises
+- **Multi-protocol from one server** - both OpenAI and Anthropic APIs from the same endpoint with bidirectional protocol translation
 - **Continuous batching** (experimental) with prefix caching and priority scheduling
+- **Performance-optimized streaming** - list-buffer string assembly (no O(n^2) concatenation), clean shutdown with drain timeout
 - **Structured output** - JSON mode with schema validation
-- **Anthropic protocol translation** - bidirectional conversion between OpenAI and Anthropic formats
 - **Cloud routing** - route to OpenAI/Anthropic cloud APIs when local models can't handle the request
 
 ### Observability
@@ -198,7 +203,7 @@ git clone https://github.com/tumma72/mlx-manager.git
 cd mlx-manager
 make install-dev  # Install dependencies
 make dev          # Start dev servers
-make test         # Run tests (4400+ tests)
+make test         # Run tests (4500+ tests)
 ```
 
 ## License

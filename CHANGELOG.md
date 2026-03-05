@@ -5,21 +5,36 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2026-03-04
+## [1.2.0] - 2026-03-05
 
-### Fixed
-
-- Frontend `StartingTile.svelte` `$effect` infinite loop causing broken tests
-- Stdlib logging format bug in probe sweeps (`sweeps.py`)
-- Clean shutdown: dispose database engine and suppress `resource_tracker` warning
-- Clear stale polling state on component unmount and HMR reload
+A **hardening and quality release** that makes the v1.1 inference server production-ready. Driven by a comprehensive code review (67 findings across 5 dimensions — architecture, design patterns, clean code, security, performance), all must-fix and should-fix items have been resolved.
 
 ### Changed
 
-- Backend test coverage: 95.54% to 96.55% (3216 tests, +70 new)
-- Frontend test coverage: 1077 to 1238 tests (+161 new)
-- 4 new frontend test files: AuditLogPanel, HuggingFaceSettings, ModelPoolSettings, TimeoutSettings
-- P3 OpenAPI annotations: line-length lint fixes
+- Metal GPU operations now use a persistent worker thread with job queue, replacing per-request thread creation that defeated Metal thread affinity (P-1)
+- All string assembly in the inference generation loop uses list buffer + `"".join()` pattern, eliminating O(n²) `+=` concatenation on the hot path (P-3)
+- `list_local_models()` wrapped in `run_in_executor` so filesystem-heavy model listing no longer blocks the async event loop (P-2)
+- Audio adapter converts MLX arrays via `np.array(audio, copy=False)` instead of roundtripping through Python list, avoiding a full double-copy of audio data (P-9)
+- Embeddings adapter counts tokens from `attention_mask.sum()` instead of re-tokenizing each input, removing redundant CPU work per embedding request (P-10)
+- Regex-based routing pattern matching uses `re.fullmatch` consistently, fixing a discrepancy where `re.match` allowed unintended prefix-only matches (CC-2f)
+- Backend test coverage increased from 95.54% to 96.55% (3216 tests, +70 new)
+- Frontend test coverage expanded from 1077 to 1238 tests (+161 new), adding 4 new test files (AuditLogPanel, HuggingFaceSettings, ModelPoolSettings, TimeoutSettings)
+
+### Security
+
+- **SSRF protection**: image URLs validated via DNS resolution with IP range blocking — private (RFC 1918), loopback, link-local (169.254.x.x), and reserved addresses are all rejected before any HTTP request is made (S-2)
+- Local file path support removed from the image processor; only `data:` URIs and validated HTTP(S) URLs are accepted (S-3)
+- Auth DTOs now validate email format (`EmailStr`) and enforce password length constraints (8–128 characters) (S-4)
+- Management API 500-level HTTP exceptions return generic error messages instead of leaking internal exception details; full stack traces logged server-side via loguru (S-8)
+
+### Fixed
+
+- `resource_tracker` "leaked semaphore" warning on Ctrl+C shutdown — applied CPython issue #90549 workaround to suppress the false-positive diagnostic
+- Both database engines (manager SQLite + MLX server SQLite) properly disposed during application shutdown
+- Metal GPU worker thread cleanly shut down on exit via sentinel-based queue drain
+- Frontend `StartingTile.svelte` `$effect` infinite loop that caused cascading test failures
+- Stale polling state on component unmount and HMR reload no longer triggers updates after teardown
+- Stdlib logging format bug in probe sweep runs (`sweeps.py`)
 
 ## [1.1.0] - 2026-01-26
 
