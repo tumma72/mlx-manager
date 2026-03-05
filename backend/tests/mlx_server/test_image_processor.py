@@ -13,6 +13,7 @@ from mlx_manager.mlx_server.services.image_processor import (
     MAX_IMAGE_DIMENSION,
     MAX_URL_RETRIES,
     _fetch_image_from_url,
+    _validate_url,
     preprocess_image,
     preprocess_images,
 )
@@ -134,21 +135,123 @@ class TestPreprocessImageResize:
         assert MAX_IMAGE_DIMENSION == 2048
 
 
-class TestPreprocessImageLocalFile:
-    """Tests for local file path handling in preprocess_image."""
+class TestPreprocessImageLocalFileRejected:
+    """Tests that local file paths are rejected (security: no arbitrary file reads)."""
 
     @pytest.mark.asyncio
-    async def test_load_local_png(self):
-        """Load a real local PNG file from test fixtures."""
-        img_path = str(FIXTURES_DIR / "red_square.png")
-        img = await preprocess_image(img_path)
-        assert isinstance(img, Image.Image)
+    async def test_local_path_raises_value_error(self):
+        """Local file paths are no longer supported and raise ValueError."""
+        with pytest.raises(ValueError, match="Only data URIs and HTTP"):
+            await preprocess_image("/some/path/image.png")
 
     @pytest.mark.asyncio
-    async def test_load_nonexistent_file_raises(self):
-        """Non-existent file raises ValueError."""
-        with pytest.raises(ValueError, match="Failed to open image file"):
-            await preprocess_image("/nonexistent/path/image.png")
+    async def test_relative_path_raises_value_error(self):
+        """Relative paths are also rejected."""
+        with pytest.raises(ValueError, match="Only data URIs and HTTP"):
+            await preprocess_image("images/photo.jpg")
+
+
+class TestValidateUrl:
+    """Tests for SSRF protection in _validate_url."""
+
+    def test_blocks_private_10_network(self):
+        """Blocks RFC 1918 10.x.x.x addresses."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("10.0.0.1", 443))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://internal.example.com/img.png")
+
+    def test_blocks_private_172_network(self):
+        """Blocks RFC 1918 172.16-31.x.x addresses."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("172.16.0.1", 443))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://internal.example.com/img.png")
+
+    def test_blocks_private_192_168_network(self):
+        """Blocks RFC 1918 192.168.x.x addresses."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("192.168.1.1", 443))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://internal.example.com/img.png")
+
+    def test_blocks_loopback(self):
+        """Blocks loopback 127.x.x.x addresses."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("127.0.0.1", 443))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://localhost/img.png")
+
+    def test_blocks_ipv6_loopback(self):
+        """Blocks IPv6 loopback ::1."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("::1", 443, 0, 0))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://localhost/img.png")
+
+    def test_blocks_link_local(self):
+        """Blocks link-local 169.254.x.x addresses (includes metadata endpoint)."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("169.254.169.254", 80))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("http://169.254.169.254/latest/meta-data/")
+
+    def test_blocks_ipv6_link_local(self):
+        """Blocks IPv6 link-local fe80:: addresses."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("fe80::1", 443, 0, 0))],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://example.com/img.png")
+
+    def test_allows_public_ip(self):
+        """Public IPs are allowed through."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[(None, None, None, None, ("93.184.216.34", 443))],
+        ):
+            _validate_url("https://example.com/img.png")  # Should not raise
+
+    def test_blocks_dns_resolution_failure(self):
+        """Unresolvable hostnames are blocked."""
+        import socket as _socket
+
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            side_effect=_socket.gaierror("Name resolution failed"),
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://nonexistent.invalid/img.png")
+
+    def test_blocks_if_any_resolved_ip_is_private(self):
+        """If DNS returns multiple IPs and any is private, block the URL."""
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor.socket.getaddrinfo",
+            return_value=[
+                (None, None, None, None, ("93.184.216.34", 443)),
+                (None, None, None, None, ("10.0.0.1", 443)),
+            ],
+        ):
+            with pytest.raises(ValueError, match="blocked address"):
+                _validate_url("https://example.com/img.png")
+
+    def test_blocks_empty_hostname(self):
+        """URL with no hostname is blocked."""
+        with pytest.raises(ValueError, match="blocked address"):
+            _validate_url("https:///path/to/image.png")
 
 
 class TestPreprocessImageURL:
@@ -167,10 +270,13 @@ class TestPreprocessImageURL:
         mock_client.get = AsyncMock(return_value=mock_response)
         mock_client.aclose = AsyncMock()
 
-        img = await preprocess_image(
-            "https://example.com/image.png",
-            client=mock_client,
-        )
+        with patch(
+            "mlx_manager.mlx_server.services.image_processor._validate_url",
+        ):
+            img = await preprocess_image(
+                "https://example.com/image.png",
+                client=mock_client,
+            )
 
         assert isinstance(img, Image.Image)
         assert img.size == (80, 80)
@@ -397,15 +503,13 @@ class TestPreprocessImages:
         mock_client.aclose.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_batch_with_mixed_types(self):
-        """Mix of base64 and local file paths works correctly."""
+    async def test_batch_with_local_path_raises(self):
+        """Batch rejects local file paths."""
         b64_uri = _make_png_base64(40, 40)
         local_path = str(FIXTURES_DIR / "red_square.png")
 
-        images = await preprocess_images([b64_uri, local_path])
-        assert len(images) == 2
-        for img in images:
-            assert isinstance(img, Image.Image)
+        with pytest.raises(ValueError, match="Only data URIs and HTTP"):
+            await preprocess_images([b64_uri, local_path])
 
     @pytest.mark.asyncio
     async def test_batch_preserves_order(self):

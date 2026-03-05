@@ -9,8 +9,11 @@ Handles:
 
 import asyncio
 import base64
+import ipaddress
+import socket
 from io import BytesIO
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
@@ -39,7 +42,6 @@ async def preprocess_image(
         image_input: One of:
             - Base64 data URI: "data:image/png;base64,<data>"
             - HTTP(S) URL: "https://example.com/image.jpg"
-            - Local file path: "/path/to/image.jpg"
         client: Optional httpx.AsyncClient for URL fetching (created if not provided)
         max_dimension: Maximum width or height (default 2048px)
 
@@ -47,7 +49,7 @@ async def preprocess_image(
         PIL Image object, resized if necessary
 
     Raises:
-        ValueError: If image cannot be decoded or fetched
+        ValueError: If image cannot be decoded, fetched, or URL points to a blocked address
     """
     img: Any
     if image_input.startswith("data:"):
@@ -61,15 +63,12 @@ async def preprocess_image(
             raise ValueError(f"Failed to decode base64 image: {e}") from e
 
     elif image_input.startswith(("http://", "https://")):
-        # URL - fetch with retry
+        # URL - fetch with retry (validate against SSRF first)
+        _validate_url(image_input)
         img = await _fetch_image_from_url(image_input, client)
 
     else:
-        # Assume local file path
-        try:
-            img = Image.open(image_input)
-        except Exception as e:
-            raise ValueError(f"Failed to open image file {image_input}: {e}") from e
+        raise ValueError("Unsupported image source. Only data URIs and HTTP(S) URLs are supported.")
 
     # Convert to RGB if needed (removes alpha channel, handles palette images)
     if img.mode not in ("RGB", "L"):
@@ -88,6 +87,37 @@ async def preprocess_image(
         )
 
     return img
+
+
+def _validate_url(url: str) -> None:
+    """Validate that a URL does not point to a private/internal address (SSRF protection).
+
+    Resolves the hostname via DNS and checks the resulting IP against blocked ranges:
+    RFC 1918 private, loopback, link-local, and cloud metadata endpoints.
+
+    Args:
+        url: The URL to validate.
+
+    Raises:
+        ValueError: If the URL targets a blocked address or cannot be resolved.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL points to a blocked address")
+
+    try:
+        # Resolve hostname to IP(s) to prevent DNS rebinding
+        addr_infos = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError("URL points to a blocked address") from e
+
+    for addr_info in addr_infos:
+        ip = ipaddress.ip_address(addr_info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("URL points to a blocked address")
+
+    return None
 
 
 async def _fetch_image_from_url(
@@ -144,7 +174,7 @@ async def preprocess_images(
     """Process multiple images concurrently.
 
     Args:
-        image_inputs: List of image sources (base64, URLs, or paths)
+        image_inputs: List of image sources (base64 data URIs or HTTP(S) URLs)
         client: Optional shared httpx.AsyncClient
         max_dimension: Maximum width or height
 

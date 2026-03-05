@@ -287,15 +287,15 @@ def hermes_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, A
             )
         elif role == "assistant" and msg.get("tool_calls"):
             tool_calls = msg.get("tool_calls", [])
-            tool_text = ""
+            tool_parts = []
             for tc in tool_calls:
                 func = tc.get("function", {})
                 tool_call_data = {
                     "name": func.get("name"),
                     "arguments": json.loads(func.get("arguments", "{}")),
                 }
-                tool_text += f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>"
-            content = (msg.get("content", "") or "") + tool_text
+                tool_parts.append(f"\n<tool_call>{json.dumps(tool_call_data)}</tool_call>")
+            content = (msg.get("content", "") or "") + "".join(tool_parts)
             converted.append({"role": "assistant", "content": content})
         else:
             converted.append(msg)
@@ -318,13 +318,13 @@ def llama_message_converter(messages: list[dict[str, Any]]) -> list[dict[str, An
             )
         elif role == "assistant" and msg.get("tool_calls"):
             tool_calls = msg.get("tool_calls", [])
-            tool_text = ""
+            tool_parts = []
             for tc in tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "unknown")
                 args = func.get("arguments", "{}")
-                tool_text += f"\n<function={name}>{args}</function>"
-            content = (msg.get("content", "") or "") + tool_text
+                tool_parts.append(f"\n<function={name}>{args}</function>")
+            content = (msg.get("content", "") or "") + "".join(tool_parts)
             converted.append({"role": "assistant", "content": content})
         else:
             converted.append(msg)

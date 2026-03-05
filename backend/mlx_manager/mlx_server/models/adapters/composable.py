@@ -566,7 +566,7 @@ class ModelAdapter:
                 from mlx_lm import stream_generate
                 from mlx_lm.sample_utils import make_sampler
 
-                text = ""
+                parts: list[str] = []
                 finish = "length"
                 sampler = make_sampler(temp=temperature, top_p=top_p)
 
@@ -581,8 +581,8 @@ class ModelAdapter:
                     if token_id is not None and token_id in stop_ids:
                         finish = "stop"
                         break
-                    text += getattr(resp, "text", str(resp))
-                return (text, finish)
+                    parts.append(getattr(resp, "text", str(resp)))
+                return ("".join(parts), finish)
 
             raw_text, finish_reason = await run_on_metal_thread(run_text_gen)
 
@@ -755,11 +755,13 @@ class ModelAdapter:
             )
             inputs = {k: mx.array(v) for k, v in encoded.items()}
 
-            # Count tokens per input (not padded batch)
-            total_tokens = 0
-            for text in texts:
-                tokens = tokenizer.encode(text, truncation=True, max_length=512)
-                total_tokens += len(tokens)
+            # Count tokens from batch encoding (avoid re-tokenizing)
+            attention_mask = encoded.get("attention_mask")
+            if attention_mask is not None:
+                total_tokens = sum(sum(row) for row in attention_mask)
+            else:
+                # Fallback: count non-padding tokens from input_ids
+                total_tokens = sum(sum(1 for t in ids if t != 0) for ids in encoded["input_ids"])
 
             # Forward pass
             outputs = model(
@@ -847,8 +849,13 @@ class ModelAdapter:
             # NOTE: mx.eval() is the MLX framework tensor evaluation function
             mx.eval(audio)
 
-            # Convert to numpy
-            audio_np = np.array(audio.tolist())
+            # Convert MLX array to numpy via buffer protocol (avoids Python list)
+            # np.array(mx_array) uses __array__ when available (mlx >= 0.16)
+            try:
+                audio_np = np.array(audio)
+            except TypeError:
+                # Fallback for older MLX or mock objects without __array__
+                audio_np = np.array(audio.tolist())
 
             # Write to bytes buffer using soundfile (used internally by mlx-audio)
             import soundfile as sf

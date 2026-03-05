@@ -8,14 +8,6 @@ warnings.filterwarnings(
     message="mx.metal.device_info is deprecated",
     category=DeprecationWarning,
 )
-# Suppress known CPython false-positive (https://github.com/python/cpython/issues/90549):
-# multiprocessing resource_tracker warns about semaphores already cleaned by the child
-# process when uvicorn's reloader stops the server subprocess.
-warnings.filterwarnings(
-    "ignore",
-    message="resource_tracker: There appear to be",
-    category=UserWarning,
-)
 
 # Configure Loguru FIRST (before any other imports)
 from mlx_manager.logging_config import intercept_standard_logging, setup_logging
@@ -282,10 +274,26 @@ async def lifespan(app: FastAPI):
         await pool.model_pool.cleanup()
         logger.info("MLX Server model pool cleaned up")
 
-    # Dispose the database engine to close all aiosqlite connections cleanly.
+    # Shut down the persistent Metal GPU worker thread and its Queue (which
+    # uses a semaphore internally). Without this, the resource_tracker reports
+    # a leaked semaphore on reloader shutdown.
+    from mlx_manager.mlx_server.utils.metal import reset_metal_worker
+
+    reset_metal_worker()
+
+    # Dispose BOTH database engines to close all aiosqlite connections cleanly.
     # Without this, background threads and their synchronization primitives
     # leak on reloader shutdown (manifests as "leaked semaphore objects" warning).
     await engine.dispose()
+
+    # Also dispose the MLX Server's separate engine (used for audit logs, etc.)
+    from mlx_manager.mlx_server.database import _get_engine as get_mlx_engine
+
+    try:
+        mlx_engine = get_mlx_engine()
+        await mlx_engine.dispose()
+    except Exception:
+        pass  # Engine may not have been initialized
 
     # Complete any pending log writes before shutdown
     await logger.complete()

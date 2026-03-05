@@ -91,7 +91,8 @@ class StreamProcessor:
         for start, end in tool_markers:
             self._pattern_ends[start] = end
 
-        self._buffer = ""  # Buffer for content within a pattern
+        self._buffer_parts: list[str] = []  # Buffer for content within a pattern
+        self._buffer_cache: str | None = None  # Cached join of buffer_parts
         self._pending_buffer = ""  # For partial marker detection
         self._in_pattern = starts_in_thinking
         self._pattern_start = "<think>" if starts_in_thinking else ""
@@ -108,6 +109,23 @@ class StreamProcessor:
     def _yielded_content(self) -> str:
         """Lazily join yielded content parts."""
         return "".join(self._yielded_parts)
+
+    @property
+    def _buffer(self) -> str:
+        """Lazily join buffer parts with caching."""
+        if self._buffer_cache is None:
+            self._buffer_cache = "".join(self._buffer_parts)
+        return self._buffer_cache
+
+    def _buffer_append(self, text: str) -> None:
+        """Append to buffer, invalidating cache."""
+        self._buffer_parts.append(text)
+        self._buffer_cache = None
+
+    def _buffer_set(self, value: str) -> None:
+        """Replace buffer contents entirely."""
+        self._buffer_parts = [value] if value else []
+        self._buffer_cache = value
 
     def feed(self, token: str) -> StreamEvent:
         """Feed a token, get StreamEvent.
@@ -158,16 +176,17 @@ class StreamProcessor:
         incrementally. For tool patterns: buffer silently (extracted in
         finalize).
         """
-        self._buffer += token
+        self._buffer_append(token)
         end_marker = self._pattern_ends.get(self._pattern_start, "")
 
         if end_marker and end_marker in self._buffer:
             # Pattern complete
             self._in_pattern = False
             end_idx = self._buffer.index(end_marker)
-            pattern_content = self._buffer[:end_idx]
-            after_pattern = self._buffer[end_idx + len(end_marker) :]
-            self._buffer = ""
+            buf = self._buffer
+            pattern_content = buf[:end_idx]
+            after_pattern = buf[end_idx + len(end_marker) :]
+            self._buffer_set("")
             self._pattern_start = ""
             was_thinking = self._is_thinking_pattern
             self._is_thinking_pattern = False
@@ -197,15 +216,18 @@ class StreamProcessor:
             # Filter out nested thinking tags from buffer (some models output
             # <think><think>). This handles cases where the model incorrectly
             # outputs duplicate start tags.
+            buf = self._buffer
             for nested_start in self._thinking_starts:
-                while nested_start in self._buffer:
-                    self._buffer = self._buffer.replace(nested_start, "", 1)
+                while nested_start in buf:
+                    buf = buf.replace(nested_start, "", 1)
+            self._buffer_set(buf)
 
             # Yield reasoning content incrementally, keeping small buffer
             # to avoid partial end markers
-            if len(self._buffer) > self.REASONING_BUFFER_SIZE:
-                to_yield = self._buffer[: -self.REASONING_BUFFER_SIZE]
-                self._buffer = self._buffer[-self.REASONING_BUFFER_SIZE :]
+            buf = self._buffer
+            if len(buf) > self.REASONING_BUFFER_SIZE:
+                to_yield = buf[: -self.REASONING_BUFFER_SIZE]
+                self._buffer_set(buf[-self.REASONING_BUFFER_SIZE :])
                 return StreamEvent(reasoning_content=to_yield)
 
         # Buffering (tool pattern or small reasoning buffer)
@@ -220,16 +242,17 @@ class StreamProcessor:
         self._is_thinking_pattern = start in self._thinking_starts
         # Buffer starts AFTER the start marker (we don't want the marker in
         # output)
-        self._buffer = combined[idx + len(start) :]
+        self._buffer_set(combined[idx + len(start) :])
 
         # Check if pattern already ends in this combined text
         end_marker = self._pattern_ends.get(start, "")
-        if end_marker and end_marker in self._buffer:
+        buf = self._buffer
+        if end_marker and end_marker in buf:
             # Complete pattern in single combined text
-            end_idx = self._buffer.index(end_marker)
-            pattern_content = self._buffer[:end_idx]
-            after_pattern = self._buffer[end_idx + len(end_marker) :]
-            self._buffer = ""
+            end_idx = buf.index(end_marker)
+            pattern_content = buf[:end_idx]
+            after_pattern = buf[end_idx + len(end_marker) :]
+            self._buffer_set("")
             self._pattern_start = ""
             was_thinking = self._is_thinking_pattern
             self._is_thinking_pattern = False
@@ -327,7 +350,12 @@ class StreamProcessor:
         Returns:
             Buffered content (pending marker + pattern buffer)
         """
-        return self._pending_buffer + self._buffer
+        parts = []
+        if self._pending_buffer:
+            parts.append(self._pending_buffer)
+        if self._buffer_parts:
+            parts.append(self._buffer)
+        return "".join(parts)
 
     def get_accumulated_text(self) -> str:
         """Get all accumulated text for logging/metrics.

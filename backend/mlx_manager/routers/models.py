@@ -90,7 +90,8 @@ async def list_local_models(
         if task.get("status") in ("starting", "pending", "downloading")
     }
 
-    all_local = hf_client.list_local_models()
+    loop = asyncio.get_running_loop()
+    all_local = await loop.run_in_executor(None, hf_client.list_local_models)
 
     if not downloading_ids:
         return all_local

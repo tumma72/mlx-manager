@@ -432,7 +432,7 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
                 from mlx_lm import stream_generate
                 from mlx_lm.sample_utils import make_sampler
 
-                response_text = ""
+                parts: list[str] = []
                 finish_reason = "length"
                 sampler = make_sampler(temp=ctx.temperature, top_p=ctx.top_p)
                 for response in stream_generate(
@@ -447,8 +447,8 @@ async def _complete_chat_ir(ctx: _GenContext) -> InferenceResult:
                     if token_id is not None and token_id in ctx.stop_token_ids:
                         finish_reason = "stop"
                         break
-                    response_text += token_text
-                return (response_text, finish_reason)
+                    parts.append(token_text)
+                return ("".join(parts), finish_reason)
 
             response_text, finish_reason = await run_on_metal_thread(run_generation)
             completion_tokens = len(
@@ -705,7 +705,7 @@ async def _generate_raw_completion(
         from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
 
-        response_text = ""
+        parts: list[str] = []
         finish_reason = "length"
 
         # Create sampler with temperature and top_p settings
@@ -725,9 +725,9 @@ async def _generate_raw_completion(
                 finish_reason = "stop"
                 break
 
-            response_text += token_text
+            parts.append(token_text)
 
-        return (response_text, finish_reason)
+        return ("".join(parts), finish_reason)
 
     response_text, finish_reason = await run_on_metal_thread(run_generation)
 

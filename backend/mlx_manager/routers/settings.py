@@ -518,7 +518,7 @@ def _matches_pattern(model_name: str, pattern: str, pattern_type: str) -> bool:
         return model_name.startswith(pattern)
     elif pattern_type == "regex":
         try:
-            return bool(re.match(pattern, model_name))
+            return re.fullmatch(pattern, model_name) is not None
         except re.error:
             return False
     return False

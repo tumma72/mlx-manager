@@ -32,7 +32,20 @@ def serve(
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser on start"),
 ):
     """Start the MLX Manager web server."""
+    import os
+
     import uvicorn
+
+    # Suppress known CPython false-positive (https://github.com/python/cpython/issues/90549):
+    # uvicorn's reloader uses multiprocessing.spawn which registers a semaphore with the
+    # resource_tracker. On Ctrl+C the child exits before unregistering, causing a harmless
+    # "leaked semaphore objects" warning. We must set PYTHONWARNINGS *before* uvicorn.run()
+    # so the resource_tracker subprocess (spawned by the reloader) inherits the filter.
+    if reload:
+        _rt_filter = "ignore::UserWarning"
+        _existing = os.environ.get("PYTHONWARNINGS", "")
+        if _rt_filter not in _existing:
+            os.environ["PYTHONWARNINGS"] = f"{_existing},{_rt_filter}" if _existing else _rt_filter
 
     console.print(f"[green]Starting MLX Manager on http://{host}:{port}[/green]")
 
