@@ -9,11 +9,12 @@ class MlxManager < Formula
   version "1.2.1"
 
   depends_on "python@3.12"
+  depends_on "uv"
   depends_on :macos
   depends_on arch: :arm64
 
   def install
-    # Create virtualenv - pip install happens in post_install to avoid dylib fixup
+    # Create virtualenv - package install happens in post_install to avoid dylib fixup
     virtualenv_create(libexec, "python3.12")
 
     # Create the bin symlink directory
@@ -21,9 +22,20 @@ class MlxManager < Formula
   end
 
   def post_install
-    # Install from PyPI in post_install to bypass Homebrew's dylib relocation
-    system libexec/"bin/python", "-m", "pip", "install", "--upgrade", "pip"
-    system libexec/"bin/pip", "install", "--no-cache-dir", "mlx-manager==#{version}"
+    # Write dependency overrides to resolve upstream version conflicts
+    # (mlx-audio/mlx-lm pin transformers==5.0.0rc3 but mlx-vlm requires >=5.1.0)
+    overrides = libexec/"overrides.txt"
+    overrides.write <<~EOS
+      mlx-lm>=0.30.5
+      transformers>=5.0.0rc3
+    EOS
+
+    # Install from PyPI using uv for override support
+    system "uv", "pip", "install",
+           "--python", libexec/"bin/python",
+           "--no-cache-dir",
+           "--overrides", overrides,
+           "mlx-manager==#{version}"
 
     # Link the binary
     bin.install_symlink libexec/"bin/mlx-manager"
