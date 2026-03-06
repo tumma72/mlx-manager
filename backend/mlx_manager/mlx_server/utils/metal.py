@@ -214,7 +214,7 @@ async def run_on_metal_thread(
                 raise RuntimeError(f"{error_context}: {result}") from result
             raise result
 
-        return result
+        return result  # type: ignore[no-any-return]
     finally:
         clear_cache()
 

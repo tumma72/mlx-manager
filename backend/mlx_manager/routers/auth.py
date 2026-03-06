@@ -48,7 +48,7 @@ async def register(
         )
 
     # Check if this is the first user (becomes admin)
-    count_result = await session.execute(select(func.count(User.id)))
+    count_result = await session.execute(select(func.count(User.id)))  # type: ignore[arg-type]
     is_first_user = count_result.scalar() == 0
 
     # Create user
@@ -133,7 +133,7 @@ async def get_pending_count(
 ) -> dict[str, int]:
     """Get count of pending users (admin only)."""
     result = await session.execute(
-        select(func.count(User.id)).where(User.status == UserStatus.PENDING)
+        select(func.count(User.id)).where(User.status == UserStatus.PENDING)  # type: ignore[arg-type]
     )
     count = result.scalar() or 0
     return {"count": count}
@@ -163,7 +163,7 @@ async def update_user(
     # Prevent admin from demoting self if they're the only admin
     if user_data.is_admin is False and user_id == admin.id:
         admin_count_result = await session.execute(
-            select(func.count(User.id)).where(
+            select(func.count(User.id)).where(  # type: ignore[arg-type]
                 User.is_admin == True  # noqa: E712
             )
         )
@@ -177,7 +177,7 @@ async def update_user(
     # Prevent admin from disabling self if they're the only active admin
     if user_data.status == UserStatus.DISABLED and user_id == admin.id:
         active_admin_count_result = await session.execute(
-            select(func.count(User.id)).where(
+            select(func.count(User.id)).where(  # type: ignore[arg-type]
                 User.is_admin == True,  # noqa: E712
                 User.status == UserStatus.APPROVED,
             )
@@ -228,7 +228,7 @@ async def delete_user(
     # Prevent admin from deleting self if only admin
     if user_id == admin.id:
         admin_count_result = await session.execute(
-            select(func.count(User.id)).where(
+            select(func.count(User.id)).where(  # type: ignore[arg-type]
                 User.is_admin == True  # noqa: E712
             )
         )

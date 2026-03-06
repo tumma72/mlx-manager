@@ -43,7 +43,7 @@ def generate_request_id() -> str:
 def _get_request_id(request: Request) -> str:
     """Get request ID from middleware, or generate fallback."""
     try:
-        return request.state.request_id
+        return request.state.request_id  # type: ignore[no-any-return]
     except AttributeError:
         return generate_request_id()
 
