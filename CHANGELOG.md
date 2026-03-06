@@ -5,6 +5,16 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-03-06
+
+A **hotfix release** fixing the production frontend (auth redirect and dark mode).
+
+### Fixed
+
+- Auth guard now reads localStorage directly instead of Svelte 5 `$state` runes, which don't work in SvelteKit's non-reactive `load()` context
+- Dark mode: added `darkMode: "class"` to Tailwind config and inline system-preference sync script, so `dark:` utilities properly respond to OS dark mode setting
+- Re-embedded frontend build with all route nodes (previous build was stale and missing pages)
+
 ## [1.2.1] - 2026-03-05
 
 A **patch release** fixing Homebrew installation and adding ty type checker support.
@@ -235,6 +245,8 @@ The major feature release introducing the **embedded MLX inference server** -- a
 - launchd service integration for auto-start
 - CLI commands: `mlx-manager serve`, `mlx-manager menubar`, `mlx-manager status`
 
+[1.2.2]: https://github.com/tumma72/mlx-manager/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/tumma72/mlx-manager/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/tumma72/mlx-manager/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/tumma72/mlx-manager/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/tumma72/mlx-manager/compare/v1.0.3...v1.0.4
