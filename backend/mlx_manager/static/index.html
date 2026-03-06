@@ -2,36 +2,66 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon.svg"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/favicon-16x16.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/apple-touch-icon.png"
+    />
     <meta name="theme-color" content="#6366f1" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MLX Model Manager</title>
+    <script>
+      // Sync .dark class with system preference (Tailwind darkMode: "class")
+      (function() {
+        var m = window.matchMedia('(prefers-color-scheme: dark)');
+        function s(e) { document.documentElement.classList.toggle('dark', e.matches); }
+        s(m);
+        m.addEventListener('change', s);
+      })();
+    </script>
     
-		<link rel="modulepreload" href="/_app/immutable/entry/start.BwjC792m.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/B5G5TIqL.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/v4vcYSfj.js">
-		<link rel="modulepreload" href="/_app/immutable/entry/app.BRkOiJAe.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/CYs-NoBq.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/BwiJqY1Q.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/CQCzmFHa.js">
-		<link rel="modulepreload" href="/_app/immutable/chunks/DwsmJOZM.js">
+		<link rel="modulepreload" href="/_app/immutable/entry/start.DgEnNGXT.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/BP2Q_VXh.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/DpkolLiq.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/CJbqisBi.js">
+		<link rel="modulepreload" href="/_app/immutable/entry/app.D_d2hfTy.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/pfhwnV1O.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/bmn8XlW7.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/TXeUdaq1.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/Dt_5EWjC.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/DdiL7vrO.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/BlA1NA_K.js">
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-gray-50 dark:bg-gray-900">
     <div style="display: contents">
 			<script>
 				{
-					__sveltekit_1svfkpn = {
+					__sveltekit_1orvrnf = {
 						base: ""
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.BwjC792m.js"),
-						import("/_app/immutable/entry/app.BRkOiJAe.js")
+						import("/_app/immutable/entry/start.DgEnNGXT.js"),
+						import("/_app/immutable/entry/app.D_d2hfTy.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});

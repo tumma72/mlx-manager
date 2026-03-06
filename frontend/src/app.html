@@ -27,6 +27,15 @@
     <meta name="theme-color" content="#6366f1" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MLX Model Manager</title>
+    <script>
+      // Sync .dark class with system preference (Tailwind darkMode: "class")
+      (function() {
+        var m = window.matchMedia('(prefers-color-scheme: dark)');
+        function s(e) { document.documentElement.classList.toggle('dark', e.matches); }
+        s(m);
+        m.addEventListener('change', s);
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-gray-50 dark:bg-gray-900">

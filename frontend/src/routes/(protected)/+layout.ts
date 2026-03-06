@@ -6,21 +6,27 @@ export const ssr = false;
 export const prerender = false;
 
 export async function load() {
-  // Initialize auth store from localStorage if not done
-  if (typeof window !== "undefined" && !authStore.isAuthenticated) {
-    authStore.initialize();
+  // Check for stored token directly from localStorage
+  // (avoids $state reactivity issues in non-reactive load() context)
+  const storedToken =
+    typeof window !== "undefined"
+      ? localStorage.getItem("mlx_auth_token")
+      : null;
+
+  if (!storedToken) {
+    throw redirect(302, "/login");
   }
 
-  // Check authentication
+  // Ensure auth store is initialized from localStorage
   if (!authStore.isAuthenticated) {
-    throw redirect(302, "/login");
+    authStore.initialize();
   }
 
   // Validate token with backend
   try {
     const user = await auth.me();
     // Update stored user in case it changed (admin status, etc)
-    authStore.setAuth(authStore.token!, user);
+    authStore.setAuth(storedToken, user);
     return { user };
   } catch {
     // Token invalid - clear and redirect
