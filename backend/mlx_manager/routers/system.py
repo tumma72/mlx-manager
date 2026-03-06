@@ -202,7 +202,7 @@ async def get_audit_logs(
                 f"{MLX_SERVER_URL}/admin/audit-logs", params=params, timeout=10.0
             )
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
     except httpx.HTTPStatusError as e:
         logger.exception(f"Failed to fetch audit logs from MLX Server: {e}")
         raise HTTPException(
@@ -222,7 +222,7 @@ async def get_audit_stats(
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{MLX_SERVER_URL}/admin/audit-logs/stats", timeout=10.0)
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
     except httpx.HTTPStatusError as e:
         logger.exception(f"Failed to fetch audit stats from MLX Server: {e}")
         raise HTTPException(
