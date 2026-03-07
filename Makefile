@@ -232,46 +232,18 @@ bump-major:
 	NEW_VERSION=$$(echo $$CURRENT | awk -F. '{print $$1+1".0.0"}') && \
 	./scripts/sync_version.sh $$NEW_VERSION
 
-# Main release target
+# Main release target — delegates to the full release script
+# Handles: version sync, changelog, commit, tag, push, PyPI wait, formula SHA update
 # Usage:
-#   make release              # Release current VERSION
-#   make release VERSION=1.2.3  # Set version and release
+#   make release VERSION=1.2.3
 release:
-	@echo ""
-	@echo "═══════════════════════════════════════════════════════"
-	@echo " MLX Manager Release Process"
-	@echo "═══════════════════════════════════════════════════════"
-	@echo ""
-	@# Step 1: Sync version (in case VERSION was overridden)
-	@./scripts/sync_version.sh $(VERSION)
-	@echo ""
-	@# Step 2: Run CI checks
-	@echo "Running CI checks..."
-	@$(MAKE) ci
-	@echo ""
-	@# Step 3: Commit version changes if any
-	@if [ -n "$$(git status --porcelain -- VERSION backend/ frontend/package.json Formula/)" ]; then \
-		echo "Committing version changes..."; \
-		git add VERSION backend/pyproject.toml backend/mlx_manager/__init__.py frontend/package.json Formula/mlx-manager.rb; \
-		git commit -m "chore: bump version to $(VERSION)"; \
-	fi
-	@# Step 4: Create tag and push
-	@echo ""
-	@echo "Creating release v$(VERSION)..."
-	git tag -a v$(VERSION) -m "Release v$(VERSION)"
-	git push origin main
-	git push origin v$(VERSION)
-	@echo ""
-	@echo "═══════════════════════════════════════════════════════"
-	@echo " ✓ Release v$(VERSION) created and pushed!"
-	@echo "═══════════════════════════════════════════════════════"
-	@echo ""
-	@echo "Next steps:"
-	@echo "  1. GitHub Actions will build and publish to PyPI"
-	@echo "  2. After PyPI release, update Formula/mlx-manager.rb:"
-	@echo "     - Update 'url' to point to v$(VERSION) tarball"
-	@echo "     - Update 'sha256' with: shasum -a 256 <tarball>"
-	@echo "  3. Create GitHub release notes from CHANGELOG.md"
+ifndef VERSION
+	@echo "Usage: make release VERSION=x.y.z"
+	@echo "  Example: make release VERSION=1.2.3"
+	@exit 1
+else
+	@./scripts/release.sh $(VERSION)
+endif
 
 # ============================================================================
 # Diagnostics
