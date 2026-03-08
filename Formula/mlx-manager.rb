@@ -17,8 +17,13 @@ class MlxManager < Formula
     # Create virtualenv - package install happens in post_install to avoid dylib fixup
     virtualenv_create(libexec, "python3.12")
 
-    # Create the bin symlink directory
-    bin.mkpath
+    # Create a wrapper script so it gets linked during install
+    # (post_install runs after linking, so bin.install_symlink there won't be on PATH)
+    (bin/"mlx-manager").write <<~SH
+      #!/bin/bash
+      exec "#{libexec}/bin/mlx-manager" "$@"
+    SH
+    (bin/"mlx-manager").chmod 0755
   end
 
   def post_install
@@ -27,18 +32,18 @@ class MlxManager < Formula
     overrides = libexec/"overrides.txt"
     overrides.write <<~EOS
       mlx-lm>=0.30.5
-      transformers>=5.0.0rc3
+      transformers>=5.0.0
     EOS
 
     # Install from PyPI using uv for override support
+    # --prerelease=allow needed because mlx-audio pins transformers==5.0.0rc3
     system "uv", "pip", "install",
            "--python", libexec/"bin/python",
            "--no-cache-dir",
+           "--prerelease=allow",
            "--overrides", overrides,
            "mlx-manager==#{version}"
 
-    # Link the binary
-    bin.install_symlink libexec/"bin/mlx-manager"
   end
 
   def caveats

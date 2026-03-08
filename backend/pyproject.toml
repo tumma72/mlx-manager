@@ -29,7 +29,7 @@ dependencies = [
     "psutil>=6.0.0",
     "httpx>=0.28.0",
     "pydantic-settings>=2.0.0",
-    "transformers>=5.0.0rc1",
+    "transformers>=5.3.0",
     "typer>=0.12.0",
     "rapidfuzz>=3.0.0",
     # macOS-only dependencies (menubar app and MLX server)
@@ -171,7 +171,7 @@ exclude_lines = [
 [tool.uv]
 # mlx-audio 0.3.1 hard-pins mlx-lm==0.30.5, but mlx-vlm>=0.3.12 requires mlx-lm>=0.30.7.
 # The override relaxes this pin so both packages can coexist.
-override-dependencies = ["mlx-lm>=0.30.5", "transformers>=5.0.0rc3"]
+override-dependencies = ["mlx-lm>=0.30.5", "transformers>=5.3.0"]
 
 [tool.uv.sources]
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
