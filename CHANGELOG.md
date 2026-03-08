@@ -5,6 +5,15 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-03-08
+
+### Fixed
+
+- Homebrew formula: use stable `transformers>=5.0.0` override instead of rc3 pre-release pin
+- Homebrew formula: add `--prerelease=allow` flag for uv resolution (mlx-audio still pins `transformers==5.0.0rc3`)
+- Homebrew formula: fix first-install PATH linking — replaced `post_install` symlink with `install`-time wrapper script so `mlx-manager` is immediately available on PATH
+- Backend: bump transformers dependency to `>=5.3.0` (stable release)
+
 ## [1.2.3] - 2026-03-07
 
 ### Fixed
