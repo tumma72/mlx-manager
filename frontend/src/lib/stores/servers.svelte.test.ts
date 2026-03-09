@@ -760,6 +760,58 @@ describe("ServerStore", () => {
     });
   });
 
+  describe("HMR state preservation", () => {
+    it("resets pollingProfiles when HMR state already exists (line 70 else branch)", async () => {
+      // Pre-populate window.__serverStoreHmrState to simulate a previous HMR cycle
+      // with stale pollingProfiles entries
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const win = window as any;
+      win.__serverStoreHmrState = {
+        servers: [],
+        startingProfiles: new Set<number>(),
+        failedProfiles: new Map(),
+        restartingProfiles: new Set<number>(),
+        pollingProfiles: new Set<number>([1, 2, 3]), // stale entries from dead polling loops
+      };
+
+      // Reset modules so the store re-initializes and hits the else branch
+      vi.resetModules();
+      vi.doMock("$api", () => ({
+        servers: {
+          list: vi.fn().mockResolvedValue([]),
+          start: vi.fn().mockResolvedValue({ pid: 12345, port: 10240 }),
+          stop: vi.fn().mockResolvedValue({ stopped: true }),
+          restart: vi.fn().mockResolvedValue({ pid: 12345 }),
+        },
+      }));
+      vi.doMock("$lib/services", () => ({
+        pollingCoordinator: {
+          register: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          refresh: vi.fn().mockResolvedValue(undefined),
+        },
+      }));
+      vi.doMock("svelte/reactivity", () => ({
+        SvelteSet: Set,
+        SvelteMap: Map,
+      }));
+
+      // Re-import — this triggers getOrCreateHmrState() which should hit
+      // the else branch and reset pollingProfiles
+      const freshModule = await import("./servers.svelte");
+      const freshStore = freshModule.serverStore;
+
+      // pollingProfiles should have been reset to empty
+      expect(freshStore.isProfilePolling(1)).toBe(false);
+      expect(freshStore.isProfilePolling(2)).toBe(false);
+      expect(freshStore.isProfilePolling(3)).toBe(false);
+
+      // But the rest of the HMR state should be preserved (same instance)
+      expect(win.__serverStoreHmrState.servers).toEqual([]);
+    });
+  });
+
   describe("markStartupFailed edge cases", () => {
     it("does not trigger refresh when already failed with same error and not starting/restarting", async () => {
       const { pollingCoordinator } = await import("$lib/services");

@@ -68,8 +68,8 @@ async def run_alembic_upgrade() -> None:
     """
     from alembic.config import Config
 
-    alembic_ini = Path(__file__).parent.parent / "alembic.ini"
-    alembic_cfg = Config(str(alembic_ini))
+    alembic_cfg = Config()
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "alembic"))
 
     async with engine.begin() as conn:
         # Check if this is a pre-Alembic database

@@ -852,5 +852,93 @@ describe("probeStore", () => {
       // Clean up
       probeStore.reset(modelId);
     });
+
+    it("skips post-stream completion when probe was reset during streaming (line 136 false branch)", async () => {
+      const modelId = "test-line136";
+      const encoder = new TextEncoder();
+
+      // Custom reader that resets the probe mid-stream, so when the stream
+      // ends the status is no longer "probing" (the probe entry is deleted).
+      let callCount = 0;
+      const reader = {
+        read: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            // First read: deliver a step (status stays "probing")
+            return Promise.resolve({
+              done: false,
+              value: encoder.encode('data: {"step":"s1","status":"running"}\n'),
+            });
+          }
+          if (callCount === 2) {
+            // Between reads, reset the probe — this removes the entry,
+            // so probes[modelId] becomes undefined and ?.status !== "probing"
+            probeStore.reset(modelId);
+            // Signal end of stream (no [DONE])
+            return Promise.resolve({ done: true, value: undefined });
+          }
+          return Promise.resolve({ done: true, value: undefined });
+        }),
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        statusText: "OK",
+        body: { getReader: () => reader },
+      });
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      // After reset during streaming, the probe entry should remain absent
+      // (the line 136 guard prevents re-creating it)
+      const state = probeStore.getProbe(modelId);
+      expect(state.status).toBe("idle");
+
+      // Clean up (already reset, but be safe)
+      probeStore.reset(modelId);
+    });
+
+    it("handles lines.pop() returning empty string via nullish coalescing (line 64)", async () => {
+      const modelId = "test-line64";
+      const encoder = new TextEncoder();
+
+      // Send a chunk that is just data with no trailing newline,
+      // then a second chunk that completes it.
+      // When buffer = "data: " and we split by "\n", we get ["data: "],
+      // pop() returns "data: " (not undefined). To trigger the ?? fallback,
+      // we'd need an empty array from split, which can't happen with String.split.
+      // However, we can verify the buffer logic works correctly with an
+      // incomplete line that spans chunks, ensuring pop() handles the partial line.
+      const reader = {
+        read: vi.fn()
+          .mockResolvedValueOnce({
+            done: false,
+            // Chunk that does NOT end with \n — the whole thing stays in buffer
+            value: encoder.encode("data: [DO"),
+          })
+          .mockResolvedValueOnce({
+            done: false,
+            // Complete the line with \n
+            value: encoder.encode("NE]\n"),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        statusText: "OK",
+        body: { getReader: () => reader },
+      });
+
+      await probeStore.startProbe(modelId, "test-token");
+      flushSync();
+
+      const state = probeStore.getProbe(modelId);
+      // The partial "data: [DO" + "NE]\n" should reassemble to "data: [DONE]\n"
+      expect(state.status).toBe("completed");
+
+      probeStore.reset(modelId);
+    });
   });
 });

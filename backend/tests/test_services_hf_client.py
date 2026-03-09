@@ -1,6 +1,6 @@
 """Tests for the HuggingFace client service."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1191,3 +1191,275 @@ class TestCancellationInfrastructure:
         # Should not find the event after cleanup
         result = request_cancel("test-id")
         assert result is False
+
+
+# ============================================================================
+# Tests for get_hf_token (lines 39-43)
+# ============================================================================
+
+
+class TestGetHfToken:
+    """Tests for the get_hf_token function."""
+
+    @pytest.mark.asyncio
+    async def test_get_hf_token_returns_decrypted_value(self):
+        """Test get_hf_token returns decrypted token when setting exists (lines 39-41)."""
+        from mlx_manager.services.hf_client import get_hf_token
+
+        mock_setting = MagicMock()
+        mock_setting.value = "encrypted-token-value"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_setting
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("mlx_manager.database.async_session", return_value=mock_session),
+            patch(
+                "mlx_manager.services.encryption_service.decrypt_api_key",
+                return_value="hf_decrypted_token_123",
+            ),
+        ):
+            result = await get_hf_token()
+
+        assert result == "hf_decrypted_token_123"
+
+    @pytest.mark.asyncio
+    async def test_get_hf_token_returns_none_on_decryption_error(self):
+        """Test get_hf_token returns None when decryption fails (line 42-43)."""
+        from mlx_manager.services.encryption_service import DecryptionError
+        from mlx_manager.services.hf_client import get_hf_token
+
+        mock_setting = MagicMock()
+        mock_setting.value = "corrupted-encrypted-value"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_setting
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("mlx_manager.database.async_session", return_value=mock_session),
+            patch(
+                "mlx_manager.services.encryption_service.decrypt_api_key",
+                side_effect=DecryptionError("Bad key"),
+            ),
+        ):
+            result = await get_hf_token()
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_hf_token_returns_none_when_no_setting(self):
+        """Test get_hf_token returns None when no token setting exists."""
+        from mlx_manager.services.hf_client import get_hf_token
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("mlx_manager.database.async_session", return_value=mock_session):
+            result = await get_hf_token()
+
+        assert result is None
+
+
+# ============================================================================
+# Tests for has_incomplete_blobs exception (lines 243-244)
+# ============================================================================
+
+
+class TestHasIncompleteBlobsException:
+    """Tests for has_incomplete_blobs exception handling."""
+
+    def test_has_incomplete_blobs_returns_false_on_exception(self, hf_client_instance, tmp_path):
+        """Test returns False when iterdir raises an exception (lines 243-244)."""
+        blobs_dir = tmp_path / "models--mlx-community--test-model" / "blobs"
+        blobs_dir.mkdir(parents=True)
+
+        with patch.object(blobs_dir.__class__, "iterdir", side_effect=PermissionError("No access")):
+            result = hf_client_instance.has_incomplete_blobs("mlx-community/test-model")
+
+        assert result is False
+
+
+# ============================================================================
+# Tests for _is_downloaded with incomplete blobs (lines 269-270)
+# ============================================================================
+
+
+class TestIsDownloadedIncompleteBlobs:
+    """Tests for _is_downloaded detecting incomplete blobs."""
+
+    def test_is_downloaded_returns_false_with_incomplete_blobs(self, hf_client_instance, tmp_path):
+        """Test model with incomplete blobs is not considered downloaded (lines 268-270)."""
+        model_dir = tmp_path / "models--mlx-community--test-model"
+        snapshots_dir = model_dir / "snapshots"
+        snapshots_dir.mkdir(parents=True)
+        (snapshots_dir / "abc123").mkdir()
+
+        # Create blobs dir with an .incomplete file
+        blobs_dir = model_dir / "blobs"
+        blobs_dir.mkdir(parents=True)
+        (blobs_dir / "sha256-abc123.incomplete").write_bytes(b"partial")
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.offline_mode = False
+            result = hf_client_instance._is_downloaded("mlx-community/test-model")
+
+        assert result is False
+
+
+# ============================================================================
+# Tests for _get_directory_size with blobs dir (lines 511-515)
+# ============================================================================
+
+
+class TestGetDirectorySizeBlobs:
+    """Tests for _get_directory_size with blobs subdirectory."""
+
+    def test_get_directory_size_counts_blobs(self, hf_client_instance, tmp_path):
+        """Test counts only blob files in blobs/ dir (lines 511-512)."""
+        blobs_dir = tmp_path / "blobs"
+        blobs_dir.mkdir()
+        (blobs_dir / "sha256-abc").write_bytes(b"x" * 500)
+        (blobs_dir / "sha256-def").write_bytes(b"y" * 300)
+
+        result = hf_client_instance._get_directory_size(tmp_path)
+        assert result == 800
+
+    def test_get_directory_size_blobs_exception(self, hf_client_instance, tmp_path):
+        """Test returns 0 when blobs dir rglob raises (lines 513-515)."""
+        blobs_dir = tmp_path / "blobs"
+        blobs_dir.mkdir()
+
+        with patch.object(blobs_dir.__class__, "rglob", side_effect=OSError("disk error")):
+            result = hf_client_instance._get_directory_size(tmp_path)
+
+        assert result == 0
+
+
+# ============================================================================
+# Tests for list_incomplete_models (lines 599, 609-610, 620-630)
+# ============================================================================
+
+
+class TestListIncompleteModels:
+    """Tests for the list_incomplete_models method."""
+
+    def test_list_incomplete_models_no_cache_dir(self, tmp_path):
+        """Test returns empty when cache dir doesn't exist (line 599)."""
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path / "nonexistent"
+            mock_settings.hf_organization = "mlx-community"
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path / "nonexistent"
+            result = client.list_incomplete_models()
+
+        assert result == []
+
+    def test_list_incomplete_models_filters_by_org(self, tmp_path):
+        """Test filters by organization (lines 609-610)."""
+        # Create incomplete model from different org
+        other_model = tmp_path / "models--other-org--some-model" / "blobs"
+        other_model.mkdir(parents=True)
+        (other_model / "sha256-abc.incomplete").write_bytes(b"partial")
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = "mlx-community"
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+            result = client.list_incomplete_models()
+
+        # other-org model should be filtered out
+        assert result == []
+
+    def test_list_incomplete_models_sums_complete_blobs(self, tmp_path):
+        """Test sums only complete blob sizes (lines 620-630)."""
+        model_dir = tmp_path / "models--mlx-community--test-model"
+        blobs_dir = model_dir / "blobs"
+        blobs_dir.mkdir(parents=True)
+
+        # Complete blobs
+        (blobs_dir / "sha256-abc").write_bytes(b"x" * 1000)
+        (blobs_dir / "sha256-def").write_bytes(b"y" * 500)
+        # Incomplete blob — should NOT be counted
+        (blobs_dir / "sha256-ghi.incomplete").write_bytes(b"z" * 200)
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = "mlx-community"
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+            result = client.list_incomplete_models()
+
+        assert len(result) == 1
+        model_id, downloaded_bytes = result[0]
+        assert model_id == "mlx-community/test-model"
+        assert downloaded_bytes == 1500  # Only complete blobs
+
+    def test_list_incomplete_models_skips_complete_models(self, tmp_path):
+        """Test skips models without incomplete blobs."""
+        model_dir = tmp_path / "models--mlx-community--complete-model"
+        blobs_dir = model_dir / "blobs"
+        blobs_dir.mkdir(parents=True)
+        (blobs_dir / "sha256-abc").write_bytes(b"x" * 1000)
+        # No .incomplete files
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = "mlx-community"
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+            result = client.list_incomplete_models()
+
+        assert result == []
+
+    def test_list_incomplete_models_no_org_filter(self, tmp_path):
+        """Test without org filter — only MLX/lmstudio models shown."""
+        # MLX model (should be listed)
+        mlx_model = tmp_path / "models--mlx-community--test-model" / "blobs"
+        mlx_model.mkdir(parents=True)
+        (mlx_model / "sha256-abc.incomplete").write_bytes(b"partial")
+
+        # Non-MLX model (should be filtered out)
+        other_model = tmp_path / "models--random-org--plain-model" / "blobs"
+        other_model.mkdir(parents=True)
+        (other_model / "sha256-xyz.incomplete").write_bytes(b"partial")
+
+        with patch("mlx_manager.services.hf_client.settings") as mock_settings:
+            mock_settings.hf_cache_path = tmp_path
+            mock_settings.hf_organization = None  # No org filter
+
+            from mlx_manager.services.hf_client import HuggingFaceClient
+
+            client = HuggingFaceClient()
+            client.cache_dir = tmp_path
+            result = client.list_incomplete_models()
+
+        assert len(result) == 1
+        assert result[0][0] == "mlx-community/test-model"

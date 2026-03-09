@@ -1,7 +1,7 @@
 """Tests for the database module."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -357,3 +357,399 @@ class TestEnsureDataDir:
             ensure_data_dir()
 
         assert (tmp_path / "existing").exists()
+
+
+# ============================================================================
+# detect_orphaned_downloads (lines 173-218)
+# ============================================================================
+
+
+class TestDetectOrphanedDownloads:
+    """Tests for detect_orphaned_downloads()."""
+
+    @pytest.mark.asyncio
+    async def test_no_incomplete_models_returns_empty(self):
+        """When hf_client reports no incomplete models, return empty list."""
+        mock_hf = MagicMock()
+        mock_hf.list_incomplete_models.return_value = []
+
+        with patch("mlx_manager.services.hf_client.hf_client", mock_hf):
+            from mlx_manager.database import detect_orphaned_downloads
+
+            result = await detect_orphaned_downloads()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_incomplete_model_with_existing_download_is_skipped(self, test_engine):
+        """Incomplete model that already has an active Download record is skipped."""
+        from contextlib import asynccontextmanager
+        from datetime import UTC, datetime
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from mlx_manager.models import Download
+        from mlx_manager.models.enums import DownloadStatusEnum
+
+        test_async_session = async_sessionmaker(
+            test_engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        # Pre-create a Download record with 'downloading' status
+        async with test_async_session() as session:
+            dl = Download(
+                model_id="mlx-community/test-model",
+                status=DownloadStatusEnum.DOWNLOADING,
+                downloaded_bytes=500,
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add(dl)
+            await session.commit()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            async with test_async_session() as session:
+                yield session
+
+        mock_hf = MagicMock()
+        mock_hf.list_incomplete_models.return_value = [
+            ("mlx-community/test-model", 500),
+        ]
+
+        with (
+            patch("mlx_manager.services.hf_client.hf_client", mock_hf),
+            patch("mlx_manager.database.get_session", fake_get_session),
+        ):
+            from mlx_manager.database import detect_orphaned_downloads
+
+            result = await detect_orphaned_downloads()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_incomplete_model_without_download_creates_record(self, test_engine):
+        """Incomplete model with no Download record gets a new one created."""
+        from contextlib import asynccontextmanager
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+        from sqlmodel import select
+
+        from mlx_manager.models import Download
+        from mlx_manager.models.enums import DownloadStatusEnum
+
+        test_async_session = async_sessionmaker(
+            test_engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        @asynccontextmanager
+        async def fake_get_session():
+            async with test_async_session() as session:
+                yield session
+
+        mock_hf = MagicMock()
+        mock_hf.list_incomplete_models.return_value = [
+            ("mlx-community/orphan-model", 1024),
+        ]
+
+        with (
+            patch("mlx_manager.services.hf_client.hf_client", mock_hf),
+            patch("mlx_manager.database.get_session", fake_get_session),
+        ):
+            from mlx_manager.database import detect_orphaned_downloads
+
+            result = await detect_orphaned_downloads()
+
+        # Should have created one record
+        assert len(result) == 1
+        download_id, model_id = result[0]
+        assert model_id == "mlx-community/orphan-model"
+        assert isinstance(download_id, int)
+
+        # Verify the record was committed to the DB
+        async with test_async_session() as session:
+            stmt = select(Download).where(Download.model_id == "mlx-community/orphan-model")
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            assert row is not None
+            assert row.status == DownloadStatusEnum.PENDING
+            assert row.downloaded_bytes == 1024
+
+    @pytest.mark.asyncio
+    async def test_mixed_incomplete_models(self, test_engine):
+        """Mix of models — one with existing record (skipped), one without (adopted)."""
+        from contextlib import asynccontextmanager
+        from datetime import UTC, datetime
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        from mlx_manager.models import Download
+        from mlx_manager.models.enums import DownloadStatusEnum
+
+        test_async_session = async_sessionmaker(
+            test_engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        # Pre-create a record for one model
+        async with test_async_session() as session:
+            dl = Download(
+                model_id="mlx-community/existing",
+                status=DownloadStatusEnum.PAUSED,
+                downloaded_bytes=200,
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add(dl)
+            await session.commit()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            async with test_async_session() as session:
+                yield session
+
+        mock_hf = MagicMock()
+        mock_hf.list_incomplete_models.return_value = [
+            ("mlx-community/existing", 200),
+            ("mlx-community/new-orphan", 999),
+        ]
+
+        with (
+            patch("mlx_manager.services.hf_client.hf_client", mock_hf),
+            patch("mlx_manager.database.get_session", fake_get_session),
+        ):
+            from mlx_manager.database import detect_orphaned_downloads
+
+            result = await detect_orphaned_downloads()
+
+        # Only the new orphan should be returned
+        assert len(result) == 1
+        assert result[0][1] == "mlx-community/new-orphan"
+
+
+# ============================================================================
+# _repair_orphaned_profiles (lines 221-296)
+# ============================================================================
+
+
+class TestRepairOrphanedProfiles:
+    """Tests for _repair_orphaned_profiles()."""
+
+    @pytest.mark.asyncio
+    async def test_no_profiles_table_returns_early(self):
+        """When neither execution_profiles nor server_profiles table exists, return early."""
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        empty_engine = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        with patch("mlx_manager.database.engine", empty_engine):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            # Should return without error
+            await _repair_orphaned_profiles()
+
+        await empty_engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_no_orphaned_profiles_is_noop(self):
+        """When all profiles have model_id set, nothing happens."""
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        eng = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        async with eng.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "CREATE TABLE execution_profiles "
+                    "(id INTEGER PRIMARY KEY, name TEXT, model_id INTEGER)"
+                )
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO execution_profiles (id, name, model_id) "
+                    "VALUES (1, 'Profile A', 42)"
+                )
+            )
+
+        with patch("mlx_manager.database.engine", eng):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            await _repair_orphaned_profiles()
+
+        # Verify profile unchanged
+        async with eng.begin() as conn:
+            result = await conn.execute(
+                sa_text("SELECT model_id FROM execution_profiles WHERE id = 1")
+            )
+            assert result.scalar() == 42
+
+        await eng.dispose()
+
+    @pytest.mark.asyncio
+    async def test_orphaned_profile_matched_to_model(self):
+        """Orphaned profile whose name matches a model repo_id short name gets repaired."""
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        eng = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        async with eng.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "CREATE TABLE execution_profiles "
+                    "(id INTEGER PRIMARY KEY, name TEXT, model_id INTEGER)"
+                )
+            )
+            await conn.execute(
+                sa_text("CREATE TABLE models (id INTEGER PRIMARY KEY, repo_id TEXT)")
+            )
+            # Orphaned profile — name contains model short name
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO execution_profiles (id, name, model_id) "
+                    "VALUES (1, 'My Qwen3-0.6B-4bit-DWQ profile', NULL)"
+                )
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO models (id, repo_id) "
+                    "VALUES (10, 'mlx-community/Qwen3-0.6B-4bit-DWQ')"
+                )
+            )
+
+        with patch("mlx_manager.database.engine", eng):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            await _repair_orphaned_profiles()
+
+        async with eng.begin() as conn:
+            result = await conn.execute(
+                sa_text("SELECT model_id FROM execution_profiles WHERE id = 1")
+            )
+            assert result.scalar() == 10
+
+        await eng.dispose()
+
+    @pytest.mark.asyncio
+    async def test_orphaned_profile_no_matching_model(self):
+        """Orphaned profile with no matching model stays orphaned (model_id NULL)."""
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        eng = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        async with eng.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "CREATE TABLE execution_profiles "
+                    "(id INTEGER PRIMARY KEY, name TEXT, model_id INTEGER)"
+                )
+            )
+            await conn.execute(
+                sa_text("CREATE TABLE models (id INTEGER PRIMARY KEY, repo_id TEXT)")
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO execution_profiles (id, name, model_id) "
+                    "VALUES (1, 'Custom Profile XYZ', NULL)"
+                )
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO models (id, repo_id) "
+                    "VALUES (10, 'mlx-community/Qwen3-0.6B-4bit-DWQ')"
+                )
+            )
+
+        with patch("mlx_manager.database.engine", eng):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            await _repair_orphaned_profiles()
+
+        async with eng.begin() as conn:
+            result = await conn.execute(
+                sa_text("SELECT model_id FROM execution_profiles WHERE id = 1")
+            )
+            assert result.scalar() is None
+
+        await eng.dispose()
+
+    @pytest.mark.asyncio
+    async def test_orphaned_profile_no_models_available(self):
+        """Orphaned profiles with empty models table — returns early with warning."""
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        eng = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        async with eng.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "CREATE TABLE execution_profiles "
+                    "(id INTEGER PRIMARY KEY, name TEXT, model_id INTEGER)"
+                )
+            )
+            await conn.execute(
+                sa_text("CREATE TABLE models (id INTEGER PRIMARY KEY, repo_id TEXT)")
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO execution_profiles (id, name, model_id) "
+                    "VALUES (1, 'Orphan', NULL)"
+                )
+            )
+            # No models inserted
+
+        with patch("mlx_manager.database.engine", eng):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            await _repair_orphaned_profiles()
+
+        async with eng.begin() as conn:
+            result = await conn.execute(
+                sa_text("SELECT model_id FROM execution_profiles WHERE id = 1")
+            )
+            assert result.scalar() is None
+
+        await eng.dispose()
+
+    @pytest.mark.asyncio
+    async def test_server_profiles_table_fallback(self):
+        """Falls back to server_profiles table if execution_profiles doesn't exist."""
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.ext.asyncio import create_async_engine as make_engine
+
+        eng = make_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
+
+        async with eng.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "CREATE TABLE server_profiles "
+                    "(id INTEGER PRIMARY KEY, name TEXT, model_id INTEGER)"
+                )
+            )
+            await conn.execute(
+                sa_text("CREATE TABLE models (id INTEGER PRIMARY KEY, repo_id TEXT)")
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO server_profiles (id, name, model_id) "
+                    "VALUES (1, 'GLM-4.7-Flash', NULL)"
+                )
+            )
+            await conn.execute(
+                sa_text(
+                    "INSERT INTO models (id, repo_id) "
+                    "VALUES (5, 'mlx-community/GLM-4.7-Flash-4bit')"
+                )
+            )
+
+        with patch("mlx_manager.database.engine", eng):
+            from mlx_manager.database import _repair_orphaned_profiles
+
+            await _repair_orphaned_profiles()
+
+        async with eng.begin() as conn:
+            result = await conn.execute(
+                sa_text("SELECT model_id FROM server_profiles WHERE id = 1")
+            )
+            assert result.scalar() == 5
+
+        await eng.dispose()

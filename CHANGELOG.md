@@ -5,6 +5,21 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-03-09
+
+### Fixed
+
+- **Critical**: Alembic migrations now bundled inside the Python package — fixes `CommandError: No 'script_location' key found` crash on startup for all installed users (PyPI and Homebrew)
+- Modernized launchctl commands: replaced deprecated `load/unload/start/stop` (deprecated since macOS 10.11) with `bootstrap/bootout/kickstart/kill` — fixes "Load failed: 5: Input/output error" on modern macOS
+- Launchd service paths now use `shutil.which("mlx-manager")` for stable symlink resolution instead of version-specific Cellar paths that break on brew upgrades
+
+### Added
+
+- `launchctl_utils.py`: shared helpers for modern launchctl API with idempotent bootout and proper error handling
+- Unit tests for `manager_launchd.py` (previously 0% coverage), `launchctl_utils.py`, and expanded coverage across 12 backend modules
+- Backend test coverage improved from ~67% to 98% overall (3343 tests)
+- Frontend store coverage: `servers.svelte.ts` at 100% branches, `probe.svelte.ts` at 97%
+
 ## [1.2.4] - 2026-03-08
 
 ### Fixed

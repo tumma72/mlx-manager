@@ -1,11 +1,33 @@
 """Launchd service for MLX Manager itself (not MLX servers)."""
 
 import plistlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from mlx_manager.services.launchctl_utils import bootout, bootstrap
+
 LABEL = "com.mlx-manager.app"
+
+
+def _find_executable() -> str:
+    """Find the mlx-manager executable using stable path resolution.
+
+    Prefers shutil.which() (finds symlinks that survive brew upgrades)
+    over sys.executable-relative paths (version-specific Cellar paths).
+    """
+    which_path = shutil.which("mlx-manager")
+    if which_path:
+        return which_path
+
+    # Fallback: resolve relative to sys.executable
+    candidate = Path(sys.executable).parent / "mlx-manager"
+    if candidate.exists():
+        return str(candidate)
+
+    # Last resort: use python -m
+    return ""
 
 
 def get_plist_path() -> Path:
@@ -18,12 +40,11 @@ def install_manager_service(host: str = "127.0.0.1", port: int = 10242) -> str:
     launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
     launch_agents_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find the mlx-manager executable or use python module
-    mlx_manager_path = Path(sys.executable).parent / "mlx-manager"
+    mlx_manager_path = _find_executable()
 
-    if mlx_manager_path.exists():
+    if mlx_manager_path:
         program_args = [
-            str(mlx_manager_path),
+            mlx_manager_path,
             "serve",
             "--host",
             host,
@@ -44,6 +65,12 @@ def install_manager_service(host: str = "127.0.0.1", port: int = 10242) -> str:
             "--no-open",
         ]
 
+    # Determine PATH: prefer the directory of the resolved executable
+    if mlx_manager_path:
+        exe_dir = str(Path(mlx_manager_path).parent)
+    else:
+        exe_dir = str(Path(sys.executable).parent)
+
     plist = {
         "Label": LABEL,
         "ProgramArguments": program_args,
@@ -52,7 +79,7 @@ def install_manager_service(host: str = "127.0.0.1", port: int = 10242) -> str:
         "StandardOutPath": f"/tmp/{LABEL}.log",
         "StandardErrorPath": f"/tmp/{LABEL}.err",
         "EnvironmentVariables": {
-            "PATH": f"{Path(sys.executable).parent}:/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{exe_dir}:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(Path.home()),
             "PYTHONUNBUFFERED": "1",
         },
@@ -62,13 +89,10 @@ def install_manager_service(host: str = "127.0.0.1", port: int = 10242) -> str:
 
     plist_path = get_plist_path()
 
-    # Unload if already loaded
-    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True, check=False)
-
     with open(plist_path, "wb") as f:
         plistlib.dump(plist, f)
 
-    subprocess.run(["launchctl", "load", str(plist_path)], check=True)
+    bootstrap(str(plist_path), LABEL)
 
     return str(plist_path)
 
@@ -80,7 +104,7 @@ def uninstall_manager_service() -> bool:
     if not plist_path.exists():
         return False
 
-    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True, check=False)
+    bootout(LABEL)
     plist_path.unlink(missing_ok=True)
 
     return True

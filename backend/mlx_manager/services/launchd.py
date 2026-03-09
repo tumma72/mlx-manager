@@ -7,15 +7,15 @@ and builds commands for mlx-manager serve.
 """
 
 import plistlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from loguru import logger
-
 from mlx_manager.config import DEFAULT_PORT
 from mlx_manager.models import ExecutionProfile
 from mlx_manager.models.dto.system import LaunchdStatus
+from mlx_manager.services.launchctl_utils import bootout, bootstrap, kickstart, kill_service
 
 
 class LaunchdManager:
@@ -46,12 +46,16 @@ class LaunchdManager:
         """
         label = self.get_label(profile)
 
-        # Find mlx-manager executable
-        python_dir = Path(sys.executable).parent
-        mlx_manager_path = python_dir / "mlx-manager"
+        # Find mlx-manager executable using stable path resolution
+        mlx_manager_path = shutil.which("mlx-manager")
+        if not mlx_manager_path:
+            mlx_manager_path = str(Path(sys.executable).parent / "mlx-manager")
 
         # Build command for mlx-manager serve
-        program_args = [str(mlx_manager_path), "serve", "--port", str(port)]
+        program_args = [mlx_manager_path, "serve", "--port", str(port)]
+
+        # Determine PATH from resolved executable
+        exe_dir = str(Path(mlx_manager_path).parent)
 
         # Build plist dictionary
         plist = {
@@ -62,7 +66,7 @@ class LaunchdManager:
             "StandardOutPath": f"/tmp/{label}.log",
             "StandardErrorPath": f"/tmp/{label}.err",
             "EnvironmentVariables": {
-                "PATH": f"{Path(sys.executable).parent}:/usr/local/bin:/usr/bin:/bin",
+                "PATH": f"{exe_dir}:/usr/local/bin:/usr/bin:/bin",
                 "HOME": str(Path.home()),
                 "PYTHONUNBUFFERED": "1",
             },
@@ -81,12 +85,13 @@ class LaunchdManager:
         # Generate and write plist
         plist = self.generate_plist(profile)
         plist_path = self.get_plist_path(profile)
+        label = self.get_label(profile)
 
         with open(plist_path, "wb") as f:
             plistlib.dump(plist, f)
 
-        # Load the service
-        subprocess.run(["launchctl", "load", str(plist_path)], check=True, capture_output=True)
+        # Load the service using modern API
+        bootstrap(str(plist_path), label)
 
         return str(plist_path)
 
@@ -97,13 +102,9 @@ class LaunchdManager:
         if not plist_path.exists():
             return False
 
-        # Unload the service
-        try:
-            subprocess.run(
-                ["launchctl", "unload", str(plist_path)], check=True, capture_output=True
-            )
-        except subprocess.CalledProcessError as e:
-            logger.debug(f"launchctl unload failed (may not be loaded): {e}")
+        # Unload the service using modern API
+        label = self.get_label(profile)
+        bootout(label)
 
         # Remove plist file
         plist_path.unlink(missing_ok=True)
@@ -125,18 +126,12 @@ class LaunchdManager:
     def start(self, profile: ExecutionProfile) -> bool:
         """Start a launchd service."""
         label = self.get_label(profile)
-
-        result = subprocess.run(["launchctl", "start", label], capture_output=True)
-
-        return result.returncode == 0
+        return kickstart(label)
 
     def stop(self, profile: ExecutionProfile) -> bool:
         """Stop a launchd service."""
         label = self.get_label(profile)
-
-        result = subprocess.run(["launchctl", "stop", label], capture_output=True)
-
-        return result.returncode == 0
+        return kill_service(label)
 
     def get_status(self, profile: ExecutionProfile) -> LaunchdStatus:
         """Get detailed status of a launchd service."""

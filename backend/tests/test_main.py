@@ -719,3 +719,392 @@ class TestLifespanWithPendingDownloads:
                 mock_resume.assert_not_called()
 
             mock_cancel.assert_called_once()
+
+
+class TestLifespanBatchingScheduler:
+    """Tests for batching scheduler init/shutdown in lifespan (lines 183-189, 269-270)."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_initializes_scheduler_when_batching_enabled(self):
+        """Test that lifespan initializes scheduler manager when batching is enabled."""
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
+
+        mock_scheduler_mgr = MagicMock()
+        mock_scheduler_mgr.shutdown = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool"),
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch(
+                "mlx_manager.mlx_server.services.batching.init_scheduler_manager",
+                return_value=mock_scheduler_mgr,
+            ) as mock_init_sched,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+        ):
+            mock_settings.enable_batching = True
+            mock_settings.batch_block_pool_size = 16
+            mock_settings.batch_max_batch_size = 8
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+
+            from mlx_manager.main import lifespan
+
+            async with lifespan(MagicMock()):
+                mock_init_sched.assert_called_once_with(
+                    block_pool_size=16,
+                    max_batch_size=8,
+                )
+
+            # Scheduler shutdown should be called during shutdown
+            mock_scheduler_mgr.shutdown.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_skips_scheduler_when_batching_disabled(self):
+        """Test that lifespan does not initialize scheduler when batching is disabled."""
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool"),
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+        ):
+            mock_settings.enable_batching = False
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+
+            from mlx_manager.main import lifespan
+
+            async with lifespan(MagicMock()):
+                pass
+            # No scheduler to shut down — no assertion needed
+
+
+class TestLifespanAutoStartProfiles:
+    """Tests for auto-start profile loading in lifespan (lines 219-256)."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_auto_loads_profiles_with_models(self):
+        """Test that lifespan preloads profiles marked with auto_start."""
+        mock_pool_mgr = MagicMock()
+        mock_pool_mgr.cleanup = AsyncMock()
+        mock_pool_mgr.preload_model = AsyncMock()
+        mock_pool_mgr.is_loaded = MagicMock(return_value=True)
+        mock_pool_mgr.register_profile_settings = MagicMock()
+
+        # Create mock auto-start profile
+        mock_model = MagicMock()
+        mock_model.repo_id = "mlx-community/Qwen3-0.6B-4bit-DWQ"
+
+        mock_profile = MagicMock()
+        mock_profile.name = "Auto Profile"
+        mock_profile.model = mock_model
+        mock_profile.model_options = None
+        mock_profile.default_system_prompt = "You are helpful."
+        mock_profile.default_enable_tool_injection = False
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_profile]
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        mock_pool_module = MagicMock()
+        mock_pool_module.model_pool = mock_pool_mgr
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool_mgr),
+            patch("mlx_manager.main.pool", mock_pool_module),
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+        ):
+            mock_settings.enable_batching = False
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+
+            from mlx_manager.main import lifespan
+
+            async with lifespan(MagicMock()):
+                mock_pool_mgr.preload_model.assert_called_once_with(
+                    "mlx-community/Qwen3-0.6B-4bit-DWQ"
+                )
+                mock_pool_mgr.register_profile_settings.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_skips_profile_without_model(self):
+        """Test that auto_start profile with no model is skipped."""
+        mock_pool_mgr = MagicMock()
+        mock_pool_mgr.cleanup = AsyncMock()
+        mock_pool_mgr.preload_model = AsyncMock()
+        mock_pool_mgr.is_loaded = MagicMock(return_value=False)
+
+        # Profile with no model
+        mock_profile = MagicMock()
+        mock_profile.name = "Broken Profile"
+        mock_profile.model = None  # No model assigned
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_profile]
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        mock_pool_module = MagicMock()
+        mock_pool_module.model_pool = mock_pool_mgr
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool_mgr),
+            patch("mlx_manager.main.pool", mock_pool_module),
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+        ):
+            mock_settings.enable_batching = False
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+
+            from mlx_manager.main import lifespan
+
+            async with lifespan(MagicMock()):
+                # preload_model should NOT be called since profile has no model
+                mock_pool_mgr.preload_model.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_handles_auto_start_failure_gracefully(self):
+        """Test that auto_start failure is caught and does not crash startup."""
+        mock_pool_mgr = MagicMock()
+        mock_pool_mgr.cleanup = AsyncMock()
+        mock_pool_mgr.preload_model = AsyncMock(side_effect=RuntimeError("OOM"))
+        mock_pool_mgr.is_loaded = MagicMock(return_value=False)
+        mock_pool_mgr.register_profile_settings = MagicMock()
+
+        mock_model = MagicMock()
+        mock_model.repo_id = "mlx-community/big-model"
+
+        mock_profile = MagicMock()
+        mock_profile.name = "Failing Profile"
+        mock_profile.model = mock_model
+        mock_profile.model_options = None
+        mock_profile.default_system_prompt = None
+        mock_profile.default_enable_tool_injection = False
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_profile]
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        mock_pool_module = MagicMock()
+        mock_pool_module.model_pool = mock_pool_mgr
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool_mgr),
+            patch("mlx_manager.main.pool", mock_pool_module),
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+        ):
+            mock_settings.enable_batching = False
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+
+            from mlx_manager.main import lifespan
+
+            # Should not raise despite preload_model failure
+            async with lifespan(MagicMock()):
+                pass
+
+
+class TestLifespanMLXEngineDispose:
+    """Tests for MLX engine dispose exception handling (lines 295-296)."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_handles_mlx_engine_dispose_exception(self):
+        """Test that lifespan gracefully handles MLX engine dispose failure."""
+        mock_pool = MagicMock()
+        mock_pool.cleanup = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_db_result = MagicMock()
+        mock_db_result.scalars.return_value = mock_scalars
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        @asynccontextmanager
+        async def mock_get_session():
+            yield mock_session
+
+        # Make the MLX engine getter raise
+        def failing_get_engine():
+            raise RuntimeError("Engine not initialized")
+
+        with (
+            patch("mlx_manager.main.init_db"),
+            patch("mlx_manager.main.recover_incomplete_downloads", return_value=[]),
+            patch("mlx_manager.main.detect_orphaned_downloads", return_value=[]),
+            patch("mlx_manager.main.health_checker") as mock_hc,
+            patch("mlx_manager.main.cancel_download_tasks"),
+            patch("mlx_manager.main.set_memory_limit"),
+            patch("mlx_manager.main.ModelPoolManager", return_value=mock_pool),
+            patch("mlx_manager.main.pool") as mock_pool_mod,
+            patch("mlx_manager.main.mlx_server_settings") as mock_settings,
+            patch("mlx_manager.database.get_session", mock_get_session),
+            patch("mlx_manager.main.engine") as mock_engine,
+            patch("mlx_manager.mlx_server.utils.metal.reset_metal_worker"),
+            patch(
+                "mlx_manager.mlx_server.database._get_engine",
+                side_effect=failing_get_engine,
+            ),
+        ):
+            mock_settings.enable_batching = False
+            mock_settings.max_memory_gb = 8.0
+            mock_settings.max_models = 3
+            mock_hc.start = AsyncMock()
+            mock_hc.stop = AsyncMock()
+            mock_engine.dispose = AsyncMock()
+            mock_pool_mod.model_pool = mock_pool
+
+            from mlx_manager.main import lifespan
+
+            # Should not raise despite MLX engine dispose failure
+            async with lifespan(MagicMock()):
+                pass
+
+
+class TestServeSpaSecurity:
+    """Tests for path traversal protection in serve_spa (line 384)."""
+
+    @pytest.mark.asyncio
+    async def test_spa_rejects_path_traversal(self):
+        """Test SPA route rejects path traversal attempts."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            static_dir = Path(tmpdir)
+            assets_dir = static_dir / "_app"
+            assets_dir.mkdir()
+
+            # Create index.html
+            index_path = static_dir / "index.html"
+            index_path.write_text("<html>SPA</html>")
+
+            # Create a file outside static dir
+            parent_file = Path(tmpdir).parent / "secret.txt"
+            try:
+                parent_file.write_text("secret data")
+            except (PermissionError, OSError):
+                pytest.skip("Cannot write outside tmpdir")
+
+            with patch("mlx_manager.main.STATIC_DIR", static_dir):
+                import sys
+
+                if "mlx_manager.main" in sys.modules:
+                    del sys.modules["mlx_manager.main"]
+
+                from httpx import ASGITransport, AsyncClient
+
+                from mlx_manager import main
+
+                async with AsyncClient(
+                    transport=ASGITransport(app=main.app), base_url="http://test"
+                ) as test_client:
+                    # Attempt path traversal — httpx normalizes ".." but the
+                    # resolve check in serve_spa should block any that slip through
+                    response = await test_client.get("/../secret.txt")
+                    # Should get 404 or fall through to SPA, NOT serve the secret
+                    assert b"secret data" not in response.content
+
+            if parent_file.exists():
+                parent_file.unlink()

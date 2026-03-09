@@ -138,26 +138,20 @@ class TestLaunchdManagerInstall:
 
     def test_install_creates_plist(self, launchd_manager, sample_profile, tmp_path):
         """Test install creates plist file."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-
+        with patch("mlx_manager.services.launchd.bootstrap"):
             result = launchd_manager.install(sample_profile)
 
         plist_path = tmp_path / "com.mlx-manager.test-profile.plist"
         assert plist_path.exists()
         assert result == str(plist_path)
 
-    def test_install_loads_service(self, launchd_manager, sample_profile):
-        """Test install calls launchctl load."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-
+    def test_install_calls_bootstrap(self, launchd_manager, sample_profile, tmp_path):
+        """Test install calls bootstrap with correct args."""
+        with patch("mlx_manager.services.launchd.bootstrap") as mock_bootstrap:
             launchd_manager.install(sample_profile)
 
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        assert "launchctl" in call_args
-        assert "load" in call_args
+        plist_path = tmp_path / "com.mlx-manager.test-profile.plist"
+        mock_bootstrap.assert_called_once_with(str(plist_path), "com.mlx-manager.test-profile")
 
 
 class TestLaunchdManagerUninstall:
@@ -173,23 +167,21 @@ class TestLaunchdManagerUninstall:
         plist_path = tmp_path / "com.mlx-manager.test-profile.plist"
         plist_path.write_text("test")
 
-        with patch("subprocess.run"):
+        with patch("mlx_manager.services.launchd.bootout"):
             result = launchd_manager.uninstall(sample_profile)
 
         assert result is True
         assert not plist_path.exists()
 
-    def test_uninstall_calls_launchctl(self, launchd_manager, sample_profile, tmp_path):
-        """Test uninstall calls launchctl unload."""
+    def test_uninstall_calls_bootout(self, launchd_manager, sample_profile, tmp_path):
+        """Test uninstall calls bootout with correct label."""
         plist_path = tmp_path / "com.mlx-manager.test-profile.plist"
         plist_path.write_text("test")
 
-        with patch("subprocess.run") as mock_run:
+        with patch("mlx_manager.services.launchd.bootout") as mock_bootout:
             launchd_manager.uninstall(sample_profile)
 
-        call_args = mock_run.call_args[0][0]
-        assert "launchctl" in call_args
-        assert "unload" in call_args
+        mock_bootout.assert_called_once_with("com.mlx-manager.test-profile")
 
 
 class TestLaunchdManagerIsRunning:
@@ -218,28 +210,24 @@ class TestLaunchdManagerStartStop:
     """Tests for the start and stop methods."""
 
     def test_start_service(self, launchd_manager, sample_profile):
-        """Test starting a service."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        """Test starting a service calls kickstart."""
+        with patch("mlx_manager.services.launchd.kickstart") as mock_kickstart:
+            mock_kickstart.return_value = True
 
             result = launchd_manager.start(sample_profile)
 
         assert result is True
-        call_args = mock_run.call_args[0][0]
-        assert "launchctl" in call_args
-        assert "start" in call_args
+        mock_kickstart.assert_called_once_with("com.mlx-manager.test-profile")
 
     def test_stop_service(self, launchd_manager, sample_profile):
-        """Test stopping a service."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        """Test stopping a service calls kill_service."""
+        with patch("mlx_manager.services.launchd.kill_service") as mock_kill:
+            mock_kill.return_value = True
 
             result = launchd_manager.stop(sample_profile)
 
         assert result is True
-        call_args = mock_run.call_args[0][0]
-        assert "launchctl" in call_args
-        assert "stop" in call_args
+        mock_kill.assert_called_once_with("com.mlx-manager.test-profile")
 
 
 class TestLaunchdManagerGetStatus:
