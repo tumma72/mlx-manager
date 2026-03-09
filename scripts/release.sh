@@ -68,6 +68,27 @@ fi
 
 ok "Clean tree on main, tag v$VERSION available"
 
+# ─── Quality gates ──────────────────────────────────────────────────────────
+
+info "Running quality gates"
+
+cd "$PROJECT_ROOT/backend"
+
+# Activate venv if present
+if [ -f ".venv/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    source .venv/bin/activate
+fi
+
+ruff check . || fail "ruff check failed — fix lint errors before releasing"
+ruff format --check . || fail "ruff format failed — run 'ruff format .' before releasing"
+mypy mlx_manager || fail "mypy failed — fix type errors before releasing"
+pytest -x -q || fail "Tests failed — fix failing tests before releasing"
+
+cd "$PROJECT_ROOT"
+
+ok "All quality gates passed"
+
 # ─── Step 1: Sync version ────────────────────────────────────────────────────
 
 info "Syncing version to $VERSION"

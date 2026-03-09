@@ -961,7 +961,7 @@ class TestInferenceLegacyVisionComplete:
 
     async def test_legacy_vision_complete(self) -> None:
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
-        from mlx_manager.mlx_server.services.inference import _GenContext, _complete_chat_ir
+        from mlx_manager.mlx_server.services.inference import _complete_chat_ir, _GenContext
 
         tok = _make_fake_tokenizer()
         adapter = create_adapter("default", tok, model_type="text-gen")
@@ -1008,7 +1008,7 @@ class TestInferenceLegacyTextComplete:
 
     async def test_legacy_text_complete(self) -> None:
         from mlx_manager.mlx_server.models.adapters.composable import create_adapter
-        from mlx_manager.mlx_server.services.inference import _GenContext, _complete_chat_ir
+        from mlx_manager.mlx_server.services.inference import _complete_chat_ir, _GenContext
 
         tok = _make_fake_tokenizer()
         adapter = create_adapter("default", tok, model_type="text-gen")
