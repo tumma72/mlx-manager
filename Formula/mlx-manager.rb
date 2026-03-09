@@ -3,8 +3,8 @@ class MlxManager < Formula
 
   desc "Web-based MLX model manager for Apple Silicon Macs"
   homepage "https://github.com/tumma72/mlx-manager"
-  url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.2.6.tar.gz"
-  sha256 "6d3a2494894e7ae81c0395d5e99dc4f160349de6a1111d73eab258d2463db863"
+  url "https://github.com/tumma72/mlx-manager/archive/refs/tags/v1.2.7.tar.gz"
+  sha256 "7b2f69369c5bbce737171766a85b146523323bb4d47a7b681b95f70d6afeb204"
   license "MIT"
   version "1.2.7"
 
