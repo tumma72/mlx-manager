@@ -5,7 +5,7 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.5] - 2026-03-09
+## [1.2.6] - 2026-03-09
 
 ### Fixed
 
@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for `manager_launchd.py` (previously 0% coverage), `launchctl_utils.py`, and expanded coverage across 12 backend modules
 - Backend test coverage improved from ~67% to 98% overall (3343 tests)
 - Frontend store coverage: `servers.svelte.ts` at 100% branches, `probe.svelte.ts` at 97%
+- Release script now runs ruff, mypy, and pytest as quality gates before publishing
+
+## [1.2.5] - 2026-03-09 [YANKED]
+
+Yanked due to CI lint failure in published package. Use 1.2.6 instead.
 
 ## [1.2.4] - 2026-03-08
 
