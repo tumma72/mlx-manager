@@ -752,7 +752,7 @@ describe("ModelPoolSettings", () => {
       await user.click(screen.getByText("Clickable Profile"));
 
       await waitFor(() => {
-        expect(vi.mocked(goto)).toHaveBeenCalledWith("/profiles?edit=42");
+        expect(vi.mocked(goto)).toHaveBeenCalledWith("/profiles/42");
       });
     });
   });
