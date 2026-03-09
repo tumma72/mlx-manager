@@ -118,9 +118,7 @@
 	}
 
 	async function handleEditProfile(profileId: number) {
-		const url = `${resolve('/profiles')}?edit=${profileId}`;
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- query params appended to resolved base path
-		await goto(url);
+		await goto(resolve(`/profiles/${profileId}`));
 	}
 </script>
 
