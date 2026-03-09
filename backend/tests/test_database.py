@@ -691,8 +691,7 @@ class TestRepairOrphanedProfiles:
             )
             await conn.execute(
                 sa_text(
-                    "INSERT INTO execution_profiles (id, name, model_id) "
-                    "VALUES (1, 'Orphan', NULL)"
+                    "INSERT INTO execution_profiles (id, name, model_id) VALUES (1, 'Orphan', NULL)"
                 )
             )
             # No models inserted
