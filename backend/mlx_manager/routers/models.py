@@ -675,7 +675,7 @@ async def probe_model_capabilities(
         probe_model,
     )
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         steps_acc: list[ProbeStep] = []
 
         async for step in probe_model(model_id):
