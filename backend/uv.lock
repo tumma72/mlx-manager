@@ -1099,7 +1099,7 @@ wheels = [
 
 [[package]]
 name = "mlx-manager"
-version = "1.2.9"
+version = "1.2.10"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
