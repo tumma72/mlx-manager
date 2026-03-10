@@ -78,11 +78,10 @@ async def client(test_engine):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Mock the health checker to prevent it from running during tests
-    with patch("mlx_manager.main.health_checker") as mock_health_checker:
-        mock_health_checker.start = AsyncMock()
-        mock_health_checker.stop = AsyncMock()
-
+    # Patch the health checker so the real start/stop (which spawn async tasks)
+    # never run.  ASGITransport does NOT invoke the ASGI lifespan, so the mock
+    # is never called — a plain MagicMock is sufficient.
+    with patch("mlx_manager.main.health_checker"):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
@@ -311,11 +310,8 @@ async def auth_client(test_engine, test_user_data):
     # Generate auth token for the test user
     token = create_access_token(data={"sub": test_user_data["email"]})
 
-    # Mock the health checker to prevent it from running during tests
-    with patch("mlx_manager.main.health_checker") as mock_health_checker:
-        mock_health_checker.start = AsyncMock()
-        mock_health_checker.stop = AsyncMock()
-
+    # Patch the health checker — see comment in `client` fixture above.
+    with patch("mlx_manager.main.health_checker"):
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,
@@ -409,11 +405,8 @@ async def admin_client(test_engine, test_admin_user_data):
     # Generate auth token for the admin user
     token = create_access_token(data={"sub": test_admin_user_data["email"]})
 
-    # Mock the health checker to prevent it from running during tests
-    with patch("mlx_manager.main.health_checker") as mock_health_checker:
-        mock_health_checker.start = AsyncMock()
-        mock_health_checker.stop = AsyncMock()
-
+    # Patch the health checker — see comment in `client` fixture above.
+    with patch("mlx_manager.main.health_checker"):
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport,

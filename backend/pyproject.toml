@@ -119,8 +119,6 @@ filterwarnings = [
     "ignore::logfire._internal.config.LogfireNotConfiguredWarning",
     # Asyncio Queue.get() coroutines from GC during multi-test runs (race condition from WebSocket tests)
     "ignore:coroutine 'Queue.get' was never awaited:RuntimeWarning",
-    # AsyncMock coroutines from GC during xdist parallel runs (cross-worker mock leakage)
-    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
 ]
 
 [tool.ty.environment]

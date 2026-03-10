@@ -1503,6 +1503,14 @@ async def test_coordinator_restores_parsers_for_preloaded_model():
     mock_strategy_inst = MagicMock()
     mock_strategy_inst.probe = empty_probe
 
+    # Build a fake async session whose execute().scalar_one_or_none() returns None
+    # (no Model record in our mock DB).  Using explicit return values prevents
+    # MagicMock from auto-creating AsyncMock children that leak unawaited coroutines.
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalar_one_or_none = MagicMock(return_value=None)
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_execute_result)
+
     with (
         patch(
             "mlx_manager.mlx_server.models.detection.detect_model_type_detailed",
@@ -1516,7 +1524,13 @@ async def test_coordinator_restores_parsers_for_preloaded_model():
             "mlx_manager.services.probe.coordinator._save_capabilities",
             new_callable=AsyncMock,
         ),
-        patch("mlx_manager.database.get_session"),
+        patch(
+            "mlx_manager.database.get_session",
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_session),
+                __aexit__=AsyncMock(return_value=False),
+            ),
+        ),
         patch(
             "mlx_manager.mlx_server.models.adapters.detect_model_family",
             return_value="qwen",
