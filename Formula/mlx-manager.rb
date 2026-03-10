@@ -14,8 +14,10 @@ class MlxManager < Formula
   depends_on arch: :arm64
 
   def install
-    # Create virtualenv - package install happens in post_install to avoid dylib fixup
-    virtualenv_create(libexec, "python3.12")
+    # Create isolated virtualenv — system_site_packages: false prevents
+    # broken system-level dist-info (e.g. Homebrew's wheel package) from
+    # being visible inside our venv and crashing importlib.metadata.
+    virtualenv_create(libexec, "python3.12", system_site_packages: false)
 
     # Create a wrapper script so it gets linked during install
     # (post_install runs after linking, so bin.install_symlink there won't be on PATH)

@@ -5,11 +5,18 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.10] - 2026-03-10
+
+### Fixed
+
+- **Critical**: Homebrew formula now creates an isolated virtualenv (`system_site_packages: false`) preventing broken system-level dist-info entries (e.g. `wheel-0.45.1.dist-info` with missing METADATA) from crashing `importlib.metadata.packages_distributions()` during model loading
+- Removed temporary monkey-patch from v1.2.9 in favour of the proper formula-level fix
+
 ## [1.2.9] - 2026-03-09
 
 ### Fixed
 
-- **Critical**: Patch `importlib.metadata.packages_distributions()` to skip broken dist-info entries (e.g. Homebrew's `wheel-0.45.1.dist-info` with missing METADATA file) — fixes `TypeError: 'NoneType' object is not subscriptable` crash that prevented all model loading in Homebrew environments
+- Temporary monkey-patch for `importlib.metadata.packages_distributions()` to tolerate broken dist-info entries in Homebrew environments (superseded by formula fix in v1.2.10)
 
 ## [1.2.8] - 2026-03-09
 

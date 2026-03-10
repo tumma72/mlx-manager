@@ -1,38 +1,5 @@
 """MLX Model Manager - FastAPI Application."""
 
-# Monkey-patch importlib.metadata.packages_distributions to tolerate broken
-# dist-info entries (e.g. Homebrew's wheel-0.45.1.dist-info with no METADATA
-# file).  transformers calls this at import time and will crash with
-# "TypeError: 'NoneType' object is not subscriptable" if any distribution's
-# metadata['Name'] is None.
-import importlib.metadata as _md
-
-_orig_packages_distributions = _md.packages_distributions
-
-
-def _safe_packages_distributions():
-    from collections import defaultdict
-
-    pkg_to_dist: dict[str, list[str]] = defaultdict(list)
-    for dist in _md.distributions():
-        try:
-            meta = dist.metadata
-            if meta is None:
-                continue
-            name = meta.get("Name") if hasattr(meta, "get") else meta["Name"]
-            if name is None:
-                continue
-        except Exception:
-            continue  # skip broken dist-info
-        if dist.files is not None:
-            for f in dist.files:
-                pkg = str(f).split("/")[0]
-                pkg_to_dist[pkg].append(name)
-    return pkg_to_dist
-
-
-_md.packages_distributions = _safe_packages_distributions  # type: ignore[assignment]
-
 # Suppress deprecation warnings from mlx-lm (uses deprecated mx.metal.device_info)
 import warnings
 
