@@ -1,6 +1,6 @@
 [project]
 name = "mlx-manager"
-version = "1.2.9"
+version = "1.2.10"
 description = "Web-based MLX model manager for Apple Silicon Macs"
 readme = "README.md"
 license = {text = "MIT"}
@@ -101,7 +101,7 @@ per-file-ignores = { "mlx_manager/main.py" = ["E402"], "mlx_manager/mlx_server/m
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-m 'not e2e'"
+addopts = "-n logical -m 'not e2e'"
 markers = [
     "e2e: End-to-end tests requiring running server and downloaded models",
     "e2e_vision: Vision model E2E tests (requires vision models downloaded)",
