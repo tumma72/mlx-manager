@@ -3,8 +3,6 @@
 Focuses on GenerativeProbe edge cases and error paths.
 """
 
-from unittest.mock import MagicMock
-
 from mlx_manager.services.probe.base import (
     _build_marker_to_parsers,
     _detect_all_tags,
@@ -232,17 +230,16 @@ class TestBuildMarkerToParsers:
     """Tests for the marker-to-parser lookup builder."""
 
     def test_builds_lookup_from_parsers(self) -> None:
-        mock_parser_a = MagicMock()
-        mock_parser_a_inst = MagicMock()
-        mock_parser_a_inst.stream_markers = [("<tool_call>", "</tool_call>")]
-        mock_parser_a.return_value = mock_parser_a_inst
+        class ParserA:
+            stream_markers = [("<tool_call>", "</tool_call>")]
 
-        mock_parser_b = MagicMock()
-        mock_parser_b_inst = MagicMock()
-        mock_parser_b_inst.stream_markers = [("[TOOL_CALLS]", "")]
-        mock_parser_b.return_value = mock_parser_b_inst
+        class ParserB:
+            stream_markers = [("[TOOL_CALLS]", "")]
 
-        parsers = {"null": MagicMock, "parser_a": mock_parser_a, "parser_b": mock_parser_b}
+        class NullParser:
+            stream_markers = []
+
+        parsers = {"null": NullParser, "parser_a": ParserA, "parser_b": ParserB}
         result = _build_marker_to_parsers(parsers)
 
         assert "<tool_call>" in result
@@ -252,35 +249,38 @@ class TestBuildMarkerToParsers:
 
     def test_shared_markers_multiple_parsers(self) -> None:
         """Multiple parsers sharing same marker are all listed."""
-        mock_p1 = MagicMock()
-        mock_p1_inst = MagicMock()
-        mock_p1_inst.stream_markers = [("<tool_call>", "</tool_call>")]
-        mock_p1.return_value = mock_p1_inst
 
-        mock_p2 = MagicMock()
-        mock_p2_inst = MagicMock()
-        mock_p2_inst.stream_markers = [("<tool_call>", "</tool_call>")]
-        mock_p2.return_value = mock_p2_inst
+        class Hermes:
+            stream_markers = [("<tool_call>", "</tool_call>")]
 
-        parsers = {"null": MagicMock, "hermes": mock_p1, "glm4": mock_p2}
+        class Glm4:
+            stream_markers = [("<tool_call>", "</tool_call>")]
+
+        class NullParser:
+            stream_markers = []
+
+        parsers = {"null": NullParser, "hermes": Hermes, "glm4": Glm4}
         result = _build_marker_to_parsers(parsers)
 
         assert "<tool_call>" in result
         assert set(result["<tool_call>"]) == {"hermes", "glm4"}
 
     def test_skips_null_parser(self) -> None:
-        mock_null = MagicMock()
-        parsers = {"null": mock_null}
+        class NullParser:
+            stream_markers = []
+
+        parsers = {"null": NullParser}
         result = _build_marker_to_parsers(parsers)
         assert result == {}
 
     def test_skips_empty_markers(self) -> None:
-        mock_parser = MagicMock()
-        mock_parser_inst = MagicMock()
-        mock_parser_inst.stream_markers = [("", "")]
-        mock_parser.return_value = mock_parser_inst
+        class EmptyParser:
+            stream_markers = [("", "")]
 
-        parsers = {"null": MagicMock, "empty": mock_parser}
+        class NullParser:
+            stream_markers = []
+
+        parsers = {"null": NullParser, "empty": EmptyParser}
         result = _build_marker_to_parsers(parsers)
         assert result == {}
 
@@ -327,18 +327,22 @@ class TestScanForKnownMarkers:
 # ---------------------------------------------------------------------------
 
 
+class _NullParser:
+    """Stub null parser for tests."""
+
+    stream_markers: list[tuple[str, str]] = []
+
+
 class TestDiscoverAndMapTags:
     """Tests for the full discovery pipeline."""
 
     def test_xml_tag_mapped_to_parser(self) -> None:
         output = "<tool_call>some data</tool_call>"
 
-        mock_parser = MagicMock()
-        mock_parser_inst = MagicMock()
-        mock_parser_inst.stream_markers = [("<tool_call>", "</tool_call>")]
-        mock_parser.return_value = mock_parser_inst
+        class Hermes:
+            stream_markers = [("<tool_call>", "</tool_call>")]
 
-        parsers = {"null": MagicMock, "hermes": mock_parser}
+        parsers = {"null": _NullParser, "hermes": Hermes}
         tags = _discover_and_map_tags(output, parsers)
 
         tool_call_tags = [t for t in tags if t.name == "tool_call"]
@@ -348,12 +352,10 @@ class TestDiscoverAndMapTags:
     def test_bracket_tag_mapped_to_parser(self) -> None:
         output = "[TOOL_CALLS] some data"
 
-        mock_parser = MagicMock()
-        mock_parser_inst = MagicMock()
-        mock_parser_inst.stream_markers = [("[TOOL_CALLS]", "")]
-        mock_parser.return_value = mock_parser_inst
+        class Mistral:
+            stream_markers = [("[TOOL_CALLS]", "")]
 
-        parsers = {"null": MagicMock, "mistral": mock_parser}
+        parsers = {"null": _NullParser, "mistral": Mistral}
         tags = _discover_and_map_tags(output, parsers)
 
         tool_tags = [t for t in tags if t.name == "TOOL_CALLS"]
@@ -363,7 +365,7 @@ class TestDiscoverAndMapTags:
     def test_unmatched_tags_have_empty_parsers(self) -> None:
         output = "<custom_tag>data</custom_tag>"
 
-        parsers = {"null": MagicMock}  # No real parsers
+        parsers = {"null": _NullParser}
         tags = _discover_and_map_tags(output, parsers)
 
         custom_tags = [t for t in tags if t.name == "custom_tag"]
@@ -374,12 +376,10 @@ class TestDiscoverAndMapTags:
         """Parsers with non-standard markers (like <function=) found by direct scan."""
         output = "<function=get_weather>{}</function>"
 
-        mock_parser = MagicMock()
-        mock_parser_inst = MagicMock()
-        mock_parser_inst.stream_markers = [("<function=", "</function>")]
-        mock_parser.return_value = mock_parser_inst
+        class LlamaXml:
+            stream_markers = [("<function=", "</function>")]
 
-        parsers = {"null": MagicMock, "llama_xml": mock_parser}
+        parsers = {"null": _NullParser, "llama_xml": LlamaXml}
         tags = _discover_and_map_tags(output, parsers)
 
         # The regex detects "function" as an XML tag, but the direct scan
@@ -392,12 +392,12 @@ class TestDiscoverAndMapTags:
 
     def test_returns_tag_discovery_objects(self) -> None:
         output = "<tool_call>data</tool_call>"
-        parsers = {"null": MagicMock}
+        parsers = {"null": _NullParser}
         tags = _discover_and_map_tags(output, parsers)
 
         assert all(isinstance(t, TagDiscovery) for t in tags)
 
     def test_empty_output(self) -> None:
-        parsers = {"null": MagicMock}
+        parsers = {"null": _NullParser}
         tags = _discover_and_map_tags("", parsers)
         assert tags == []

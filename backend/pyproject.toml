@@ -101,7 +101,7 @@ per-file-ignores = { "mlx_manager/main.py" = ["E402"], "mlx_manager/mlx_server/m
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-n logical -m 'not e2e'"
+addopts = "-n logical --dist loadfile -m 'not e2e'"
 markers = [
     "e2e: End-to-end tests requiring running server and downloaded models",
     "e2e_vision: Vision model E2E tests (requires vision models downloaded)",
@@ -119,6 +119,8 @@ filterwarnings = [
     "ignore::logfire._internal.config.LogfireNotConfiguredWarning",
     # Asyncio Queue.get() coroutines from GC during multi-test runs (race condition from WebSocket tests)
     "ignore:coroutine 'Queue.get' was never awaited:RuntimeWarning",
+    # AsyncMock coroutines from GC during xdist parallel runs (cross-worker mock leakage)
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
 ]
 
 [tool.ty.environment]
