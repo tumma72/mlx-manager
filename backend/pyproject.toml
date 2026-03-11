@@ -37,7 +37,7 @@ dependencies = [
     "alembic>=1.18.1",
     "authlib>=1.3.0",
     "pwdlib[argon2]>=0.3.0",
-    #"torchvision>=0.25.0; sys_platform == 'darwin'",
+    "torchvision>=0.25.0",
     # MLX Server dependencies
     "logfire[fastapi,httpx,sqlalchemy]>=3.0.0",
     "sse-starlette>=2.0.0",
@@ -47,7 +47,7 @@ dependencies = [
     # MLX Core libraries
     "mlx-audio>=0.3.1",
     "mlx-embeddings>=0.0.5",
-    "mlx-lm>=0.30.5",
+    "mlx-lm>=0.31.1",
     "mlx-vlm>=0.3.12",
     # Structured output validation
     "jsonschema>=4.0.0",
@@ -168,9 +168,9 @@ exclude_lines = [
 ]
 
 [tool.uv]
-# mlx-audio 0.3.1 hard-pins mlx-lm==0.30.5, but mlx-vlm>=0.3.12 requires mlx-lm>=0.30.7.
+# mlx-audio 0.3.1 hard-pins mlx-lm==0.31.1, but mlx-vlm>=0.3.12 requires mlx-lm>=0.30.7.
 # The override relaxes this pin so both packages can coexist.
-override-dependencies = ["mlx-lm>=0.30.5", "transformers>=5.3.0"]
+override-dependencies = ["mlx-lm>=0.31.1", "transformers>=5.3.0"]
 
 [tool.uv.sources]
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

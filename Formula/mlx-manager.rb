@@ -33,8 +33,8 @@ class MlxManager < Formula
     # (mlx-audio/mlx-lm pin transformers==5.0.0rc3 but mlx-vlm requires >=5.1.0)
     overrides = libexec/"overrides.txt"
     overrides.write <<~EOS
-      mlx-lm>=0.30.5
-      transformers>=5.0.0
+      mlx-lm>=0.31.1
+      transformers>=5.3.0
     EOS
 
     # Install from PyPI using uv for override support

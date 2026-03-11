@@ -5,6 +5,15 @@ All notable changes to MLX Model Manager will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.12] - 2026-03-11
+
+### Fixed
+
+- Add `torchvision` as runtime dependency — required by `transformers>=5.3.0` for Qwen3 VL video processor when loading vision models
+- Bump `mlx-lm` minimum to `>=0.31.1` to skip yanked v0.31.0 (batched KV cache cross-contamination bug)
+- Add `pytest-xdist` to declared dev dependencies (was missing, causing CI test failures)
+- Add return type annotation to probe SSE generator (eliminates mypy annotation-unchecked note)
+
 ## [1.2.11] - 2026-03-10
 
 ### Fixed
